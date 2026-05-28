@@ -44,7 +44,7 @@ class JournalTests(unittest.TestCase):
         if not call_operation("genomi.describe_context").get("active_agi_id"):
             call_operation("genomi.parse_source", {"source": str(vcf)})
         call_operation(
-            "genomi.approve_agi_access",
+            "active_genome_index.approve_access",
             {"approved_by_user": True, "reason": "test approved Active Genome Index access"},
         )
 
@@ -273,7 +273,7 @@ class JournalTests(unittest.TestCase):
                 ],
             },
         )
-        call_operation("genomi.revoke_agi_access")
+        call_operation("active_genome_index.revoke_access")
 
         artifact = call_operation("journal.export_memory")
 
@@ -301,7 +301,7 @@ class JournalTests(unittest.TestCase):
                 ],
             },
         )
-        call_operation("genomi.revoke_agi_access")
+        call_operation("active_genome_index.revoke_access")
 
         amended = call_operation(
             "journal.append_entry",

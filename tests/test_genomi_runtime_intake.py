@@ -27,7 +27,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation(
                     "genomi.parse_source",
                     {"source": str(vcf), "genome_build": "GRCh38"},
@@ -69,7 +69,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation(
                     "genomi.parse_source",
                     {"source": str(vcf), "genome_build": "GRCh38"},
@@ -96,7 +96,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation(
                     "genomi.parse_source",
                     {"source": str(vcf), "genome_build": "GRCh38"},
@@ -129,7 +129,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "23andme")
@@ -169,7 +169,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "ancestrydna")
@@ -211,7 +211,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 with zipfile.ZipFile(archive_path, "w") as archive:
                     archive.writestr("AncestryDNA.txt", content)
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(archive_path)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "ancestrydna")
@@ -241,7 +241,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "myheritage")
@@ -272,7 +272,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 with zipfile.ZipFile(archive_path, "w") as archive:
                     archive.writestr("MyHeritage_raw_dna_data.csv", content)
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(archive_path)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "myheritage")
@@ -297,7 +297,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "ftdna")
@@ -326,7 +326,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 with gzip.open(archive_path, "wb") as handle:
                     handle.write(content)
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(archive_path)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "ftdna")
@@ -352,7 +352,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     encoding="utf-8",
                 )
 
-                self.approve_agi_access()
+                self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "livingdna")
@@ -563,7 +563,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                         side_effect=fake_materialize_bam_variant_vcf,
                     ),
                 ):
-                    self.approve_agi_access()
+                    self.approve_access()
                     parsed = call_operation(
                         "genomi.parse_source",
                         {"source": str(bam), "reference_fasta": str(reference)},

@@ -395,7 +395,7 @@ class RegistryGatingTests(unittest.TestCase):
                     },
                 )
                 call_operation(
-                    "genomi.approve_agi_access",
+                    "active_genome_index.approve_access",
                     {"approved_by_user": True, "reason": "test"},
                 )
                 out = wd_path / "dash.html"

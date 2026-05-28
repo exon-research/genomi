@@ -104,7 +104,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
         },
         "context_axes": {
             "active_genome_index": {
-                "selected_by": ["genomi.parse_source", "genomi.assign_user_genome", "genomi.select_user", "default user auto-select"],
+                "selected_by": ["genomi.parse_source", "active_genome_index.assign_user_genome", "active_genome_index.select_user", "default user auto-select"],
                 "current_state": "active_accessible" if active and bool(active_access.get("approved")) else ("metadata_only" if active else "public_only"),
                 "known_agis": len(known_agis),
             },

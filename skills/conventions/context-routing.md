@@ -31,11 +31,11 @@ Start from the current session context:
    The supplied path is approval to read that source for this session. Use
    `genomi.parse_source` when the question needs an Active Genome Index.
 5. If the user explicitly names a known `agi_id`, approve that specific Active Genome Index
-   with `genomi.approve_agi_access` before using parsed Active Genome Index evidence.
+   with `active_genome_index.approve_access` before using parsed Active Genome Index evidence.
 6. If the user names a profile nickname, select the user with
-   `genomi.select_user`. That is metadata-only unless the selected user is the
+   `active_genome_index.select_user`. That is metadata-only unless the selected user is the
    default user or the session explicitly approves the selected Active Genome
-   Index with `genomi.approve_agi_access`.
+   Index with `active_genome_index.approve_access`.
 7. If one user is configured as the default user, Genomi auto-selects that
    user's selected Active Genome Index for every session using this
    `GENOMI_HOME` without a separate per-session approval step. Other genome

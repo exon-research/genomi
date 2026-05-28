@@ -110,7 +110,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                         "outputs": {"active_genome_index_path": str(index)},
                     },
                 )
-                self.approve_agi_access()
+                self.approve_access()
 
                 with mock.patch(
                     "genomi.operations.pgx.review_medication_interaction",
@@ -150,7 +150,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                         "outputs": {"active_genome_index_path": str(index)},
                     },
                 )
-                self.approve_agi_access()
+                self.approve_access()
                 expected_shared = str(self.genomi_home / "shared-evidence.sqlite")
 
                 with mock.patch(
@@ -197,7 +197,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                         "outputs": {"active_genome_index_path": str(index), "clinvar_matches": str(matches)},
                     },
                 )
-                self.approve_agi_access()
+                self.approve_access()
 
                 with (
                     mock.patch(

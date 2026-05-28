@@ -173,7 +173,7 @@ def _require_agi_access(action: str) -> None:
         "active_genome_index_approval_required",
         (
             f"Explicit user approval is required before {action}. "
-            "After the user approves Active Genome Index access for this chat, call genomi.approve_agi_access."
+            "After the user approves Active Genome Index access for this chat, call active_genome_index.approve_access."
         ),
     )
 

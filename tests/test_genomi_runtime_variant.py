@@ -91,7 +91,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 db = Path("evidence.sqlite")
 
                 call_operation(
-                    "genomi.assign_user_genome",
+                    "active_genome_index.assign_user_genome",
                     {"nickname": "Test user", "source": str(vcf), "active_genome_index_path": str(index), "db": str(db), "genome_build": "GRCh38"},
                 )
                 active_result = call_operation("variant.resolve", {"rsid": "rs555"})
@@ -101,12 +101,12 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 self.assertNotIn(str(vcf.resolve(strict=False)), json.dumps(active_result))
 
                 agi_id = active_result["sample_context"]["searched_active_genome_indexes"][0]["agi_id"]
-                call_operation("genomi.clear_selection")
+                call_operation("active_genome_index.clear_selection")
                 public_only = call_operation("variant.resolve", {"rsid": "rs555"})
                 self.assertEqual(public_only["sample_context"]["searched_active_genome_indexes"], [])
                 self.assertEqual(public_only["sample_context"]["count"], 0)
 
-                call_operation("genomi.approve_agi_access", {"approved_by_user": True, "agi_id": agi_id})
+                call_operation("active_genome_index.approve_access", {"approved_by_user": True, "agi_id": agi_id})
                 known_result = call_operation("variant.resolve", {"rsid": "rs555", "agi_id": agi_id})
                 self.assertEqual(known_result["sample_context"]["count"], 1)
                 self.assertEqual(known_result["sample_context"]["searched_active_genome_indexes"][0]["selection"], "explicit_active_genome_index")
@@ -144,7 +144,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                     connection.commit()
 
                 call_operation(
-                    "genomi.assign_user_genome",
+                    "active_genome_index.assign_user_genome",
                     {"nickname": "Test user", "source": str(vcf), "active_genome_index_path": str(index), "genome_build": "GRCh38"},
                 )
                 current = call_operation("genomi.describe_context")
@@ -233,7 +233,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                     )
 
                 call_operation(
-                    "genomi.assign_user_genome",
+                    "active_genome_index.assign_user_genome",
                     {"nickname": "Test user", "source": str(vcf), "active_genome_index_path": str(index), "db": str(db), "genome_build": "GRCh38"},
                 )
                 result = call_operation("variant.resolve", {"query": "chr1:100:A:G"})
@@ -273,7 +273,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNA12878\n",
             encoding="utf-8",
         )
-        set_result = call_operation("genomi.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
+        set_result = call_operation("active_genome_index.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
         hidden = call_operation("genomi.list_resources")
         hidden_text = json.dumps(hidden)
         self.assertNotIn(set_result["context"]["active_agi_id"], hidden_text)

@@ -11,10 +11,19 @@
         "active_genome_index.summarize"
       ],
       "operations": [
-        "active_genome_index.summarize",
+        "active_genome_index.approve_access",
+        "active_genome_index.assign_user_genome",
         "active_genome_index.classify_callset_qc",
         "active_genome_index.classify_genotype_support",
-        "active_genome_index.classify_region_callability"
+        "active_genome_index.classify_region_callability",
+        "active_genome_index.clear_default_user",
+        "active_genome_index.clear_selection",
+        "active_genome_index.list_users",
+        "active_genome_index.rename_user",
+        "active_genome_index.revoke_access",
+        "active_genome_index.select_user",
+        "active_genome_index.set_default_user",
+        "active_genome_index.summarize"
       ]
     }
   },
@@ -242,6 +251,359 @@
       "external_io": [],
       "data_access": [
         "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.approve_access": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Record explicit user approval to read one resolved Active Genome Index for this session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "approved_by_user": {
+            "type": "boolean"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved_by_user"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "active_genome_index_access"
+      ],
+      "context_optional": [
+        "agi_id",
+        "source",
+        "user_id",
+        "nickname"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.revoke_access": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Revoke scoped Active Genome Index read approval for this session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agi_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "active_genome_index_access"
+      ],
+      "context_optional": [
+        "agi_id"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.assign_user_genome": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Assign an existing or supplied genome source to a user/profile and optionally make it that user's selected Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "set_active": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "set_default_user": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "shared_db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genotype_reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "user",
+        "active_genome_index_or_source_param"
+      ],
+      "produces": [
+        "user_registry_metadata",
+        "active_genome_index"
+      ],
+      "context_optional": [
+        "source",
+        "agi_id"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.select_user": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Select a user/profile for this session without granting private artifact access.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "context_status",
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.set_default_user": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Set the default user/profile for this GENOMI_HOME.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "default_user"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.clear_default_user": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Clear persistent default user/profile selection for this GENOMI_HOME.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "default_user"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.rename_user": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Rename a user/profile nickname.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "new_nickname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_nickname"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.list_users": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "List user/profile metadata and the Active Genome Index records assigned to each user.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.clear_selection": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Clear active user and Active Genome Index selection for this session. Shared public evidence remains usable.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget_active_genome_indexes": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "context_status"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
       ],
       "discovery_role": "focused_tool"
     }

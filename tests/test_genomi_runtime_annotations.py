@@ -323,7 +323,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         for expected in ("source", "user_nickname", "set_default_user", "genome_build"):
             self.assertIn(expected, parse_schema["properties"])
 
-        assign_schema = by_name["genomi.assign_user_genome"]["inputSchema"]
+        assign_schema = by_name["active_genome_index.assign_user_genome"]["inputSchema"]
         for expected in ("user_id", "nickname", "agi_id", "source", "set_active", "set_default_user"):
             self.assertIn(expected, assign_schema["properties"])
 

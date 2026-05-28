@@ -237,6 +237,15 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
                 "active_genome_index.classify_callset_qc",
                 "active_genome_index.classify_genotype_support",
                 "active_genome_index.classify_region_callability",
+                "active_genome_index.approve_access",
+                "active_genome_index.revoke_access",
+                "active_genome_index.assign_user_genome",
+                "active_genome_index.select_user",
+                "active_genome_index.set_default_user",
+                "active_genome_index.clear_default_user",
+                "active_genome_index.rename_user",
+                "active_genome_index.list_users",
+                "active_genome_index.clear_selection",
             },
         )
 

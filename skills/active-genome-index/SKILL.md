@@ -8,20 +8,20 @@ description: |
   Family Finder export, Living DNA autosomal export, supported source zip, or known Active Genome Index.
 tools:
   - genomi.describe_context
-  - genomi.approve_agi_access
-  - genomi.list_users
-  - genomi.select_user
-  - genomi.assign_user_genome
+  - active_genome_index.approve_access
+  - active_genome_index.list_users
+  - active_genome_index.select_user
+  - active_genome_index.assign_user_genome
   - genomi.parse_source
-  - genomi.rename_user
-  - genomi.set_default_user
-  - genomi.clear_default_user
+  - active_genome_index.rename_user
+  - active_genome_index.set_default_user
+  - active_genome_index.clear_default_user
   - active_genome_index.summarize
   - active_genome_index.classify_callset_qc
   - active_genome_index.classify_genotype_support
   - active_genome_index.classify_region_callability
-  - genomi.clear_selection
-  - genomi.revoke_agi_access
+  - active_genome_index.clear_selection
+  - active_genome_index.revoke_access
 mutating: true
 ---
 
@@ -95,7 +95,7 @@ Summarize local parse/readiness/evidence state for an Active Genome Index.
 
 **Result semantics**: Summarizes local Active Genome Index and evidence artifact state; it does not parse new input or perform interpretation.
 
-### genomi.assign_user_genome
+### active_genome_index.assign_user_genome
 
 Assign an existing or supplied genome source to a user/profile and optionally make it that user's selected Active Genome Index.
 
@@ -109,7 +109,7 @@ Assign an existing or supplied genome source to a user/profile and optionally ma
 
 **Result semantics**: Links user metadata to genomi agi metadata. Supplying a source path grants scoped session access to that source's resolved Active Genome Index.
 
-### genomi.clear_default_user
+### active_genome_index.clear_default_user
 
 Clear persistent default user/profile selection for this GENOMI_HOME.
 
@@ -121,7 +121,7 @@ Clear persistent default user/profile selection for this GENOMI_HOME.
 
 **Result semantics**: Clears default=true from all known users; session selections and artifacts remain.
 
-### genomi.list_users
+### active_genome_index.list_users
 
 List user/profile metadata and the Active Genome Index records assigned to each user.
 
@@ -135,19 +135,12 @@ List user/profile metadata and the Active Genome Index records assigned to each 
 
 ### genomi.parse_source
 
-Detect, parse, and digitize a genome source such as VCF/gVCF, BAM, or a consumer-array raw genotype export from 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA (Family Finder), or Living DNA (text, zip, or `.csv.gz`).
+`genomi.parse_source` is a core `genomi.*` tool, documented in the root Genomi
+skill (`SKILL.md` → "Parsing A Genome Source"). This skill drives the workflow
+around it — select user, approve access, assign the parsed genome to a profile,
+and lifecycle reparse — plus the `active_genome_index.*` interpretation tools.
 
-**Use when**: The user explicitly supplied a genome source and downstream questions need a queryable Active Genome Index in this session.
-
-**Why necessary**: Raw VCF, BAM, and consumer genotype files are too large and irregular for reliable direct reasoning; parsing creates the scoped Active Genome Index used by later tools.
-
-**Not for**: Public-only genetics questions, already parsed Active Genome Index selection, or capped sample scans that should not replace a complete Active Genome Index.
-
-**Example prompts**: Parse this VCF for this session.
-
-**Result semantics**: Digitizes local intake into an Active Genome Index for future tools. Genomi auto-detects the source type. Supplying user_nickname links the parsed artifact to a user profile. It does not run whole-callset static annotation; focused tools lazily materialize public libraries only when their evidence is needed.
-
-### genomi.rename_user
+### active_genome_index.rename_user
 
 Rename a user/profile nickname.
 
@@ -159,19 +152,19 @@ Rename a user/profile nickname.
 
 **Result semantics**: Updates one user nickname. Active Genome Index artifact IDs are unchanged.
 
-### genomi.select_user
+### active_genome_index.select_user
 
 Select a user/profile for this session without granting private artifact access.
 
 **Use when**: The user names a person/profile and the agent needs to make that user's selected Active Genome Index the session metadata context.
 
-**Why necessary**: Selecting another user should be metadata-only until genomi.approve_agi_access grants access to that user's selected Active Genome Index.
+**Why necessary**: Selecting another user should be metadata-only until active_genome_index.approve_access grants access to that user's selected Active Genome Index.
 
 **Example prompts**: Use Alice's genome context.
 
 **Result semantics**: Sets the selected user and selected Active Genome Index metadata; private reads still require scoped access approval unless this is the default user.
 
-### genomi.set_default_user
+### active_genome_index.set_default_user
 
 Set the default user/profile for this GENOMI_HOME.
 
@@ -203,10 +196,10 @@ Set the default user/profile for this GENOMI_HOME.
   for the user's intent and ask whether they want it installed. Do not treat
   missing library data as negative evidence.
 - If the user supplied a known `agi_id`, call
-  `genomi.approve_agi_access --params '{"approved_by_user":true,"agi_id":"..."}'`
+  `active_genome_index.approve_access --params '{"approved_by_user":true,"agi_id":"..."}'`
   only after explicit approval for this session.
-- If the user supplied a user nickname, call `genomi.select_user` for metadata
-  selection, then call `genomi.approve_agi_access` if sample evidence is needed
+- If the user supplied a user nickname, call `active_genome_index.select_user` for metadata
+  selection, then call `active_genome_index.approve_access` if sample evidence is needed
   and the selected user is not the default user.
 - For interpretation work, read the matching `skills/<capability>/SKILL.md` and call its capability tools through `genomi.invoke`.
 

@@ -34,7 +34,7 @@ registration. Ask the user to start a new session.
 - Reading imported/parsed Active Genome Index artifacts, resuming a previous run for
   evidence, or searching for an existing "my Active Genome Index"/"my genome" context requires
   explicit user approval for this session. Record approval with
-  `genomi.approve_agi_access` before calling those tools.
+  `active_genome_index.approve_access` before calling those tools.
 - Do not use unrelated genome sources from other chats, workspaces, or external
   evaluation tasks.
 - Call narrow tools first and inspect evidence before making a claim.
@@ -134,6 +134,33 @@ libraries are skipped), and persists the response profile. CLI equivalent:
 applies once Genomi is installed; first-time setup on a machine without the
 `genomi` runtime follows the source bootstrap in `INSTALL_FOR_AGENTS.md`.
 
+## Parsing A Genome Source
+
+`genomi.parse_source` is a core `genomi.*` tool: it detects, parses, and
+digitizes a genome source (VCF/gVCF, BAM, or a consumer-array raw genotype
+export from 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA, or Living DNA —
+text, zip, or `.csv.gz`) into a queryable Active Genome Index.
+
+- **Use when**: the user supplied a genome source in this chat and downstream
+  questions need a queryable Active Genome Index this session.
+- **Why**: raw VCF/BAM/genotype files are too large and irregular for reliable
+  direct reasoning; parsing builds the scoped index later tools query.
+- **Not for**: public-only genetics questions, selecting an already-parsed
+  index, or capped sample scans that should not replace a complete index.
+- **Result**: digitizes local intake into an Active Genome Index; Genomi
+  auto-detects the source type. Supplying `user_nickname` links the parsed
+  artifact to a user profile. It does not run whole-callset annotation —
+  focused tools materialize public libraries lazily when their evidence is
+  needed.
+- If it returns `status="in_progress"` with a `job_id`, poll
+  `genomi.check_background_job`; don't substitute a capped parse or raw scan
+  unless the user explicitly asks for a fallback.
+
+The parse/digitize/user-management **workflow** (selecting users, approving
+access, assigning a genome to a profile, lifecycle reparse) lives in
+`skills/active-genome-index/SKILL.md`, which also owns the
+`active_genome_index.*` interpretation tools.
+
 ## Journal
 
 Use journal when an investigation spans multiple Genomi tools and the host
@@ -150,27 +177,18 @@ Genomi context and users:
 
 - `genomi.check_background_job`
 - `genomi.check_libraries`
-- `genomi.clear_default_user`
-- `genomi.clear_selection`
 - `genomi.describe_context`
 - `genomi.install`
 - `genomi.invoke`
 - `genomi.list_resources`
 - `genomi.search_indexes`
-- `genomi.approve_agi_access`
-- `genomi.assign_user_genome`
-- `genomi.list_users`
-- `genomi.rename_user`
-- `genomi.revoke_agi_access`
-- `genomi.select_user`
-- `genomi.set_default_user`
 
 Active Genome Index:
 
-- `active_genome_index.classify_genotype_support`
-- `active_genome_index.classify_region_callability`
 - `genomi.parse_source`
-- `active_genome_index.summarize`
+
+All other `active_genome_index.*` tools are invoke-only: reach them via
+`genomi.invoke` after reading `skills/active-genome-index/SKILL.md`.
 
 ClinVar:
 

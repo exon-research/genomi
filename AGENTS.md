@@ -38,7 +38,7 @@ comes from Genomi operations and result envelopes.
   check whether Genomi already has an imported Active Genome Index context to use.
 - Reading imported/parsed Active Genome Index artifacts, or searching for an existing
   "my Active Genome Index"/"my genome" context, requires explicit user approval for this
-  session. After approval, record it with `genomi.approve_agi_access`.
+  session. After approval, record it with `active_genome_index.approve_access`.
 - Do not use unrelated genome sources from other chats or previous tasks.
 
 ## Fresh Task Flow

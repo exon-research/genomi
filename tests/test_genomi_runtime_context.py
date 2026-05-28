@@ -135,7 +135,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertTrue(current["active_genome_index_access"]["approved"])
 
-                call_operation("genomi.revoke_agi_access")
+                call_operation("active_genome_index.revoke_access")
                 current_after_revoke = call_operation("genomi.describe_context")
                 self.assertTrue(current_after_revoke["has_active_genome_index"])
                 self.assertFalse(current_after_revoke["active_genome_index_access"]["approved"])
@@ -144,7 +144,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                     call_operation("active_genome_index.summarize")
                 self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
 
-                self.approve_agi_access()
+                self.approve_access()
                 summary = call_operation("active_genome_index.summarize")
                 self.assertIn("outputs", summary)
             finally:
@@ -163,9 +163,9 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 )
                 set_result = call_operation("genomi.parse_source", {"source": str(vcf), "user_nickname": "Alex"})
                 agi_id = set_result["active_genome_index"]["agi_id"]
-                listed = call_operation("genomi.list_users")
+                listed = call_operation("active_genome_index.list_users")
                 self.assertEqual(listed["users"][0]["nickname"], "Alex")
-                renamed = call_operation("genomi.rename_user", {"nickname": "Alex", "new_nickname": "Alex Renamed"})
+                renamed = call_operation("active_genome_index.rename_user", {"nickname": "Alex", "new_nickname": "Alex Renamed"})
                 self.assertEqual(renamed["user"]["nickname"], "Alex Renamed")
                 self.assertTrue(call_operation("genomi.describe_context")["has_active_genome_index"])
 
@@ -174,9 +174,9 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 self.assertFalse(current["has_active_genome_index"])
                 self.assertEqual(current["active_genome_index_registry"]["known_agi_count"], 1)
 
-                resumed = call_operation("genomi.approve_agi_access", {"approved_by_user": True, "agi_id": agi_id})
+                resumed = call_operation("active_genome_index.approve_access", {"approved_by_user": True, "agi_id": agi_id})
                 self.assertEqual(resumed["active_agi_id"], agi_id)
-                by_nickname = call_operation("genomi.select_user", {"nickname": "Alex Renamed"})
+                by_nickname = call_operation("active_genome_index.select_user", {"nickname": "Alex Renamed"})
                 self.assertEqual(by_nickname["context"]["active_agi_id"], agi_id)
                 self.assertTrue(call_operation("genomi.describe_context")["has_active_genome_index"])
             finally:
@@ -230,7 +230,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 self.assertEqual(current["active_agi_id"], agi_id)
                 self.assertTrue(current["default_auto_selected"])
                 self.assertEqual(current["active_genome_index_access"]["scope"], "persistent_default")
-                cleared = call_operation("genomi.clear_default_user")
+                cleared = call_operation("active_genome_index.clear_default_user")
                 self.assertTrue(cleared["cleared_default"])
                 self.assertFalse(call_operation("genomi.describe_context")["has_active_genome_index"])
             finally:

@@ -48,7 +48,7 @@ Only the current chat determines Active Genome Index context.
 - Reading imported/parsed Active Genome Index artifacts, resuming a previous run
   for evidence, or searching for an existing user genome context requires
   explicit user approval for this session. Record approval with
-  `genomi.approve_agi_access`.
+  `active_genome_index.approve_access`.
 - Do not use unrelated genome sources from other chats or prior tasks.
 
 ## Tool Selection
@@ -99,7 +99,7 @@ Use the smallest operation that can answer the question:
   supplied; it is not diagnosis or absolute risk by default.
 - `genomi.describe_context` only after the chat mentions or asks about Active
   Genome Index context.
-- `genomi.approve_agi_access` after explicit user approval, before reading
+- `active_genome_index.approve_access` after explicit user approval, before reading
   existing imported/parsed Active Genome Index artifacts.
 
 Answer from the returned evidence. Mention Active Genome Index use only when it

@@ -310,7 +310,7 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
                 index = Path("active-genome-index.sqlite")
                 create_active_genome_index(vcf, index, reuse_existing=False)
                 call_operation(
-                    "genomi.assign_user_genome",
+                    "active_genome_index.assign_user_genome",
                     {
                         "nickname": "Test user",
                         "source": str(vcf),

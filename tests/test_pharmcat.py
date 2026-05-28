@@ -577,7 +577,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
                 "10\t94761900\trs4244285\tG\tA\t.\tPASS\t.\tGT\t0/1\n",
                 encoding="utf-8",
             )
-            call_operation("genomi.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
+            call_operation("active_genome_index.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
 
             result = call_operation("pharmacogenomics.preflight_pharmcat")
 
@@ -589,7 +589,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             vcf = Path(tmp) / "sample.vcf"
             vcf.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")
-            call_operation("genomi.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
+            call_operation("active_genome_index.assign_user_genome", {"nickname": "Test user", "source": str(vcf)})
 
             with patch(
                 "genomi.operations.pharmcat.run_pharmcat",

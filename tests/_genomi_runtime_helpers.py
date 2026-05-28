@@ -16,23 +16,14 @@ from genomi.runtime import context as runtime_context
 # genomi.invoke. All other capabilities (clinvar, pharmacogenomics, etc.)
 # are likewise hidden behind the dispatcher.
 DEFAULT_TASK_ENTRY_TOOLS = {
-    "genomi.approve_agi_access",
-    "genomi.assign_user_genome",
     "genomi.check_background_job",
     "genomi.check_libraries",
-    "genomi.clear_default_user",
-    "genomi.clear_selection",
     "genomi.describe_context",
     "genomi.install",
     "genomi.invoke",
     "genomi.list_resources",
-    "genomi.list_users",
     "genomi.parse_source",
-    "genomi.rename_user",
-    "genomi.revoke_agi_access",
     "genomi.search_indexes",
-    "genomi.select_user",
-    "genomi.set_default_user",
     "genomi.set_response_profile",
     "journal.append_entry",
     "journal.export_memory",
@@ -65,10 +56,10 @@ class GenomiRuntimeTestCase(unittest.TestCase):
         self._env.start()
         self.addCleanup(self._env.stop)
 
-    def approve_agi_access(self) -> None:
+    def approve_access(self) -> None:
         context = call_operation("genomi.describe_context")
         if context.get("active_agi_id"):
             call_operation(
-                "genomi.approve_agi_access",
+                "active_genome_index.approve_access",
                 {"approved_by_user": True, "reason": "test approved Active Genome Index access"},
             )

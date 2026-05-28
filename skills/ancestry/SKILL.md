@@ -12,7 +12,7 @@ tools:
   - ancestry.check_sample_overlap
   - ancestry.project_pca
   - ancestry.estimate_population_context
-  - genomi.approve_agi_access
+  - active_genome_index.approve_access
   - genomi.parse_source
 mutating: false
 ---

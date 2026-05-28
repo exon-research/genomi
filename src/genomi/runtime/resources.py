@@ -31,7 +31,7 @@ def list_resources() -> dict[str, Any]:
                 "Resource discovery reports public capabilities only. Active Genome Index context is handled by context "
                 "tools after the conversation asks for it."
             ),
-            "context_tools": ["genomi.describe_context", "genomi.parse_source", "genomi.assign_user_genome", "genomi.approve_agi_access"],
+            "context_tools": ["genomi.describe_context", "genomi.parse_source", "active_genome_index.assign_user_genome", "active_genome_index.approve_access"],
         },
         "toolset_disclosure": {
             "model": "skill_gated_dispatcher",

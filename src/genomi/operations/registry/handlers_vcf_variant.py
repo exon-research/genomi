@@ -37,7 +37,7 @@ def _vcf_summary(params: JsonObject) -> JsonObject:
         params,
         resolved,
         "vcf",
-        "Provide a genome source or select an Active Genome Index with genomi.parse_source or genomi.assign_user_genome.",
+        "Provide a genome source or select an Active Genome Index with genomi.parse_source or active_genome_index.assign_user_genome.",
         "reading Active Genome Index artifacts",
     )
     return static_annotation.summarize_static_state(_path(resolved, "vcf"), evidence_db=_optional_path(resolved, "db"))
@@ -120,7 +120,7 @@ def _variant_lookup(params: JsonObject) -> JsonObject:
     if named_agi and not runtime_context.agi_access_approved(str(named_agi)):
         raise OperationError(
             "active_genome_index_approval_required",
-            "Explicit user approval is required before reading that Active Genome Index. After approval, call genomi.approve_agi_access for the target agi_id.",
+            "Explicit user approval is required before reading that Active Genome Index. After approval, call active_genome_index.approve_access for the target agi_id.",
         )
     if (include_known_active_genome_indexes or include_active_genome_index) and not runtime_context.agi_access_approved():
         _require_agi_access("reading parsed Active Genome Index artifacts")
