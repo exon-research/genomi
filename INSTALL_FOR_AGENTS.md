@@ -200,13 +200,24 @@ How should Genomi explain things in answers?
 ```
 
 Persist the chosen profile in the Genomi registry as the primary source of
-truth by calling
-`genomi.set_response_profile({"profile": "<id>"})` (one of `eli5`,
-`patient`, `literate`, `expert`). Sessions that inspect current personal
-context can read the active profile from
-`genomi.describe_context.active_response_profile`. Also write the chosen id
-into the host's durable memory (CLAUDE.md, Codex memory, etc.) as a redundant
-backup. On "default" / "doesn't matter", record `eli5`.
+truth by calling the **MCP tool** `genomi.set_response_profile` with
+`{"profile": "<id>"}` where `<id>` is one of `eli5`, `patient`, `literate`,
+`expert`. This is an MCP tool invocation from your agent runtime — not a
+shell command. There is no `genomi set-response-profile` CLI; trying to call
+it from the shell will (correctly) be rejected.
+
+Equivalent forms by host:
+
+- Claude Code / Gemini / Codex / any MCP host: invoke the `genomi` server's
+  `set_response_profile` tool with `{"profile": "<id>"}`.
+- From inside the Genomi host-agent skill: same call routed through the
+  Genomi MCP dispatcher.
+
+Sessions that inspect current personal context can read the active profile
+from `genomi.describe_context` (the `active_response_profile` field — also
+an MCP tool, not a shell command). Also write the chosen id into the host's
+durable memory (CLAUDE.md, Codex memory, etc.) as a redundant backup. On
+"default" / "doesn't matter", record `eli5`.
 
 ### Step 4: Pre-flight checks
 
@@ -285,8 +296,11 @@ The installer will:
 - symlink the `genomi` host-agent skill into detected skill dirs,
 - run its built-in install verification through `<GENOMI_HOME>/bin/genomi`.
 
-After install, add the shim directory to PATH if the user wants to type
-`genomi` from any shell:
+The installer does **not** touch host MCP config files — see Step 7, you'll
+write that yourself.
+
+After install, add the shim directory to PATH so the MCP host can launch
+`genomi serve`:
 
 ```bash
 export PATH="<GENOMI_HOME>/bin:$PATH"
@@ -317,26 +331,98 @@ Step 2), or skip the install.
 | `--pharmcat-version v2.15.5` | Pin a PharmCAT release. |
 | `--msigdb-gmt /path/to/h.all.v*.symbols.gmt` | Required only when `msigdb-hallmark` is selected. |
 
-### Step 7: Verify the host MCP config
+### Step 7: Wire the MCP config yourself
 
-Do this only after the source bootstrap fallback. The bootstrap installer wrote
-the MCP config automatically; verify it landed:
+You — the host agent — write this. The installer does not touch host config
+files; their schemas differ across hosts and you have better merge tooling.
 
-| Host | Check |
-| --- | --- |
-| Claude Code | `cat ~/.claude/.mcp.json` |
-| Gemini CLI | `cat ~/.gemini/settings.json` |
-| Codex CLI | `grep mcp_servers ~/.codex/config.toml` |
-| Hermes | `grep mcp_servers ~/.hermes/config.yaml` |
-| OpenClaw | `cat ~/.openclaw/openclaw.json` |
+For the host you're running in, use that host's documented `mcp add` command
+if one exists; otherwise read the config file, merge the single Genomi entry
+under the existing servers map, and write it back, then re-read and confirm
+it still parses.
 
-If the entry is missing for a detected host, re-run the installer without
-`--skip-host-skill` and it will write it. Do not write MCP config by hand —
-each host uses a different file and schema.
+Use the **absolute path** `<GENOMI_HOME>/bin/genomi` as the command, with
+`<GENOMI_HOME>` resolved to the path chosen in Q2 (the installer printed the
+exact value on completion). Don't write `"command": "genomi"` — that depends
+on the MCP host's launch PATH, which often differs from the user's shell PATH.
 
-Reload the host's MCP servers. The installer already symlinked the Genomi
-skill into detected skill dirs (`~/.claude/skills`, `~/.codex/skills`,
-`~/.openclaw/skills`, `~/.hermes/skills`, `~/.agents/skills`).
+In the snippets below, substitute `<GENOMI_HOME>` with the resolved absolute
+path. Examples assume `~/.genomi`, expanded to `/Users/<you>/.genomi` (macOS) or
+`/home/<you>/.genomi` (Linux).
+
+Most hosts treat newly-added `.mcp.json` entries as opt-in: writing the
+server entry registers it, and a second step (an approval list, a `mcp
+enable` command, or an interactive prompt at restart) actually launches it.
+Both steps are on you. After writing the entry below, run the host's enable
+step, then ask the user to restart the host so the server is spawned.
+
+**Claude Code** — write `~/.claude/.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "genomi": {
+      "command": "<GENOMI_HOME>/bin/genomi",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+Then add `"genomi"` to the `enabledMcpjsonServers` array in
+`~/.claude/settings.json` (create the array if it isn't there):
+
+```json
+{
+  "enabledMcpjsonServers": ["genomi"]
+}
+```
+
+**Gemini CLI** — write `~/.gemini/settings.json` using the same
+`mcpServers` schema as Claude Code. Check `gemini --help` or the release's
+docs for that host's enable step.
+
+**Codex CLI** — `~/.codex/config.toml`. The key is `[mcp_servers.<name>]`:
+
+```toml
+[mcp_servers.genomi]
+command = "<GENOMI_HOME>/bin/genomi"
+args = ["serve"]
+```
+
+**Hermes** — `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  genomi:
+    command: <GENOMI_HOME>/bin/genomi
+    args:
+      - serve
+```
+
+**OpenClaw** — `~/.openclaw/openclaw.json` (servers live under `mcp.servers`):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "genomi": {
+        "command": "<GENOMI_HOME>/bin/genomi",
+        "args": ["serve"]
+      }
+    }
+  }
+}
+```
+
+If a `genomi` entry already exists, check its `command`. A stale path from a
+prior install (e.g. one pointing into `/tmp` or `/private/var/folders`) won't
+launch — overwrite it with the resolved `<GENOMI_HOME>/bin/genomi`.
+
+The installer already symlinked the Genomi skill into detected skill dirs
+(`~/.claude/skills`, `~/.codex/skills`, `~/.openclaw/skills`,
+`~/.hermes/skills`, `~/.agents/skills`). Confirm the skill symlinks point
+back into the Genomi checkout, then reload the host's MCP servers.
 
 > ⚠️ **Invocation syntax is host-specific.** Ask the host to list installed
 > skills; don't assume `/genomi` works in every host.

@@ -11,6 +11,7 @@ test suite loads this exact file path).
 this module's namespace — that keeps ``mock.patch.object(install_for_agents,
 "run")`` and friends working in the test suite.
 """
+# pyright: reportUnusedImport=false
 from __future__ import annotations
 
 import os
@@ -52,20 +53,14 @@ from _install_for_agents_lib import (  # noqa: F401  (explicit; incl. underscore
     PHARMCAT_RELEASES_API_URL,
     REPO_ROOT,
     SRC_DIR,
-    _MCP_HOST_WRITERS,
     _capability_skill_sources,
     _ensure_src_on_path,
     _load_existing_users,
-    _mcp_write_codex_toml,
-    _mcp_write_hermes_yaml,
-    _mcp_write_json_mcpservers,
-    _mcp_write_openclaw_json,
     configure_genome_source,
     genomi_home_path,
     install_capability_skills,
     install_genomi_command_shim,
     install_host_agent_skill,
-    install_mcp_config,
     parse_args,
     parse_library_selection,
     print_summary,

@@ -13,7 +13,6 @@ Download/verify/install-library helpers live in
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shlex
 import shutil
@@ -290,170 +289,6 @@ DEFAULT_HOST_SKILL_PARENTS = (
 )
 
 
-def _mcp_write_json_mcpservers(config_path: Path, shim: Path) -> bool:
-    """Write/merge into JSON files that use a top-level ``mcpServers`` key.
-
-    Used by: Claude Code (~/.claude/.mcp.json),
-             Gemini CLI  (~/.gemini/settings.json).
-    """
-    entry = {"command": str(shim), "args": ["serve"]}
-    try:
-        existing: dict = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        existing = {}
-    servers: dict = existing.setdefault("mcpServers", {})
-    if servers.get("genomi") == entry:
-        print(f"Genomi MCP config already current: {config_path}")
-        return True
-    servers["genomi"] = entry
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-    print(f"Genomi MCP config written: {config_path}")
-    return True
-
-
-def _mcp_write_openclaw_json(config_path: Path, shim: Path) -> bool:
-    """Write/merge into OpenClaw's openclaw.json (``mcp.servers.<name>``).
-
-    OpenClaw nests MCP servers under ``mcp.servers`` rather than a top-level
-    ``mcpServers`` key.
-    """
-    entry = {"command": str(shim), "args": ["serve"]}
-    try:
-        existing: dict = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
-    except (json.JSONDecodeError, OSError):
-        existing = {}
-    mcp: dict = existing.setdefault("mcp", {})
-    servers: dict = mcp.setdefault("servers", {})
-    if servers.get("genomi") == entry:
-        print(f"Genomi MCP config already current: {config_path}")
-        return True
-    servers["genomi"] = entry
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-    print(f"Genomi MCP config written: {config_path}")
-    return True
-
-
-def _mcp_write_codex_toml(config_path: Path, shim: Path) -> bool:
-    """Write/merge into Codex CLI's config.toml (``[mcp_servers.<id>]``).
-
-    Uses stdlib ``tomllib`` (Python 3.11+) to read and detects whether the
-    entry already exists.  Appends the TOML section if missing; replaces it
-    if it exists but differs.  Falls back gracefully on older Pythons.
-    """
-    try:
-        import tomllib  # stdlib ≥ 3.11
-    except ImportError:
-        try:
-            import tomli as tomllib  # type: ignore[no-redef]
-        except ImportError:
-            print(
-                f"Skipping Codex CLI MCP config ({config_path}): "
-                "tomllib/tomli not available (Python < 3.11 and tomli not installed).",
-                file=sys.stderr,
-            )
-            return False
-
-    desired_command = str(shim)
-    desired_args = ["serve"]
-    section = f'[mcp_servers.genomi]\ncommand = {json.dumps(desired_command)}\nargs = {json.dumps(desired_args)}\n'
-
-    existing_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
-    try:
-        parsed = tomllib.loads(existing_text)
-    except Exception:
-        parsed = {}
-
-    current = parsed.get("mcp_servers", {}).get("genomi", {})
-    if current.get("command") == desired_command and current.get("args") == desired_args:
-        print(f"Genomi MCP config already current: {config_path}")
-        return True
-
-    import re
-    # Remove any existing [mcp_servers.genomi] section (including its keys).
-    existing_text = re.sub(
-        r'\[mcp_servers\.genomi\][^\[]*',
-        '',
-        existing_text,
-        flags=re.DOTALL,
-    ).rstrip()
-    new_text = (existing_text + "\n\n" + section) if existing_text else section
-    config_path.write_text(new_text, encoding="utf-8")
-    print(f"Genomi MCP config written: {config_path}")
-    return True
-
-
-def _mcp_write_hermes_yaml(config_path: Path, shim: Path) -> bool:
-    """Write/merge into Hermes' config.yaml (``mcp_servers:<name>``).
-
-    Requires PyYAML.  Skips with a message if not installed rather than
-    failing the whole install.
-    """
-    try:
-        import yaml  # type: ignore[import]
-    except ImportError:
-        print(
-            f"Skipping Hermes MCP config ({config_path}): "
-            "PyYAML not installed. Run `pip install pyyaml` then re-run the installer.",
-            file=sys.stderr,
-        )
-        return False
-
-    entry = {"command": str(shim), "args": ["serve"]}
-    try:
-        existing: dict = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
-        existing = existing or {}
-    except Exception:
-        existing = {}
-    servers: dict = existing.setdefault("mcp_servers", {})
-    if servers.get("genomi") == entry:
-        print(f"Genomi MCP config already current: {config_path}")
-        return True
-    servers["genomi"] = entry
-    config_path.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False), encoding="utf-8")
-    print(f"Genomi MCP config written: {config_path}")
-    return True
-
-
-# Maps each host's config directory to (config_path_relative_to_host_dir, writer_fn).
-# Only confirmed hosts are listed.  Writers handle format differences internally.
-_MCP_HOST_WRITERS: list[tuple[Path, str, object]] = [
-    (Path("~/.claude"),    ".mcp.json",         _mcp_write_json_mcpservers),  # Claude Code
-    (Path("~/.gemini"),    "settings.json",      _mcp_write_json_mcpservers),  # Gemini CLI
-    (Path("~/.openclaw"),  "openclaw.json",      _mcp_write_openclaw_json),    # OpenClaw
-    (Path("~/.codex"),     "config.toml",        _mcp_write_codex_toml),       # Codex CLI
-    (Path("~/.hermes"),    "config.yaml",        _mcp_write_hermes_yaml),      # Hermes
-]
-
-
-def install_mcp_config(args: argparse.Namespace) -> None:
-    """Write (or merge) the Genomi MCP server entry into each detected host's
-    MCP config file.
-
-    Each host uses a different config file and schema — see _MCP_HOST_WRITERS.
-    Only hosts whose config directories already exist on disk are touched.
-    """
-    if getattr(args, "skip_host_skill", False):
-        return
-
-    shim = genomi_home_path() / "bin" / "genomi"
-    wrote_any = False
-    for host_dir_tpl, config_filename, writer in _MCP_HOST_WRITERS:
-        host_dir = host_dir_tpl.expanduser()
-        if not host_dir.is_dir():
-            continue
-        config_path = host_dir / config_filename
-        if writer(config_path, shim):  # type: ignore[operator]
-            wrote_any = True
-
-    if not wrote_any:
-        checked = ", ".join(str(p) for p, _, _ in _MCP_HOST_WRITERS)
-        print(
-            f"No known host config dirs detected for MCP wiring (checked: {checked}). "
-            "Add the Genomi MCP server manually — see INSTALL_FOR_AGENTS.md Step 7.",
-            file=sys.stderr,
-        )
-
-
 def install_host_agent_skill(args: argparse.Namespace) -> None:
     """Symlink the in-repo Genomi skill into each detected host-agent skills dir.
 
@@ -513,7 +348,6 @@ def install_host_agent_skill(args: argparse.Namespace) -> None:
         print("  Invocation is controlled by the active host, not by this installer.")
         print("  Ask the host to list installed skills, then use that host's documented skill syntax.")
         print("  Do not assume /genomi works in every host.")
-    install_mcp_config(args)
     install_capability_skills(args)
 
 

@@ -558,11 +558,19 @@ def install_aligner_binary(
             "version": version,
         }
     if sys.platform != "linux":
-        raise SystemExit(
-            f"Aligner library {library} currently ships a linux x86_64 binary only; "
-            f"detected sys.platform={sys.platform!r}. Install the aligner via your "
-            f"system package manager (e.g. brew install {binary_name}) and place it on PATH."
+        message = (
+            f"Skipping {library}: ships a linux x86_64 binary only "
+            f"(detected sys.platform={sys.platform!r}). Install {binary_name} via your "
+            f"system package manager (e.g. brew install {binary_name}) and place it on PATH "
+            f"if FASTQ alignment is needed."
         )
+        print(message, file=sys.stderr)
+        return {
+            "status": "skipped",
+            "output": message,
+            "library": library,
+            "version": version,
+        }
 
     install_dir.mkdir(parents=True, exist_ok=True)
     tarball_path = install_dir / f"{binary_name}-{version}.tar.bz2.partial"
