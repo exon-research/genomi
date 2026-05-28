@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from .vcf import VcfHeader
 from .vcf import iter_sample_records
-from .vcf import parse_record_line
+from .vcf import parse_record_fields
 from .vcf import read_header
-from .vcf import sample_field_count
+from .vcf import sample_count_from_parts
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -340,11 +340,12 @@ def _populate_records_from_byte_range(
             text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             if not text:
                 continue
-            sample_count = sample_field_count(text, sample_names)
+            parts = text.split("\t")
+            sample_count = sample_count_from_parts(parts, sample_names)
             for sample_index in range(sample_count):
                 total += 1
-                record = parse_record_line(
-                    text,
+                record = parse_record_fields(
+                    parts,
                     sample_names=sample_names,
                     sample_index=sample_index,
                     offset=offset,

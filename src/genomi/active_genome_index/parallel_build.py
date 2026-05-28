@@ -105,7 +105,7 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
         _reset_schema,
         connect,
     )
-    from .vcf import parse_record_line, sample_field_count
+    from .vcf import parse_record_fields, sample_count_from_parts
 
     connection = connect(shard_path)
     total = variant = reference = pass_count = fail_count = 0
@@ -144,11 +144,12 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
                 if not text:
                     continue
                 line_length = len(raw)
-                sample_count = sample_field_count(text, sample_names)
+                parts = text.split("\t")
+                sample_count = sample_count_from_parts(parts, sample_names)
                 for sample_index in range(sample_count):
                     total += 1
-                    record = parse_record_line(
-                        text,
+                    record = parse_record_fields(
+                        parts,
                         sample_names=sample_names,
                         sample_index=sample_index,
                         offset=offset,

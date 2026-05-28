@@ -16,10 +16,17 @@ random access via `pysam.libcbgzf.BGZFile`.
 from __future__ import annotations
 
 import gzip
+import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+
+def _bgzip_threads() -> int:
+    # bgzip compression/reindexing parallelizes across threads; leave one core
+    # for the decompressor in the pigz|bgzip pipe and the rest of the parse.
+    return max(1, min(8, (os.cpu_count() or 1) - 1))
 
 CANONICAL_SOURCE_DIRNAME = "source"
 CANONICAL_VCF_FILENAME = "canonical.vcf.gz"
@@ -108,12 +115,14 @@ def build_canonical_bgzip(
         if stale.exists():
             stale.unlink()
 
+    threads = _bgzip_threads()
+
     if _is_bgzip(intake_path):
         # Fast path: already bgzip. Copy the bytes verbatim (no recompress) and
         # build the .gzi block index over the copy.
         shutil.copyfile(intake_path, tmp_canonical)
         proc = subprocess.run(
-            [bgzip_exe, "--reindex", "--index-name", str(tmp_gzi), str(tmp_canonical)],
+            [bgzip_exe, "-@", str(threads), "--reindex", "--index-name", str(tmp_gzi), str(tmp_canonical)],
             check=False,
         )
         if proc.returncode != 0:
@@ -126,7 +135,7 @@ def build_canonical_bgzip(
             "gzi_path": str(gzi_path),
         }
 
-    bgzip_cmd = [bgzip_exe, "-c", "-i", "-I", str(tmp_gzi)]
+    bgzip_cmd = [bgzip_exe, "-@", str(threads), "-c", "-i", "-I", str(tmp_gzi)]
     if _looks_like_gzip(intake_path):
         # gzip-compressed intake: decompress → bgzip. Prefer an all-subprocess
         # pipe (pigz > gzip) so no Python sits in the data path; fall back to

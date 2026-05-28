@@ -391,10 +391,11 @@ def iter_sample_records(path: str | Path, limit: int | None = None) -> Iterator[
             text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             if not text:
                 continue
-            sample_count = sample_field_count(text, header.samples)
+            parts = text.split("\t")
+            sample_count = sample_count_from_parts(parts, header.samples)
             for sample_index in range(sample_count):
-                yield parse_record_line(
-                    text,
+                yield parse_record_fields(
+                    parts,
                     sample_names=header.samples,
                     sample_index=sample_index,
                     offset=offset,
@@ -459,10 +460,11 @@ def iter_sample_records_bgzf(bgzf_path: str | Path, limit: int | None = None) ->
             text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             if not text:
                 continue
-            sample_count = sample_field_count(text, header.samples)
+            parts = text.split("\t")
+            sample_count = sample_count_from_parts(parts, header.samples)
             for sample_index in range(sample_count):
-                yield parse_record_line(
-                    text,
+                yield parse_record_fields(
+                    parts,
                     sample_names=header.samples,
                     sample_index=sample_index,
                     offset=virtual_offset,
@@ -474,16 +476,19 @@ def iter_sample_records_bgzf(bgzf_path: str | Path, limit: int | None = None) ->
                 return
 
 
-def sample_field_count(line: str, sample_names: list[str]) -> int:
-    parts = line.rstrip("\r\n").split("\t")
+def sample_count_from_parts(parts: list[str], sample_names: list[str] | None) -> int:
     observed = max(0, len(parts) - 9)
     if sample_names:
         return min(len(sample_names), observed)
     return observed or 1
 
 
-def parse_record_line(
-    line: str,
+def sample_field_count(line: str, sample_names: list[str]) -> int:
+    return sample_count_from_parts(line.rstrip("\r\n").split("\t"), sample_names)
+
+
+def parse_record_fields(
+    parts: list[str],
     *,
     sample_name: str | None = None,
     sample_names: list[str] | None = None,
@@ -492,9 +497,14 @@ def parse_record_line(
     line_length: int | None = None,
     line_number: int | None = None,
 ) -> VcfRecord:
-    parts = line.rstrip("\r\n").split("\t")
+    """Build a VcfRecord from a pre-split tab-field list.
+
+    The parse hot path splits each line on tabs exactly once and reuses the
+    field list across every sample column, so the per-record loop (millions
+    of records on a WGS gVCF) avoids re-splitting the same line per sample.
+    """
     if len(parts) < 8:
-        raise ValueError(f"VCF record has fewer than 8 fields: {line[:100]}")
+        raise ValueError(f"VCF record has fewer than 8 fields: {parts[:8]}")
     chrom, pos_raw, record_id, ref, alt, qual, filt, info = parts[:8]
     format_field = parts[8] if len(parts) > 8 else ""
     sample_field_index = 9 + sample_index
@@ -517,6 +527,27 @@ def parse_record_line(
         format=format_field,
         sample=sample_field,
         sample_name=sample_name,
+        sample_index=sample_index,
+        offset=offset,
+        line_length=line_length,
+        line_number=line_number,
+    )
+
+
+def parse_record_line(
+    line: str,
+    *,
+    sample_name: str | None = None,
+    sample_names: list[str] | None = None,
+    sample_index: int = 0,
+    offset: int | None = None,
+    line_length: int | None = None,
+    line_number: int | None = None,
+) -> VcfRecord:
+    return parse_record_fields(
+        line.rstrip("\r\n").split("\t"),
+        sample_name=sample_name,
+        sample_names=sample_names,
         sample_index=sample_index,
         offset=offset,
         line_length=line_length,
