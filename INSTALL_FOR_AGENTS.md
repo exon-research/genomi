@@ -31,9 +31,10 @@ cd "$GENOMI_HOME/genomi"
 python3 scripts/install_for_agents.py --libraries everything
 ```
 
-Python 3.10+ required. macOS and Linux are first-class; on Windows, run
-inside WSL. The full install caches ~7 GB of public reference libraries
-under `GENOMI_HOME` (defaults to `~/.genomi`).
+Python 3.10+ required. This install guide currently targets **Linux x86_64
+only**. Do not run this flow on native macOS. On Windows, run inside WSL2
+Linux. The full install caches ~7 GB of public reference libraries under
+`GENOMI_HOME` (defaults to `~/.genomi`).
 
 After install, peek at [`AGENTS.md`](./AGENTS.md) and [`SKILL.md`](./SKILL.md)
 to see what your agent can now do.
@@ -77,7 +78,7 @@ something like:
 Match the user's energy and their language. If they write in French, reply in
 French. If they write in Chinese, reply in Chinese. Detect their language from
 their very first message and use it for every message in this conversation —
-questions, confirmations, the tour, all of it. Then go to Step 1.
+questions, confirmations, the tour, all of it. Then go to Step 0.5.
 
 ### Rules
 
@@ -98,7 +99,26 @@ Silent defaults for source bootstrap only: source checkout at
 User-owned choices: Q1 (`--libraries`), Q2 (`GENOMI_HOME`), and Q3
 (response tone).
 
-Python 3.10+. macOS and Linux are first-class. Windows: use WSL.
+Python 3.10+. **Linux x86_64 only for this install flow.** Do not run the
+installer on native macOS; use a Linux x86_64 host, VM, container, or WSL2.
+Windows: use WSL2 Linux.
+
+### Step 0.5: Platform gate
+
+Before asking library questions, verify the host platform. If the host is not
+Linux x86_64, stop and tell the user to switch to a Linux x86_64 environment.
+Do not continue with `everything`, `wgs-alignment`, or the source bootstrap
+installer on macOS; the bundled aligner libraries are Linux x86_64 tarballs
+and the install will fail before MCP wiring completes.
+
+```bash
+python3 - <<'PY'
+import platform, sys
+print(sys.platform, platform.machine())
+PY
+```
+
+Proceed only when the result is Linux on x86_64/amd64.
 
 ### Step 1: Ask Q1 — what should Genomi be ready for?
 
@@ -355,10 +375,14 @@ Hand the original deliverable straight to Genomi; source-type auto-detection
 figures out the rest. The user must point at the actual data file — not a
 manifest, folder, or screenshot.
 
-**Paired-end FASTQ needs the local aligners.** Only offer the FASTQ path if
-`--libraries wgs-alignment` (or `everything`) is installed. Otherwise the
-parse returns a `requires_library_install` envelope naming `minimap2-binary`
-and `bwa-mem2-binary`; offer to install them before retrying.
+**Paired-end FASTQ needs the local aligners and is Linux x86_64 only in this
+installer.** Only offer the FASTQ path on Linux x86_64 when
+`--libraries wgs-alignment` (or `everything`) is installed. On macOS, do not
+offer the FASTQ path or ask the user to install the aligners manually; tell
+them to use a Linux x86_64 environment for this Genomi install flow. Otherwise
+the parse returns a `requires_library_install` envelope naming
+`minimap2-binary` and `bwa-mem2-binary`; offer to install them before retrying
+only on Linux x86_64.
 
 #### "I don't have a file"
 
@@ -529,8 +553,8 @@ Default downloadable libraries:
 | `cellmarker-human` | CellMarker 2.0 human marker table normalized for Genomi. | ~10 MB |
 | `pharmcat` | PharmCAT all-in-one JAR for broad pharmacogenomic calling. Requires `java` on `PATH` at runtime. | ~30 MB |
 | `ancestry-1000g-30x-grch38` | 1000 Genomes 30x GRCh38 compact ancestry PCA panel used by `ancestry.estimate_population_context`. Downloaded as a pre-built tarball from [`exon-research/genomi-ancestry-panel`](https://github.com/exon-research/genomi-ancestry-panel/releases) and SHA-256 verified. | ~3 MB |
-| `minimap2-binary` | Pinned [minimap2](https://github.com/lh3/minimap2) release used for long-read FASTQ → BAM alignment. Linux x86_64 tarball is SHA-256 verified and dropped at `<GENOMI_HOME>/tools/aligners/minimap2/minimap2`; macOS / ARM hosts should install via the system package manager. | ~5 MB |
-| `bwa-mem2-binary` | Pinned [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) release used for short-read FASTQ → BAM alignment. Same install location and platform caveats as `minimap2-binary`. Builds a reference index on first use (~5 min for GRCh38). | ~50 MB |
+| `minimap2-binary` | Pinned [minimap2](https://github.com/lh3/minimap2) release used for long-read FASTQ → BAM alignment. Linux x86_64 only; the tarball is SHA-256 verified and dropped at `<GENOMI_HOME>/tools/aligners/minimap2/minimap2`. Do not select this library on native macOS or ARM hosts. | ~5 MB |
+| `bwa-mem2-binary` | Pinned [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) release used for short-read FASTQ → BAM alignment. Linux x86_64 only, with the same platform boundary as `minimap2-binary`. Builds a reference index on first use (~5 min for GRCh38). Do not select this library on native macOS or ARM hosts. | ~50 MB |
 
 Manual-source library (not in any default purpose):
 
