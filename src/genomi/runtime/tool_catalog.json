@@ -81,7 +81,7 @@
     "genomi.install": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Complete Genomi setup inside an available runtime: install or update the user's selected public reference libraries in GENOMI_HOME, persist the selected response profile, and rebuild public retrieval indexes so genomi.search_indexes returns a coherent view immediately. Runtime code updates happen only when the runtime provides a GENOMI_RUNTIME_UPDATE provider. Use source bootstrap only when no Genomi runtime is available.",
+      "description": "Install or update Genomi (`genomi update` is the same operation). Inside an available runtime: update the runtime code when a GENOMI_RUNTIME_UPDATE provider is configured, install or top up the user's selected public reference libraries in GENOMI_HOME (idempotent — already-present libraries are skipped; pass force to re-download), persist the selected response profile, and rebuild public retrieval indexes so genomi.search_indexes returns a coherent view immediately. libraries defaults to setup-only, so a bare call just updates the runtime and leaves libraries untouched. This tool only exists once Genomi is installed; for a first-time install on a machine without the genomi runtime, follow the source bootstrap in INSTALL_FOR_AGENTS.md instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -121,16 +121,10 @@
             "$ref": "#/schema_fragments/properties/boolean_default_false"
           }
         },
-        "required": [
-          "libraries"
-        ],
         "additionalProperties": false
       },
       "skill": "INSTALL_FOR_AGENTS.md",
       "area": "resources",
-      "requires": [
-        "explicit_user_library_selection"
-      ],
       "produces": [
         "installed_libraries",
         "response_profile",

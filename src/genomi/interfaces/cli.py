@@ -99,12 +99,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     install_parser = subparsers.add_parser(
         "install",
-        help="Install or update Genomi setup inside the current runtime.",
+        aliases=["update"],
+        help="Install or update Genomi setup inside the current runtime. `genomi update` is an alias.",
     )
     install_parser.add_argument(
         "--libraries",
-        required=True,
-        help="Library purpose or exact comma-separated library IDs, e.g. setup-only, common-questions, medication-response, everything.",
+        default="setup-only",
+        help=(
+            "Library purpose or exact comma-separated library IDs, e.g. "
+            "common-questions, medication-response, everything. Defaults to "
+            "'setup-only': a bare `genomi install` updates the runtime and "
+            "leaves reference libraries untouched. Re-running with a purpose is "
+            "idempotent — it downloads only the libraries that are missing."
+        ),
     )
     install_parser.add_argument(
         "--response-profile",

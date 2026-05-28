@@ -125,8 +125,14 @@ context, a selected user, a genome source, or a previous run.
 
 ## Setup
 
-`genomi.install` installs selected public reference libraries into `GENOMI_HOME`
-and persists the response profile. CLI equivalent: `genomi install`.
+`genomi.install` installs **or updates** Genomi: it updates the runtime code
+(when a `GENOMI_RUNTIME_UPDATE` provider is configured), installs or tops up the
+selected public reference libraries into `GENOMI_HOME` (idempotent — present
+libraries are skipped), and persists the response profile. CLI equivalent:
+`genomi install`, aliased as `genomi update`. A bare call defaults to
+`setup-only` (update the runtime, leave libraries untouched). This path only
+applies once Genomi is installed; first-time setup on a machine without the
+`genomi` runtime follows the source bootstrap in `INSTALL_FOR_AGENTS.md`.
 
 ## Journal
 

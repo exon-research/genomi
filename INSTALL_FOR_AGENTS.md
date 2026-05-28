@@ -53,16 +53,23 @@ in a few minutes you're going to hand your assistant something it has never
 had before — a real human genome, queryable in natural language, kept
 entirely on this machine.
 
-Read this whole document before sending your first message. Ask the questions,
-then use the first available Genomi runtime:
+Read this whole document before sending your first message. Decide whether
+Genomi is already installed by checking whether `$GENOMI_HOME/genomi` (default
+`~/.genomi/genomi`) holds the project:
 
-1. If the Genomi MCP server is available, call `genomi.install`.
-2. Else if the `genomi` command is available, run `genomi install`.
-3. Else clone Genomi and bootstrap from source with
-   `scripts/install_for_agents.py`.
+```bash
+test -f "${GENOMI_HOME:-$HOME/.genomi}/genomi/pyproject.toml" && echo installed || echo not-installed
+```
 
-Use `--force` / `force: true` only when the user explicitly asks to update
-already cached public libraries.
+- **Installed** → this is an **update**: run `genomi install` (alias
+  `genomi update`), or `"${GENOMI_HOME:-$HOME/.genomi}/bin/genomi" install` if
+  `genomi` isn't on PATH. It git-pulls the runtime, reinstalls, and fills only
+  the missing libraries (idempotent). Then stop — skip the rest of this doc.
+- **Not installed** → **first-time install**: follow the steps below to
+  bootstrap from source with `scripts/install_for_agents.py`.
+
+Use `--force` / `force: true` only when the user explicitly asks to re-download
+already cached public libraries; it's never needed to fill in missing ones.
 
 ### Step 0: Greet the user
 
@@ -234,12 +241,12 @@ durable memory (CLAUDE.md, Codex memory, etc.) as a redundant backup. On
 
 ### Step 4: Pre-flight checks
 
-Run silently to choose the install path. If Genomi MCP is already connected,
-use `genomi.install` in Step 6. If not, check for the `genomi` command. Only
-clone in Step 5 when neither runtime path exists.
+Run silently to choose the install path. If `$GENOMI_HOME/genomi` already holds
+the project, Genomi is installed → update it via Step 6. Otherwise
+clone/bootstrap in Step 5.
 
 ```bash
-command -v genomi || true
+test -f "${GENOMI_HOME:-$HOME/.genomi}/genomi/pyproject.toml" && echo installed || echo not-installed
 python3 --version    # need 3.10+
 python3 -m pip --version || uv --version
 git --version
@@ -247,7 +254,8 @@ git --version
 
 ### Step 5: Source checkout
 
-Skip this step when `genomi.install` or `genomi install` is available.
+Skip this step when `$GENOMI_HOME/genomi` already holds the project — you're
+updating an existing install, not bootstrapping.
 
 Source lives at `$GENOMI_HOME/genomi` (so it travels with the data root
 chosen in Q2). Make sure it's current (skip if you're already inside
