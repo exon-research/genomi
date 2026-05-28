@@ -60,6 +60,65 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
         self.assertEqual(result["public_context"]["clinvar_by_rsid"][0]["clinical_significance"], "Pathogenic")
         self.assertTrue(any(target["target_type"] == "allele" for target in result["resolved_targets"]))
 
+    def test_rsid_resolves_to_locus_when_id_column_empty_and_alt_differs(self) -> None:
+        # The demo VCF leaves the ID column empty, so a direct `rsid = ?` lookup
+        # misses, and the sample's stored ALT need not match ClinVar's exact
+        # representation. ClinVar resolves the rsID to a coordinate; the inferred
+        # locus target must then surface the sample's observed genotype there.
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                vcf = Path("sample.vcf")
+                vcf.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\n"
+                    # Empty ID column; stored ALT (G) differs from ClinVar's (C).
+                    "19\t45411941\t.\tT\tG\t.\tPASS\t.\tGT:DP:GQ\t0/1:30:99\n",
+                    encoding="utf-8",
+                )
+                index = Path("active-genome-index.sqlite")
+                create_active_genome_index(vcf, index, reuse_existing=False)
+                db = Path("evidence.sqlite")
+                init_evidence_db(db)
+                with sqlite3.connect(db) as connection:
+                    rowid = connection.execute(
+                        """
+                        insert into clinvar_variants(
+                            chrom, pos, ref, alt, genome_build, clinvar_id, allele_id,
+                            clinical_significance, review_status, conditions, gene_info,
+                            hgvs, raw_info_json, source_path, source_version, imported_at
+                        )
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            "19", 45411941, "T", "C", "GRCh37", "VCV1", "CA1",
+                            "risk_factor", "reviewed_by_expert_panel", "APOE-related",
+                            "APOE:348", "x", "{}", "clinvar.vcf.gz", "test",
+                            "2026-01-01T00:00:00Z",
+                        ),
+                    ).lastrowid
+                    connection.execute(
+                        "insert into clinvar_variant_rsids(rsid, variant_rowid, genome_build) values (?, ?, ?)",
+                        ("rs429358", rowid, "GRCh37"),
+                    )
+
+                call_operation(
+                    "genomi.assign_user_genome",
+                    {"nickname": "u", "source": str(vcf), "active_genome_index_path": str(index), "db": str(db), "genome_build": "GRCh37"},
+                )
+                result = call_operation("variant.resolve", {"rsid": "rs429358", "db": str(db), "genome_build": "GRCh37"})
+
+                target_types = {target["target_type"] for target in result["resolved_targets"]}
+                self.assertIn("locus", target_types)
+                self.assertEqual(result["sample_context"]["count"], 1)
+                match = result["sample_context"]["matches"][0]
+                self.assertEqual(match["pos"], 45411941)
+                self.assertEqual(match["genotype"], "0/1")
+                self.assertTrue(str(match.get("target", "")).startswith("locus:"))
+            finally:
+                os.chdir(previous)
+
     def test_variant_lookup_questions_cover_missing_target_and_context(self) -> None:
         no_target = call_operation("variant.resolve", {})
 

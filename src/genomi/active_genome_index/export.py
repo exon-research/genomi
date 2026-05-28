@@ -51,27 +51,31 @@ def export_variants(
     # Synthesize VCF records from the structured index columns — no reopening
     # of the canonical bgzip. Multi-sample lines are reconstructed by grouping
     # the per-(offset, sample_index) rows back together in column order.
+    #
+    # `where` qualifies a line through any variant *sample row* (is_variant is a
+    # per-sample property). A multi-sample line where only one sample carries the
+    # ALT therefore qualifies on that row alone, but the line must still emit a
+    # column for every declared sample or the row is narrower than the #CHROM
+    # header and strict parsers (PharmCAT) reject it. So select the qualifying
+    # offsets first, then pull back *all* sample rows at those offsets — the
+    # line-level filters (PASS, contig) hold for every sample row of a line.
     if max_records is not None:
-        offset_limit_sql = f"""
-            and offset in (
-                select offset from records where {where}
-                group by offset order by min(chrom_sort), min(pos), offset limit ?
-            )
+        selected_offsets_sql = f"""
+            select offset from records where {where}
+            group by offset order by min(chrom_sort), min(pos), offset limit ?
         """
     else:
-        offset_limit_sql = ""
+        selected_offsets_sql = f"select distinct offset from records where {where}"
     select_sql = f"""
         select offset, chrom, chrom_sort, pos, rsid, ref, alt, qual, filter, info,
                format, sample, sample_index
         from records
-        where {where}{offset_limit_sql}
+        where offset in ({selected_offsets_sql})
         order by chrom_sort, pos, offset, sample_index
     """
     count_sql = f"select count(distinct offset) as records from records where {where}"
     select_params: list[Any] = list(params)
     if max_records is not None:
-        # offset_limit_sql repeats the same WHERE params, then the limit.
-        select_params += list(params)
         select_params.append(max_records)
     filters = {
         "variants_only": True,
@@ -196,15 +200,19 @@ def _write_variant_vcf(
     # offset, sample_index); consecutive rows sharing an offset are one source
     # record (multi-sample), recombined in sample-index order.
     exported = 0
+    header = read_header_from_active_genome_index(connection)
+    # #CHROM POS ID REF ALT QUAL FILTER INFO [FORMAT sample...] — 8 fixed columns,
+    # then FORMAT at index 8 and one column per declared sample from index 9 on.
+    sample_count = max(0, len(header.columns) - 9)
     with output_path.open("w", encoding="utf-8") as output:
-        _write_header(connection, output, pass_only=pass_only, selected_contigs=selected_contigs, chrom_style=chrom_style)
+        _write_header(header, output, pass_only=pass_only, selected_contigs=selected_contigs, chrom_style=chrom_style)
         current_offset: object = object()
         group: list[sqlite3.Row] = []
 
         def flush() -> int:
             if not group:
                 return 0
-            output.write(_synthesize_record_line(group, chrom_style) + "\n")
+            output.write(_synthesize_record_line(group, chrom_style, sample_count) + "\n")
             return 1
 
         for row in connection.execute(sql, params):
@@ -219,7 +227,7 @@ def _write_variant_vcf(
     return exported
 
 
-def _synthesize_record_line(group: list[sqlite3.Row], chrom_style: str) -> str:
+def _synthesize_record_line(group: list[sqlite3.Row], chrom_style: str, sample_count: int) -> str:
     first = group[0]
     chrom = _transform_chrom(str(first["chrom"]), chrom_style)
     rsid = first["rsid"] if first["rsid"] not in (None, "") else "."
@@ -237,26 +245,37 @@ def _synthesize_record_line(group: list[sqlite3.Row], chrom_style: str) -> str:
         str(first["filter"]),
         str(info),
     ]
-    if fmt is not None:
+    # When the header declares samples, every data line must carry FORMAT plus
+    # exactly one column per declared sample. Place each stored sample row by its
+    # sample_index and fill any sample that is absent at this offset — e.g. a
+    # reference call coalesced into a gVCF block elsewhere — with the VCF
+    # missing-value token so the row width always matches the #CHROM header.
+    if sample_count > 0:
+        fields.append(str(fmt) if fmt is not None else "GT")
+        by_index = {
+            int(row["sample_index"]): str(row["sample"])
+            for row in group
+            if row["sample"] not in (None, "")
+        }
+        fields.extend(by_index.get(index, ".") for index in range(sample_count))
+    elif fmt is not None:
+        # Header declares FORMAT but no sample columns (rare); preserve FORMAT and
+        # any per-row sample values in stored order without padding.
         fields.append(str(fmt))
-        for row in group:
-            sample = row["sample"]
-            if sample not in (None, ""):
-                fields.append(str(sample))
+        fields.extend(str(row["sample"]) for row in group if row["sample"] not in (None, ""))
     return "\t".join(fields)
 
 
 def _write_header(
-    connection: sqlite3.Connection,
+    header: Any,
     output: Any,
     *,
     pass_only: bool,
     selected_contigs: list[str] | None,
     chrom_style: str,
 ) -> None:
-    # Reconstruct the header from the structured index (source_header_lines),
-    # never the canonical/source.
-    header = read_header_from_active_genome_index(connection)
+    # Emit the header reconstructed from the structured index
+    # (source_header_lines), never the canonical/source.
     header_lines = [*list(header.meta), "\t".join(header.columns)]
     emitted_contigs: set[str] = set()
     for line in header_lines:

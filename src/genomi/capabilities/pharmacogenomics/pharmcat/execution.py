@@ -363,10 +363,13 @@ def _version_probe(selected: JsonObject, *, timeout_seconds: int) -> JsonObject:
 
 
 def _version_command(selected: JsonObject) -> list[str] | None:
+    # PharmCAT exposes the version as `--version` (`-version` is also accepted);
+    # the short `-V` is rejected by the jar's CLI parser (exit 1), which made
+    # the probe report a working install as failed.
     if selected.get("mode") == "pipeline" and selected.get("pipeline_command"):
-        return [str(selected["pipeline_command"]), "-V"]
+        return [str(selected["pipeline_command"]), "--version"]
     if selected.get("mode") == "jar" and selected.get("pharmcat_jar") and selected.get("java_command"):
-        return [str(selected["java_command"]), "-jar", str(selected["pharmcat_jar"]), "-V"]
+        return [str(selected["java_command"]), "-jar", str(selected["pharmcat_jar"]), "--version"]
     return None
 
 

@@ -153,6 +153,40 @@ class DispatchEnvelopeContractTests(unittest.TestCase):
         )
         self.assertNotIn("evidence_envelope", result)
 
+    def test_nested_evidence_counts_yield_evidence_present(self) -> None:
+        # variant.gather_gene_context returns no top-level status/ok/count; its
+        # counts live nested inside per-source summaries. The classifier must
+        # look one level down so partial-but-useful gene context is not stamped
+        # not_assessed/cannot_answer_yet.
+        result = self._call_with_stub(
+            "variant.gather_gene_context",
+            {
+                "query": {"gene": "APOE", "genome_build": "GRCh37"},
+                "clinvar_gene": {"total_records": 42, "compact_records": []},
+                "sample_matches": {"total_records": 3, "records": []},
+                "research_evidence": {"record_count": 0},
+            },
+        )
+        envelope = result["evidence_envelope"]
+        env.validate(envelope)
+        self.assertEqual(envelope["finding_state"], env.EVIDENCE_PRESENT)
+        self.assertEqual(envelope["answer_readiness"], env.SCOPED_ANSWER_ONLY)
+
+    def test_nested_zero_counts_do_not_assert_evidence(self) -> None:
+        # When every nested summary is empty, the op must not claim evidence.
+        result = self._call_with_stub(
+            "variant.gather_gene_context",
+            {
+                "query": {"gene": "APOE", "genome_build": "GRCh37"},
+                "clinvar_gene": {"total_records": 0, "compact_records": []},
+                "sample_matches": {"total_records": 0, "records": []},
+                "research_evidence": {"record_count": 0},
+            },
+        )
+        envelope = result["evidence_envelope"]
+        env.validate(envelope)
+        self.assertNotEqual(envelope["finding_state"], env.EVIDENCE_PRESENT)
+
     def test_allowlist_only_names_known_operations(self) -> None:
         known = set(ops._OPERATION_BY_NAME.keys())
         for name in ops.EVIDENCE_PRODUCING_OPERATIONS:

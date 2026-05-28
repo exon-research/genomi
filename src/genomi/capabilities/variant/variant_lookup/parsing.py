@@ -116,19 +116,50 @@ def _overlaps_exact_or_region_match(query: str, locus_match: re.Match[str]) -> b
 
 
 def _inferred_allele_targets(public_context: JsonObject, *, genome_build: str) -> list[JsonObject]:
+    """Resolve rsID ClinVar hits into Active Genome Index lookup targets.
+
+    The Active Genome Index only carries an rsID in its `rsid` column when the
+    source VCF populated the ID field; most whole-genome VCFs leave it empty, so
+    a direct `rsid = ?` lookup misses. ClinVar's rsID→coordinate table closes
+    that gap. For each resolved rsID we emit two targets:
+
+      * an exact-allele target (chrom/pos/ref/alt) for a precise sample match, and
+      * a locus target (chrom/pos) so the sample's genotype at that position is
+        reported even when the stored ALT differs from ClinVar's representation
+        or the call is homozygous-reference — i.e. rsID → coordinate → observed
+        sample genotype, not only rsID → exact ALT.
+
+    Coordinates are already constrained to the lookup's genome build upstream
+    (`_query_clinvar_rsid` filters on `cr.genome_build`), so the inferred targets
+    match the Active Genome Index build.
+    """
+
     targets: list[JsonObject] = []
+    seen_loci: set[tuple[str, int, str]] = set()
     for row in public_context.get("clinvar_by_rsid", []):
-        if row.get("chrom") and row.get("pos") and row.get("ref") and row.get("alt"):
-            target = _allele_target(
-                _clean_chrom(row["chrom"]),
-                int(row["pos"]),
+        if not (row.get("chrom") and row.get("pos")):
+            continue
+        chrom = _clean_chrom(row["chrom"])
+        pos = int(row["pos"])
+        build = str(row.get("genome_build") or genome_build)
+        inferred_from = {"rsid": row.get("rsid"), "source": "clinvar_variant_rsids"}
+        if row.get("ref") and row.get("alt"):
+            allele = _allele_target(
+                chrom,
+                pos,
                 _clean_allele(row["ref"]),
                 _clean_allele(row["alt"]),
-                str(row.get("genome_build") or genome_build),
+                build,
                 source="clinvar_rsid",
             )
-            target["inferred_from"] = {"rsid": row.get("rsid"), "source": "clinvar_variant_rsids"}
-            targets.append(target)
+            allele["inferred_from"] = inferred_from
+            targets.append(allele)
+        locus_key = (build, pos, chrom)
+        if locus_key not in seen_loci:
+            seen_loci.add(locus_key)
+            locus = _locus_target(chrom, pos, build, source="clinvar_rsid")
+            locus["inferred_from"] = inferred_from
+            targets.append(locus)
     return targets
 
 

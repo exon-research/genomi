@@ -609,6 +609,42 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(result["candidate_records"], 1)
             self.assertEqual(result["exported_records"], 1)
             self.assertEqual(len(records), 1)
+            # The line qualifies only through Sample1's ALT, but the non-variant
+            # `unknown` (0/0) column must still be emitted so the row matches the
+            # #CHROM header — otherwise strict parsers (PharmCAT) reject the file
+            # with "got 10 vs. 11 columns".
+            self.assertEqual(records[0].split("\t"), ["1", "100", "rs1", "A", "G", ".", "PASS", ".", "GT", "0/0", "0/1"])
+
+    def test_export_variants_rows_match_header_width_for_multi_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf_path = Path(tmp) / "multi.vcf"
+            active_genome_index_path = Path(tmp) / "multi.sqlite"
+            output_path = Path(tmp) / "variants.vcf"
+            vcf_path.write_text(
+                "\n".join(
+                    [
+                        "##fileformat=VCFv4.2",
+                        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tunknown\tSample1",
+                        # Each line qualifies through a different sample, exercising
+                        # both column positions for the dropped non-variant call.
+                        "1\t100\trs1\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1",
+                        "1\t200\trs2\tC\tT\t.\tPASS\t.\tGT\t0/1\t1/1",
+                        "1\t300\trs3\tG\tA\t.\tPASS\t.\tGT\t1/1\t0/0",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            create_active_genome_index(vcf_path, active_genome_index_path)
+
+            export_variants(vcf_path, output_path, active_genome_index_path)
+            lines = output_path.read_text(encoding="utf-8").splitlines()
+            header_width = next(len(line.split("\t")) for line in lines if line.startswith("#CHROM"))
+            data_rows = [line.split("\t") for line in lines if not line.startswith("#")]
+
+            self.assertEqual(len(data_rows), 3)
+            for row in data_rows:
+                self.assertEqual(len(row), header_width, f"ragged row breaks strict VCF parsers: {row}")
 
     def test_preflight_is_bounded(self) -> None:
         result = preflight(FIXTURE, scan_records=2)

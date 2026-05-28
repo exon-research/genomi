@@ -112,7 +112,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
             output = Path(tmp) / "pharmcat"
 
             def fake_run(command, **_kwargs):
-                if "-V" in command:
+                if "--version" in command:
                     return subprocess.CompletedProcess(command, 0, "PharmCAT 3.2.0", "")
                 out_dir = Path(command[command.index("-o") + 1])
                 base = command[command.index("-bf") + 1]
@@ -545,6 +545,11 @@ class PharmCATIntegrationTests(unittest.TestCase):
         self.assertEqual(result["status"], "available")
         self.assertEqual(result["version_probe"]["version_text"], "PharmCAT 3.2.0")
         runner.assert_called_once()
+        # PharmCAT's CLI rejects the short `-V`; the probe must use `--version`
+        # so a working install is not reported as failed.
+        probe_command = result["version_probe"]["command"]
+        self.assertIn("--version", probe_command)
+        self.assertNotIn("-V", probe_command)
 
     def test_pharmcat_is_agent_operation(self) -> None:
         tools = {tool["name"]: tool for tool in list_operations(capability="pharmacogenomics")}

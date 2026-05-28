@@ -652,6 +652,21 @@ def attach_envelope(payload: dict[str, Any], envelope_payload: dict[str, Any]) -
     return payload
 
 
+def _as_count(value: Any) -> int:
+    """Coerce a result/observation value to a non-negative evidence count.
+
+    Returns 0 for None, booleans, and anything not parseable as an int so the
+    envelope's count heuristics never treat a flag or label as evidence.
+    """
+    if value is None or isinstance(value, bool):
+        return 0
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return count if count > 0 else 0
+
+
 def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str, Any]:
     """Best-effort envelope derived from common result fields.
 
@@ -676,7 +691,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
         "ok": ok,
     }
     # try to surface a record / candidate / match count
-    for key in (
+    count_keys = (
         "record_count",
         "result_count",
         "candidate_count",
@@ -684,11 +699,26 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
         "association_count",
         "total_records",
         "total_match_records",
-    ):
+    )
+    for key in count_keys:
         if isinstance(summary, dict) and key in summary:
             observations[key] = summary[key]
         elif key in result:
             observations[key] = result[key]
+    # Some operations (e.g. variant.gather_gene_context) carry their evidence
+    # counts nested inside per-source summary objects — clinvar_gene.total_records,
+    # sample_matches.total_records, research_evidence.record_count — rather than at
+    # the top level, and emit no top-level `status`/`ok`. Without looking one level
+    # down, a result that gathered genuinely useful gene context would fall through
+    # to not_assessed/cannot_answer_yet. When no top-level count is present, surface
+    # any positive nested count so partial-but-useful evidence is recognized.
+    if not any(_as_count(observations.get(key)) > 0 for key in count_keys):
+        for child_key, child in result.items():
+            if not isinstance(child, dict):
+                continue
+            for key in count_keys:
+                if key in child and _as_count(child[key]) > 0:
+                    observations[f"{child_key}.{key}"] = child[key]
 
     query_scope = dict(result.get("query") or result.get("target") or {})
     coverage = _coverage(consulted_sources=[], unavailable_sources=[])
@@ -770,10 +800,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
     for key, value in observations.items():
         if key in {"status", "ok"}:
             continue
-        try:
-            positive_count += int(value or 0)
-        except (TypeError, ValueError):
-            continue
+        positive_count += _as_count(value)
 
     if positive_count > 0:
         return evidence_present(
