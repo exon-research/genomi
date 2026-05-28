@@ -31,10 +31,15 @@ cd "$GENOMI_HOME/genomi"
 python3 scripts/install_for_agents.py --libraries everything
 ```
 
-Python 3.10+ required. This install guide currently targets **Linux x86_64
-only**. Do not run this flow on native macOS. On Windows, run inside WSL2
-Linux. The full install caches ~7 GB of public reference libraries under
-`GENOMI_HOME` (defaults to `~/.genomi`).
+Python 3.10+ required. Runs on macOS, Linux, and Windows (via WSL2). One
+caveat: raw paired-end FASTQ alignment (`wgs-alignment` purpose, or
+`minimap2-binary`/`bwa-mem2-binary` libraries) ships Linux x86_64 binaries;
+on macOS or ARM those binaries are skipped at install time and you can
+install `minimap2` / `bwa-mem2` via your package manager if you need FASTQ
+support. Everything else — variants, ClinVar, pharmacogenomics, ancestry,
+PRS, sequence utilities — works the same on every platform. The full
+install caches ~7 GB of public reference libraries under `GENOMI_HOME`
+(defaults to `~/.genomi`).
 
 After install, peek at [`AGENTS.md`](./AGENTS.md) and [`SKILL.md`](./SKILL.md)
 to see what your agent can now do.
@@ -99,17 +104,14 @@ Silent defaults for source bootstrap only: source checkout at
 User-owned choices: Q1 (`--libraries`), Q2 (`GENOMI_HOME`), and Q3
 (response tone).
 
-Python 3.10+. **Linux x86_64 only for this install flow.** Do not run the
-installer on native macOS; use a Linux x86_64 host, VM, container, or WSL2.
-Windows: use WSL2 Linux.
+Python 3.10+. Runs on macOS, Linux, and Windows via WSL2. The bundled
+aligner binaries are Linux x86_64 — on other platforms the installer
+skips them with a notice and the rest of the install completes.
 
-### Step 0.5: Platform gate
+### Step 0.5: Note the platform
 
-Before asking library questions, verify the host platform. If the host is not
-Linux x86_64, stop and tell the user to switch to a Linux x86_64 environment.
-Do not continue with `everything`, `wgs-alignment`, or the source bootstrap
-installer on macOS; the bundled aligner libraries are Linux x86_64 tarballs
-and the install will fail before MCP wiring completes.
+Record the host platform for later. It's only a hard gate when the user
+selects FASTQ-alignment libraries:
 
 ```bash
 python3 - <<'PY'
@@ -118,7 +120,18 @@ print(sys.platform, platform.machine())
 PY
 ```
 
-Proceed only when the result is Linux on x86_64/amd64.
+Behavior by platform:
+
+- **Linux x86_64** — every library installs, including `minimap2-binary`
+  and `bwa-mem2-binary`. FASTQ → BAM alignment is supported.
+- **macOS / Linux ARM / anything else** — `minimap2-binary` and
+  `bwa-mem2-binary` are skipped at install time (the installer prints a
+  notice). Every other purpose (`common-questions`, `medication-response`,
+  `ancestry-context`, `sequence-and-regions`, `cell-and-tissue`,
+  `setup-only`) installs and runs normally; `everything` installs too,
+  just without the aligners. If the user needs FASTQ alignment on this
+  host, point them at `brew install minimap2 bwa-mem2` (or their package
+  manager's equivalent) and let them put the binaries on PATH.
 
 ### Step 1: Ask Q1 — what should Genomi be ready for?
 
@@ -461,14 +474,15 @@ Hand the original deliverable straight to Genomi; source-type auto-detection
 figures out the rest. The user must point at the actual data file — not a
 manifest, folder, or screenshot.
 
-**Paired-end FASTQ needs the local aligners and is Linux x86_64 only in this
-installer.** Only offer the FASTQ path on Linux x86_64 when
-`--libraries wgs-alignment` (or `everything`) is installed. On macOS, do not
-offer the FASTQ path or ask the user to install the aligners manually; tell
-them to use a Linux x86_64 environment for this Genomi install flow. Otherwise
-the parse returns a `requires_library_install` envelope naming
-`minimap2-binary` and `bwa-mem2-binary`; offer to install them before retrying
-only on Linux x86_64.
+**Paired-end FASTQ needs `minimap2` and `bwa-mem2` on PATH or under
+`<GENOMI_HOME>/tools/aligners/`.** On Linux x86_64, `--libraries
+wgs-alignment` (or `everything`) installs them automatically. On macOS or
+ARM the bundled binaries don't apply; if the user wants the FASTQ path on
+this host, have them `brew install minimap2 bwa-mem2` (or use their package
+manager's equivalent) so the runtime can find them. If the user runs a
+FASTQ parse without the aligners present, the parse returns a
+`requires_library_install` envelope naming `minimap2-binary` and
+`bwa-mem2-binary` — install or point at locally-built aligners and retry.
 
 #### "I don't have a file"
 
