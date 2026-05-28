@@ -329,16 +329,20 @@ export PATH="$PWD/.venv/bin:$PATH"
 python3 scripts/install_for_agents.py --skip-package --libraries <Q1-value>
 ```
 
-**Populated `GENOMI_HOME`.** If the source bootstrap installer refuses because
-the data root is non-empty, **don't force**. It's protecting existing data. Ask
-whether to update with `--force`, pick a different `GENOMI_HOME` (re-run
-Step 2), or skip the install.
+**Re-running into a populated `GENOMI_HOME` is safe and idempotent.** Install
+skips any library whose files already exist and downloads only what's missing,
+so running `--libraries everything` against a near-complete home fills the one
+gap without re-fetching the multi-GB caches you already have. No `--force`
+needed for that. Use `--force` only to deliberately re-download (e.g. refresh a
+stale ClinVar cache). To find what's missing first, check the library inventory
+(`genomi.check_libraries` / `genomi tools`) — its summary reports
+`installed_count` / `missing_count`.
 
 #### Less common flags
 
 | Flag | When to use |
 | --- | --- |
-| `--force` | Refresh libraries in a non-empty `GENOMI_HOME`. Ask first. |
+| `--force` | Re-download selected libraries even if already present (refresh). Not needed to fill gaps. |
 | `--ancestry-panel-dir /path` | Use a locally-built ancestry panel instead of the release tarball. |
 | `--ancestry-panel-url <URL>` | Mirror or unreleased panel build. |
 | `--pharmcat-version v2.15.5` | Pin a PharmCAT release. |

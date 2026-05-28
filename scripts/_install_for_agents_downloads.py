@@ -44,31 +44,26 @@ from _install_for_agents_lib import (
 )
 
 
-def _abort_on_existing_install(selected: list[str], *, force: bool) -> None:
-    """Refuse to overwrite a populated GENOMI_HOME unless --force was passed.
+def _report_existing_install(selected: list[str], *, force: bool) -> None:
+    """Note that GENOMI_HOME is already populated; install is idempotent.
 
-    Protects an existing install when a second one is run into the same home
-    by accident. Only triggers when libraries would actually be installed and
-    the home already has populated resource/reference/tools directories.
+    Every per-library installer skips a library whose files already exist
+    (returning ``status: cached``) unless ``--force`` is passed, so re-running
+    an install simply fills in whatever is missing and leaves the rest alone.
+    This is informational only — it never aborts.
     """
-    if force or not selected:
+    if not selected:
         return
     home = Path(os.environ.get("GENOMI_HOME") or str(Path("~/.genomi").expanduser())).expanduser()
     if not home.exists():
         return
-    populated = []
-    for child in ("resources", "reference", "tools"):
-        sub = home / child
-        if sub.is_dir() and any(sub.iterdir()):
-            populated.append(child)
+    populated = [child for child in ("resources", "reference", "tools") if (home / child).is_dir() and any((home / child).iterdir())]
     if not populated:
         return
-    print(
-        f"Refusing to install into existing GENOMI_HOME {home}: already contains {', '.join(populated)}.\n"
-        "Pass --force to refresh selected libraries, or set --genomi-home to a clean path.",
-        file=sys.stderr,
-    )
-    raise SystemExit(2)
+    if force:
+        print(f"GENOMI_HOME {home} already contains {', '.join(populated)}; --force will re-download selected libraries.")
+    else:
+        print(f"GENOMI_HOME {home} already contains {', '.join(populated)}; installing only missing libraries (pass --force to re-download).")
 
 
 def _verify(label: str, command: list[str]) -> None:

@@ -68,8 +68,8 @@ from _install_for_agents_lib import (  # noqa: F401  (explicit; incl. underscore
     resolve_library_selection,
 )
 from _install_for_agents_downloads import (  # noqa: F401  (explicit; incl. underscore names)
-    _abort_on_existing_install,
     _copy_ancestry_panel,
+    _report_existing_install,
     _download_ancestry_panel,
     _fetch_pharmcat_release,
     _select_pharmcat_jar_asset,
@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     selected = resolve_library_selection(args.libraries)
     print(f"Genomi libraries: {', '.join(selected) if selected else 'no public libraries selected'}")
 
-    _abort_on_existing_install(selected, force=args.force)
+    _report_existing_install(selected, force=args.force)
 
     if not args.skip_package:
         command = [sys.executable, "-m", "pip", "install", "-e", str(REPO_ROOT)]

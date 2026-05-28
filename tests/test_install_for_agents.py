@@ -154,6 +154,29 @@ class InstallForAgentsTests(unittest.TestCase):
             verify.assert_called_once()
             self.assertEqual(verify.call_args.args[1], [str(resolved_home / "bin" / "genomi"), "tools"])
 
+    def test_install_into_populated_home_does_not_abort(self) -> None:
+        # A populated GENOMI_HOME must not block a fill-the-gap install: the
+        # per-library installers skip what already exists, so main() should run
+        # to completion (downloading only what's missing) without --force.
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "genomi-home"
+            for child in ("resources", "reference", "tools"):
+                (home / child).mkdir(parents=True)
+                (home / child / "existing.bin").write_text("cached", encoding="utf-8")
+
+            with (
+                mock.patch.dict(os.environ, {"GENOMI_HOME": str(home)}),
+                mock.patch.object(install_for_agents, "run"),
+                mock.patch.object(install_for_agents, "install_libraries") as install_libraries,
+                mock.patch.object(install_for_agents, "install_host_agent_skill"),
+                mock.patch.object(install_for_agents, "_verify"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                result = install_for_agents.main(["--libraries", "everything"])
+
+            self.assertEqual(result, 0)
+            install_libraries.assert_called_once()
+
     def test_parse_args_accepts_genome_source_import_flags(self) -> None:
         args = install_for_agents.parse_args(
             [
