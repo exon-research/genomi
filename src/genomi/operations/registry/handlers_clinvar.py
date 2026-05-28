@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...active_genome_index.active_genome_index import default_active_genome_index_path
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed
 from ...capabilities.clinvar import static_annotation
+from .agi_access import open_agi
 from .coerce import (
     _bool,
     _optional_path,
     _path,
-    _require_personal_artifact_context,
     _str,
     _with_context,
 )
@@ -16,30 +16,20 @@ from .errors import JsonObject, OperationError
 
 
 def _clinvar_match(params: JsonObject) -> JsonObject:
-    resolved = _with_context(params, vcf=True, db=True, active_genome_index_path=True, genome_build=True)
-    _require_personal_artifact_context(
-        params,
-        resolved,
-        "vcf",
-        "Select or parse an Active Genome Index before ClinVar matching.",
-        "reading parsed Active Genome Index artifacts",
-    )
-    # Personal-genome context comes only from the Active Genome Index, never a
-    # raw VCF: resolve the index (deriving it from the source if context did not
-    # supply it) and match against it. No source/canonical is reopened.
-    agi_path = resolved.get("active_genome_index_path")
-    if not agi_path and resolved.get("vcf"):
-        agi_path = str(default_active_genome_index_path(_path(resolved, "vcf")))
-    if not agi_path or not Path(str(agi_path)).exists():
+    # Auth-gated through open_agi (need=VARIANT: matching reads variant sites,
+    # final at variants_ready). Personal-genome context comes only from the
+    # Active Genome Index, never a raw VCF.
+    reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
+    resolved = _with_context(params, db=True, genome_build=True)
+    agi_path = reader.active_genome_index_path
+    if not agi_path.exists():
         raise OperationError(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar matching.",
         )
-    output = resolved.get("output")
-    if not output:
-        output = str(Path(str(agi_path)).with_name("clinvar.matches.jsonl"))
+    output = resolved.get("output") or str(agi_path.with_name("clinvar.matches.jsonl"))
     return static_annotation.match_static_clinvar_from_active_genome_index(
-        Path(str(agi_path)),
+        agi_path,
         evidence_db=_path(resolved, "db"),
         output=Path(str(output)),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
@@ -48,58 +38,36 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
 
 
 def _clinvar_scan(params: JsonObject) -> JsonObject:
-    resolved = _with_context(params, db=True, active_genome_index_path=True, matches=True, comparable_vcf=True, genome_build=True)
-    matches_path = Path(str(resolved["matches"])) if resolved.get("matches") else None
-    if matches_path is not None and matches_path.exists():
-        _require_personal_artifact_context(
-            params,
-            resolved,
-            "matches",
-            "Provide matches or select an Active Genome Index with ClinVar matches before scanning candidates.",
-            "reading parsed Active Genome Index artifacts",
-            source_keys=(),
-        )
-    else:
-        materialization_key = "active_genome_index_path" if resolved.get("active_genome_index_path") else "vcf"
-        _require_personal_artifact_context(
-            params,
-            resolved,
-            materialization_key,
-            "Provide/select an Active Genome Index before ClinVar candidate scanning.",
-            "reading parsed Active Genome Index artifacts",
-        )
-        materialized = _materialize_clinvar_matches_for_scan(resolved, matches_path)
+    reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
+    resolved = _with_context(params, db=True, genome_build=True)
+    matches_path = _optional_path(params, "matches")
+    if matches_path is None or not matches_path.exists():
+        # No prebuilt matches file: materialize one from the Active Genome Index
+        # (pure-SQLite, variant sites only — never an iteration of the raw VCF).
+        materialized = _materialize_clinvar_matches_for_scan(reader.active_genome_index_path, resolved, matches_path)
         if isinstance(materialized, dict):
             return materialized
         matches_path = materialized
     return static_annotation.scan_static_candidates(
         matches_path,
         evidence_db=_optional_path(resolved, "db"),
-        output=_optional_path(resolved, "output"),
+        output=_optional_path(params, "output"),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
         force=_bool(resolved, "force"),
     )
 
 
-def _materialize_clinvar_matches_for_scan(resolved: JsonObject, matches_path: Path | None) -> Path | JsonObject:
-    # Always prefer the Active Genome Index (pure-SQLite, queries only variant
-    # sites). The raw VCF-iteration path streams EVERY record — catastrophic for
-    # a gVCF (~128M reference-block records) and it reopens the source. So when
-    # the context didn't surface an index path, derive it from the source and
-    # use it whenever the index exists; only iterate a VCF when there is no AGI.
-    agi_path = resolved.get("active_genome_index_path")
-    if not agi_path and resolved.get("vcf"):
-        agi_path = str(default_active_genome_index_path(_path(resolved, "vcf")))
-    agi_exists = bool(agi_path) and Path(str(agi_path)).exists()
-
-    if not agi_exists:
+def _materialize_clinvar_matches_for_scan(
+    agi_path: Path, resolved: JsonObject, matches_path: Path | None
+) -> Path | JsonObject:
+    if not agi_path.exists():
         raise OperationError(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar candidate scanning.",
         )
-    output_path = matches_path or Path(str(agi_path)).with_name("clinvar.matches.jsonl")
+    output_path = matches_path or agi_path.with_name("clinvar.matches.jsonl")
     materialized = static_annotation.match_static_clinvar_from_active_genome_index(
-        Path(str(agi_path)),
+        agi_path,
         evidence_db=_path(resolved, "db"),
         output=output_path,
         genome_build=_str(resolved, "genome_build", "GRCh38"),

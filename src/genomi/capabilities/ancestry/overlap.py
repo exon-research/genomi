@@ -5,11 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ...active_genome_index.active_genome_index import (
-    connect_existing,
-    default_active_genome_index_path,
-    active_genome_index_readiness,
-)
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...active_genome_index.vcf import parse_sample
 from . import reference_panels, source_context
 
@@ -27,19 +23,17 @@ LOW_OVERLAP_FRACTION = 0.20
 
 
 def check_sample_overlap(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     genome_build: str = "GRCh38",
     panel_root: str | Path | None = None,
 ) -> JsonObject:
-    panel_or_missing = _load_panel_or_missing(genome_build, panel_root, active_genome_index_path, vcf)
+    panel_or_missing = _load_panel_or_missing(genome_build, panel_root, reader)
     if isinstance(panel_or_missing, dict) and panel_or_missing.get("status") == "panel_not_installed":
         return panel_or_missing
     panel = panel_or_missing
     genotype_context = collect_sample_genotypes(
-        vcf,
-        active_genome_index_path=active_genome_index_path,
+        reader,
         genome_build=genome_build,
         panel=panel,
     )
@@ -58,8 +52,7 @@ def check_sample_overlap(
 def _load_panel_or_missing(
     genome_build: str,
     panel_root: str | Path | None,
-    active_genome_index_path: str | Path | None,
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
 ) -> JsonObject:
     """Load the panel that matches the sample's genome build.
 
@@ -74,7 +67,7 @@ def _load_panel_or_missing(
     except FileNotFoundError:
         return _panel_not_installed_payload(
             genome_build=normalized_build,
-            active_genome_index_path=str(active_genome_index_path or default_active_genome_index_path(vcf)),
+            active_genome_index_path=str(reader.active_genome_index_path),
         )
 
 
@@ -133,9 +126,8 @@ def _panel_not_installed_payload(*, genome_build: str, active_genome_index_path:
 
 
 def collect_sample_genotypes(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     genome_build: str = "GRCh38",
     panel: JsonObject | None = None,
 ) -> JsonObject:
@@ -144,26 +136,14 @@ def collect_sample_genotypes(
     markers = list(panel_payload["markers"])
     panel_marker_count = len(markers)
 
-    active_genome_index_file = Path(active_genome_index_path) if active_genome_index_path is not None else default_active_genome_index_path(vcf)
-    readiness = active_genome_index_readiness(active_genome_index_file)
-    if not readiness.get("complete"):
-        sample_qc = _sample_qc(
-            marker_count=panel_marker_count,
-            usable_marker_count=0,
-            missing_marker_count=panel_marker_count,
-            genome_build=normalized_build,
-            active_genome_index_path=str(active_genome_index_file),
-            overlap_status="active_genome_index_incomplete",
-            projection_allowed=False,
-            marker_overlap_quality="unavailable",
-            note="The Active Genome Index is missing or incomplete; run genomi.parse_source for the sample.",
-        )
-        sample_qc["active_genome_index_readiness"] = readiness
-        return {"sample_qc": sample_qc, "dosages": {}, "usable_marker_ids": [], "missing_marker_ids": [m["marker_id"] for m in markers]}
-
+    active_genome_index_file = reader.active_genome_index_path
+    # No readiness / incompleteness handling here: open_agi gated access
+    # upstream (missing / incomplete -> active_genome_index_incomplete). A
+    # variants_ready index proceeds; the dispatch chokepoint stamps
+    # reference_pending.
     dosages: dict[str, float] = {}
     missing_marker_ids: list[str] = []
-    with connect_existing(active_genome_index_file) as connection:
+    with reader.connect() as connection:
         for marker in markers:
             dosage = _marker_dosage(connection, marker)
             marker_id = str(marker["marker_id"])

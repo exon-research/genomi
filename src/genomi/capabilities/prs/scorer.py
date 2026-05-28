@@ -4,11 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from ...active_genome_index.active_genome_index import (
-    connect_existing,
-    default_active_genome_index_path,
-    active_genome_index_readiness,
-)
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...evidence import envelope as evidence_envelope
 from ...runtime.library_status import library_install_request, library_status
 from . import harmonize, scoring_files, source_context
@@ -21,17 +17,15 @@ HIGH_OVERLAP_FRACTION = 0.90
 
 
 def check_score_overlap(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     pgs_id: str | None = None,
     score_dir: str | Path | None = None,
     genome_build: str = "GRCh38",
     skip_ambiguous_palindromic: bool = True,
 ) -> JsonObject:
     collected = collect_score_context(
-        vcf,
-        active_genome_index_path=active_genome_index_path,
+        reader,
         pgs_id=pgs_id,
         score_dir=score_dir,
         genome_build=genome_build,
@@ -54,9 +48,8 @@ def check_score_overlap(
 
 
 def calculate_score(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     pgs_id: str | None = None,
     score_dir: str | Path | None = None,
     genome_build: str = "GRCh38",
@@ -65,8 +58,7 @@ def calculate_score(
     score_sd: float | None = None,
 ) -> JsonObject:
     collected = collect_score_context(
-        vcf,
-        active_genome_index_path=active_genome_index_path,
+        reader,
         pgs_id=pgs_id,
         score_dir=score_dir,
         genome_build=genome_build,
@@ -113,9 +105,8 @@ def calculate_score(
 
 
 def collect_score_context(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     pgs_id: str | None = None,
     score_dir: str | Path | None = None,
     genome_build: str = "GRCh38",
@@ -134,8 +125,7 @@ def collect_score_context(
     score_build = scoring_files.normalize_build(str(manifest.get("genome_build") or normalized_build))
     score_summary = _polygenic_score_summary(cache["score_dir"], manifest)
 
-    active_genome_index_file = Path(active_genome_index_path) if active_genome_index_path is not None else default_active_genome_index_path(vcf)
-    readiness = active_genome_index_readiness(active_genome_index_file)
+    active_genome_index_file = reader.active_genome_index_path
     variants = scoring_files.load_variants(cache["score_dir"])
     original_variant_count = len(variants)
     lift_summary: JsonObject | None = None
@@ -170,40 +160,14 @@ def collect_score_context(
             )),
             "chain": "UCSC pyliftover",
         }
-    if not readiness.get("complete"):
-        sample_qc = _sample_qc(
-            genome_build=normalized_build,
-            score_build=score_build,
-            active_genome_index_path=active_genome_index_file,
-            score_variant_count=original_variant_count,
-            matched=[],
-            missing=[{"reason": "active_genome_index_incomplete"} for _ in variants],
-            excluded=[],
-            note="The Active Genome Index is missing or incomplete; run genomi.parse_source for the sample.",
-            liftover=lift_summary,
-        )
-        sample_qc["active_genome_index_readiness"] = readiness
-        return {
-            "schema": "genomi-prs-score-v1",
-            "status": "active_genome_index_incomplete",
-            "personal_context": {"uses_personal_dna": True},
-            "polygenic_score": score_summary,
-            "sample_qc": sample_qc,
-            "score_result": None,
-            "limitations": source_context.limitations(),
-            "next_actions": [{"action": "parse_source", "operation": "genomi.parse_source"}],
-            "evidence_envelope": evidence_envelope.not_assessed(
-                operation=operation,
-                reason="The Active Genome Index is incomplete.",
-                personal_context={"uses_personal_dna": True},
-                query_scope={"pgs_id": manifest.get("pgs_id"), "genome_build": normalized_build},
-            ),
-        }
-
+    # No readiness / incompleteness handling here: open_agi has already gated
+    # access (missing / incomplete -> active_genome_index_incomplete; reparse /
+    # schema-too-new surfaced upstream). A variants_ready index proceeds and the
+    # dispatch chokepoint stamps reference_pending.
     matched: list[JsonObject] = []
     missing: list[JsonObject] = []
     excluded: list[JsonObject] = []
-    with connect_existing(active_genome_index_file) as connection:
+    with reader.connect() as connection:
         dosages = harmonize.dosage_for_variants(
             connection,
             variants,

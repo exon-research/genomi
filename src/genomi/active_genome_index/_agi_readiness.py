@@ -20,6 +20,15 @@ class ActiveGenomeIndexSchemaTooNew(RuntimeError):
     catches RuntimeError and surfaces a structured envelope.
     """
 
+class ActiveGenomeIndexIncomplete(RuntimeError):
+    """Raised when an Active Genome Index is missing or has not finished
+    building (no usable variants surface yet) and a capability needs to read
+    it. Distinct from the schema-lifecycle errors: the fix is to (re)run
+    genomi.parse_source, not to up/downgrade Genomi. The operations layer maps
+    it to a structured ``active_genome_index_incomplete`` envelope so a host
+    gets an actionable status instead of a raw exception — and so no capability
+    has to hand-roll its own incomplete-index handling."""
+
 def active_genome_index_summary(active_genome_index_path: str | Path) -> dict[str, Any]:
     with connect_existing(active_genome_index_path) as connection:
         readiness = _active_genome_index_readiness_from_connection(connection)
@@ -98,7 +107,7 @@ def ensure_active_genome_index_complete(active_genome_index_path: str | Path) ->
             f"than this one (SCHEMA_VERSION={SCHEMA_VERSION}); upgrade "
             "genomi before reading it."
         )
-    raise RuntimeError(
+    raise ActiveGenomeIndexIncomplete(
         f"Active Genome Index is not complete ({status}: {reason}); rerun `genomi call genomi.parse_source` for this source to resume/rebuild it"
     )
 

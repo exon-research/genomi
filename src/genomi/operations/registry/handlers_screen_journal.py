@@ -4,15 +4,15 @@ from ...capabilities.decode import dashboard as decode_dashboard
 from ...capabilities.functional_genomics import evidence_acquisition, geo, screen
 from ...capabilities.journal import journal
 from ...capabilities.research import intent_research
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed
 from ...runtime import context as runtime_context
+from .agi_access import open_agi
 from .coerce import (
-    _approve_supplied_dna_source,
     _bool,
     _int,
     _list_dict,
     _list_str,
     _path,
-    _require_agi_access,
     _str,
     _with_context,
 )
@@ -164,17 +164,17 @@ def _journal_export_memory_artifact(params: JsonObject) -> JsonObject:
 
 def _decode_render_dashboard(params: JsonObject) -> JsonObject:
     resolved = _with_context(params)
-    # Gating: the dashboard reads/writes inside the active genome work_dir and
-    # the evidence dict is personal — require an Active Genome Index and
-    # session approval, same gate as other personal-data ops.
+    # The dashboard reads/writes inside the active genome work_dir and the
+    # evidence dict is personal. Require an Active Genome Index, then auth-gate
+    # via open_agi (approves a supplied source, raises approval_required for a
+    # selected-but-unapproved AGI) — the one central session gate.
     active = runtime_context.active_run()
     if active is None:
         raise OperationError(
             "active_genome_index_required",
             "Select or parse an Active Genome Index before rendering the Genomi Dashboard.",
         )
-    _approve_supplied_dna_source(params)
-    _require_agi_access("rendering the Genomi Dashboard from Active Genome Index evidence")
+    open_agi(need=ActiveGenomeIndexNeed.NONE, action="rendering the Genomi Dashboard from Active Genome Index evidence", params=params)
 
     output = resolved.get("output")
     if not output:

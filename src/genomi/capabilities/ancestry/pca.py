@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...evidence import envelope as evidence_envelope
 from . import overlap, reference_panels, source_context
 
@@ -12,14 +13,13 @@ JsonObject = dict[str, Any]
 
 
 def project_sample_pca(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     genome_build: str = "GRCh38",
     panel_root: str | Path | None = None,
     nearest_reference_count: int = 10,
 ) -> JsonObject:
-    panel_or_missing = overlap._load_panel_or_missing(genome_build, panel_root, active_genome_index_path, vcf)
+    panel_or_missing = overlap._load_panel_or_missing(genome_build, panel_root, reader)
     if isinstance(panel_or_missing, dict) and panel_or_missing.get("status") == "panel_not_installed":
         result = {
             "schema": "genomi-ancestry-pca-projection-v1",
@@ -36,8 +36,7 @@ def project_sample_pca(
         return result
     panel = panel_or_missing
     genotype_context = overlap.collect_sample_genotypes(
-        vcf,
-        active_genome_index_path=active_genome_index_path,
+        reader,
         genome_build=genome_build,
         panel=panel,
     )
@@ -76,16 +75,14 @@ def project_sample_pca(
 
 
 def estimate_population_context(
-    vcf: str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
-    active_genome_index_path: str | Path | None = None,
     genome_build: str = "GRCh38",
     panel_root: str | Path | None = None,
     nearest_reference_count: int = 10,
 ) -> JsonObject:
     projection_result = project_sample_pca(
-        vcf,
-        active_genome_index_path=active_genome_index_path,
+        reader,
         genome_build=genome_build,
         panel_root=panel_root,
         nearest_reference_count=nearest_reference_count,

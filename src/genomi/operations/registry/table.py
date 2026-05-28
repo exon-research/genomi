@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from ...active_genome_index.active_genome_index import (
+    ActiveGenomeIndexIncomplete as _ActiveGenomeIndexIncomplete,
+)
+from ...active_genome_index.active_genome_index import (
     ActiveGenomeIndexNeedsReparse as _ActiveGenomeIndexNeedsReparse,
 )
 from ...active_genome_index.active_genome_index import (
@@ -305,6 +308,44 @@ def get_operation(name: str) -> Operation:
         raise OperationError("unknown_operation", f"Unknown operation: {name}") from exc
 
 
+# Operations whose result depends on the reference-block surface of the Active
+# Genome Index (coverage, callability, hom-ref / genotype support, callset QC,
+# reference-overlap scoring). While a two-phase gVCF parse is still appending
+# its reference tail (`variants_ready`, not yet `completed`), a negative or
+# empty answer from these is provisional, so the chokepoint stamps the result
+# `reference_pending` — in ONE place — instead of every handler doing it.
+REFERENCE_DEPENDENT_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "active_genome_index.classify_region_callability",
+        "active_genome_index.classify_genotype_support",
+        "active_genome_index.classify_callset_qc",
+        "ancestry.check_sample_overlap",
+        "ancestry.project_pca",
+        "ancestry.estimate_population_context",
+        "prs.check_score_overlap",
+        "prs.calculate_score",
+        "pharmacogenomics.preflight_pharmcat",
+    }
+)
+
+
+def _stamp_reference_pending_if_due(name: str, params: JsonObject, result: object) -> object:
+    if (
+        name not in REFERENCE_DEPENDENT_OPERATIONS
+        or not isinstance(result, dict)
+        or "reference_pending" in result
+    ):
+        return result
+    from . import agi_access
+
+    if agi_access.reference_pending_for_call(params, agi_id=params.get("agi_id")):
+        from ...active_genome_index._agi_readiness import REFERENCE_PENDING_NOTE
+
+        result["reference_pending"] = True
+        result["reference_pending_note"] = REFERENCE_PENDING_NOTE
+    return result
+
+
 def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
     operation = get_operation(name)
     safe_params = params or {}
@@ -337,7 +378,14 @@ def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
         # The on-disk Active Genome Index was built by a newer Genomi runtime than this
         # one. The agent must upgrade Genomi before reading.
         raise OperationError("active_genome_index_schema_too_new", str(exc)) from exc
+    except _ActiveGenomeIndexIncomplete as exc:
+        # The Active Genome Index is missing or still building. Surface a
+        # structured code so the agent knows to run/await genomi.parse_source —
+        # one central message instead of each capability hand-rolling its own
+        # incomplete-index status.
+        raise OperationError("active_genome_index_incomplete", str(exc)) from exc
     result = _with_defaults_applied(name, safe_params, result)
+    result = _stamp_reference_pending_if_due(name, safe_params, result)
     return _ensure_envelope(name, result)
 
 

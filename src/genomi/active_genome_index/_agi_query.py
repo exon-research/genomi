@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 import json
 import sqlite3
-from ._agi_readiness import REFERENCE_PENDING_NOTE, ensure_active_genome_index_complete, reference_pending
+from ._agi_readiness import ensure_active_genome_index_complete
 from ._agi_schema import connect_existing_readonly, default_active_genome_index_path
 
 
@@ -122,13 +122,9 @@ def coverage_query(
         "records": records,
         "truncated": len(records) >= limit,
     }
-    # Coverage is the reference-dependent answer: while Phase B is still
-    # appending reference blocks, a low/zero covered_fraction is provisional,
-    # not final. Stamp it so the host waits/polls instead of concluding "no
-    # coverage". (Resolves through the index path; harmless if path unknown.)
-    if active_genome_index_path is not None and reference_pending(active_genome_index_path):
-        result["reference_pending"] = True
-        result["reference_pending_note"] = REFERENCE_PENDING_NOTE
+    # reference_pending is stamped once, centrally, by the dispatch chokepoint
+    # (operations.registry.table) for reference-dependent operations — not here,
+    # so there is a single source of truth.
     return result
 
 def _query_offsets(

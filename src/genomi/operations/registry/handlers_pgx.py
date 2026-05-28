@@ -8,18 +8,15 @@ from ...capabilities.pharmacogenomics import (
     pgxdb,
     pharmcat,
 )
+from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed
 from ...capabilities.pharmacogenomics import review as pgx
 from ...retrieval import semantic as retrieval_semantic
 from ...runtime import context as runtime_context
 from ...runtime.paths import shared_evidence_db_path
+from .agi_access import open_agi
 from .coerce import (
-    _approve_supplied_dna_source,
     _bool,
     _int,
-    _optional_path,
-    _path,
-    _require_agi_access,
-    _require_personal_artifact_context,
     _str,
     _with_context,
 )
@@ -98,7 +95,6 @@ def _fda_pgx_lookup(params: JsonObject) -> JsonObject:
 
 
 def _pgx_medication_review(params: JsonObject) -> JsonObject:
-    _approve_supplied_dna_source(params, ("vcf",))
     include_active_supplied = "include_active_genome_index" in params
     include_active_requested = (
         _bool(params, "include_active_genome_index", False)
@@ -111,15 +107,13 @@ def _pgx_medication_review(params: JsonObject) -> JsonObject:
         or _bool(params, "include_known_active_genome_indexes", False)
     )
     if personal_context_requested:
-        _require_agi_access("reading parsed Active Genome Index artifacts")
-        resolved = _with_context(
-            params,
-            vcf=True,
-            db=True,
-            shared_db=True,
-            genome_build=True,
-            allow_shared_db_without_vcf=False,
-        )
+        # Auth-gate the personal context centrally (raises approval_required for
+        # a selected-but-unapproved AGI). The medication review reads the AGI
+        # only indirectly via variant_lookup, so need=NONE is enough here.
+        reader = open_agi(need=ActiveGenomeIndexNeed.NONE, action="reading parsed Active Genome Index artifacts", params=params)
+        resolved = _with_context(params, db=True, shared_db=True, genome_build=True, allow_shared_db_without_vcf=False)
+        if reader.vcf_path is not None and not resolved.get("vcf"):
+            resolved["vcf"] = str(reader.vcf_path)
     else:
         resolved = dict(params)
         resolved.setdefault("shared_db", str(shared_evidence_db_path()))
@@ -156,16 +150,10 @@ def _pgx_medication_review(params: JsonObject) -> JsonObject:
 
 
 def _pgx_pharmcat(params: JsonObject) -> JsonObject:
-    resolved = _with_context(params, vcf=True, genome_build=True, allow_shared_db_without_vcf=False)
-    _require_personal_artifact_context(
-        params,
-        resolved,
-        "vcf",
-        "Select an Active Genome Index or provide a genome source path before running PharmCAT.",
-        "reading raw or parsed Active Genome Index artifacts",
-    )
+    reader = open_agi(need=ActiveGenomeIndexNeed.NONE, action="reading raw or parsed Active Genome Index artifacts", params=params)
+    resolved = dict(params)
     return pharmcat.run_pharmcat(
-        vcf=_path(resolved, "vcf"),
+        vcf=reader.vcf_path,
         output_dir=resolved.get("output_dir"),
         base_filename=resolved.get("base_filename"),
         mode=_str(resolved, "mode", "auto"),
@@ -189,15 +177,8 @@ def _pgx_pharmcat(params: JsonObject) -> JsonObject:
 
 
 def _pgx_pharmcat_preflight(params: JsonObject) -> JsonObject:
-    resolved = _with_context(params, vcf=True, genome_build=True, allow_shared_db_without_vcf=False)
-    _require_personal_artifact_context(
-        params,
-        resolved,
-        "vcf",
-        "Select an Active Genome Index or provide a genome source path before checking PharmCAT preflight.",
-        "reading raw or parsed Active Genome Index artifacts",
-    )
-    return pharmcat.pharmcat_preflight(vcf=_path(resolved, "vcf"))
+    reader = open_agi(need=ActiveGenomeIndexNeed.NONE, action="reading raw or parsed Active Genome Index artifacts", params=params)
+    return pharmcat.pharmcat_preflight(vcf=reader.vcf_path)
 
 
 def _pgx_pharmcat_import(params: JsonObject) -> JsonObject:

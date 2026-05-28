@@ -10,6 +10,7 @@ from pathlib import Path
 
 from genomi.active_genome_index.export import export_variants
 from genomi.active_genome_index.active_genome_index import (
+    ActiveGenomeIndexNeed,
     append_reference_pass,
     connect_existing,
     coverage_query,
@@ -18,6 +19,7 @@ from genomi.active_genome_index.active_genome_index import (
     failure_summary,
     active_genome_index_readiness,
     active_genome_index_summary,
+    open_reader,
     preflight,
     query_region,
     query_rsid,
@@ -488,11 +490,15 @@ class IndexTests(unittest.TestCase):
             ensure_active_genome_index_complete(two_index)
 
             # Variant lookups are correct now; reference coverage is provisional
-            # (empty) and flagged so the host knows to wait, not conclude "no".
+            # (empty). reference_pending is surfaced by the central reader's
+            # parse-state (and stamped on operation results by the dispatch
+            # chokepoint) — not by the library coverage_query itself.
             self.assertEqual(len(query_rsid(two_vcf, "rs500", two_index)), 1)
             cov_a = coverage_query(two_vcf, "1", 1, 499, two_index)
             self.assertEqual(cov_a["covered_fraction"], 0.0)
-            self.assertTrue(cov_a["reference_pending"])
+            reader_a = open_reader(two_index, need=ActiveGenomeIndexNeed.REFERENCE)
+            self.assertTrue(reader_a.reference_pending)
+            self.assertTrue(reader_a.parse_state()["reference_pending"])
 
             # Phase B: append the reference tail, flip to completed.
             phase_b = append_reference_pass(two_index)
@@ -512,6 +518,7 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(cov_b["covered_bases"], cov_full["covered_bases"])
             self.assertEqual(cov_b["segments"], cov_full["segments"])
             self.assertNotIn("reference_pending", cov_b)
+            self.assertFalse(open_reader(two_index, need=ActiveGenomeIndexNeed.REFERENCE).reference_pending)
             # The completed two-phase index reports the same stats as single-phase.
             self.assertEqual(
                 active_genome_index_summary(two_index)["stats"],

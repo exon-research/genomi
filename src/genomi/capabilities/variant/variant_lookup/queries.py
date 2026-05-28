@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from ....active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ....runtime.sqlite_support import connect_readonly_sqlite
 from .parsing import _chrom_aliases, _dedupe_records, _target_key
 
@@ -13,7 +14,7 @@ JsonObject = dict[str, Any]
 
 
 def _query_active_genome_index(
-    active_genome_index_path: Path,
+    reader: ActiveGenomeIndexReader,
     *,
     run: JsonObject,
     selection: str,
@@ -23,7 +24,7 @@ def _query_active_genome_index(
     warnings: list[str],
 ) -> list[JsonObject]:
     try:
-        with _connect_readonly(active_genome_index_path) as connection:
+        with reader.connect() as connection:
             if not _table_exists(connection, "records"):
                 warnings.append(f"Active Genome Index {run.get('agi_id')} has no records table.")
                 return []

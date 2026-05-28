@@ -7,16 +7,15 @@ from ...capabilities.research import intent_research
 from ...evidence import research_scope_choices
 from ...retrieval import semantic as retrieval_semantic
 from ...runtime.paths import shared_evidence_db_path
+from .agi_access import require_session_access
 from .coerce import (
     _bool,
-    _float,
     _int,
     _list_dict,
     _list_str,
     _optional_path,
     _path,
     _require_context_value,
-    _require_personal_artifact_context,
     _str,
     _target_kwargs,
     _with_context,
@@ -82,15 +81,17 @@ def _evidence_gather_gene(params: JsonObject) -> JsonObject:
 def _risk_investigate(params: JsonObject) -> JsonObject:
     include_active = _bool(params, "include_active_genome_index", False) or params.get("matches") not in (None, "")
     if include_active:
+        # Session-level auth gate: the ClinVar matches artifact is personal,
+        # AGI-derived evidence but not tied to one resolved run (a raw matches
+        # path may be supplied directly), so the session-approval gate fits
+        # better than the run-centric open_agi.
+        require_session_access("reading parsed Active Genome Index artifacts for risk investigation")
         resolved = _with_context(params, db=True, matches=True, genome_build=True)
-        _require_personal_artifact_context(
-            params,
-            resolved,
-            "matches",
-            "Provide matches or select an Active Genome Index with ClinVar matches before using active genome evidence for risk investigation.",
-            "reading parsed Active Genome Index artifacts for risk investigation",
-            source_keys=(),
-        )
+        if resolved.get("matches") in (None, ""):
+            raise OperationError(
+                "missing_context",
+                "Provide matches or select an Active Genome Index with ClinVar matches before using active genome evidence for risk investigation.",
+            )
     else:
         resolved = dict(params)
         if not resolved.get("db"):

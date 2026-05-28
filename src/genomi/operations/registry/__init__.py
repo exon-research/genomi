@@ -132,9 +132,7 @@ from .coerce import (
     _redact_intake_paths,
     _remember_result,
     _remember_source_result,
-    _require_agi_access,
     _require_context_value,
-    _require_personal_artifact_context,
     _resolved_default_value,
     _str,
     _target_kwargs,
@@ -184,7 +182,6 @@ from .handlers_ancestry_prs import (
     _ancestry_estimate_population_context,
     _ancestry_list_reference_panels,
     _ancestry_missing_library,
-    _ancestry_private_context,
     _ancestry_project_pca,
     _nutrigenomics_build_source_context,
     _nutrigenomics_list_domains,
@@ -196,7 +193,6 @@ from .handlers_ancestry_prs import (
     _prs_fetch_score_metadata,
     _prs_import_scoring_file,
     _prs_list_imported_scores,
-    _prs_private_context,
     _prs_search_scores,
 )
 from .handlers_evidence_phenotype import (

@@ -67,6 +67,7 @@ from ._agi_readiness import (
     AGI_SCHEMA_NEEDS_REPARSE as AGI_SCHEMA_NEEDS_REPARSE,
     AGI_SCHEMA_TOO_NEW as AGI_SCHEMA_TOO_NEW,
     ActiveGenomeIndexNeedsReparse as ActiveGenomeIndexNeedsReparse,
+    ActiveGenomeIndexIncomplete as ActiveGenomeIndexIncomplete,
     canonical_source_for_active_genome_index as canonical_source_for_active_genome_index,
     check_agi_schema_compatibility as check_agi_schema_compatibility,
 )
@@ -90,6 +91,11 @@ from ._agi_query import (
     _json_list as _json_list,
     _row_sample_index as _row_sample_index,
     _merge_segments as _merge_segments,
+)
+from .reader import (
+    ActiveGenomeIndexNeed as ActiveGenomeIndexNeed,
+    ActiveGenomeIndexReader as ActiveGenomeIndexReader,
+    open_reader as open_reader,
 )
 from ._agi_build import (
     create_active_genome_index as create_active_genome_index,
@@ -134,4 +140,7 @@ __all__ = [
     'canonical_source_for_active_genome_index',
     'check_agi_schema_compatibility',
     'read_header_from_active_genome_index',
+    'ActiveGenomeIndexNeed',
+    'ActiveGenomeIndexReader',
+    'open_reader',
 ]

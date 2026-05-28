@@ -6,7 +6,7 @@ from ...evidence import init_evidence_db
 from ...runtime import context as runtime_context
 from ...runtime.paths import shared_evidence_db_path
 from .errors import JsonObject, OperationError
-from .model import Operation, _operation_parameter_defaults
+from .model import _operation_parameter_defaults
 
 
 def _path(params: JsonObject, key: str) -> Path:
@@ -14,29 +14,6 @@ def _path(params: JsonObject, key: str) -> Path:
     if value is None or value == "":
         raise OperationError("invalid_params", f"{key} is required")
     return Path(str(value))
-
-
-def _stamp_reference_pending(result: JsonObject, resolved: JsonObject) -> JsonObject:
-    """Mark a reference-dependent read provisional while a two-phase gVCF parse
-    is still appending its reference-block tail. Without this, a host agent
-    could read a transient empty/zero-coverage answer as final instead of
-    waiting for the active_genome_index.build_reference_pass job to complete.
-
-    A no-op unless the resolved Active Genome Index is variants_ready, so a
-    fully complete index (or a non-AGI read) is untouched."""
-    if not isinstance(result, dict):
-        return result
-    agi_path = resolved.get("active_genome_index_path")
-    if not agi_path:
-        return result
-    from ...active_genome_index._agi_readiness import REFERENCE_PENDING_NOTE, reference_pending
-
-    try:
-        if reference_pending(agi_path):
-            return {**result, "reference_pending": True, "reference_pending_note": REFERENCE_PENDING_NOTE}
-    except Exception:
-        return result
-    return result
 
 
 def _optional_path(params: JsonObject, key: str) -> Path | None:
@@ -130,38 +107,34 @@ def _target_kwargs(params: JsonObject) -> JsonObject:
 def _with_context(
     params: JsonObject,
     *,
-    vcf: bool = False,
-    comparable_vcf: bool = False,
     db: bool = False,
-    active_genome_index_path: bool = False,
     matches: bool = False,
     shared_db: bool = False,
     reference_fasta: bool = False,
-    genotype_reference_fasta: bool = False,
     genome_build: bool = False,
     allow_shared_db_without_vcf: bool = True,
 ) -> JsonObject:
+    """Resolve non-index auxiliary context (evidence db, shared db, the ClinVar
+    matches artifact, reference FASTA, genome build) from the approved active
+    run into ``params``.
+
+    Index access itself no longer flows through here: a handler obtains the
+    Active Genome Index via ``agi_access.open_agi`` (auth + reader), which is the
+    single door. This helper only fills the side resources those handlers still
+    need alongside the reader."""
     resolved = dict(params)
     active = runtime_context.active_accessible_run()
     if active is not None:
         if not resolved.get("source"):
             resolved["source"] = active.get("source") or active.get("vcf")
-        if vcf and not resolved.get("vcf"):
-            resolved["vcf"] = active.get("vcf")
-        if comparable_vcf and not resolved.get("vcf"):
-            resolved["vcf"] = active.get("comparable_vcf") or active.get("vcf")
         if db and not resolved.get("db"):
             resolved["db"] = active.get("evidence_db")
-        if active_genome_index_path and not resolved.get("active_genome_index_path"):
-            resolved["active_genome_index_path"] = active.get("active_genome_index_path")
         if matches and not resolved.get("matches"):
             resolved["matches"] = active.get("matches")
         if shared_db and not resolved.get("shared_db"):
             resolved["shared_db"] = active.get("shared_evidence_db")
         if reference_fasta and not resolved.get("reference_fasta"):
             resolved["reference_fasta"] = active.get("reference_fasta")
-        if genotype_reference_fasta and not resolved.get("genotype_reference_fasta"):
-            resolved["genotype_reference_fasta"] = active.get("genotype_reference_fasta")
         active_build = str(active.get("genome_build") or "")
         if genome_build and not resolved.get("genome_build") and active_build and active_build != "auto":
             resolved["genome_build"] = active.get("genome_build")
@@ -187,35 +160,6 @@ def _approve_supplied_dna_source(params: JsonObject, source_keys: tuple[str, ...
     if _has_supplied_dna_source(params, source_keys):
         source_value = next((params.get(key) for key in source_keys if params.get(key) not in (None, "")), None)
         runtime_context.approve_agi_access(source=source_value, reason="User supplied a genome source path in this session.")
-
-
-def _require_agi_access(action: str) -> None:
-    if runtime_context.agi_access_approved():
-        return
-    raise OperationError(
-        "active_genome_index_approval_required",
-        (
-            f"Explicit user approval is required before {action}. "
-            "After the user approves Active Genome Index access for this chat, call active_genome_index.approve_access."
-        ),
-    )
-
-
-def _require_personal_artifact_context(
-    original_params: JsonObject,
-    resolved: JsonObject,
-    key: str,
-    missing_message: str,
-    action: str,
-    *,
-    source_keys: tuple[str, ...] = ("source", "vcf"),
-) -> None:
-    if resolved.get(key) in (None, ""):
-        if runtime_context.active_run() is not None and not _has_supplied_dna_source(original_params, source_keys):
-            _require_agi_access(action)
-        _require_context_value(resolved, key, missing_message)
-    _approve_supplied_dna_source(original_params, source_keys)
-    _require_agi_access(action)
 
 
 def _remember_result(

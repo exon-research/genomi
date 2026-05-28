@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ....active_genome_index.active_genome_index import active_genome_index_readiness
+from ....active_genome_index.active_genome_index import ActiveGenomeIndexNeed, open_reader
 from ....evidence import envelope as _env
 from .parsing import _chrom_aliases, _dedupe_records
 from .queries import (
@@ -100,18 +100,27 @@ def _sample_context(
         if not active_genome_index_path:
             summary["query_available"] = False
             continue
-        active_genome_index_file = Path(str(active_genome_index_path))
+        # The reader is the one door to AGI data. need=NONE: variant.resolve
+        # does its own format-aware availability check below — consumer-array
+        # indexes (23andme etc.) are queryable without the vcf-centric
+        # completion marker, and a variants_ready gVCF is fine since variant
+        # rows are final — so the generic readiness gate must not apply here.
+        reader = open_reader(
+            Path(str(active_genome_index_path)),
+            need=ActiveGenomeIndexNeed.NONE,
+            vcf_path=run.get("vcf"),
+            genome_build=run.get("genome_build"),
+        )
         if run.get("source_format") in {"vcf", "gvcf"}:
-            readiness = active_genome_index_readiness(active_genome_index_file)
-            summary["active_genome_index_readiness"] = readiness
-            if not readiness.get("complete"):
+            summary["active_genome_index_readiness"] = reader.readiness
+            if not reader.variants_ready:
                 summary["query_available"] = False
-                summary["availability_note"] = readiness.get("reason") or "active_genome_index_not_complete"
+                summary["availability_note"] = reader.readiness.get("reason") or "active_genome_index_not_complete"
                 warnings.append(
                     f"Active Genome Index {run.get('agi_id')} is not complete; rerun genomi.parse_source to resume/rebuild it."
                 )
                 continue
-        elif not active_genome_index_file.exists():
+        elif not reader.active_genome_index_path.exists():
             summary["query_available"] = False
             summary["availability_note"] = "active_genome_index_not_found"
             continue
@@ -119,7 +128,7 @@ def _sample_context(
         for target in targets:
             matches.extend(
                 _query_active_genome_index(
-                    active_genome_index_file,
+                    reader,
                     run=run,
                     selection=selection,
                     target=target,
