@@ -36,6 +36,46 @@ from genomi.active_genome_index.vcf import (
 FIXTURE = Path(__file__).parent / "data" / "tiny.gvcf.vcf"
 
 
+class ParallelWorkerScalingTests(unittest.TestCase):
+    def _large_plain_vcf(self, tmp: str) -> Path:
+        # A real plain-VCF header, then a sparse truncate to a multi-GB logical
+        # size so the size threshold is crossed without writing GBs of data.
+        vcf = Path(tmp) / "big.vcf"
+        vcf.write_text(
+            "##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n",
+            encoding="utf-8",
+        )
+        with vcf.open("r+b") as handle:
+            handle.truncate(4 * 1024 * 1024 * 1024)  # 4 GB sparse
+        return vcf
+
+    def test_worker_count_scales_with_host_cores_not_a_fixed_cap(self) -> None:
+        from unittest import mock
+
+        from genomi.active_genome_index import _agi_build
+
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf = self._large_plain_vcf(tmp)
+            # 4 GB / 16 MB = 256, so the file-size bound does not clamp below
+            # the core count for these core counts; the result tracks cpu-1.
+            with mock.patch.object(_agi_build.os, "cpu_count", return_value=32):
+                self.assertEqual(
+                    _agi_build._resolved_parallel_workers(vcf, parallel_workers=None, max_records=None),
+                    31,
+                )
+            with mock.patch.object(_agi_build.os, "cpu_count", return_value=12):
+                self.assertEqual(
+                    _agi_build._resolved_parallel_workers(vcf, parallel_workers=None, max_records=None),
+                    11,
+                )
+            # Explicit override always wins.
+            with mock.patch.object(_agi_build.os, "cpu_count", return_value=32):
+                self.assertEqual(
+                    _agi_build._resolved_parallel_workers(vcf, parallel_workers=3, max_records=None),
+                    3,
+                )
+
+
 class VcfParsingTests(unittest.TestCase):
     def test_header_parses_metadata_and_samples(self) -> None:
         header = read_header(FIXTURE)

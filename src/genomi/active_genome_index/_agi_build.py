@@ -422,7 +422,11 @@ def _resolved_parallel_workers(vcf_path: Path, *, parallel_workers: int | None, 
     threshold = 128 * 1024 * 1024 if bgzip_indexed else 512 * 1024 * 1024
     if size < threshold:
         return 1
-    requested = min(8, max(1, (os.cpu_count() or 1) - 1))
+    # Scale to the host: the per-record parse is CPU-bound and embarrassingly
+    # parallel, so use every core but one (left for the OS and the coordinator
+    # that merges shards). Still bounded by file size so a just-over-threshold
+    # input does not spawn more workers than there is work to split.
+    requested = max(1, (os.cpu_count() or 1) - 1)
     return min(requested, max(1, size // (16 * 1024 * 1024)))
 
 def _bgzip_indexed(vcf_path: Path) -> bool:
