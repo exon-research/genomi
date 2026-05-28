@@ -183,8 +183,6 @@ DNA 文件在哪儿，Genomi 就在哪儿读。磁盘上任何一份 VCF 或 gVC
 
 手头还没基因组、但想看看 Genomi 能干嘛，去 [Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)。那儿放着真实参与者的真实消费级 DNA 交付件，上面列的每家厂商都覆盖。随便挑一位，把 Genomi 指过去，开始问。不送自己去测序的前提下，这是最干净的一种试水方式。
 
-顺便说，Genomi 之所以能原生支持那么多厂商，也多亏了这份 PGP-HMS 数据集。每个检测器、每个奇怪的列、每段头部 banner、每份消费级阵列和厂商标签 VCF 的测试 fixture，都拿真实参与者的导出文件对过。MyHeritage、FamilyTreeDNA、Living DNA、Nebula、Dante、Sequencing.com 的原生支持能做出来，是因为 PGP-HMS 用一份宽松的再利用许可，把真实样本免费公开了——这是开放消费基因组学领域里默默的一笔贡献，Genomi 直接受益。
-
 基因组数据是可选的。没有的话，Genomi 也能答纯公共的遗传学问题。
 
 ## 为什么要做这个
@@ -235,40 +233,75 @@ DNA 的问题往往很私人、很乱、很容易讲过头。Genomi 把不同来
 - 项目级 journal 在 v1 里直接拒收私有 / 样本证据的链接。
 - 记忆导出默认就把私有证据链接抹掉，除非你点头同意。
 
-## Genomi 接的可信来源
+## 来源、库和归属
 
-答案得扎在真实证据上，不能靠感觉。所以 Genomi 接的，全是可信、能核对的数据库和基因组学工具。一部分装在本地，私有、可复现地查；剩下的走在线。
+答案得扎在真实证据上，不能靠感觉。所以 Genomi 接的，是能核对的数据库和专业基因组学工具。安装时下载的库，能写 source manifest 的都会写；在线 adapter 会把 source URL 和访问背景放回结果信封；需要审阅的 source family 不能当背景知识用，agent 要引用或 journal 具体用到的 source record。
 
-本地参考库：
+Genomi 可安装的本地库：
 
-- [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/docs/downloads/)
-  GRCh38/GRCh37 VCF 缓存，用来做变异解读。
-- [HPO](https://obophenotype.github.io/human-phenotype-ontology/annotations/)
-  表型基因和疾病注释文件。
-- [GenCC](https://search.thegencc.org/download) 基因-疾病有效性记录。
-- [UCSC Genome Browser downloads](https://hgdownload.soe.ucsc.edu/downloads.html)
-  hg38/hg19 参考 FASTA，用在序列和可调用性流程里。
-- [GENCODE](https://www.gencodegenes.org/human/) GRCh38/GRCh37 转录本注释。
-- [ENCODE SCREEN](https://www.encodeproject.org/software/screen/) cCRE 注释。
+- [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/docs/downloads/)——
+  `clinvar-grch38` 和 `clinvar-grch37` VCF 缓存，用来做精确变异解读。
+- [Human Phenotype Ontology](https://obophenotype.github.io/human-phenotype-ontology/annotations/)——
+  `hpo` 表型到基因、疾病的注释文件。
+- [GenCC](https://search.thegencc.org/download)——`gencc` 基因-疾病有效性 submissions。
+- [UCSC Genome Browser downloads](https://hgdownload.soe.ucsc.edu/downloads.html)——
+  `reference-grch38` 和 `reference-grch37` hg38/hg19 FASTA，用在序列、标准化、可调用性流程里。
+- [UCSC liftOver chain files](https://hgdownload.soe.ucsc.edu/downloads.html#liftover)——
+  `liftover-chains`，负责 GRCh37/GRCh38 坐标转换。
+- [GENCODE](https://www.gencodegenes.org/human/)——`gencode-grch38` 和
+  `gencode-grch37` 转录本注释 GTF。
+- [ENCODE SCREEN](https://www.encodeproject.org/software/screen/)——
+  `encode-ccre-grch38` candidate cis-regulatory element 注释。
 - [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27all_cells%27) 和
-  [CellMarker](http://bio-bigdata.hrbmu.edu.cn/CellMarker/) 人类细胞类型标志物表。
-- [1000 Genomes 30x GRCh38](https://www.internationalgenome.org/data-portal/data-collections/30x-grch38.html)
-  祖源参考面板。
-- [PharmCAT](https://pharmcat.org/) 一体化 JAR，做广覆盖的药物基因组学 calling。
-- 启用之后会接上 [MSigDB Hallmark](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp#H)
-  通路合集。
+  [CellMarker 2.0](http://bio-bigdata.hrbmu.edu.cn/CellMarker/)——
+  `panglaodb-markers` 和 `cellmarker-human` 细胞类型 marker 表。
+- [MSigDB Hallmark](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp#H)——
+  `msigdb-hallmark`，只从用户提供的官方 GMT 导出文件或 URL 安装。
+- [PharmCAT](https://pharmcat.org/) 和
+  [PharmGKB](https://www.pharmgkb.org/)——`pharmcat` 一体化 JAR，用来生成
+  pharmacogene diplotype、phenotype 和 recommendation artifacts。
+- [1000 Genomes 30x GRCh38](https://www.internationalgenome.org/data-portal/data-collections/30x-grch38.html)——
+  `ancestry-1000g-30x-grch38` compact ancestry PCA 面板，发布自
+  [genomi-ancestry-panel](https://github.com/exon-research/genomi-ancestry-panel)
+  构建项目。`ancestry-1000g-30x-grch37` 是用 UCSC liftOver chains 从这份面板本地派生出来的。
+- [minimap2](https://github.com/lh3/minimap2) 和
+  [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2)——
+  `minimap2-binary` 和 `bwa-mem2-binary`，用于可选的 FASTQ 比对。
+  BAM/FASTQ 流程需要时也会用到 host 上的
+  [samtools 和 bcftools](https://www.htslib.org/)。
 
-在线公共来源：
+在线公共 adapter 和可配置公共数据：
 
 - [gnomAD](https://gnomad.broadinstitute.org/) 人群频率查询。
-- [PGS Catalog](https://www.pgscatalog.org/) 评分元数据和打分文件。
-- [ClinPGx](https://www.clinpgx.org/) 药物基因组学指南、注释、标签背景。
-- [PGxDB](https://pgx-db.org/) 药物-基因-变异关联记录。
-- FDA [pharmacogenomic biomarker](https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling/)
-  和 [pharmacogenetic association](https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations) 表。
-- 支持的地方还会接 [KEGG](https://www.kegg.jp/kegg/pathway.html)、
+- [GWAS Catalog](https://www.ebi.ac.uk/gwas/) association record 检索。
+- [PGS Catalog](https://www.pgscatalog.org/) score metadata 和 scoring files。
+- [ClinPGx](https://www.clinpgx.org/)、[PharmGKB](https://www.pharmgkb.org/)、
+  [PGxDB](https://pgx-db.org/)、[CPIC](https://cpicpgx.org/guidelines/)，以及 FDA
+  [pharmacogenomic biomarker](https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling/)
+  和 [pharmacogenetic association](https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations)
+  表，用来查药物基因组学指南、标签、关联背景。
+- [KEGG](https://www.kegg.jp/kegg/pathway.html)、
   [Reactome](https://reactome.org/)、
-  [Human Protein Atlas](https://www.proteinatlas.org/)。
+  [QuickGO](https://www.ebi.ac.uk/QuickGO/)、
+  [Human Protein Atlas](https://www.proteinatlas.org/) 和
+  [ChEMBL](https://www.ebi.ac.uk/chembl/)，用于通路、本体、组织/细胞类型、化合物、药物靶点关系。
+- [Open Targets Platform](https://platform.opentargets.org/) 用于疾病和临床 drug-target 背景。
+- [BioGRID ORCS](https://orcs.thebiogrid.org/)、
+  [DepMap](https://depmap.org/portal/download/) 和
+  [NCBI GEO](https://www.ncbi.nlm.nih.gov/geo/)，用于已配置或可发现的 functional-genomics perturbation 证据。
+
+需要审阅的 source family：
+
+- [ClinGen Gene-Disease Validity](https://search.clinicalgenome.org/kb/gene-validity)、
+  [GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/)、
+  [MONDO](https://mondo.monarchinitiative.org/)、
+  [Orphanet](https://www.orpha.net/)、[OMIM](https://www.omim.org/)、
+  [GeneCards](https://www.genecards.org/)、[MalaCards](https://www.malacards.org/)、
+  [NCI cancer genetics resources](https://www.cancer.gov/about-cancer/causes-prevention/genetics)，以及
+  [COSMIC Cancer Gene Census](https://www.cosmickb.org/knowledgebase/cosmic-modules/)，可被 agent 审阅、引用、写入 journal，用于疾病、癌症风险、基因背景调查。
+- [DrugBank](https://go.drugbank.com/)、
+  [PharmaProjects](https://pharmaintelligence.informa.com/products-and-services/data-and-analysis/pharmaprojects) 和
+  [PubMed](https://pubmed.ncbi.nlm.nih.gov/) 支持 drug-target、机制、primary literature 背景；前提仍然是 agent 记录了具体、有来源背书的 finding。
 
 ## 工作原理
 
@@ -340,3 +373,15 @@ Genomi 以 [Apache License 2.0](LICENSE) 发布。
 ## 贡献
 
 欢迎来提 issue 和 pull request。报 bug 时麻烦带上三样东西：基因组源是什么格式（VCF / gVCF / 23andMe / AncestryDNA / …）、跑了哪个操作、agent 收到的那份结构化报错信封——一般就够复现了。
+
+## 致谢
+
+Genomi 在实现上直接受益于
+[Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)
+公开遗传数据目录。
+
+Genomi 之所以能原生支持那么多厂商，也多亏了这份 PGP-HMS 数据集。每个检测器、每个奇怪的列、每段头部 banner、每份消费级阵列和厂商标签 VCF 的测试 fixture，都拿真实参与者的导出文件对过。MyHeritage、FamilyTreeDNA、Living DNA、Nebula、Dante、Sequencing.com 的原生支持能做出来，是因为 PGP-HMS 用一份宽松的再利用许可，把真实样本免费公开了——这是开放消费基因组学领域里默默的一笔贡献，Genomi 直接受益。
+
+也感谢 [GBrain](https://github.com/garrytan/gbrain)，Garry Tan 的
+OpenClaw/Hermes agent-brain 项目。Genomi 从它那里得到的启发很直接：
+agent 系统应该扎在来源上，应该有记忆，也应该能从一个单文件文档入口开始真正变得有用。

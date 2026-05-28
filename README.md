@@ -240,16 +240,6 @@ catalog covers every provider in the list above — pick any participant's
 export, point Genomi at it, and ask questions. It is the cleanest way to
 kick the tires without sequencing yourself.
 
-That same PGP-HMS public dataset also did the unglamorous work of letting
-Genomi support all of these providers natively. Every detector, every
-column quirk, every header banner, and every test fixture for the
-consumer-array and provider-tagged VCF paths was sanity-checked against
-real PGP participant exports. Native MyHeritage, FamilyTreeDNA, Living
-DNA, Nebula, Dante, and Sequencing.com support exists because PGP-HMS
-makes real-world examples freely available under a permissive re-use
-license — a quiet contribution to open consumer genomics that Genomi
-inherits directly.
-
 Genome data is optional; Genomi also handles public-only genetics questions.
 
 ## Why We Built This
@@ -333,48 +323,92 @@ Genomi keeps the most sensitive data close to you.
 - Memory exports omit private evidence links unless explicitly requested and
   approved.
 
-## Trusted Sources Genomi Connects To
+## Sources, Libraries, And Attribution
 
 Genomi talks to trusted, verified databases and specialist genomics tools so
-your agent can ground answers in real evidence instead of vibes. Some sources
-install locally for private, repeatable lookups, and some are queried live.
+your agent can ground answers in real evidence instead of vibes. Install-time
+downloads write source manifests where possible. Live adapters return source
+URLs and access context in their result envelopes. Reviewed source families are
+not treated as background knowledge; agents cite or journal the specific source
+records they used.
 
-Local reference libraries:
+Installed Genomi libraries:
 
-- [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/docs/downloads/)
-  GRCh38/GRCh37 VCF caches for variant interpretation lookup.
-- [HPO](https://obophenotype.github.io/human-phenotype-ontology/annotations/)
-  phenotype gene and disease annotation files.
-- [GenCC](https://search.thegencc.org/download) gene-disease validity records.
-- [UCSC Genome Browser downloads](https://hgdownload.soe.ucsc.edu/downloads.html)
-  hg38/hg19 reference FASTA files for sequence and callability workflows.
-- [GENCODE](https://www.gencodegenes.org/human/) GRCh38/GRCh37 transcript
-  annotation.
-- [ENCODE SCREEN](https://www.encodeproject.org/software/screen/) cCRE
-  annotations.
-- [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27all_cells%27) and
-  [CellMarker](http://bio-bigdata.hrbmu.edu.cn/CellMarker/) human cell-type
-  marker tables.
-- [1000 Genomes 30x GRCh38](https://www.internationalgenome.org/data-portal/data-collections/30x-grch38.html)
-  ancestry reference-panel files.
-- [PharmCAT](https://pharmcat.org/) all-in-one JAR for broad pharmacogenomic
-  calling.
-- [MSigDB Hallmark](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp#H)
-  pathway collections where configured.
+- [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/docs/downloads/) —
+  `clinvar-grch38` and `clinvar-grch37` VCF caches for exact variant
+  interpretation lookup.
+- [Human Phenotype Ontology](https://obophenotype.github.io/human-phenotype-ontology/annotations/) —
+  `hpo` phenotype-to-gene and disease annotation files.
+- [GenCC](https://search.thegencc.org/download) — `gencc` gene-disease
+  validity submissions.
+- [UCSC Genome Browser downloads](https://hgdownload.soe.ucsc.edu/downloads.html) —
+  `reference-grch38` and `reference-grch37` hg38/hg19 FASTA files for
+  sequence, normalization, and callability workflows.
+- [UCSC liftOver chain files](https://hgdownload.soe.ucsc.edu/downloads.html#liftover) —
+  `liftover-chains` for GRCh37/GRCh38 coordinate translation.
+- [GENCODE](https://www.gencodegenes.org/human/) — `gencode-grch38` and
+  `gencode-grch37` transcript annotation GTFs.
+- [ENCODE SCREEN](https://www.encodeproject.org/software/screen/) —
+  `encode-ccre-grch38` candidate cis-regulatory element annotations.
+- [PanglaoDB](https://panglaodb.se/markers.html?cell_type=%27all_cells%27)
+  and [CellMarker 2.0](http://bio-bigdata.hrbmu.edu.cn/CellMarker/) —
+  `panglaodb-markers` and `cellmarker-human` marker tables.
+- [MSigDB Hallmark](https://www.gsea-msigdb.org/gsea/msigdb/human/collections.jsp#H) —
+  `msigdb-hallmark`, installed only from a user-supplied official GMT export
+  or URL.
+- [PharmCAT](https://pharmcat.org/) and
+  [PharmGKB](https://www.pharmgkb.org/) — `pharmcat` all-in-one JAR for
+  pharmacogene diplotypes, phenotypes, and recommendation artifacts.
+- [1000 Genomes 30x GRCh38](https://www.internationalgenome.org/data-portal/data-collections/30x-grch38.html) —
+  `ancestry-1000g-30x-grch38` compact ancestry PCA panel, distributed from
+  the [genomi-ancestry-panel](https://github.com/exon-research/genomi-ancestry-panel)
+  build project. `ancestry-1000g-30x-grch37` is derived locally from that
+  panel with UCSC liftOver chains.
+- [minimap2](https://github.com/lh3/minimap2) and
+  [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) —
+  `minimap2-binary` and `bwa-mem2-binary` for optional FASTQ alignment.
+  BAM/FASTQ workflows also use [samtools and bcftools](https://www.htslib.org/)
+  when those tools are needed on the host.
 
-Live public sources:
+Live public adapters and configured public data:
 
 - [gnomAD](https://gnomad.broadinstitute.org/) population frequency lookups.
+- [GWAS Catalog](https://www.ebi.ac.uk/gwas/) association-record retrieval.
 - [PGS Catalog](https://www.pgscatalog.org/) score metadata and scoring files.
-- [ClinPGx](https://www.clinpgx.org/) pharmacogenomic guideline, annotation,
-  and label context.
-- [PGxDB](https://pgx-db.org/) drug-gene-variant association records.
-- FDA [pharmacogenomic biomarker](https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling/)
+- [ClinPGx](https://www.clinpgx.org/), [PharmGKB](https://www.pharmgkb.org/),
+  [PGxDB](https://pgx-db.org/), [CPIC](https://cpicpgx.org/guidelines/),
+  and FDA [pharmacogenomic biomarker](https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling/)
   and [pharmacogenetic association](https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations)
-  tables.
+  tables for pharmacogenomic guideline, label, and association context.
 - [KEGG](https://www.kegg.jp/kegg/pathway.html),
-  [Reactome](https://reactome.org/), and
-  [Human Protein Atlas](https://www.proteinatlas.org/) lookups where supported.
+  [Reactome](https://reactome.org/),
+  [QuickGO](https://www.ebi.ac.uk/QuickGO/),
+  [Human Protein Atlas](https://www.proteinatlas.org/), and
+  [ChEMBL](https://www.ebi.ac.uk/chembl/) for pathway, ontology,
+  tissue/cell-type, compound, and drug-target relationships.
+- [Open Targets Platform](https://platform.opentargets.org/) for disease and
+  clinical drug-target context.
+- [BioGRID ORCS](https://orcs.thebiogrid.org/),
+  [DepMap](https://depmap.org/portal/download/), and
+  [NCBI GEO](https://www.ncbi.nlm.nih.gov/geo/) for configured or discovered
+  functional-genomics perturbation evidence.
+
+Reviewed source families:
+
+- [ClinGen Gene-Disease Validity](https://search.clinicalgenome.org/kb/gene-validity),
+  [GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/),
+  [MONDO](https://mondo.monarchinitiative.org/),
+  [Orphanet](https://www.orpha.net/), [OMIM](https://www.omim.org/),
+  [GeneCards](https://www.genecards.org/), [MalaCards](https://www.malacards.org/),
+  [NCI cancer genetics resources](https://www.cancer.gov/about-cancer/causes-prevention/genetics),
+  and the [COSMIC Cancer Gene Census](https://www.cosmickb.org/knowledgebase/cosmic-modules/)
+  are source families agents may review, cite, and journal for disease,
+  cancer-risk, and gene-context investigations.
+- [DrugBank](https://go.drugbank.com/),
+  [PharmaProjects](https://pharmaintelligence.informa.com/products-and-services/data-and-analysis/pharmaprojects),
+  and [PubMed](https://pubmed.ncbi.nlm.nih.gov/) support reviewed
+  drug-target, mechanism, and primary-literature context when the agent records
+  specific source-backed findings.
 
 ## How It Works
 
@@ -475,3 +509,24 @@ Issues and pull requests welcome. If you are reporting a bug, include the
 genome source format (VCF / gVCF / 23andMe / AncestryDNA / etc.), the
 operation you ran, and the structured error envelope the agent received —
 that is usually enough to reproduce.
+
+## Acknowledgements
+
+Genomi owes a direct implementation debt to the
+[Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)
+public genetic data catalog.
+
+That same PGP-HMS public dataset also did the unglamorous work of letting
+Genomi support all of these providers natively. Every detector, every
+column quirk, every header banner, and every test fixture for the
+consumer-array and provider-tagged VCF paths was sanity-checked against
+real PGP participant exports. Native MyHeritage, FamilyTreeDNA, Living
+DNA, Nebula, Dante, and Sequencing.com support exists because PGP-HMS
+makes real-world examples freely available under a permissive re-use
+license — a quiet contribution to open consumer genomics that Genomi
+inherits directly.
+
+Thanks also to [GBrain](https://github.com/garrytan/gbrain), Garry Tan's
+OpenClaw/Hermes agent-brain project, for inspiration around making agent
+systems source-grounded, memory-aware, and useful from a single fetched
+documentation entry point.
