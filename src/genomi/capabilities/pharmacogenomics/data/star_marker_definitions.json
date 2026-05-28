@@ -1,0 +1,50 @@
+{
+  "curation_scope": "Small deterministic marker-definition sets for sample-side PGx triage. Not a complete star-allele caller.",
+  "definition_sets": [
+    {
+      "definition_set": "cyp2c19-common-cpic-marker-subset-v1",
+      "definition_scope": "Common CYP2C19 marker subset for sample-side evidence triage; use PharmCAT or specialized PGx callers for clinical-grade genotyping.",
+      "gene": "CYP2C19",
+      "markers": [
+        {
+          "effect_allele": "A",
+          "function": "no_function",
+          "hgvs": "NM_000769.4:c.681G>A",
+          "reference_allele": "G",
+          "rsid": "rs4244285",
+          "star_allele": "*2"
+        },
+        {
+          "effect_allele": "A",
+          "function": "no_function",
+          "hgvs": "NM_000769.4:c.636G>A",
+          "reference_allele": "G",
+          "rsid": "rs4986893",
+          "star_allele": "*3"
+        },
+        {
+          "effect_allele": "T",
+          "function": "increased_function",
+          "hgvs": "NM_000769.4:c.-806C>T",
+          "reference_allele": "C",
+          "rsid": "rs12248560",
+          "star_allele": "*17"
+        }
+      ],
+      "normal_function_allele": "*1",
+      "sources": [
+        {
+          "title": "NCBI Medical Genetics Summaries: Nomenclature for Selected CYP2C19 Alleles",
+          "type": "allele_definition_table",
+          "url": "https://www.ncbi.nlm.nih.gov/books/NBK100895/table/omeprazole.Tf/"
+        },
+        {
+          "title": "NCBI Medical Genetics Summaries: Clopidogrel Therapy and CYP2C19 Genotype",
+          "type": "clinical_pharmacogenetics_summary",
+          "url": "https://www.ncbi.nlm.nih.gov/books/NBK84114/"
+        }
+      ]
+    }
+  ],
+  "schema": "genomi-pgx-marker-definition-catalog-v1"
+}

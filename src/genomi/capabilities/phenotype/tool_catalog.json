@@ -1,0 +1,715 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "phenotype-gene": {
+      "title": "Phenotype, Disease, and Candidate Gene",
+      "start_when": "Phenotype, disease, risk-topic, or candidate-gene evidence capabilities.",
+      "skill_documents": [
+        "skills/rare-disease-cancer/SKILL.md",
+        "skills/drug-targets/SKILL.md",
+        "skills/genomic-inquiry/SKILL.md"
+      ],
+      "entry_operations": [
+        "phenotype.compare_disease_evidence",
+        "phenotype.compare_gene_hpo_evidence",
+        "phenotype.compare_drug_target_evidence",
+        "phenotype.retrieve_gene_disease_associations",
+        "phenotype.retrieve_disease_drug_targets",
+        "phenotype.retrieve_trait_gene_records"
+      ],
+      "operations": [
+        "phenotype.compare_disease_evidence",
+        "phenotype.compare_drug_target_evidence",
+        "phenotype.compare_gene_hpo_evidence",
+        "phenotype.normalize_terms",
+        "phenotype.plan_risk_investigation",
+        "phenotype.retrieve_disease_drug_targets",
+        "phenotype.retrieve_gene_disease_associations",
+        "phenotype.retrieve_trait_gene_records"
+      ]
+    }
+  },
+  "operations": {
+    "phenotype.plan_risk_investigation": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Plan rare disease or cancer risk investigation from public targets and optionally selected Active Genome Index evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "investigation_type": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "rare_disease",
+              "cancer_risk"
+            ],
+            "default": "auto"
+          },
+          "gene": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "type": "string",
+            "default": "GRCh38",
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "If active genome evidence is used and supplies genome_build, that context value is used before this fallback."
+            }
+          },
+          "include_active_genome_index": {
+            "type": "boolean",
+            "x_genomi_default": {
+              "rule": "true when matches is supplied; otherwise false unless the host explicitly opts in",
+              "source": "contextual_default",
+              "possible_values": [
+                false,
+                true
+              ]
+            }
+          },
+          "search_stored_research": {
+            "$ref": "#/schema_fragments/properties/search_stored_research"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "question"
+            ]
+          },
+          {
+            "required": [
+              "gene"
+            ]
+          },
+          {
+            "required": [
+              "genes"
+            ]
+          },
+          {
+            "required": [
+              "condition"
+            ]
+          },
+          {
+            "required": [
+              "topic"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/rare-disease-cancer/SKILL.md",
+      "area": "risk",
+      "requires": [
+        "public_risk_question_or_target"
+      ],
+      "produces": [
+        "risk_investigation_plan",
+        "source_review_guidance",
+        "evidence_view",
+        "decision_evidence",
+        "candidate_matrix",
+        "rankings",
+        "top_observed_candidate"
+      ],
+      "context_optional": [
+        "db",
+        "matches",
+        "genome_build",
+        "active_genome_index"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "phenotype.normalize_terms": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Normalize phenotype text and HPO IDs into public evidence-review targets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "phenotype_text": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "hpo_term_arrays"
+        ]
+      },
+      "skill": "skills/rare-disease-cancer/SKILL.md",
+      "area": "phenotype",
+      "requires": [],
+      "produces": [
+        "phenotype_normalization",
+        "source_review_plan"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "phenotype.retrieve_gene_disease_associations": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Retrieve primary gene-disease associations from GenCC for supplied gene symbols.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "gene_symbols": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "gencc_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "gencc_url": {
+            "type": "string",
+            "default": "https://thegencc.org/download/action/submissions-export-tsv?format=new"
+          },
+          "download_gencc": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "classifications": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_100"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "genes"
+            ]
+          },
+          {
+            "required": [
+              "gene_symbols"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/rare-disease-cancer/SKILL.md",
+      "area": "gene",
+      "requires": [
+        "candidate_genes"
+      ],
+      "produces": [
+        "associations",
+        "associations_by_gene",
+        "coverage_state",
+        "source_coverage",
+        "telemetry"
+      ],
+      "context_optional": [],
+      "optional_libraries": [
+        "gencc"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "gencc_public_download"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "phenotype.compare_disease_evidence": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Compare supplied or primary gene-derived diseases against phenotype/HPO evidence without selecting the diagnosis.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "phenotype_text": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "candidate_diseases": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "diseases": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "gene_symbols": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "hpo_disease_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "hpo_disease_url": {
+            "type": "string",
+            "default": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"
+          },
+          "use_primary_gene_disease": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "download_primary_gene_disease": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "gencc_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "gencc_url": {
+            "type": "string",
+            "default": "https://thegencc.org/download/action/submissions-export-tsv?format=new"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "hpo_term_arrays",
+          "hpo_annotation_controls",
+          "source_records"
+        ]
+      },
+      "skill": "skills/rare-disease-cancer/SKILL.md",
+      "area": "phenotype",
+      "requires": [
+        "phenotype_terms_or_hpo_ids",
+        "candidate_diseases_or_genes_or_source_records"
+      ],
+      "produces": [
+        "evidence_view",
+        "coverage_state",
+        "source_local_ordering",
+        "decision_evidence",
+        "candidate_matrix",
+        "rankings",
+        "top_observed_candidate",
+        "discrimination",
+        "source_review_plan",
+        "hpo_disease_annotation_evidence"
+      ],
+      "context_optional": [
+        "db"
+      ],
+      "optional_libraries": [
+        "hpo",
+        "gencc"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "hpo_public_annotation_files",
+        "gencc_public_download"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "phenotype.compare_gene_hpo_evidence": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Compare candidate genes using phenotype, HPO, and curated rare-disease annotation evidence only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "phenotype": {
+            "type": "string"
+          },
+          "phenotype_text": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "task_text": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "genes"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "phenotype"
+            ]
+          },
+          {
+            "required": [
+              "phenotype_text"
+            ]
+          },
+          {
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "required": [
+              "hpo_ids"
+            ]
+          }
+        ],
+        "x_genomi_property_groups": [
+          "hpo_term_arrays",
+          "hpo_annotation_controls",
+          "hpo_gene_annotation_source",
+          "source_records"
+        ]
+      },
+      "skill": "skills/rare-disease-cancer/SKILL.md",
+      "area": "phenotype",
+      "requires": [
+        "phenotype_terms_or_hpo_ids",
+        "candidate_genes"
+      ],
+      "produces": [
+        "ranking",
+        "source_local_ordering",
+        "decision_evidence",
+        "evidence_records",
+        "source_prior",
+        "coverage",
+        "top_observed_candidate",
+        "details",
+        "telemetry"
+      ],
+      "context_optional": [
+        "db"
+      ],
+      "optional_libraries": [
+        "hpo"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "hpo_public_annotation_files"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "phenotype.compare_drug_target_evidence": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Compare candidate genes using direct drug-target or mechanism evidence only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "drug": {
+            "type": "string"
+          },
+          "drug_class": {
+            "type": "string"
+          },
+          "indication": {
+            "type": "string"
+          },
+          "phenotype": {
+            "type": "string"
+          },
+          "mechanism": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "search_stored_research": {
+            "$ref": "#/schema_fragments/properties/search_stored_research"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "genes"
+        ],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "drug"
+            ]
+          },
+          {
+            "required": [
+              "drug_class"
+            ]
+          },
+          {
+            "required": [
+              "mechanism"
+            ]
+          }
+        ],
+        "x_genomi_property_groups": [
+          "source_records"
+        ]
+      },
+      "skill": "skills/drug-targets/SKILL.md",
+      "area": "target",
+      "requires": [
+        "drug_or_drug_class_or_mechanism",
+        "candidate_genes"
+      ],
+      "produces": [
+        "ranking",
+        "source_local_ordering",
+        "decision_evidence",
+        "evidence_records",
+        "source_prior",
+        "coverage",
+        "top_observed_candidate",
+        "details",
+        "telemetry"
+      ],
+      "context_optional": [
+        "db"
+      ],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "phenotype.retrieve_disease_drug_targets": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Retrieve disease-scoped clinical drug-target genes from Open Targets drug candidate records.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "disease": {
+            "type": "string"
+          },
+          "disease_id": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "records",
+              "gene_membership"
+            ],
+            "default": "records"
+          },
+          "minimum_clinical_stage": {
+            "type": "string",
+            "default": "PHASE_2"
+          },
+          "opentargets_api_url": {
+            "type": "string",
+            "default": "https://api.platform.opentargets.org/api/v4/graphql"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_100"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "disease"
+            ]
+          },
+          {
+            "required": [
+              "disease_id"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/drug-targets/SKILL.md",
+      "area": "target",
+      "requires": [
+        "disease_anchor"
+      ],
+      "produces": [
+        "targets",
+        "targets_by_gene",
+        "gene_membership",
+        "source_records",
+        "coverage_state",
+        "coverage_status",
+        "source_coverage",
+        "telemetry"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "opentargets_api"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "phenotype.retrieve_trait_gene_records": {
+      "capability": "phenotype-gene",
+      "namespace": "phenotype",
+      "description": "Retrieve native trait-to-gene records from integrated public sources, optionally filtered to gene symbols.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "trait": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "opentargets_api_url": {
+            "type": "string",
+            "default": "https://api.platform.opentargets.org/api/v4/graphql"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "trait"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomic-inquiry/SKILL.md",
+      "area": "gene",
+      "requires": [
+        "trait_anchor"
+      ],
+      "produces": [
+        "gene_records",
+        "records_by_gene",
+        "coverage_state",
+        "source_records",
+        "comparison_inputs",
+        "coverage",
+        "source_coverage",
+        "telemetry"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "opentargets_api"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

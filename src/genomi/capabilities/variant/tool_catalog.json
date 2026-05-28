@@ -1,0 +1,204 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "variant-evidence": {
+      "title": "Variant and Public Evidence",
+      "start_when": "The question names an rsID, variant, gene, condition, or source-backed public claim.",
+      "skill_documents": [
+        "skills/variant-evidence/SKILL.md"
+      ],
+      "entry_operations": [
+        "variant.resolve"
+      ],
+      "operations": [
+        "variant.gather_gene_context",
+        "variant.gather_allele_context",
+        "variant.resolve"
+      ]
+    }
+  },
+  "operations": {
+    "variant.resolve": {
+      "capability": "variant-evidence",
+      "namespace": "variant",
+      "description": "Resolve one variant target and return deterministic public, local sample, and stored evidence facts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "rsid": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "genome_build": {
+            "type": "string",
+            "default": "GRCh38"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "include_active_genome_index": {
+            "type": "boolean",
+            "x_genomi_default": {
+              "rule": "true only when scoped Active Genome Index access is approved and no agi_id is supplied; otherwise false",
+              "source": "contextual_default",
+              "possible_values": [
+                false,
+                true
+              ]
+            }
+          },
+          "include_known_active_genome_indexes": {
+            "$ref": "#/schema_fragments/properties/include_known_active_genome_indexes"
+          },
+          "include_fail": {
+            "$ref": "#/schema_fragments/properties/include_fail"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_20"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "storage_db_pair",
+          "variant_locus"
+        ]
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "variant",
+      "requires": [],
+      "produces": [
+        "variant_lookup_packet",
+        "resolved_variant_targets",
+        "sample_presence_context",
+        "public_variant_context",
+        "variant_unanswered_answer_components",
+        "variant_target_inventory"
+      ],
+      "context_optional": [
+        "db",
+        "shared_db",
+        "agi_id",
+        "active_genome_index"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected",
+        "explicit_known_active_genome_indexes_when_selected"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "variant.gather_allele_context": {
+      "capability": "variant-evidence",
+      "namespace": "variant",
+      "description": "Gather existing sample, static, population, and reviewed research evidence for one allele.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "population_source": {
+            "type": "string"
+          },
+          "population": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chrom",
+          "pos",
+          "ref",
+          "alt"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "variant_locus"
+        ]
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "variant",
+      "requires": [
+        "allele"
+      ],
+      "produces": [
+        "allele_context"
+      ],
+      "context_optional": [
+        "db",
+        "matches",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "variant.gather_gene_context": {
+      "capability": "variant-evidence",
+      "namespace": "variant",
+      "description": "Gather existing sample, ClinVar, and reviewed research evidence for one gene.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "gene": {
+            "type": "string"
+          },
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          }
+        },
+        "required": [
+          "gene"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "variant",
+      "requires": [
+        "gene"
+      ],
+      "produces": [
+        "gene_context"
+      ],
+      "context_optional": [
+        "db",
+        "matches",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

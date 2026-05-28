@@ -1,0 +1,292 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "analytical-grounding": {
+      "title": "Analytical Grounding",
+      "start_when": "The task needs canonical pathway members, cell-type marker records, or interval feature annotations from declared sources.",
+      "skill_documents": [
+        "skills/analytical-grounding/SKILL.md"
+      ],
+      "entry_operations": [
+        "pathway.retrieve_members",
+        "cell_type.retrieve_markers",
+        "region.retrieve_features"
+      ],
+      "operations": [
+        "cell_type.retrieve_markers",
+        "pathway.retrieve_members",
+        "region.retrieve_features"
+      ]
+    }
+  },
+  "operations": {
+    "pathway.retrieve_members": {
+      "capability": "analytical-grounding",
+      "namespace": "pathway",
+      "description": "Retrieve canonical member genes for a controlled pathway or gene-set source entity.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pathway_id_or_name": {
+            "type": "string"
+          },
+          "pathway_id": {
+            "type": "string"
+          },
+          "pathway_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "reactome",
+              "kegg",
+              "msigdb_hallmark"
+            ]
+          },
+          "species": {
+            "type": "string"
+          },
+          "reactome_api_base": {
+            "type": "string",
+            "default": "https://reactome.org/ContentService"
+          },
+          "kegg_api_base": {
+            "type": "string",
+            "default": "https://rest.kegg.jp"
+          },
+          "msigdb_gmt": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "msigdb_gmt_url": {
+            "type": "string"
+          },
+          "msigdb_version": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 500
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "pathway_id_or_name"
+            ]
+          },
+          {
+            "required": [
+              "pathway_id"
+            ]
+          },
+          {
+            "required": [
+              "pathway_name"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/analytical-grounding/SKILL.md",
+      "area": "pathway",
+      "requires": [
+        "controlled_pathway_id_or_name"
+      ],
+      "produces": [
+        "members",
+        "pathway",
+        "coverage_status",
+        "source_coverage",
+        "resolution_candidates"
+      ],
+      "context_optional": [],
+      "optional_libraries": [
+        "msigdb-hallmark"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "reactome_api",
+        "kegg_api",
+        "msigdb_hallmark_gmt"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "cell_type.retrieve_markers": {
+      "capability": "analytical-grounding",
+      "namespace": "cell_type",
+      "description": "Retrieve canonical marker genes for a controlled cell-type source entity.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cell_type_id_or_name": {
+            "type": "string"
+          },
+          "cell_type_id": {
+            "type": "string"
+          },
+          "cell_type_name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "hpa",
+              "cellmarker",
+              "panglaodb",
+              "encode"
+            ]
+          },
+          "species": {
+            "type": "string"
+          },
+          "marker_table": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "hpa_api_base": {
+            "type": "string",
+            "default": "https://www.proteinatlas.org/api"
+          },
+          "hpa_download_base": {
+            "type": "string",
+            "default": "https://www.proteinatlas.org/download/tsv"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_100"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "cell_type_id_or_name"
+            ]
+          },
+          {
+            "required": [
+              "cell_type_id"
+            ]
+          },
+          {
+            "required": [
+              "cell_type_name"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/analytical-grounding/SKILL.md",
+      "area": "cell_type",
+      "requires": [
+        "controlled_cell_type_id_or_name"
+      ],
+      "produces": [
+        "markers",
+        "cell_type",
+        "coverage_status",
+        "source_coverage",
+        "resolution_candidates"
+      ],
+      "context_optional": [],
+      "optional_libraries": [
+        "cellmarker-human",
+        "panglaodb-markers"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "hpa_api",
+        "hpa_public_download",
+        "source_marker_table"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "region.retrieve_features": {
+      "capability": "analytical-grounding",
+      "namespace": "region",
+      "description": "Retrieve genomic-region feature annotations from supplied or installed GENCODE and ENCODE annotation files.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chrom": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "end": {
+            "type": "integer"
+          },
+          "region": {
+            "type": "string"
+          },
+          "assembly": {
+            "type": "string",
+            "enum": [
+              "GRCh37",
+              "GRCh38"
+            ]
+          },
+          "gencode_gtf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "encode_ccre_bed": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_100"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/analytical-grounding/SKILL.md",
+      "area": "region",
+      "requires": [
+        "genomic_interval"
+      ],
+      "produces": [
+        "features",
+        "classification",
+        "coverage_status",
+        "source_coverage"
+      ],
+      "context_optional": [],
+      "optional_libraries": [
+        "gencode-grch38",
+        "gencode-grch37",
+        "encode-ccre-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "local_gencode_gtf",
+        "local_encode_ccre_bed"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

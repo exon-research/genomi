@@ -1,0 +1,110 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "decode": {
+      "title": "Genomi Dashboard (decode)",
+      "start_when": "The agent runs the /genomi decode kicker or otherwise needs to render the consolidated Genomi Dashboard HTML artifact from gathered panel evidence.",
+      "skill_documents": [
+        "skills/decode/SKILL.md"
+      ],
+      "entry_operations": [
+        "decode.render_dashboard"
+      ],
+      "operations": [
+        "decode.render_dashboard"
+      ]
+    }
+  },
+  "operations": {
+    "decode.render_dashboard": {
+      "capability": "decode",
+      "namespace": "decode",
+      "description": "Render the Genomi Dashboard self-contained HTML artifact from supplied panel evidence. Active Genome Index approval required.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "description": "Dashboard panel evidence keyed by panel name. Missing panels render the 'Not gathered yet' placeholder.",
+            "properties": {
+              "overview": {
+                "type": "object",
+                "description": "Active Genome Index summary: sampleId, genomeBuild, variantCount, genotypeQuality, meanDepth, genomeSource, parsedAt, sourceCoverage[]."
+              },
+              "variants": {
+                "type": "array",
+                "description": "Clinically significant (P/LP-highlighted) variants shown in the top 'Clinically Significant' section: rsid, gene, zygosity, chrom, pos, ref, alt, clinvarSignificance, conditionShort, evidenceQuality.",
+                "items": {"type": "object"}
+              },
+              "pgx": {
+                "type": "array",
+                "description": "Pharmacogenomics records: gene, diplotype, phenotype, impact (normal|reduced|increased|poor), drugs[].",
+                "items": {"type": "object"}
+              },
+              "risk": {
+                "type": "array",
+                "description": "Polygenic risk scores: trait, score, percentile, ancestryAdjusted, overlap, sources.",
+                "items": {"type": "object"}
+              },
+              "ancestry": {
+                "type": "object",
+                "description": "Ancestry context: dominantAncestry, neighbors[], pcaPoints[]."
+              },
+              "nutrigenomics": {
+                "type": "array",
+                "description": "Nutrigenomic markers: marker, gene, rsid, status, recommendation, evidenceTier.",
+                "items": {"type": "object"}
+              },
+              "journal": {
+                "type": "array",
+                "description": "Journal entries: ts, kind (observation|hypothesis|decision|question), title, body, tags, evidenceLinks.",
+                "items": {"type": "object"}
+              }
+            },
+            "additionalProperties": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["full", "update"],
+            "default": "full",
+            "description": "'full' rewrites the dashboard; 'update' merges supplied panels over the existing inlined evidence."
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path",
+            "description": "Optional override for the dashboard HTML path. Defaults to a transient path under the system temp dir: <tmp>/genomi-dashboards/<sample>/dashboard.html."
+          },
+          "variants_all_source": {
+            "type": "string",
+            "description": "Path to a ClinVar matches JSONL file (e.g. the clinvar.matches.jsonl written by clinvar.match_variants). Pass the file path here; the renderer reads and normalizes it server-side. Accepts both scan_candidates format ({variant, clinvar, genes}) and matches JSONL format ({sample_variant, clinvar})."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/decode/SKILL.md",
+      "area": "decode",
+      "requires": [
+        "active_genome_index"
+      ],
+      "produces": [
+        "dashboard_artifact"
+      ],
+      "context_optional": [
+        "work_dir"
+      ],
+      "privacy_scope": "active_genome_index",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index"
+      ],
+      "discovery_role": "entry_tool",
+      "dependencyContract": {
+        "localResources": [
+          "active_genome_index"
+        ]
+      }
+    }
+  }
+}

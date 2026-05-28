@@ -1,0 +1,745 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "pharmacogenomics": {
+      "title": "Pharmacogenomics",
+      "start_when": "The question is about drug response, PGx alleles, labels, guidelines, or PharmCAT.",
+      "skill_documents": [
+        "skills/pharmacogenomics/SKILL.md"
+      ],
+      "entry_operations": [
+        "pharmacogenomics.review_medication"
+      ],
+      "operations": [
+        "pharmacogenomics.check_pharmcat",
+        "pharmacogenomics.describe_gene_requirements",
+        "pharmacogenomics.fetch_clinpgx",
+        "pharmacogenomics.fetch_fda_labels",
+        "pharmacogenomics.fetch_pgxdb",
+        "pharmacogenomics.import_pharmcat_artifacts",
+        "pharmacogenomics.preflight_pharmcat",
+        "pharmacogenomics.prepare_outside_call_tsv",
+        "pharmacogenomics.review_medication",
+        "pharmacogenomics.run_pharmcat",
+        "pharmacogenomics.validate_outside_call_tsv"
+      ],
+      "capability_matrix": {
+        "implementation": "genomi.capabilities.pharmacogenomics.review.capability_inventory",
+        "public_resource_id": "pgx_capability_inventory",
+        "discovery_surface": "genomi.list_resources",
+        "runtime_status_operation": "pharmacogenomics.check_pharmcat"
+      }
+    }
+  },
+  "operations": {
+    "pharmacogenomics.describe_gene_requirements": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Return pharmacogene-specific sample evidence requirements for PharmCAT named allele matching, outside calls, CYP2D6 SV/CNV handling, HLA typing, MT-RNR1, and G6PD chrX representation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "gene": {
+            "type": "string"
+          },
+          "refresh_sources": {
+            "type": "boolean",
+            "default": false
+          },
+          "pharmcat_genes_drugs_url": {
+            "type": "string",
+            "default": "https://pharmcat.clinpgx.org/Genes-Drugs/"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [],
+      "produces": [
+        "pharmacogene_requirement_catalog",
+        "pgx_sample_evidence_requirements",
+        "source_document_references",
+        "optional_live_source_snapshot"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "pharmcat_documentation_web_when_refresh_sources_true"
+      ],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.review_medication": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Review medication pharmacogenomic evidence by combining ClinPGx guideline/label context, FDA PGx table rows, PGxDB association evidence, Active Genome Index rsID lookup when selected, implemented marker-definition evidence when selected, evidence components, and target inventory.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "indication": {
+            "type": "string"
+          },
+          "dose": {
+            "type": "string"
+          },
+          "current_medications": {
+            "type": "string"
+          },
+          "allergies_or_contraindications": {
+            "type": "string"
+          },
+          "known_genotype": {
+            "type": "string"
+          },
+          "known_diplotype": {
+            "type": "string"
+          },
+          "known_phenotype": {
+            "type": "string"
+          },
+          "known_activity_score": {
+            "type": "string"
+          },
+          "known_pgx_source": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "include_active_genome_index": {
+            "type": "boolean",
+            "x_genomi_default": {
+              "rule": "true when explicit/private active genome context is available; otherwise false",
+              "source": "contextual_default",
+              "possible_values": [
+                false,
+                true
+              ]
+            }
+          },
+          "include_known_active_genome_indexes": {
+            "$ref": "#/schema_fragments/properties/include_known_active_genome_indexes"
+          },
+          "include_stored_research": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "include_record_research_payloads": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10
+          },
+          "clinpgx_api_url": {
+            "type": "string",
+            "default": "https://api.pharmgkb.org/v1"
+          },
+          "pgxdb_api_url": {
+            "type": "string",
+            "default": "https://pgx-db.org/rest-api"
+          },
+          "fda_biomarkers_url": {
+            "type": "string",
+            "default": "https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling"
+          },
+          "fda_associations_url": {
+            "type": "string",
+            "default": "https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "storage_db_pair",
+          "pgx_drug_gene_variant_target"
+        ]
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "selected_medication"
+      ],
+      "produces": [
+        "pharmacogenomic_medication_review",
+        "pgx_unanswered_answer_components",
+        "pgx_answer_support",
+        "pgx_evidence_components",
+        "pgx_target_inventory",
+        "pgx_evidence_matrix",
+        "pgx_evidence_envelope",
+        "pgx_evidence_traceability",
+        "pgx_evidence_state",
+        "candidate_matrix",
+        "evidence_view",
+        "decision_evidence",
+        "top_observed_candidate",
+        "sample_variant_evidence",
+        "sample_marker_definition_evidence",
+        "public_pgx_evidence",
+        "fda_pharmacogenomic_table_evidence",
+        "record_research_payloads"
+      ],
+      "context_optional": [],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "clinpgx_api",
+        "pgxdb_api",
+        "fda_web"
+      ],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "pharmacogenomics.preflight_pharmcat": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Inspect VCF structure for broad PharmCAT PGx calling without running PharmCAT or writing artifacts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "active_genome_index_or_source_param"
+      ],
+      "produces": [
+        "pharmcat_input_preflight",
+        "sample_column_summary",
+        "vcf_format_summary"
+      ],
+      "context_optional": [
+        "vcf"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.validate_outside_call_tsv": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Validate PharmCAT outside-call TSV structure and summarize selected diplotype, phenotype, or activity-score evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "outside_call_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "max_rows": {
+            "$ref": "#/schema_fragments/properties/limit_200"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "outside_call_file"
+      ],
+      "produces": [
+        "pharmcat_outside_call_validation",
+        "outside_call_gene_evidence"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.import_pharmcat_artifacts": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Import existing PharmCAT report JSON, calls-only TSV, matcher JSON, phenotype JSON, missing-position VCF, or output directory without executing PharmCAT.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "output_dir": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "base_filename": {
+            "type": "string"
+          },
+          "report_json": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "calls_only_tsv": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "match_json": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "phenotype_json": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "missing_pgx_positions_vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [],
+      "produces": [
+        "pharmcat_report",
+        "sample_diplotype_evidence",
+        "sample_phenotype_evidence",
+        "pgx_recommendation_artifacts",
+        "record_research_payloads"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.prepare_outside_call_tsv": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Prepare a PharmCAT outside-call TSV from supported specialized caller output such as OptiType HLA calls, StellarPGx CYP2D6 summaries, or generic gene/diplotype tables.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "caller_output_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "caller_format": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "pharmcat_tsv",
+              "generic_table",
+              "optitype",
+              "stellarpgx_summary"
+            ],
+            "default": "auto"
+          },
+          "output_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "max_rows": {
+            "$ref": "#/schema_fragments/properties/limit_200"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "specialized_caller_output_file"
+      ],
+      "produces": [
+        "pharmcat_outside_call_file",
+        "pharmcat_outside_call_validation",
+        "outside_call_gene_evidence"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.run_pharmcat": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Run a local PharmCAT installation for broad VCF-based PGx diplotype, phenotype, and recommendation artifacts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output_dir": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "base_filename": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "pipeline",
+              "jar"
+            ],
+            "default": "auto"
+          },
+          "pipeline_command": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "pharmcat_jar": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "java_command": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "sample_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "sample_metadata": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "outside_call_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "reporter_sources": {
+            "type": "string"
+          },
+          "research_mode": {
+            "type": "string"
+          },
+          "max_memory": {
+            "type": "string"
+          },
+          "max_concurrent_processes": {
+            "type": "integer"
+          },
+          "include_reporter_json": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "include_calls_only_tsv": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "probe_version": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "dry_run": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "default": 7200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "active_genome_index_or_source_param",
+        "local_pharmcat_installation"
+      ],
+      "produces": [
+        "pharmcat_report",
+        "sample_diplotype_evidence",
+        "sample_phenotype_evidence",
+        "pgx_recommendation_artifacts"
+      ],
+      "context_optional": [
+        "vcf"
+      ],
+      "optional_libraries": [
+        "pharmcat"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.check_pharmcat": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Check local PharmCAT availability and version provenance for broad VCF-based PGx calling.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "pipeline",
+              "jar"
+            ],
+            "default": "auto"
+          },
+          "pipeline_command": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "pharmcat_jar": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "java_command": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "default": 15
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [],
+      "produces": [
+        "pharmcat_availability",
+        "pharmcat_version_provenance"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.fetch_clinpgx": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Fetch traceable ClinPGx pharmacogenomic guideline, clinical annotation, and FDA label evidence for a selected drug, gene, or rsID; compact normalized records are returned by default.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "drug": {
+            "type": "string"
+          },
+          "gene": {
+            "type": "string"
+          },
+          "rsid": {
+            "type": "string"
+          },
+          "chemical_id": {
+            "type": "string"
+          },
+          "gene_id": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "string"
+          },
+          "guideline_source": {
+            "type": "string",
+            "enum": [
+              "all",
+              "cpic",
+              "dpwg",
+              "pro"
+            ],
+            "default": "all"
+          },
+          "include_clinical_annotations": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "include_labels": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "include_raw_records": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10
+          },
+          "api_url": {
+            "type": "string",
+            "default": "https://api.pharmgkb.org/v1"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "selected_public_pgx_target"
+      ],
+      "produces": [
+        "pharmacogenomic_guideline_evidence",
+        "drug_label_evidence",
+        "clinical_annotation_evidence",
+        "record_research_payloads"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "clinpgx_api"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.fetch_fda_labels": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Fetch targeted FDA pharmacogenomic biomarker-labeling and pharmacogenetic-association table rows from official FDA pages.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "drug": {
+            "type": "string"
+          },
+          "gene": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "all",
+              "biomarkers",
+              "associations"
+            ],
+            "default": "all"
+          },
+          "include_raw_rows": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "biomarkers_url": {
+            "type": "string",
+            "default": "https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling"
+          },
+          "associations_url": {
+            "type": "string",
+            "default": "https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "selected_public_pgx_target"
+      ],
+      "produces": [
+        "fda_pharmacogenomic_table_evidence",
+        "drug_label_biomarker_context",
+        "fda_pharmacogenetic_association_evidence",
+        "record_research_payloads"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "fda_web"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "pharmacogenomics.fetch_pgxdb": {
+      "capability": "pharmacogenomics",
+      "namespace": "pharmacogenomics",
+      "description": "Fetch targeted PGxDB pharmacogenomic evidence for a selected drug, ATC code, DrugBank ID, rsID, variant marker, or gene.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "variant_marker": {
+            "type": "string"
+          },
+          "include_raw_records": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "api_url": {
+            "type": "string",
+            "default": "https://pgx-db.org/rest-api"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "pgx_drug_gene_variant_target"
+        ]
+      },
+      "skill": "skills/pharmacogenomics/SKILL.md",
+      "area": "pharmacogenomics",
+      "requires": [
+        "selected_public_pgx_target"
+      ],
+      "produces": [
+        "pharmacogenomic_evidence",
+        "record_research_payloads"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "pgxdb_api"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

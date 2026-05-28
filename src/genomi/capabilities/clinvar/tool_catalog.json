@@ -1,0 +1,139 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "clinvar": {
+      "title": "ClinVar Evidence",
+      "start_when": "The task needs exact ClinVar/sample matching or ClinVar candidate triage from a selected Active Genome Index.",
+      "skill_documents": [
+        "skills/clinvar/SKILL.md"
+      ],
+      "entry_operations": [
+        "clinvar.scan_candidates"
+      ],
+      "optional_libraries": [
+        "clinvar-grch38",
+        "clinvar-grch37"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "operations": [
+        "clinvar.match_variants",
+        "clinvar.scan_candidates"
+      ]
+    }
+  },
+  "operations": {
+    "clinvar.match_variants": {
+      "capability": "clinvar",
+      "namespace": "clinvar",
+      "description": "Materialize exact ClinVar matches for comparable Active Genome Index variants using the installed build-specific ClinVar library.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_auto_contextual"
+          },
+          "force": {
+            "$ref": "#/schema_fragments/properties/force"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/clinvar/SKILL.md",
+      "area": "clinvar",
+      "requires": [
+        "active_genome_index_or_source_param",
+        "clinvar-grch38_or_clinvar-grch37"
+      ],
+      "produces": [
+        "clinvar_matches"
+      ],
+      "context_optional": [
+        "vcf",
+        "db",
+        "genome_build"
+      ],
+      "optional_libraries": [
+        "clinvar-grch38",
+        "clinvar-grch37"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "clinvar.scan_candidates": {
+      "capability": "clinvar",
+      "namespace": "clinvar",
+      "description": "Build a deterministic candidate inventory from exact ClinVar matches, materializing those matches from the Active Genome Index when needed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "force": {
+            "$ref": "#/schema_fragments/properties/force"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/clinvar/SKILL.md",
+      "area": "clinvar",
+      "requires": [
+        "active_genome_index_or_matches_param",
+        "clinvar-grch38_or_clinvar-grch37_when_matches_need_materialization"
+      ],
+      "produces": [
+        "candidate_inventory",
+        "evidence_view",
+        "decision_evidence",
+        "candidate_matrix",
+        "rankings",
+        "top_observed_candidate"
+      ],
+      "context_optional": [
+        "matches",
+        "db",
+        "genome_build"
+      ],
+      "optional_libraries": [
+        "clinvar-grch38",
+        "clinvar-grch37"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

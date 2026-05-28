@@ -1,0 +1,270 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "functional-genomics": {
+      "title": "Functional Genomics Perturbation Evidence",
+      "start_when": "CRISPR, RNAi, dependency, viability, resistance, and perturbation experiment evidence capabilities.",
+      "skill_documents": [
+        "skills/functional-genomics/SKILL.md"
+      ],
+      "entry_operations": [
+        "functional_genomics.compare_gene_perturbation"
+      ],
+      "operations": [
+        "functional_genomics.compare_gene_perturbation",
+        "functional_genomics.import_perturbation_table",
+        "functional_genomics.query_geo",
+        "functional_genomics.retrieve_perturbation_records"
+      ]
+    }
+  },
+  "operations": {
+    "functional_genomics.retrieve_perturbation_records": {
+      "capability": "functional-genomics",
+      "namespace": "functional_genomics",
+      "description": "Retrieve native public functional-genomics perturbation records from BioGRID ORCS and DepMap for candidate genes and declared experimental context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_100"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "context",
+          "genes"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "functional_perturbation_context",
+          "functional_native_sources"
+        ]
+      },
+      "skill": "skills/functional-genomics/SKILL.md",
+      "area": "functional_genomics",
+      "requires": [
+        "candidate_genes",
+        "perturbation_context"
+      ],
+      "produces": [
+        "source_records",
+        "direct_perturbation_source_records",
+        "records_by_gene",
+        "coverage_state",
+        "source_coverage"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "biogrid_orcs_api",
+        "depmap_public_download"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "functional_genomics.query_geo": {
+      "capability": "functional-genomics",
+      "namespace": "functional_genomics",
+      "description": "Discover public study tables from NCBI GEO when curated perturbation sources do not cover a requested functional-genomics context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "accession": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "ncbi_api_key": {
+            "type": "string"
+          },
+          "ncbi_email": {
+            "type": "string"
+          },
+          "ncbi_tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "functional_perturbation_context"
+        ]
+      },
+      "skill": "skills/functional-genomics/SKILL.md",
+      "area": "functional_genomics",
+      "requires": [
+        "perturbation_context"
+      ],
+      "produces": [
+        "geo_hits",
+        "download_candidates",
+        "source_records",
+        "direct_perturbation_source_records",
+        "records_by_gene",
+        "coverage_state",
+        "source_coverage"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "ncbi_geo_eutilities",
+        "ncbi_geo_ftp"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "functional_genomics.import_perturbation_table": {
+      "capability": "functional-genomics",
+      "namespace": "functional_genomics",
+      "description": "Extract verified perturbation experiment source records from a local CSV or TSV result table.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "column_map": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "delimiter": {
+            "type": "string"
+          },
+          "source_title": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 500
+          }
+        },
+        "required": [
+          "table",
+          "context",
+          "genes"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "functional_perturbation_context"
+        ]
+      },
+      "skill": "skills/functional-genomics/SKILL.md",
+      "area": "functional_genomics",
+      "requires": [
+        "local_perturbation_result_table",
+        "candidate_genes",
+        "perturbation_context"
+      ],
+      "produces": [
+        "source_records",
+        "verified_source_records",
+        "direct_perturbation_source_records",
+        "source_gaps",
+        "table_evidence_records"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "functional_genomics.compare_gene_perturbation": {
+      "capability": "functional-genomics",
+      "namespace": "functional_genomics",
+      "description": "Compare candidate genes by verified functional-genomics perturbation experiment evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "search_stored_research": {
+            "$ref": "#/schema_fragments/properties/search_stored_research"
+          },
+          "retrieve_native": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "context",
+          "genes"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "source_records",
+          "functional_perturbation_context",
+          "functional_native_sources"
+        ]
+      },
+      "skill": "skills/functional-genomics/SKILL.md",
+      "area": "functional_genomics",
+      "requires": [
+        "candidate_genes",
+        "perturbation_context"
+      ],
+      "produces": [
+        "native_retrieval",
+        "source_acquisition",
+        "evidence_view",
+        "coverage_state",
+        "source_local_ordering",
+        "source_coverage",
+        "decision_evidence",
+        "candidate_matrix",
+        "rankings",
+        "top_observed_candidate"
+      ],
+      "context_optional": [
+        "db"
+      ],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "biogrid_orcs_api",
+        "depmap_public_download",
+        "ncbi_geo_eutilities",
+        "ncbi_geo_ftp"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

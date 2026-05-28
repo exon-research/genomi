@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genomi"
+version = "0.1.0"
+description = "Agent-facing genomics runtime for private genome source analysis and evidence-grounded DNA research."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+  { name = "Exon Research" }
+]
+dependencies = [
+  "biopython>=1.87",
+  "google-genai>=2.0.1",
+  "numpy>=1.26",
+  "openpyxl>=3.1.5",
+  # htslib bindings: parse_source writes a bgzip-compressed canonical VCF
+  # per Active Genome Index and downstream capabilities read it via
+  # BGZFile virtual-offset random access. Never reopen the user's intake.
+  "pysam>=0.22",
+  # GRCh37 <-> GRCh38 coordinate liftover via UCSC chain files. Pure-Python,
+  # consumed by genomi.runtime.liftover and any capability that has to align
+  # personal-genome and public-resource coordinates across builds.
+  "pyliftover>=0.4",
+  # Intel ISA-L gzip acceleration — 3-5x faster decompression for ClinVar/
+  # population VCF imports vs stdlib gzip. Falls back to subprocess gzip or
+  # stdlib gzip when unavailable.
+  "isal>=1.1",
+]
+
+[project.urls]
+Homepage = "https://www.genomiagent.com/"
+Repository = "https://github.com/exon-research/genomi.git"
+
+[project.scripts]
+genomi = "genomi.interfaces.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"genomi" = ["assets/*.png"]
+"genomi.operations" = ["catalog_base.json"]
+"genomi.runtime" = ["tool_catalog.json", "host_response_profiles.json"]
+"genomi.active_genome_index" = ["tool_catalog.json", "panels/*.json"]
+"genomi.capabilities.analytical_grounding" = ["tool_catalog.json"]
+"genomi.capabilities.ancestry" = ["tool_catalog.json"]
+"genomi.capabilities.clinvar" = ["tool_catalog.json"]
+"genomi.capabilities.functional_genomics" = ["tool_catalog.json"]
+"genomi.capabilities.gwas" = ["tool_catalog.json"]
+"genomi.capabilities.journal" = ["tool_catalog.json"]
+"genomi.capabilities.pharmacogenomics" = ["tool_catalog.json", "data/*.json"]
+"genomi.capabilities.phenotype" = ["tool_catalog.json"]
+"genomi.capabilities.prs" = ["tool_catalog.json"]
+"genomi.capabilities.report" = ["tool_catalog.json", "policies/*.json"]
+"genomi.capabilities.research" = ["tool_catalog.json"]
+"genomi.capabilities.sequence" = ["tool_catalog.json"]
+"genomi.capabilities.variant" = ["tool_catalog.json"]

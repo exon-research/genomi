@@ -1,0 +1,57 @@
+# Genomi
+
+Genomi is an open-source, local-first genomics runtime for AI agents.
+It turns private genome sources into Active Genome Index records and exposes deterministic evidence and journal tooling through CLI/MCP.
+
+Official URL: https://www.genomiagent.com/
+Repo: git@github.com:exon-research/genomi.git
+
+## Core rules
+
+- Start with AGENTS.md unless the host agent has an automatic project file loader.
+- Base tools (genomi.* and journal.*) appear in MCP tools/list directly. Every other capability tool is reached via the genomi.invoke dispatcher after reading the relevant skills/<capability>/SKILL.md.
+- Treat genome source files as optional private context. Public-only genomic questions are valid.
+- After genomi.parse_source, use the Active Genome Index for normal future inquiries.
+- Use host_response_profiles for optional response-depth preferences; otherwise use the default without asking a standalone style question.
+- Derive confidence dynamically from Genomi evidence quality; confidence is not a response-style profile or static default.
+- Use variant.resolve as the umbrella deterministic lookup for rsIDs, alleles, loci, regions, and mixed variant text.
+
+## Documentation map
+
+### Core entry points
+
+- [AGENTS.md](https://raw.githubusercontent.com/exon-research/genomi/main/AGENTS.md): Start here for agent install, read order, runtime rules, and common starts.
+- [INSTALL_FOR_AGENTS.md](https://raw.githubusercontent.com/exon-research/genomi/main/INSTALL_FOR_AGENTS.md): Step-by-step install, verification, MCP setup, and first-question flow.
+- [SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/SKILL.md): Top-level Genomi skill contract and runtime axes.
+- [CLAUDE.md](https://raw.githubusercontent.com/exon-research/genomi/main/CLAUDE.md): Short architecture reference for Claude Code and compatible agents.
+- [README.md](https://raw.githubusercontent.com/exon-research/genomi/main/README.md): Project overview, interfaces, architecture, examples, and verification.
+### Conventions
+
+- [skills/conventions/context-routing.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/conventions/context-routing.md): Active Genome Index home, users, scoped access, and Active Genome Index selection rules.
+- [skills/conventions/evidence-quality.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/conventions/evidence-quality.md): Evidence classes, source precedence, and citation discipline.
+- [skills/_output-rules.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/_output-rules.md): User-facing answer shape and safety language.
+### Structured context
+
+- [src/genomi/runtime/host_response_profiles.json](https://raw.githubusercontent.com/exon-research/genomi/main/src/genomi/runtime/host_response_profiles.json): Response-depth profile metadata for user-facing answer shape.
+### Skills
+
+- [skills/genomic-inquiry/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/genomic-inquiry/SKILL.md): Default natural-language DNA entrypoint.
+- [skills/active-genome-index/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/active-genome-index/SKILL.md): Genome source selection, parsing, and Active Genome Index creation.
+- [skills/variant-evidence/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/variant-evidence/SKILL.md): Variant, rsID, allele, region, support, and callability questions.
+- [skills/clinvar/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/clinvar/SKILL.md): ClinVar matching, candidate inventory, and clinical-significance triage.
+- [skills/source-research/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/source-research/SKILL.md): Journal source-review sub-skill for reviewed finding write-back.
+- [skills/rare-disease-cancer/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/rare-disease-cancer/SKILL.md): Rare disease, hereditary cancer, and cancer risk source investigation.
+- [skills/drug-targets/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/drug-targets/SKILL.md): Drug-target and causal pharma gene prioritization.
+- [skills/sequence/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/sequence/SKILL.md): Supplied-sequence translation, ORF, restriction, Kozak, and primer utilities.
+- [skills/pharmacogenomics/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/pharmacogenomics/SKILL.md): Drug response, PharmCAT, ClinPGx, PGxDB, CPIC, DPWG, and FDA PGx evidence.
+- [skills/gwas-catalog/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/gwas-catalog/SKILL.md): GWAS Catalog association-record retrieval and source-field comparison.
+- [skills/functional-genomics/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/functional-genomics/SKILL.md): Perturbation, dependency, viability, resistance, and screen evidence.
+- [skills/ancestry/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/ancestry/SKILL.md): 1000 Genomes GRCh38 PCA projection and qualitative reference-panel similarity.
+- [skills/prs/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/prs/SKILL.md): PGS Catalog score discovery, local score import, overlap QC, and raw PRS calculation.
+- [skills/nutrigenomics/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/nutrigenomics/SKILL.md): Declared nutrient-metabolism, food-tolerance, and taste-perception domains with curated single-marker records.
+- [skills/journal/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/journal/SKILL.md): Journal and research memory entries, evidence trace links, and reviewed findings.
+- [skills/decode/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/main/skills/decode/SKILL.md): Heavy-kicker for /genomi decode: render the consolidated Genomi Dashboard HTML artifact from gathered panel evidence.
+
+## Single-fetch option
+
+- llms-full.txt contains this map plus the inlined core docs and skills.

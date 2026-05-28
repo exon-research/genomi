@@ -1,0 +1,19 @@
+##fileformat=VCFv4.2
+##fileDate=April-25-2026
+##source=UnitTest
+##dataSourceType=WGS
+##reference=GRCh38.p13
+##contig=<ID=1,length=248956422>
+##FILTER=<ID=PASS,Description="All filters passed">
+##FILTER=<ID=FAIL,Description="Did not meet quality or depth criteria">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=MIN_DP,Number=1,Type=Integer,Description="Minimum depth">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SAMPLE1
+1	10001	.	T	.	130.72	PASS	END=10249	GT:DP:GQ:MIN_DP:AD	0/0:107:0:31:26386
+1	10250	rs199706086	A	C	123.38	PASS	.	GT:DP:GQ:AD	0/1:50:124:24,26
+1	10251	.	C	.	114.81	PASS	END=10256	GT:DP:GQ:MIN_DP:AD	0/0:51:0:34:296
+1	10257	rs111200574	A	C	53.05	PASS	.	GT:DP:GQ:AD	0/1:60:86:42,18
+1	10595	.	T	.	223.59	FAIL	.	GT:DP:GQ:AD	0/0:7:0:7

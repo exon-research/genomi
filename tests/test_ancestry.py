@@ -1,0 +1,364 @@
+from __future__ import annotations
+
+import csv
+import json
+import os
+import tempfile
+import unittest
+from collections.abc import Iterable
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest import mock
+
+import numpy as np
+
+from genomi.active_genome_index.active_genome_index import create_active_genome_index, default_active_genome_index_path
+from genomi.capabilities.ancestry import reference_panels
+from genomi.operations import OperationError, call_operation, list_operations
+from genomi.runtime import context as runtime_context
+
+
+def _write_synthetic_panel(
+    output_dir: Path,
+    *,
+    samples: list[dict[str, object]],
+    markers: list[dict[str, object]],
+    genotype_rows: list[list[float | None]],
+    component_count: int,
+    genome_build: str = "GRCh38",
+    panel_id: str | None = None,
+    panel_library: str | None = None,
+    panel_title: str | None = None,
+) -> None:
+    """Write a panel artifact for projection tests.
+
+    Production builds live in the genomi-ancestry-panel repo; this is a
+    test-only fixture that produces the same on-disk shape so the projection
+    code path under test sees a real artifact.
+    """
+    matrix = np.asarray(
+        [[np.nan if value is None else float(value) for value in row] for row in genotype_rows],
+        dtype=float,
+    )
+    means = np.nanmean(matrix, axis=1)
+    scales = np.nanstd(matrix, axis=1, ddof=0)
+    scales[~np.isfinite(scales) | (scales <= 0)] = 1.0
+    imputed = np.where(np.isnan(matrix), means[:, None], matrix)
+    standardized = ((imputed - means[:, None]) / scales[:, None]).T
+    k = max(1, min(int(component_count), standardized.shape[0], standardized.shape[1]))
+    u, singular, vt = np.linalg.svd(standardized, full_matrices=False)
+    scores = u[:, :k] * singular[:k]
+    loadings = vt[:k, :].T
+    component_names = [f"PC{index + 1}" for index in range(k)]
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def write_tsv(name: str, fieldnames: list[str], rows: Iterable[dict[str, object]]) -> None:
+        with (output_dir / name).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t", extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+
+    marker_rows = [
+        {
+            **marker,
+            "marker_id": marker.get("marker_id") or f"{marker['chrom']}:{marker['pos']}:{marker['ref']}:{marker['alt']}",
+            "mean": f"{float(means[index]):.10g}",
+            "scale": f"{float(scales[index]):.10g}",
+        }
+        for index, marker in enumerate(markers)
+    ]
+    write_tsv(reference_panels.SAMPLES_NAME, ["sample_id", "population", "superpopulation", "sex"], samples)
+    write_tsv(reference_panels.MARKERS_NAME, ["marker_id", "chrom", "pos", "ref", "alt", "mean", "scale"], marker_rows)
+    write_tsv(
+        reference_panels.LOADINGS_NAME,
+        ["marker_id", *component_names],
+        [
+            {
+                "marker_id": marker_rows[index]["marker_id"],
+                **{name: f"{float(loadings[index, pc_index]):.10g}" for pc_index, name in enumerate(component_names)},
+            }
+            for index in range(len(marker_rows))
+        ],
+    )
+    write_tsv(
+        reference_panels.REFERENCE_SCORES_NAME,
+        ["sample_id", "population", "superpopulation", *component_names],
+        [
+            {
+                "sample_id": sample["sample_id"],
+                "population": sample.get("population", ""),
+                "superpopulation": sample.get("superpopulation", ""),
+                **{name: f"{float(scores[index, pc_index]):.10g}" for pc_index, name in enumerate(component_names)},
+            }
+            for index, sample in enumerate(samples)
+        ],
+    )
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    (output_dir / reference_panels.PANEL_STATS_NAME).write_text(
+        json.dumps(
+            {
+                "schema": "genomi-ancestry-panel-stats-v1",
+                "sample_count": len(samples),
+                "marker_count": len(marker_rows),
+                "component_count": len(component_names),
+                "target_marker_count": len(marker_rows),
+                "built_at": now,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / reference_panels.MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "schema": "genomi-ancestry-reference-panel-v1",
+                "panel_id": panel_id or reference_panels.PANEL_ID,
+                "title": panel_title or reference_panels.PANEL_TITLE,
+                "library": panel_library or reference_panels.PANEL_LIBRARY,
+                "genome_build": genome_build,
+                "sample_count": len(samples),
+                "marker_count": len(marker_rows),
+                "component_count": len(component_names),
+                "built_at": now,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+class AncestryCapabilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._home_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._home_tmp.cleanup)
+        self.genomi_home = Path(self._home_tmp.name) / "genomi-home"
+        self._env = mock.patch.dict(
+            os.environ,
+            {
+                "GENOMI_HOME": str(self.genomi_home),
+                "GENOMI_CONTEXT": "",
+                "GENOMI_SESSION_ID": "",
+                "GENOMI_MCP_BACKGROUND": "0",
+                **{name: "" for name in runtime_context.AGENT_SESSION_ENVS},
+            },
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
+    def test_public_metadata_tools_do_not_require_personal_approval(self) -> None:
+        panels = call_operation("ancestry.list_reference_panels")
+        source_context = call_operation("ancestry.build_source_context")
+
+        self.assertEqual(panels["status"], "completed")
+        self.assertFalse(panels["panels"][0]["installed"])
+        self.assertIn("internationalgenome.org", panels["panels"][0]["source_urls"]["igsr_collection"])
+        self.assertEqual(source_context["status"], "completed")
+        self.assertIn("reference-panel similarity", " ".join(source_context["limitations"]))
+
+    def test_private_tools_require_approval_for_existing_active_context(self) -> None:
+        vcf = Path(self._home_tmp.name) / "sample.vcf"
+        runtime_context.set_active_genome_index(
+            vcf,
+            status="parsed",
+            active_genome_index_path=vcf.with_suffix(".sqlite"),
+            genome_build="GRCh38",
+        )
+
+        with self.assertRaises(OperationError) as raised:
+            call_operation("ancestry.estimate_population_context")
+        self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
+
+    def test_private_tools_return_missing_library_after_supplied_source_approval(self) -> None:
+        result = call_operation("ancestry.estimate_population_context", {"source": "sample.vcf"})
+
+        self.assertEqual(result["status"], "requires_library_install")
+        self.assertEqual(result["missing_library"]["library"], "ancestry-1000g-30x-grch38")
+        self.assertIn("--libraries ancestry-1000g-30x-grch38", result["missing_library"]["install_command"])
+        defaults = {item["parameter"]: item for item in result["defaults_applied"]}
+        self.assertEqual(defaults["genome_build"]["value"], "GRCh38")
+        self.assertEqual(defaults["nearest_reference_count"]["value"], 10)
+
+    def test_discovery_registers_all_ancestry_handlers(self) -> None:
+        tools = {tool["name"]: tool for tool in list_operations(capability="ancestry")}
+
+        self.assertEqual(
+            set(tools),
+            {
+                "ancestry.list_reference_panels",
+                "ancestry.build_source_context",
+                "ancestry.check_sample_overlap",
+                "ancestry.project_pca",
+                "ancestry.estimate_population_context",
+            },
+        )
+        self.assertEqual(tools["ancestry.estimate_population_context"]["annotations"]["discoveryRole"], "entry_tool")
+        self.assertEqual(
+            tools["ancestry.check_sample_overlap"]["annotations"]["dependencyContract"]["installedLibraries"],
+            ["ancestry-1000g-30x-grch38"],
+        )
+
+    def test_synthetic_panel_overlap_projection_and_group_ordering(self) -> None:
+        markers = self._install_synthetic_panel(marker_count=8)
+        vcf = self._write_indexed_vcf("sample_full.vcf", markers, usable_count=8)
+
+        with self._tiny_thresholds():
+            result = call_operation("ancestry.estimate_population_context", {"source": str(vcf)})
+
+        self.assertEqual(result["schema"], "genomi-ancestry-population-context-v1")
+        self.assertEqual(result["status"], "completed")
+        self.assertTrue(result["personal_context"]["uses_personal_dna"])
+        self.assertEqual(result["sample_qc"]["usable_marker_count"], 8)
+        self.assertEqual(result["sample_qc"]["missing_marker_count"], 0)
+        self.assertEqual(result["sample_qc"]["marker_overlap_quality"], "high")
+        self.assertIsNotNone(result["pca_projection"])
+        nearest_samples = result["pca_projection"]["nearest_reference_samples"]
+        self.assertEqual(nearest_samples[0]["superpopulation"], "EUR")
+        nearest_labels = [group["label"] for group in result["nearest_reference_groups"][:3]]
+        self.assertIn("CEU", nearest_labels)
+        self.assertIn("EUR", nearest_labels)
+        self.assertIn("reference cluster", result["interpretation"]["summary"])
+        self.assertNotIn("ethnicity", result["interpretation"]["summary"].lower())
+        self.assertNotIn("determine origin", result["interpretation"]["summary"].lower())
+
+    def test_overlap_thresholds_block_low_overlap_projection(self) -> None:
+        # 1 of 8 panel markers usable = 12.5% — below LOW_OVERLAP_FRACTION (20%),
+        # so the projection is blocked.
+        markers = self._install_synthetic_panel(marker_count=8)
+        vcf = self._write_indexed_vcf("sample_low.vcf", markers, usable_count=1)
+
+        with self._tiny_thresholds():
+            result = call_operation("ancestry.project_pca", {"source": str(vcf)})
+
+        self.assertEqual(result["status"], "low_overlap")
+        self.assertFalse(result["sample_qc"]["projection_allowed"])
+        self.assertIsNone(result["pca_projection"])
+        self.assertEqual(result["sample_qc"]["usable_marker_count"], 1)
+        self.assertEqual(result["sample_qc"]["missing_marker_count"], 7)
+        self.assertEqual(result["sample_qc"]["marker_overlap_quality"], "insufficient")
+
+    def test_grch37_sample_without_grch37_panel_prompts_install(self) -> None:
+        # Only the GRCh38 synthetic panel is installed. A GRCh37 sample must
+        # surface the GRCh37-panel install prompt rather than crashing or
+        # silently using the wrong panel.
+        markers = self._install_synthetic_panel(marker_count=8)
+        vcf = self._write_indexed_vcf("sample_grch37.vcf", markers, usable_count=8)
+        runtime_context.set_active_genome_index(
+            vcf,
+            status="parsed",
+            active_genome_index_path=default_active_genome_index_path(vcf),
+            genome_build="GRCh37",
+        )
+        runtime_context.approve_agi_access(reason="test approved Active Genome Index access")
+
+        with self._tiny_thresholds():
+            result = call_operation("ancestry.check_sample_overlap")
+
+        self.assertEqual(result["status"], "requires_library_install")
+        self.assertEqual(result["missing_library"]["library"], "ancestry-1000g-30x-grch37")
+        # The install command includes the prereqs (GRCh38 panel + liftover-chains)
+        # alongside the GRCh37 panel so one shell invocation produces everything
+        # needed for the local lift.
+        install_command = result["missing_library"]["install_command"]
+        self.assertIn("ancestry-1000g-30x-grch37", install_command)
+        self.assertIn("liftover-chains", install_command)
+        defaults = {item["parameter"]: item for item in result["defaults_applied"]}
+        self.assertEqual(defaults["genome_build"]["value"], "GRCh37")
+        self.assertEqual(result["reference_panel"]["panel_id"], "1000g_30x_grch37")
+        self.assertEqual(result["reference_panel"]["genome_build"], "GRCh37")
+
+    def test_grch37_sample_with_grch37_panel_runs_overlap(self) -> None:
+        # Install a synthetic GRCh37 panel and verify the GRCh37 sample is
+        # actually projected against it, with the envelope and sample_qc
+        # pointing at the GRCh37 panel id.
+        markers = self._install_synthetic_panel(marker_count=8, genome_build="GRCh37")
+        vcf = self._write_indexed_vcf("sample_grch37.vcf", markers, usable_count=8)
+        runtime_context.set_active_genome_index(
+            vcf,
+            status="parsed",
+            active_genome_index_path=default_active_genome_index_path(vcf),
+            genome_build="GRCh37",
+        )
+        runtime_context.approve_agi_access(reason="test approved Active Genome Index access")
+
+        with self._tiny_thresholds():
+            result = call_operation("ancestry.check_sample_overlap")
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["sample_qc"]["genome_build"], "GRCh37")
+        self.assertEqual(result["sample_qc"]["usable_marker_count"], 8)
+        self.assertEqual(result["sample_qc"]["marker_overlap_quality"], "high")
+        self.assertEqual(result["reference_panel"]["panel_id"], "1000g_30x_grch37")
+        self.assertEqual(result["reference_panel"]["genome_build"], "GRCh37")
+        self.assertEqual(result["reference_panel"]["library"], "ancestry-1000g-30x-grch37")
+
+    def _install_synthetic_panel(
+        self, *, marker_count: int, genome_build: str = "GRCh38"
+    ) -> list[dict[str, object]]:
+        samples = [
+            {"sample_id": "EUR1", "population": "CEU", "superpopulation": "EUR", "sex": ""},
+            {"sample_id": "EUR2", "population": "CEU", "superpopulation": "EUR", "sex": ""},
+            {"sample_id": "AFR1", "population": "YRI", "superpopulation": "AFR", "sex": ""},
+            {"sample_id": "AFR2", "population": "YRI", "superpopulation": "AFR", "sex": ""},
+        ]
+        markers = [
+            {"marker_id": f"m{index}", "chrom": "1", "pos": 1000 + index * 1000, "ref": "A", "alt": "C"}
+            for index in range(marker_count)
+        ]
+        genotype_rows = [[2.0, 2.0, 0.0, 0.0] for _ in markers]
+        from genomi.capabilities.ancestry import source_context as ancestry_source_context
+
+        _write_synthetic_panel(
+            reference_panels.panel_dir(genome_build=genome_build),
+            samples=samples,
+            markers=markers,
+            genotype_rows=genotype_rows,
+            component_count=2,
+            genome_build=genome_build,
+            panel_id=ancestry_source_context.panel_id_for_build(genome_build),
+            panel_library=ancestry_source_context.panel_library_for_build(genome_build),
+        )
+        return markers
+
+    def _write_indexed_vcf(self, name: str, markers: list[dict[str, object]], *, usable_count: int) -> Path:
+        vcf = Path(self._home_tmp.name) / name
+        lines = [
+            "##fileformat=VCFv4.2",
+            '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+        ]
+        for marker in markers[:usable_count]:
+            lines.append(
+                "\t".join(
+                    [
+                        str(marker["chrom"]),
+                        str(marker["pos"]),
+                        str(marker["marker_id"]),
+                        str(marker["ref"]),
+                        str(marker["alt"]),
+                        ".",
+                        "PASS",
+                        ".",
+                        "GT",
+                        "1/1",
+                    ]
+                )
+            )
+        vcf.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        create_active_genome_index(vcf, parallel_workers=1, reuse_existing=False)
+        return vcf
+
+    def _tiny_thresholds(self):
+        # Fraction-of-panel grading is panel-size-agnostic, so no patching is
+        # needed for the 8-marker synthetic panel. Kept as a no-op context
+        # manager to preserve the existing call sites in this file.
+        from contextlib import nullcontext
+        return nullcontext()
+
+
+if __name__ == "__main__":
+    unittest.main()

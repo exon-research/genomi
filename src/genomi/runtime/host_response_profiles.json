@@ -1,0 +1,26 @@
+{
+  "schema": "genomi-host-response-profiles-v1",
+  "default_profile": "eli5",
+  "profiles": [
+    {
+      "id": "eli5",
+      "label": "Explain to me like I am 5",
+      "guidance": "Teach the user. Define every genetics term the first time it appears, use everyday analogies, walk through the reasoning step by step, and tie the result back to a concrete real-world implication. Length follows the teaching need, not a brevity target — be thorough and educational, not terse. Skip lab-grade tables and provenance trees unless asked."
+    },
+    {
+      "id": "patient",
+      "label": "General patient-friendly",
+      "guidance": "Lead with a concise answer, define genetics terms the first time they appear, and include technical identifiers only when they matter."
+    },
+    {
+      "id": "literate",
+      "label": "Genetics-literate",
+      "guidance": "Include genes, variants, zygosity or call support, and evidence classes with compact explanations."
+    },
+    {
+      "id": "expert",
+      "label": "Expert / evidence-heavy",
+      "guidance": "Include methods, quality checks, source provenance, caveats, and structured evidence details when useful."
+    }
+  ]
+}

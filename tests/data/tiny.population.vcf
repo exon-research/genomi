@@ -1,0 +1,6 @@
+##fileformat=VCFv4.2
+##source=TinyPopulationFixture
+##fileDate=20260428
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+1	10250	.	A	C	.	PASS	AC=20;AN=200;AF=0.1;nhomalt=1
+1	10257	.	A	C,G	.	PASS	AC=10,4;AN=200;AF=0.05,0.02;nhomalt=0,0

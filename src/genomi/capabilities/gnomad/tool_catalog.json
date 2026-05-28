@@ -1,0 +1,82 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "gnomad": {
+      "title": "Population Frequency (gnomAD)",
+      "start_when": "The agent needs reusable public population allele frequency for a specific variant from gnomAD (allele frequencies, MAF, population stratification).",
+      "skill_documents": [
+        "skills/gnomad/SKILL.md"
+      ],
+      "entry_operations": [
+        "gnomad.fetch_population_frequency"
+      ],
+      "operations": [
+        "gnomad.fetch_population_frequency"
+      ]
+    }
+  },
+  "operations": {
+    "gnomad.fetch_population_frequency": {
+      "capability": "gnomad",
+      "namespace": "gnomad",
+      "description": "Fetch reusable gnomAD public population frequency for one allele and write it into evidence storage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sync_shared": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "dataset": {
+            "type": "string",
+            "default": "gnomad_r4"
+          },
+          "genome_build": {
+            "type": "string",
+            "default": "GRCh38"
+          },
+          "api_url": {
+            "type": "string",
+            "default": "https://gnomad.broadinstitute.org/api"
+          },
+          "force": {
+            "$ref": "#/schema_fragments/properties/force"
+          }
+        },
+        "required": [
+          "chrom",
+          "pos",
+          "ref",
+          "alt"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "storage_db_pair",
+          "variant_locus"
+        ]
+      },
+      "skill": "skills/gnomad/SKILL.md",
+      "area": "gnomad",
+      "requires": [
+        "allele"
+      ],
+      "produces": [
+        "population_frequency"
+      ],
+      "context_optional": [
+        "db",
+        "shared_db",
+        "genome_build"
+      ],
+      "privacy_scope": "public_variant_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [
+        "gnomad_api"
+      ],
+      "data_access": [
+        "selected_public_variant_targets"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

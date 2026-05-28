@@ -1,0 +1,172 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "nutrigenomics": {
+      "title": "Nutrigenomic Single-Marker Evidence",
+      "start_when": "The user asks about how a germline variant affects a declared nutrient-metabolism or food-tolerance domain (folate, vitamin D, iron, lactose, lipid response to diet, obesity predisposition).",
+      "skill_documents": [
+        "skills/nutrigenomics/SKILL.md"
+      ],
+      "entry_operations": [
+        "nutrigenomics.list_domains",
+        "nutrigenomics.retrieve_domain_markers"
+      ],
+      "operations": [
+        "nutrigenomics.list_domains",
+        "nutrigenomics.retrieve_domain_markers",
+        "nutrigenomics.retrieve_variant_records",
+        "nutrigenomics.build_source_context"
+      ]
+    }
+  },
+  "operations": {
+    "nutrigenomics.list_domains": {
+      "capability": "nutrigenomics",
+      "namespace": "nutrigenomics",
+      "description": "List declared nutrigenomic domains with evidence-tier coverage and explicit out-of-scope-by-construction notes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/nutrigenomics/SKILL.md",
+      "area": "nutrigenomics",
+      "requires": [],
+      "produces": [
+        "nutrigenomic_domain_catalog",
+        "out_of_scope_by_construction",
+        "boundary_note"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "nutrigenomics.retrieve_domain_markers": {
+      "capability": "nutrigenomics",
+      "namespace": "nutrigenomics",
+      "description": "Retrieve curated single-marker records for a declared nutrigenomic domain, filtered by minimum evidence tier.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "string"
+          },
+          "min_evidence_tier": {
+            "type": "string",
+            "enum": [
+              "established",
+              "probable",
+              "emerging"
+            ],
+            "default": "established"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "domain_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/nutrigenomics/SKILL.md",
+      "area": "nutrigenomics",
+      "requires": [
+        "declared_nutrigenomic_domain_id"
+      ],
+      "produces": [
+        "nutrigenomic_marker_records",
+        "out_of_scope_claims",
+        "evidence_tier_per_record",
+        "downstream_traits_with_gwas",
+        "boundary_note",
+        "composition_hints"
+      ],
+      "context_optional": [
+        "min_evidence_tier"
+      ],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "nutrigenomics.retrieve_variant_records": {
+      "capability": "nutrigenomics",
+      "namespace": "nutrigenomics",
+      "description": "Retrieve any nutrigenomic catalogue records referencing a specific rsID.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "rsid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rsid"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/nutrigenomics/SKILL.md",
+      "area": "nutrigenomics",
+      "requires": [
+        "rsid"
+      ],
+      "produces": [
+        "nutrigenomic_marker_records",
+        "out_of_scope_claims",
+        "consulted_domains",
+        "boundary_note"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "nutrigenomics.build_source_context": {
+      "capability": "nutrigenomics",
+      "namespace": "nutrigenomics",
+      "description": "Explain nutrigenomic catalogue provenance, domain definitions, evidence-tier meanings, method limitations, and the non-prescription boundary.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/nutrigenomics/SKILL.md",
+      "area": "nutrigenomics",
+      "requires": [],
+      "produces": [
+        "nutrigenomic_source_context",
+        "domain_definitions",
+        "evidence_tier_definitions",
+        "method_limitations",
+        "boundary_note"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

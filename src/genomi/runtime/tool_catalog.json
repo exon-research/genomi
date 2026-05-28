@@ -1,0 +1,782 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "genomi": {
+      "title": "Genomi Context",
+      "start_when": "Bootstrap Genomi, inspect public resources, manage users, or approve scoped Active Genome Index access.",
+      "skill_documents": [
+        "SKILL.md",
+        "skills/active-genome-index/SKILL.md"
+      ],
+      "entry_operations": [
+        "genomi.install",
+        "genomi.describe_context",
+        "genomi.check_background_job",
+        "genomi.parse_source"
+      ],
+      "operations": [
+        "genomi.approve_agi_access",
+        "genomi.assign_user_genome",
+        "genomi.check_background_job",
+        "genomi.check_libraries",
+        "genomi.clear_default_user",
+        "genomi.clear_selection",
+        "genomi.describe_context",
+        "genomi.install",
+        "genomi.invoke",
+        "genomi.list_resources",
+        "genomi.list_users",
+        "genomi.parse_source",
+        "genomi.rename_user",
+        "genomi.revoke_agi_access",
+        "genomi.search_indexes",
+        "genomi.select_user",
+        "genomi.set_default_user",
+        "genomi.set_response_profile"
+      ]
+    }
+  },
+  "operations": {
+    "genomi.invoke": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Dispatch a Genomi capability operation. Use this for any tool outside the genomi.* / journal.* / research.* namespaces. The agent must read the relevant capability skill (e.g. skills/pharmacogenomics/SKILL.md) for parameter shapes and result semantics before invoking. Returns the underlying tool's response unchanged.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "Qualified tool name in the form '<namespace>.<op>', e.g. 'pharmacogenomics.run_pharmcat' or 'clinvar.scan_candidates'. Must be a registered capability operation; tools already in default tools/list (genomi.*, journal.*, research.*) are not dispatchable through invoke."
+          },
+          "params": {
+            "type": "object",
+            "description": "Parameters for the named tool. Validated against the tool's own input_schema before dispatch.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "tool",
+          "params"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "runtime",
+      "requires": [],
+      "produces": [
+        "dispatched_tool_result"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "active_genome_index_or_supplied_private_paths",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.install": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Complete Genomi setup inside an available runtime: install or update the user's selected public reference libraries in GENOMI_HOME, persist the selected response profile, and rebuild public retrieval indexes so genomi.search_indexes returns a coherent view immediately. Runtime code updates happen only when the runtime provides a GENOMI_RUNTIME_UPDATE provider. Use source bootstrap only when no Genomi runtime is available.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "libraries": {
+            "type": "string",
+            "description": "Installer library selection such as setup-only, common-questions, medication-response, ancestry-context, sequence-and-regions, cell-and-tissue, everything, or comma-separated exact library IDs."
+          },
+          "response_profile": {
+            "type": "string",
+            "enum": [
+              "eli5",
+              "patient",
+              "literate",
+              "expert"
+            ],
+            "description": "Default explanation style to persist for downstream Genomi answers."
+          },
+          "force": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "msigdb_gmt": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "msigdb_gmt_url": {
+            "type": "string"
+          },
+          "pharmcat_version": {
+            "type": "string"
+          },
+          "ancestry_panel_url": {
+            "type": "string"
+          },
+          "ancestry_panel_dir": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "skip_reindex": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          }
+        },
+        "required": [
+          "libraries"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "INSTALL_FOR_AGENTS.md",
+      "area": "resources",
+      "requires": [
+        "explicit_user_library_selection"
+      ],
+      "produces": [
+        "installed_libraries",
+        "response_profile",
+        "retrieval_index_refresh"
+      ],
+      "context_optional": [
+        "response_profile"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [
+        "public_reference_downloads"
+      ],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.check_background_job": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Check a long-running MCP tool job and return its presented result when it has completed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "job_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "runtime",
+      "requires": [],
+      "produces": [
+        "background_job_status",
+        "operation_result"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.parse_source": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Detect, parse, and digitize a genome source such as VCF/gVCF, BAM, 23andMe, or AncestryDNA raw genotype text/zip.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "source_evidence_db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "auto_reference_fasta": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "reference_root": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "type": "string",
+            "default": "auto"
+          },
+          "max_records": {
+            "type": "integer"
+          },
+          "parallel_workers": {
+            "type": "integer"
+          },
+          "force": {
+            "$ref": "#/schema_fragments/properties/force"
+          },
+          "user_nickname": {
+            "type": "string"
+          },
+          "set_default_user": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "storage_db_pair"
+        ]
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "genome_source_file"
+      ],
+      "produces": [
+        "active_genome_index",
+        "genome_index",
+        "evidence_db",
+        "active_genome_index_access"
+      ],
+      "context_optional": [
+        "user_nickname"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.describe_context": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Return the current personal/session context: Active Genome Index access state, current user, and active_response_profile — id + label + full guidance string for the user's selected tone (eli5 / patient / literate / expert, or the catalog default when none has been set). Use when the user asks about personal context, their own genome/context, a genome source, a previous run, a selected user, or before making sample-specific claims. Public-only context (no active genome) is a valid state. Do not require this as a universal bootstrap for public-only questions.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "context_status",
+        "active_genome_index",
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.list_resources": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "List public agent-facing Genomi resources without exposing active or known Active Genome Index records.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "resources",
+      "requires": [],
+      "produces": [
+        "resource_catalog"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.search_indexes": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Search Genomi metadata retrieval indexes across public capabilities (e.g. PGS Catalog) to discover relevant doc IDs before drilling in with a capability tool. Active Genome Index metadata is searched only when explicitly requested and approved. Requires query or semantic_context. Indexes are rebuilt automatically by genomi.install; use genomi.list_resources to enumerate installed reference libraries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "include_private_metadata": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_20"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "retrieval",
+      "requires": [],
+      "produces": [
+        "retrieval_search_results"
+      ],
+      "context_optional": [
+        "active_genome_index_when_private_metadata_requested"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.check_libraries": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Check which public Genomi libraries are installed and get install commands for missing libraries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "libraries": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "INSTALL_FOR_AGENTS.md",
+      "area": "resources",
+      "requires": [],
+      "produces": [
+        "library_inventory",
+        "install_guidance"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.approve_agi_access": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Record explicit user approval to read one resolved Active Genome Index for this session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "approved_by_user": {
+            "type": "boolean"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approved_by_user"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "active_genome_index_access"
+      ],
+      "context_optional": [
+        "agi_id",
+        "source",
+        "user_id",
+        "nickname"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.revoke_agi_access": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Revoke scoped Active Genome Index read approval for this session.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agi_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "active_genome_index_access"
+      ],
+      "context_optional": [
+        "agi_id"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.list_users": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "List user/profile metadata and the Active Genome Index records assigned to each user.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.select_user": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Select a user/profile for this session without granting private artifact access.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "context_status",
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.rename_user": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Rename a user/profile nickname.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "new_nickname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_nickname"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.assign_user_genome": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Assign an existing or supplied genome source to a user/profile and optionally make it that user's selected Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "set_active": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          },
+          "set_default_user": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "shared_db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "matches": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genotype_reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "user",
+        "active_genome_index_or_source_param"
+      ],
+      "produces": [
+        "user_registry_metadata",
+        "active_genome_index"
+      ],
+      "context_optional": [
+        "source",
+        "agi_id"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.set_default_user": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Set the default user/profile for this GENOMI_HOME.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "known_user"
+      ],
+      "produces": [
+        "default_user"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.set_response_profile": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Persist the active host response-tone profile in the Genomi registry. The chosen profile is surfaced in genomi.describe_context.active_response_profile for sessions that inspect current personal/session context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "One of the ids in host_response_profiles.json (eli5, patient, literate, expert)."
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "response_profile"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.clear_default_user": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Clear persistent default user/profile selection for this GENOMI_HOME.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "default_user"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomi.clear_selection": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Clear active user and Active Genome Index selection for this session. Shared public evidence remains usable.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget_active_genome_indexes": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "context_status"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

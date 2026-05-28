@@ -1,0 +1,383 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "sequence": {
+      "title": "Sequence Utilities",
+      "start_when": "The task needs deterministic ORFs, translation, restriction sites, Kozak context, or primer checks.",
+      "skill_documents": [
+        "skills/sequence/SKILL.md"
+      ],
+      "entry_operations": [
+        "sequence.analyze"
+      ],
+      "operations": [
+        "sequence.analyze",
+        "sequence.check_primers",
+        "sequence.classify_kozak",
+        "sequence.find_orfs",
+        "sequence.find_restriction_sites",
+        "sequence.match_reference",
+        "sequence.translate"
+      ]
+    }
+  },
+  "operations": {
+    "sequence.analyze": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Run a compact deterministic sequence analysis bundle and point to focused sequence tools when needed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "translate",
+              "orfs",
+              "restriction_sites",
+              "kozak"
+            ],
+            "default": "summary"
+          },
+          "frame": {
+            "type": "integer",
+            "default": 1,
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "Used by translation analysis when translation is selected."
+            }
+          },
+          "strand": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "reverse",
+              "both"
+            ],
+            "x_genomi_default": {
+              "rule": "forward for translation mode; both for ORF mode; each sub-analysis uses its own default in summary mode",
+              "source": "contextual_default",
+              "possible_values": [
+                "forward",
+                "reverse",
+                "both"
+              ]
+            }
+          },
+          "min_aa": {
+            "type": "integer",
+            "default": 30,
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "Used by ORF analysis when ORFs are selected."
+            }
+          },
+          "enzymes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "motifs": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "start_pos": {
+            "type": "integer"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "max_matches": {
+            "type": "integer",
+            "default": 10,
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "Used only when reference_fasta is supplied."
+            }
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string"
+      ],
+      "produces": [
+        "sequence_analysis",
+        "reference_matches",
+        "identity_chain",
+        "next_skill"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "sequence.match_reference": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Match a supplied DNA sequence against local FASTA records and return record identifiers plus annotations.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "max_matches": {
+            "type": "integer",
+            "default": 10
+          }
+        },
+        "required": [
+          "sequence",
+          "reference_fasta"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string",
+        "local_reference_fasta"
+      ],
+      "produces": [
+        "identity_chain",
+        "reference_matches",
+        "matched_record_ids"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "sequence.translate": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Translate a DNA sequence in a selected frame and strand using the standard genetic code.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "default": 1
+          },
+          "strand": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "reverse"
+            ],
+            "default": "forward"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string"
+      ],
+      "produces": [
+        "translation"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "sequence.find_orfs": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Find ATG-to-stop open reading frames in a supplied DNA sequence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "min_aa": {
+            "type": "integer",
+            "default": 30
+          },
+          "strand": {
+            "type": "string",
+            "enum": [
+              "forward",
+              "reverse",
+              "both"
+            ],
+            "default": "both"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string"
+      ],
+      "produces": [
+        "orfs"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "sequence.find_restriction_sites": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Find common restriction enzyme or custom motif sites in a supplied DNA sequence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "enzymes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "motifs": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string"
+      ],
+      "produces": [
+        "restriction_sites"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "sequence.classify_kozak": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Classify Kozak sequence context around ATG start codons.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "string"
+          },
+          "start_pos": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "sequence_string"
+      ],
+      "produces": [
+        "kozak_context"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "sequence.check_primers": {
+      "capability": "sequence",
+      "namespace": "sequence",
+      "description": "Check basic primer properties and optional template amplicons.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forward_primer": {
+            "type": "string"
+          },
+          "reverse_primer": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "forward_primer"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/sequence/SKILL.md",
+      "area": "sequence",
+      "requires": [
+        "primer_sequence"
+      ],
+      "produces": [
+        "primer_checks",
+        "amplicons"
+      ],
+      "context_optional": [],
+      "privacy_scope": "operation_parameters",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "operation_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

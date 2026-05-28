@@ -1,0 +1,5 @@
+##fileformat=VCFv4.2
+##source=TinyClinVarFixture
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+1	10250	12345	A	C	.	.	ALLELEID=999;CLNSIG=Benign;CLNREVSTAT=criteria_provided,_single_submitter;CLNDN=not_provided;GENEINFO=GENE1:1;CLNHGVS=NC_000001.11:g.10250A>C
+1	10257	67890	A	C,G	.	.	ALLELEID=1000;CLNSIG=Uncertain_significance;CLNREVSTAT=no_assertion_criteria_provided;CLNDN=condition;GENEINFO=GENE2:2

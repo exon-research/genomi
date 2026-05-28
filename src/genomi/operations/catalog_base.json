@@ -1,0 +1,311 @@
+{
+  "schema": "genomi-tool-catalog-v1",
+  "schema_fragments": {
+    "properties": {
+      "local_path": {
+        "type": "string",
+        "description": "Local filesystem path."
+      },
+      "string_array": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "source_record_array": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "semantic_context": {
+        "type": "object",
+        "description": "Host-supplied semantic retrieval terms. Genomi reports which terms hit local/public source records and which terms had no hit in the consulted scope.",
+        "properties": {
+          "raw_query": {
+            "type": "string"
+          },
+          "host_expansions": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "host_entities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "boolean_default_false": {
+        "type": "boolean",
+        "default": false
+      },
+      "boolean_default_true": {
+        "type": "boolean",
+        "default": true
+      },
+      "limit_20": {
+        "type": "integer",
+        "default": 20
+      },
+      "limit_25": {
+        "type": "integer",
+        "default": 25
+      },
+      "limit_100": {
+        "type": "integer",
+        "default": 100
+      },
+      "limit_200": {
+        "type": "integer",
+        "default": 200
+      },
+      "genome_build_grch38_contextual": {
+        "type": "string",
+        "default": "GRCh38",
+        "x_genomi_default": {
+          "source": "tool_default",
+          "condition": "If an approved Active Genome Index supplies genome_build, that context value is used before this fallback."
+        }
+      },
+      "genome_build_auto_contextual": {
+        "type": "string",
+        "default": "auto",
+        "x_genomi_default": {
+          "source": "tool_default",
+          "condition": "If an approved Active Genome Index supplies genome_build, that context value is used before this fallback."
+        }
+      },
+      "target_type": {
+        "type": "string",
+        "enum": [
+          "condition",
+          "drug",
+          "gene",
+          "topic",
+          "variant"
+        ]
+      },
+      "search_stored_research": {
+        "$ref": "#/schema_fragments/properties/boolean_default_true"
+      },
+      "use_hpo_annotations": {
+        "$ref": "#/schema_fragments/properties/boolean_default_true"
+      },
+      "download_hpo_annotations": {
+        "$ref": "#/schema_fragments/properties/boolean_default_false"
+      },
+      "include_known_active_genome_indexes": {
+        "$ref": "#/schema_fragments/properties/boolean_default_false"
+      },
+      "include_fail": {
+        "$ref": "#/schema_fragments/properties/boolean_default_false"
+      },
+      "force": {
+        "$ref": "#/schema_fragments/properties/boolean_default_false"
+      }
+    },
+    "property_groups": {
+      "storage_db_pair": {
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "shared_db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          }
+        }
+      },
+      "variant_locus": {
+        "properties": {
+          "chrom": {
+            "type": "string"
+          },
+          "pos": {
+            "type": "integer"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "alt": {
+            "type": "string"
+          }
+        }
+      },
+      "research_target_scalars": {
+        "properties": {
+          "gene": {
+            "type": "string"
+          },
+          "drug": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          }
+        }
+      },
+      "hpo_term_arrays": {
+        "properties": {
+          "phenotypes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "terms": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "hpo_ids": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          }
+        }
+      },
+      "hpo_annotation_controls": {
+        "properties": {
+          "search_stored_research": {
+            "$ref": "#/schema_fragments/properties/search_stored_research"
+          },
+          "use_hpo_annotations": {
+            "$ref": "#/schema_fragments/properties/use_hpo_annotations"
+          },
+          "download_hpo_annotations": {
+            "$ref": "#/schema_fragments/properties/download_hpo_annotations"
+          }
+        }
+      },
+      "hpo_gene_annotation_source": {
+        "properties": {
+          "hpo_gene_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "hpo_gene_url": {
+            "type": "string",
+            "default": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype_to_genes.txt"
+          }
+        }
+      },
+      "source_records": {
+        "properties": {
+          "source_records": {
+            "$ref": "#/schema_fragments/properties/source_record_array"
+          }
+        }
+      },
+      "functional_perturbation_context": {
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "organism": {
+            "type": "string"
+          },
+          "cell_line": {
+            "type": "string"
+          },
+          "perturbation": {
+            "type": "string"
+          },
+          "assay": {
+            "type": "string"
+          },
+          "phenotype": {
+            "type": "string"
+          }
+        }
+      },
+      "functional_native_sources": {
+        "properties": {
+          "perturbation_sources": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "biogrid_orcs_access_key": {
+            "type": "string"
+          },
+          "depmap_gene_effect_url": {
+            "type": "string"
+          },
+          "depmap_model_url": {
+            "type": "string"
+          }
+        }
+      },
+      "pgx_drug_gene_variant_target": {
+        "properties": {
+          "drug": {
+            "type": "string"
+          },
+          "atc_code": {
+            "type": "string"
+          },
+          "drugbank_id": {
+            "type": "string"
+          },
+          "rsid": {
+            "type": "string"
+          },
+          "gene": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "capability_order": [
+    "genomi",
+    "active-genome-index",
+    "clinvar",
+    "variant-evidence",
+    "phenotype-gene",
+    "pharmacogenomics",
+    "gwas-catalog",
+    "functional-genomics",
+    "ancestry",
+    "gnomad",
+    "polygenic-score",
+    "nutrigenomics",
+    "sequence",
+    "analytical-grounding",
+    "journal",
+    "decode"
+  ],
+  "namespace_order": [
+    "genomi",
+    "active_genome_index",
+    "clinvar",
+    "variant",
+    "research",
+    "gnomad",
+    "phenotype",
+    "pharmacogenomics",
+    "gwas",
+    "functional_genomics",
+    "ancestry",
+    "prs",
+    "nutrigenomics",
+    "sequence",
+    "entity",
+    "cell_type",
+    "pathway",
+    "region",
+    "journal",
+    "decode"
+  ]
+}

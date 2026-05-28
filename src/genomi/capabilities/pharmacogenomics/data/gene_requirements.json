@@ -1,0 +1,155 @@
+{
+  "curation_scope": "Pharmacogene sample-evidence requirements derived from PharmCAT public documentation and source-specific caller boundaries.",
+  "named_allele_matcher_genes": [
+    "ABCG2",
+    "CACNA1S",
+    "CFTR",
+    "CYP2B6",
+    "CYP2C19",
+    "CYP2C9",
+    "CYP3A4",
+    "CYP3A5",
+    "CYP4F2",
+    "DPYD",
+    "F2",
+    "F5",
+    "G6PD",
+    "IFNL3",
+    "NAT2",
+    "NUDT15",
+    "RYR1",
+    "SLCO1B1",
+    "TPMT",
+    "UGT1A1",
+    "VKORC1"
+  ],
+  "outside_call_genes": {
+    "CYP2D6": {
+      "candidate_callers": [
+        "StellarPGx",
+        "Stargazer"
+      ],
+      "category": "outside_call_recommended",
+      "preferred_evidence": [
+        "SV/CNV-aware CYP2D6 caller output",
+        "diplotype",
+        "copy number",
+        "activity score or metabolizer phenotype"
+      ],
+      "requirements": [
+        "CYP2D6 diplotype, phenotype, or activity evidence from a caller that handles structural variation and copy number variation.",
+        "Outside-call formatting compatible with PharmCAT when recommendations should be generated through PharmCAT.",
+        "Clinical synthesis using guideline or label source evidence plus the outside sample call."
+      ],
+      "source_urls": [
+        "https://pharmcat.clinpgx.org/Genes-Drugs/",
+        "https://pharmcat.clinpgx.org/using/Calling-CYP2D6/",
+        "https://pharmcat.clinpgx.org/using/Outside-Call-Format/",
+        "https://pharmcat.clinpgx.org/faqs/"
+      ]
+    },
+    "HLA-A": {
+      "candidate_callers": [
+        "OptiType"
+      ],
+      "category": "outside_call_required",
+      "preferred_evidence": [
+        "HLA allele call",
+        "typing resolution appropriate to the medication/guideline"
+      ],
+      "requirements": [
+        "HLA allele typing from a specialized HLA caller.",
+        "Outside-call formatting compatible with PharmCAT when recommendations should be generated through PharmCAT.",
+        "Clinical synthesis using guideline or label source evidence plus the outside sample call."
+      ],
+      "source_urls": [
+        "https://pharmcat.clinpgx.org/Genes-Drugs/",
+        "https://pharmcat.clinpgx.org/using/Outside-Call-Format/"
+      ]
+    },
+    "HLA-B": {
+      "candidate_callers": [
+        "OptiType"
+      ],
+      "category": "outside_call_required",
+      "preferred_evidence": [
+        "HLA allele call",
+        "typing resolution appropriate to the medication/guideline"
+      ],
+      "requirements": [
+        "HLA allele typing from a specialized HLA caller.",
+        "Outside-call formatting compatible with PharmCAT when recommendations should be generated through PharmCAT.",
+        "Clinical synthesis using guideline or label source evidence plus the outside sample call."
+      ],
+      "source_urls": [
+        "https://pharmcat.clinpgx.org/Genes-Drugs/",
+        "https://pharmcat.clinpgx.org/using/Outside-Call-Format/"
+      ]
+    },
+    "MT-RNR1": {
+      "candidate_callers": [],
+      "category": "outside_call_required",
+      "preferred_evidence": [
+        "MT-RNR1 variant call",
+        "outside diplotype or phenotype when available"
+      ],
+      "requirements": [
+        "MT-RNR1 genotype or phenotype evidence from an appropriate mitochondrial variant call source.",
+        "Outside-call formatting compatible with PharmCAT when recommendations should be generated through PharmCAT.",
+        "Clinical synthesis using guideline or label source evidence plus the outside sample call."
+      ],
+      "source_urls": [
+        "https://pharmcat.clinpgx.org/Genes-Drugs/",
+        "https://pharmcat.clinpgx.org/using/Outside-Call-Format/"
+      ]
+    }
+  },
+  "schema": "genomi-pgx-gene-requirements-catalog-v1",
+  "source_documents": [
+    {
+      "supports": [
+        "named allele matcher genes",
+        "outside caller genes"
+      ],
+      "title": "PharmCAT Genes & Drugs",
+      "url": "https://pharmcat.clinpgx.org/Genes-Drugs/"
+    },
+    {
+      "supports": [
+        "CYP2D6 SV/CNV-aware calling requirements"
+      ],
+      "title": "PharmCAT Calling CYP2D6",
+      "url": "https://pharmcat.clinpgx.org/using/Calling-CYP2D6/"
+    },
+    {
+      "supports": [
+        "outside diplotype, phenotype, and activity score formatting"
+      ],
+      "title": "PharmCAT Outside Call Format",
+      "url": "https://pharmcat.clinpgx.org/using/Outside-Call-Format/"
+    },
+    {
+      "supports": [
+        "consumer data boundaries",
+        "CYP2D6 VCF caveats",
+        "G6PD chrX representation"
+      ],
+      "title": "PharmCAT FAQ",
+      "url": "https://pharmcat.clinpgx.org/faqs/"
+    }
+  ],
+  "special_gene_requirements": {
+    "G6PD": {
+      "category": "sex_chromosome_representation_sensitive",
+      "requirements": [
+        "Confirm chrX genotype representation for samples with one X chromosome.",
+        "Use haploid representation when the sample should be haploid on chrX.",
+        "Inspect PharmCAT output and source guideline context before synthesis."
+      ],
+      "source_urls": [
+        "https://pharmcat.clinpgx.org/Genes-Drugs/",
+        "https://pharmcat.clinpgx.org/faqs/"
+      ]
+    }
+  }
+}

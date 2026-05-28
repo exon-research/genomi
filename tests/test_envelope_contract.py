@@ -1,0 +1,163 @@
+"""End-to-end contract test: Genomi emits one valid envelope schema.
+
+This file does NOT exercise each operation with real data — that would require
+fixtures spanning every public source. Instead, it stubs each handler with a
+minimal representative result and asserts:
+
+  1. call_operation auto-attaches an `evidence_envelope` if the handler does
+     not emit one, for every op in EVIDENCE_PRODUCING_OPERATIONS.
+  2. The attached envelope passes envelope.validate.
+  3. Handlers that DO emit an envelope (risk, variant, pgx, etc.) are not
+     stripped or overwritten — the explicit envelope is preserved.
+  4. Non-evidence ops (e.g. genomi.list_resources) are passed through
+     unchanged with no envelope auto-attached.
+  5. Every registered operation gets the same envelope schema for failure-like
+     results, so tools do not invent one-off prose or policy fields.
+"""
+
+from __future__ import annotations
+
+import unittest
+from typing import Any
+
+from genomi import operations as ops
+from genomi.evidence import envelope as env
+
+
+class DispatchEnvelopeContractTests(unittest.TestCase):
+    def _call_with_stub(self, name: str, stub_result: dict[str, Any]) -> dict[str, Any]:
+        """Replace the registered handler with a stub, dispatch, restore."""
+        operation = ops.get_operation(name)
+        original = operation.handler
+        new = ops.Operation(
+            name=operation.name,
+            description=operation.description,
+            input_schema=operation.input_schema,
+            handler=lambda _params, _stub=stub_result: dict(_stub),
+            skill=operation.skill,
+            area=operation.area,
+            requires=operation.requires,
+            produces=operation.produces,
+            context_optional=operation.context_optional,
+            privacy_scope=operation.privacy_scope,
+            operation_scope=operation.operation_scope,
+            mutating=operation.mutating,
+            external_io=operation.external_io,
+            data_access=operation.data_access,
+        )
+        ops._OPERATION_BY_NAME[name] = new
+        try:
+            return ops.call_operation(name, {})
+        finally:
+            ops._OPERATION_BY_NAME[name] = ops.Operation(
+                name=operation.name,
+                description=operation.description,
+                input_schema=operation.input_schema,
+                handler=original,
+                skill=operation.skill,
+                area=operation.area,
+                requires=operation.requires,
+                produces=operation.produces,
+                context_optional=operation.context_optional,
+                privacy_scope=operation.privacy_scope,
+                operation_scope=operation.operation_scope,
+                mutating=operation.mutating,
+                external_io=operation.external_io,
+                data_access=operation.data_access,
+                )
+
+    def test_every_evidence_op_gets_envelope_with_positive_result(self) -> None:
+        for name in sorted(ops.EVIDENCE_PRODUCING_OPERATIONS):
+            with self.subTest(op=name):
+                result = self._call_with_stub(
+                    name,
+                    {
+                        "status": "completed",
+                        "ok": True,
+                        "summary": {"record_count": 3},
+                    },
+                )
+                envelope = result.get("evidence_envelope")
+                self.assertIsInstance(envelope, dict, f"{name} did not receive an envelope")
+                env.validate(envelope)
+                self.assertEqual(envelope["operation"], name)
+                # positive-count stub should yield evidence_present
+                self.assertEqual(envelope["finding_state"], env.EVIDENCE_PRESENT)
+                self.assertEqual(envelope["answer_readiness"], env.SCOPED_ANSWER_ONLY)
+
+    def test_every_evidence_op_with_zero_count_yields_scoped_empty(self) -> None:
+        for name in sorted(ops.EVIDENCE_PRODUCING_OPERATIONS):
+            with self.subTest(op=name):
+                result = self._call_with_stub(
+                    name,
+                    {"status": "no_matching_records", "ok": True, "summary": {"record_count": 0}},
+                )
+                envelope = result["evidence_envelope"]
+                env.validate(envelope)
+                self.assertEqual(envelope["finding_state"], env.NOT_OBSERVED_IN_CONSULTED_SCOPE)
+                self.assertEqual(envelope["answer_readiness"], env.SCOPED_ANSWER_ONLY)
+                self.assertFalse(envelope["negative_inference"]["allowed"])
+
+    def test_source_unavailable_yields_not_assessed(self) -> None:
+        for name in sorted(ops.EVIDENCE_PRODUCING_OPERATIONS):
+            with self.subTest(op=name):
+                result = self._call_with_stub(
+                    name,
+                    {"status": "source_unavailable", "ok": False},
+                )
+                envelope = result["evidence_envelope"]
+                env.validate(envelope)
+                self.assertEqual(envelope["finding_state"], env.NOT_ASSESSED)
+                self.assertEqual(envelope["answer_readiness"], env.CANNOT_ANSWER_YET)
+                self.assertIn("source_unavailable:retry_or_use_alternate_source", envelope["guidance"])
+
+    def test_every_operation_failure_like_result_gets_same_envelope_schema(self) -> None:
+        for name in sorted(ops._OPERATION_BY_NAME):
+            with self.subTest(op=name):
+                result = self._call_with_stub(
+                    name,
+                    {
+                        "ok": False,
+                        "status": "invalid_params",
+                        "message": "missing required input",
+                        "summary": {},
+                    },
+                )
+                envelope = result.get("evidence_envelope")
+                self.assertIsInstance(envelope, dict, f"{name} did not receive failure guidance")
+                env.validate(envelope)
+                self.assertEqual(envelope["operation"], name)
+                self.assertEqual(envelope["finding_state"], env.NOT_ASSESSED)
+                self.assertEqual(envelope["answer_readiness"], env.CANNOT_ANSWER_YET)
+                self.assertIn("invalid_input:fix_params_before_retry", envelope["guidance"])
+
+    def test_existing_envelope_is_preserved(self) -> None:
+        # Choose any evidence op; the dispatcher must not overwrite an
+        # envelope a handler already produced.
+        name = "phenotype.plan_risk_investigation"
+        custom = env.evidence_present(
+            operation=name,
+            observations={"observation_count": 1},
+        )
+        result = self._call_with_stub(
+            name,
+            {"status": "completed", "ok": True, "evidence_envelope": custom, "summary": {"record_count": 0}},
+        )
+        self.assertEqual(result["evidence_envelope"], custom)
+
+    def test_non_evidence_op_has_no_auto_envelope(self) -> None:
+        # genomi.list_resources is metadata-only and not in the evidence allowlist.
+        result = self._call_with_stub(
+            "genomi.list_resources",
+            {"ok": True, "status": "completed", "summary": {"record_count": 7}},
+        )
+        self.assertNotIn("evidence_envelope", result)
+
+    def test_allowlist_only_names_known_operations(self) -> None:
+        known = set(ops._OPERATION_BY_NAME.keys())
+        for name in ops.EVIDENCE_PRODUCING_OPERATIONS:
+            self.assertIn(name, known, f"EVIDENCE_PRODUCING_OPERATIONS references unknown op {name!r}")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,368 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "journal": {
+      "title": "Journal and Research Memory",
+      "start_when": "The investigation needs notebook entries, evidence links, reviewed source findings, or reusable target-scoped research memory.",
+      "skill_documents": [
+        "skills/journal/SKILL.md",
+        "skills/source-research/SKILL.md"
+      ],
+      "entry_operations": [
+        "journal.append_entry",
+        "journal.search_entries",
+        "research.build_target_packet",
+        "research.list_sources"
+      ],
+      "operations": [
+        "journal.append_entry",
+        "journal.export_memory",
+        "journal.search_entries",
+        "journal.summarize",
+        "research.build_target_packet",
+        "research.list_sources",
+        "research.query",
+        "research.record",
+        "research.search"
+      ]
+    }
+  },
+  "operations": {
+    "journal.append_entry": {
+      "capability": "journal",
+      "namespace": "journal",
+      "description": "Append a new journal entry, or append evidence links and/or an amendment to an existing entry.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "session",
+              "project"
+            ],
+            "x_genomi_default": {
+              "rule": "session for a new entry; session_and_project lookup when entry_id is supplied and scope is omitted",
+              "source": "contextual_default",
+              "possible_values": [
+                "session",
+                "project",
+                "session_and_project"
+              ]
+            }
+          },
+          "entry_type": {
+            "type": "string",
+            "enum": [
+              "observation",
+              "hypothesis",
+              "decision",
+              "contradiction",
+              "unresolved_question",
+              "protocol_note",
+              "plan",
+              "summary"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tags": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "evidence_links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string"
+                },
+                "evidence_id": {
+                  "type": "string"
+                },
+                "finding_id": {
+                  "type": "string"
+                },
+                "coverage_state": {
+                  "type": "string"
+                },
+                "input_digest": {
+                  "type": "string"
+                },
+                "output_digest": {
+                  "type": "string"
+                },
+                "source_url": {
+                  "type": "string"
+                },
+                "linked_payload": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "privacy_scope": {
+                  "type": "string"
+                },
+                "evidence_scope": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "operation"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "decision_status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "unresolved",
+              "unsupported",
+              "superseded"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "x_genomi_default": {
+              "value": "host_agent",
+              "source": "tool_default",
+              "condition": "Used only when creating a new entry."
+            }
+          },
+          "entry_id": {
+            "type": "string"
+          },
+          "amendment_type": {
+            "type": "string",
+            "enum": [
+              "correction",
+              "clarification",
+              "supersession",
+              "note"
+            ],
+            "x_genomi_default": {
+              "value": "correction",
+              "source": "tool_default",
+              "condition": "Used only when entry_id is supplied with amendment content."
+            }
+          },
+          "rationale": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/journal/SKILL.md",
+      "area": "journal",
+      "requires": [
+        "new_entry_content_or_existing_entry_update"
+      ],
+      "produces": [
+        "journal_entry",
+        "notebook_memory",
+        "evidence_trace_links",
+        "optional_journal_amendment"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "journal.search_entries": {
+      "capability": "journal",
+      "namespace": "journal",
+      "description": "Token-search session and project journal entries by scope, target, tag, entry type, and text.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "session",
+              "project"
+            ],
+            "x_genomi_default": {
+              "rule": "searches session and project journals when omitted",
+              "source": "contextual_default",
+              "possible_values": [
+                "session",
+                "project",
+                "session_and_project"
+              ]
+            }
+          },
+          "text": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "tag": {
+            "type": "string"
+          },
+          "tags": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "entry_type": {
+            "type": "string",
+            "enum": [
+              "observation",
+              "hypothesis",
+              "decision",
+              "contradiction",
+              "unresolved_question",
+              "protocol_note",
+              "plan",
+              "summary"
+            ]
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_25"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/journal/SKILL.md",
+      "area": "journal",
+      "requires": [
+        "journal_query"
+      ],
+      "produces": [
+        "journal_entries",
+        "evidence_trace_links"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "journal.summarize": {
+      "capability": "journal",
+      "namespace": "journal",
+      "description": "Summarize journal state into observations, decisions, contradictions, unresolved questions, and commonly linked evidence sources.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "session",
+              "project"
+            ],
+            "x_genomi_default": {
+              "rule": "summarizes session and project journals when omitted",
+              "source": "contextual_default",
+              "possible_values": [
+                "session",
+                "project",
+                "session_and_project"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "default": 8
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/journal/SKILL.md",
+      "area": "journal",
+      "requires": [
+        "journal_entries"
+      ],
+      "produces": [
+        "journal_summary",
+        "investigation_state"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "journal.export_memory": {
+      "capability": "journal",
+      "namespace": "journal",
+      "description": "Return a MemOS-shaped JSON memory artifact from journal entries without requiring or writing to MemOS.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "session",
+              "project"
+            ],
+            "x_genomi_default": {
+              "rule": "exports session and project journals when omitted",
+              "source": "contextual_default",
+              "possible_values": [
+                "session",
+                "project",
+                "session_and_project"
+              ]
+            }
+          },
+          "include_private_evidence": {
+            "$ref": "#/schema_fragments/properties/boolean_default_false"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/journal/SKILL.md",
+      "area": "journal",
+      "requires": [
+        "journal_entries"
+      ],
+      "produces": [
+        "memos_shaped_memory_artifact",
+        "notebook_memory",
+        "tool_trajectory_memory",
+        "decision_memory"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

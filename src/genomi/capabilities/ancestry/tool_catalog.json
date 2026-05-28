@@ -1,0 +1,258 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "ancestry": {
+      "title": "Ancestry Reference-Panel Context",
+      "start_when": "The user asks for ancestry, population context, reference-panel similarity, PCA projection, or what a sample is closest to in a public reference panel.",
+      "skill_documents": [
+        "skills/ancestry/SKILL.md"
+      ],
+      "optional_libraries": [
+        "ancestry-1000g-30x-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "entry_operations": [
+        "ancestry.list_reference_panels",
+        "ancestry.estimate_population_context"
+      ],
+      "operations": [
+        "ancestry.build_source_context",
+        "ancestry.check_sample_overlap",
+        "ancestry.estimate_population_context",
+        "ancestry.list_reference_panels",
+        "ancestry.project_pca"
+      ]
+    }
+  },
+  "operations": {
+    "ancestry.list_reference_panels": {
+      "capability": "ancestry",
+      "namespace": "ancestry",
+      "description": "List local ancestry reference panels, installation state, public source URLs, label definitions, and method boundaries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/ancestry/SKILL.md",
+      "area": "ancestry",
+      "requires": [],
+      "produces": [
+        "ancestry_reference_panel_catalog",
+        "library_install_guidance"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "ancestry.check_sample_overlap": {
+      "capability": "ancestry",
+      "namespace": "ancestry",
+      "description": "Check how many installed 1000 Genomes ancestry panel markers are usable in an approved Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/ancestry/SKILL.md",
+      "area": "ancestry",
+      "requires": [
+        "approved_active_genome_index_or_supplied_grch38_source",
+        "ancestry-1000g-30x-grch38"
+      ],
+      "produces": [
+        "ancestry_marker_overlap",
+        "sample_qc",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "source",
+        "vcf",
+        "active_genome_index_path",
+        "genome_build"
+      ],
+      "privacy_scope": "local_reference_panel_private_projection",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths",
+        "installed_public_reference_panel"
+      ],
+      "optional_libraries": [
+        "ancestry-1000g-30x-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "discovery_role": "focused_tool"
+    },
+    "ancestry.project_pca": {
+      "capability": "ancestry",
+      "namespace": "ancestry",
+      "description": "Project an approved sample into the installed 1000 Genomes ancestry PCA space and return nearest reference neighbors.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "nearest_reference_count": {
+            "type": "integer",
+            "default": 10
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/ancestry/SKILL.md",
+      "area": "ancestry",
+      "requires": [
+        "approved_active_genome_index_or_supplied_grch38_source",
+        "ancestry-1000g-30x-grch38",
+        "sufficient_marker_overlap"
+      ],
+      "produces": [
+        "pca_projection",
+        "nearest_reference_samples",
+        "nearest_reference_groups",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "source",
+        "vcf",
+        "active_genome_index_path",
+        "genome_build"
+      ],
+      "privacy_scope": "local_reference_panel_private_projection",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths",
+        "installed_public_reference_panel"
+      ],
+      "optional_libraries": [
+        "ancestry-1000g-30x-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "discovery_role": "focused_tool"
+    },
+    "ancestry.estimate_population_context": {
+      "capability": "ancestry",
+      "namespace": "ancestry",
+      "description": "Estimate qualitative reference-panel similarity for an approved GRCh38 sample using local 1000 Genomes PCA projection.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "nearest_reference_count": {
+            "type": "integer",
+            "default": 10
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/ancestry/SKILL.md",
+      "area": "ancestry",
+      "requires": [
+        "approved_active_genome_index_or_supplied_grch38_source",
+        "ancestry-1000g-30x-grch38"
+      ],
+      "produces": [
+        "population_context",
+        "pca_projection",
+        "nearest_reference_groups",
+        "sample_qc",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "source",
+        "vcf",
+        "active_genome_index_path",
+        "genome_build"
+      ],
+      "privacy_scope": "local_reference_panel_private_projection",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths",
+        "installed_public_reference_panel"
+      ],
+      "optional_libraries": [
+        "ancestry-1000g-30x-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "discovery_role": "entry_tool"
+    },
+    "ancestry.build_source_context": {
+      "capability": "ancestry",
+      "namespace": "ancestry",
+      "description": "Explain 1000 Genomes ancestry panel provenance, label meanings, sampling limits, and method boundaries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/ancestry/SKILL.md",
+      "area": "ancestry",
+      "requires": [],
+      "produces": [
+        "ancestry_source_context",
+        "label_definitions",
+        "method_limitations"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

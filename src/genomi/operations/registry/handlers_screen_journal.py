@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+from ...capabilities.decode import dashboard as decode_dashboard
+from ...capabilities.functional_genomics import evidence_acquisition, geo, screen
+from ...capabilities.journal import journal
+from ...capabilities.research import intent_research
+from ...runtime import context as runtime_context
+from .coerce import (
+    _approve_supplied_dna_source,
+    _bool,
+    _int,
+    _list_dict,
+    _list_str,
+    _path,
+    _require_agi_access,
+    _str,
+    _with_context,
+)
+from .errors import JsonObject, OperationError
+
+
+def _screen_retrieve_experiment_records(params: JsonObject) -> JsonObject:
+    return screen.retrieve_public_screen_records(
+        context=_str(params, "context"),
+        genes=_list_str(params, "genes"),
+        organism=params.get("organism"),
+        cell_line=params.get("cell_line"),
+        perturbation=params.get("perturbation"),
+        assay=params.get("assay"),
+        phenotype=params.get("phenotype"),
+        sources=_list_str(params, "perturbation_sources"),
+        biogrid_orcs_access_key=params.get("biogrid_orcs_access_key"),
+        depmap_gene_effect_url=params.get("depmap_gene_effect_url"),
+        depmap_model_url=params.get("depmap_model_url"),
+        limit=_int(params, "limit", 100),
+        semantic_context=params.get("semantic_context"),
+    )
+
+
+def _screen_query_geo(params: JsonObject) -> JsonObject:
+    return geo.query_geo_datasets(
+        context=_str(params, "context"),
+        genes=_list_str(params, "genes"),
+        organism=params.get("organism"),
+        cell_line=params.get("cell_line"),
+        perturbation=params.get("perturbation"),
+        assay=params.get("assay"),
+        phenotype=params.get("phenotype"),
+        accession=params.get("accession"),
+        limit=_int(params, "limit", 25),
+        semantic_context=params.get("semantic_context"),
+        ncbi_api_key=params.get("ncbi_api_key"),
+        ncbi_email=params.get("ncbi_email"),
+        ncbi_tool=params.get("ncbi_tool"),
+    )
+
+
+def _screen_import_table_evidence_records(params: JsonObject) -> JsonObject:
+    column_map = params.get("column_map") if isinstance(params.get("column_map"), dict) else None
+    return evidence_acquisition.extract_screen_table_evidence_records(
+        _path(params, "table"),
+        context=_str(params, "context"),
+        genes=_list_str(params, "genes"),
+        column_map=column_map,
+        delimiter=params.get("delimiter"),
+        source_title=params.get("source_title"),
+        source_url=params.get("source_url"),
+        source_type=params.get("source_type"),
+        organism=params.get("organism"),
+        cell_line=params.get("cell_line"),
+        perturbation=params.get("perturbation"),
+        assay=params.get("assay"),
+        phenotype=params.get("phenotype"),
+        limit=_int(params, "limit", 500),
+    )
+
+
+def _screen_answer_gene(params: JsonObject) -> JsonObject:
+    resolved = _with_context(params, db=True, allow_shared_db_without_vcf=True)
+    return intent_research.answer_screen_gene_context(
+        _path(resolved, "db"),
+        context=_str(resolved, "context"),
+        genes=_list_str(resolved, "genes"),
+        source_records=_list_dict(resolved, "source_records"),
+        organism=resolved.get("organism"),
+        cell_line=resolved.get("cell_line"),
+        perturbation=resolved.get("perturbation"),
+        assay=resolved.get("assay"),
+        phenotype=resolved.get("phenotype"),
+        search_stored_research=_bool(resolved, "search_stored_research", True),
+        retrieve_native=_bool(resolved, "retrieve_native", True),
+        perturbation_sources=_list_str(resolved, "perturbation_sources"),
+        biogrid_orcs_access_key=resolved.get("biogrid_orcs_access_key"),
+        depmap_gene_effect_url=resolved.get("depmap_gene_effect_url"),
+        depmap_model_url=resolved.get("depmap_model_url"),
+        limit=_int(resolved, "limit", 25),
+        semantic_context=resolved.get("semantic_context"),
+    )
+
+
+def _journal_error(exc: journal.JournalError) -> OperationError:
+    return OperationError(exc.code, exc.message)
+
+
+def _journal_append_entry(params: JsonObject) -> JsonObject:
+    links = _list_dict(params, "evidence_links") or _list_dict(params, "links")
+    single_link = params.get("link")
+    if not links and isinstance(single_link, dict):
+        links = [dict(single_link)]
+    try:
+        return journal.append_entry(
+            scope=params.get("scope"),
+            entry_id=params.get("entry_id"),
+            entry_type=params.get("entry_type"),
+            content=params.get("content"),
+            title=params.get("title"),
+            tags=params.get("tags"),
+            target=params.get("target"),
+            evidence_links=links,
+            decision_status=params.get("decision_status"),
+            created_by=params.get("created_by"),
+            amendment_type=params.get("amendment_type"),
+            rationale=params.get("rationale"),
+        )
+    except journal.JournalError as exc:
+        raise _journal_error(exc) from exc
+
+
+def _journal_search_entries(params: JsonObject) -> JsonObject:
+    try:
+        return journal.search_entries(
+            scope=params.get("scope"),
+            text=params.get("text") or params.get("query"),
+            target=params.get("target"),
+            tag=params.get("tag"),
+            tags=params.get("tags"),
+            entry_type=params.get("entry_type"),
+            limit=_int(params, "limit", 25),
+            semantic_context=params.get("semantic_context"),
+        )
+    except journal.JournalError as exc:
+        raise _journal_error(exc) from exc
+
+
+def _journal_summarize_notebook(params: JsonObject) -> JsonObject:
+    try:
+        return journal.summarize_notebook(
+            scope=params.get("scope"),
+            limit=_int(params, "limit", 8),
+        )
+    except journal.JournalError as exc:
+        raise _journal_error(exc) from exc
+
+
+def _journal_export_memory_artifact(params: JsonObject) -> JsonObject:
+    try:
+        return journal.export_memory_artifact(
+            scope=params.get("scope"),
+            include_private_evidence=_bool(params, "include_private_evidence"),
+        )
+    except journal.JournalError as exc:
+        raise _journal_error(exc) from exc
+
+
+def _decode_render_dashboard(params: JsonObject) -> JsonObject:
+    resolved = _with_context(params)
+    # Gating: the dashboard reads/writes inside the active genome work_dir and
+    # the evidence dict is personal — require an Active Genome Index and
+    # session approval, same gate as other personal-data ops.
+    active = runtime_context.active_run()
+    if active is None:
+        raise OperationError(
+            "active_genome_index_required",
+            "Select or parse an Active Genome Index before rendering the Genomi Dashboard.",
+        )
+    _approve_supplied_dna_source(params)
+    _require_agi_access("rendering the Genomi Dashboard from Active Genome Index evidence")
+
+    output = resolved.get("output")
+    if not output:
+        work_dir = active.get("work_dir") if isinstance(active, dict) else None
+        output = str(decode_dashboard.default_output_path(work_dir))
+
+    evidence = resolved.get("evidence")
+    if evidence is not None and not isinstance(evidence, dict):
+        raise OperationError("invalid_params", "evidence must be a JSON object.")
+
+    try:
+        result = decode_dashboard.render_dashboard(
+            evidence=evidence,
+            mode=_str(resolved, "mode", "full"),
+            output=output,
+            variants_all_source=resolved.get("variants_all_source"),
+        )
+    except decode_dashboard.DashboardRenderError as exc:
+        raise OperationError(exc.code, exc.message) from exc
+    return result

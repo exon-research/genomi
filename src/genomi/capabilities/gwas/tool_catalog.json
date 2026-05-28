@@ -1,0 +1,140 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "gwas-catalog": {
+      "title": "GWAS Catalog Association Evidence",
+      "start_when": "GWAS Catalog association-record retrieval and source-field comparison capabilities for variants and genes.",
+      "skill_documents": [
+        "skills/gwas-catalog/SKILL.md"
+      ],
+      "entry_operations": [
+        "gwas.compare_variant_associations",
+        "gwas.compare_gene_associations"
+      ],
+      "operations": [
+        "gwas.compare_gene_associations",
+        "gwas.compare_variant_associations"
+      ]
+    }
+  },
+  "operations": {
+    "gwas.compare_variant_associations": {
+      "capability": "gwas-catalog",
+      "namespace": "gwas",
+      "description": "Compare candidate rsIDs by population-trait GWAS Catalog association evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "phenotype": {
+            "type": "string"
+          },
+          "variants": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "association_limit": {
+            "$ref": "#/schema_fragments/properties/limit_200"
+          },
+          "api_url": {
+            "type": "string",
+            "default": "https://www.ebi.ac.uk/gwas/rest/api/v2"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "phenotype",
+          "variants"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/gwas-catalog/SKILL.md",
+      "area": "gwas_catalog",
+      "requires": [],
+      "produces": [
+        "evidence_view",
+        "coverage_state",
+        "source_local_ordering",
+        "decision_evidence",
+        "candidate_matrix",
+        "rankings",
+        "top_observed_candidate",
+        "gwas_association_evidence"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_variant_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "gwas_catalog_api"
+      ],
+      "data_access": [
+        "selected_public_variant_targets"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "gwas.compare_gene_associations": {
+      "capability": "gwas-catalog",
+      "namespace": "gwas",
+      "description": "Compare candidate genes using GWAS Catalog reported_gene and mapped_gene trait-association evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "phenotype": {
+            "type": "string"
+          },
+          "genes": {
+            "$ref": "#/schema_fragments/properties/string_array"
+          },
+          "association_limit": {
+            "$ref": "#/schema_fragments/properties/limit_200"
+          },
+          "api_url": {
+            "type": "string",
+            "default": "https://www.ebi.ac.uk/gwas/rest/api/v2"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          }
+        },
+        "required": [
+          "phenotype",
+          "genes"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "source_records"
+        ]
+      },
+      "skill": "skills/gwas-catalog/SKILL.md",
+      "area": "gwas_catalog",
+      "requires": [
+        "phenotype",
+        "candidate_genes"
+      ],
+      "produces": [
+        "ranking",
+        "coverage_state",
+        "source_local_ordering",
+        "decision_evidence",
+        "evidence_records",
+        "source_prior",
+        "coverage",
+        "top_observed_candidate",
+        "details",
+        "telemetry"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "gwas_catalog_api"
+      ],
+      "data_access": [
+        "selected_public_targets"
+      ],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

@@ -1,0 +1,272 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {},
+  "operations": {
+    "research.list_sources": {
+      "capability": "journal",
+      "namespace": "research",
+      "description": "List source catalogs relevant to a target type or one source ID.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "$ref": "#/schema_fragments/properties/target_type"
+          },
+          "source_id": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/source-research/SKILL.md",
+      "area": "sources",
+      "requires": [],
+      "produces": [
+        "source_catalog"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "research.build_target_packet": {
+      "capability": "journal",
+      "namespace": "research",
+      "description": "Build a target-centric evidence packet after the agent identifies the user's target.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "target_type": {
+            "$ref": "#/schema_fragments/properties/target_type"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_20"
+          }
+        },
+        "required": [
+          "target_type"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "variant_locus",
+          "research_target_scalars"
+        ]
+      },
+      "skill": "skills/source-research/SKILL.md",
+      "area": "research",
+      "requires": [
+        "target"
+      ],
+      "produces": [
+        "evidence_packet"
+      ],
+      "context_optional": [
+        "db",
+        "genome_build"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "research.record": {
+      "capability": "journal",
+      "namespace": "research",
+      "description": "Store reviewed source findings or tool-returned record_research_payloads in evidence storage with explicit shared/private scope.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            ],
+            "description": "A reviewed finding object, a findings wrapper, or record_research_payloads returned by source/PGx tools."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "private",
+              "shared"
+            ],
+            "default": "shared"
+          },
+          "sync_shared": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "storage_db_pair"
+        ]
+      },
+      "skill": "skills/source-research/SKILL.md",
+      "area": "evidence",
+      "requires": [
+        "reviewed_finding_payload_or_file"
+      ],
+      "produces": [
+        "reviewed_research"
+      ],
+      "context_optional": [
+        "db",
+        "shared_db"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "research.query": {
+      "capability": "journal",
+      "namespace": "research",
+      "description": "Retrieve reviewed research for an exact target from local evidence storage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "target_type": {
+            "$ref": "#/schema_fragments/properties/target_type"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "private",
+              "shared"
+            ]
+          },
+          "limit": {
+            "$ref": "#/schema_fragments/properties/limit_20"
+          }
+        },
+        "required": [
+          "target_type"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "variant_locus",
+          "research_target_scalars"
+        ]
+      },
+      "skill": "skills/source-research/SKILL.md",
+      "area": "evidence",
+      "requires": [
+        "target"
+      ],
+      "produces": [
+        "reviewed_research_query"
+      ],
+      "context_optional": [
+        "db",
+        "genome_build"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "research.search": {
+      "capability": "journal",
+      "namespace": "research",
+      "description": "Token-search reviewed research findings stored in local evidence storage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "query": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "target_type": {
+            "$ref": "#/schema_fragments/properties/target_type"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "private",
+              "shared"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/source-research/SKILL.md",
+      "area": "evidence",
+      "requires": [
+        "query"
+      ],
+      "produces": [
+        "reviewed_research_search"
+      ],
+      "context_optional": [
+        "db"
+      ],
+      "privacy_scope": "target_scoped",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "selected_public_targets",
+        "active_genome_index_when_selected"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

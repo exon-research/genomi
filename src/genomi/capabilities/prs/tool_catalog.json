@@ -1,0 +1,371 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "polygenic-score": {
+      "title": "Polygenic Scores",
+      "start_when": "The user asks about polygenic risk scores, PRS, PGS Catalog scores, common disease or trait risk from many variants, or applying a published scoring file to their genome.",
+      "skill_documents": [
+        "skills/prs/SKILL.md"
+      ],
+      "entry_operations": [
+        "prs.search_scores",
+        "prs.calculate_score"
+      ],
+      "operations": [
+        "prs.build_source_context",
+        "prs.calculate_score",
+        "prs.check_score_overlap",
+        "prs.fetch_score_metadata",
+        "prs.import_scoring_file",
+        "prs.list_imported_scores",
+        "prs.search_scores"
+      ]
+    }
+  },
+  "operations": {
+    "prs.search_scores": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Search public PGS Catalog score metadata by trait, score ID, EFO term, or free-text query without reading Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "trait": {
+            "type": "string"
+          },
+          "pgs_id": {
+            "type": "string",
+            "pattern": "^PGS[0-9]{6}$"
+          },
+          "efo_id": {
+            "type": "string"
+          },
+          "semantic_context": {
+            "$ref": "#/schema_fragments/properties/semantic_context"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [
+        "public_trait_or_pgs_id"
+      ],
+      "produces": [
+        "pgs_catalog_score_candidates",
+        "score_metadata",
+        "source_status"
+      ],
+      "context_optional": [
+        "query",
+        "trait",
+        "pgs_id",
+        "efo_id"
+      ],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "pgs_catalog_metadata"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "prs.fetch_score_metadata": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Fetch detailed public PGS Catalog metadata for one score ID, including scoring-file URLs and source publication context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pgs_id": {
+            "type": "string",
+            "pattern": "^PGS[0-9]{6}$"
+          }
+        },
+        "required": [
+          "pgs_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [
+        "pgs_id"
+      ],
+      "produces": [
+        "score_metadata",
+        "scoring_file_urls",
+        "source_status"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "pgs_catalog_api"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "prs.import_scoring_file": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Import a PGS Catalog or local scoring file into Genomi's local PRS score cache for a declared genome build.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pgs_id": {
+            "type": "string",
+            "pattern": "^PGS[0-9]{6}$"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "scoring_file": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "scoring_url": {
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [
+        "pgs_id_or_scoring_file_or_scoring_url",
+        "declared_genome_build"
+      ],
+      "produces": [
+        "local_prs_score_cache",
+        "score_manifest",
+        "variant_weight_database"
+      ],
+      "context_optional": [
+        "pgs_id",
+        "scoring_file",
+        "scoring_url",
+        "genome_build"
+      ],
+      "privacy_scope": "public_or_user_supplied_score_file",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [
+        "pgs_catalog_api",
+        "pgs_catalog_ftp"
+      ],
+      "data_access": [
+        "public_catalog_metadata",
+        "local_public_score_cache"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "prs.list_imported_scores": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "List polygenic scores available locally for use without reading Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [],
+      "produces": [
+        "local_prs_score_cache_inventory"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_public_score_cache"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "prs.check_score_overlap": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Check how many variants from a polygenic score are usable in an approved Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "pgs_id": {
+            "type": "string"
+          },
+          "score_dir": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "skip_ambiguous_palindromic": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [
+        "approved_active_genome_index_or_supplied_source",
+        "pgs_id_or_score_dir"
+      ],
+      "produces": [
+        "prs_variant_overlap",
+        "sample_qc",
+        "score_readiness",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "source",
+        "vcf",
+        "active_genome_index_path",
+        "pgs_id",
+        "score_dir",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private_prs_score",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths",
+        "local_public_score_cache"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "prs.calculate_score": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Apply a published polygenic score to an approved Active Genome Index and return raw weighted score plus QC.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "pgs_id": {
+            "type": "string"
+          },
+          "score_dir": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "skip_ambiguous_palindromic": {
+            "type": "boolean",
+            "default": true
+          },
+          "score_mean": {
+            "type": "number"
+          },
+          "score_sd": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [
+        "approved_active_genome_index_or_supplied_source",
+        "pgs_id_or_score_dir",
+        "sufficient_score_overlap"
+      ],
+      "produces": [
+        "raw_polygenic_score",
+        "prs_variant_overlap",
+        "sample_qc",
+        "source_bound_interpretation",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "source",
+        "vcf",
+        "active_genome_index_path",
+        "pgs_id",
+        "score_dir",
+        "genome_build",
+        "score_mean",
+        "score_sd"
+      ],
+      "privacy_scope": "local_private_prs_score",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths",
+        "local_public_score_cache"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "prs.build_source_context": {
+      "capability": "polygenic-score",
+      "namespace": "prs",
+      "description": "Explain PGS Catalog provenance, local scoring workflow, genome-build defaults, calibration limits, and PRS risk boundaries.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/prs/SKILL.md",
+      "area": "polygenic_score",
+      "requires": [],
+      "produces": [
+        "prs_source_context",
+        "method_boundaries"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

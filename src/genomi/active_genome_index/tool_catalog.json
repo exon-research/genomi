@@ -1,0 +1,249 @@
+{
+  "schema": "genomi-tool-catalog-fragment-v1",
+  "capabilities": {
+    "active-genome-index": {
+      "title": "Active Genome Index Intake and Scans",
+      "start_when": "The user supplies a genome source or asks about selected Active Genome Index evidence.",
+      "skill_documents": [
+        "skills/active-genome-index/SKILL.md"
+      ],
+      "entry_operations": [
+        "active_genome_index.summarize"
+      ],
+      "operations": [
+        "active_genome_index.summarize",
+        "active_genome_index.classify_callset_qc",
+        "active_genome_index.classify_genotype_support",
+        "active_genome_index.classify_region_callability"
+      ]
+    }
+  },
+  "operations": {
+    "active_genome_index.summarize": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Summarize local parse/readiness/evidence state for an Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "vcf",
+      "requires": [],
+      "produces": [
+        "active_genome_index_summary",
+        "evidence_db_summary"
+      ],
+      "context_optional": [
+        "vcf",
+        "db"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "active_genome_index.classify_callset_qc": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Classify genome callset shape, depth/quality field availability, and absence-claim boundaries using an Active Genome Index.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_auto_contextual"
+          },
+          "scan_records": {
+            "type": "integer",
+            "default": 1000
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "vcf",
+      "requires": [
+        "active_genome_index_or_source_param"
+      ],
+      "produces": [
+        "sample_qc"
+      ],
+      "context_optional": [
+        "vcf",
+        "db",
+        "active_genome_index_path",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.classify_genotype_support": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Classify whether one exact allele has enough sample support to be used in a personal interpretation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_auto_contextual"
+          },
+          "reference_fasta": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "min_depth": {
+            "type": "integer",
+            "default": 10
+          },
+          "min_gq": {
+            "$ref": "#/schema_fragments/properties/limit_20"
+          }
+        },
+        "required": [
+          "chrom",
+          "pos",
+          "ref",
+          "alt"
+        ],
+        "additionalProperties": false,
+        "x_genomi_property_groups": [
+          "variant_locus"
+        ]
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "vcf",
+      "requires": [
+        "active_genome_index_or_source_param",
+        "allele"
+      ],
+      "produces": [
+        "genotype_support"
+      ],
+      "context_optional": [
+        "vcf",
+        "db",
+        "active_genome_index_path",
+        "reference_fasta",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.classify_region_callability": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Classify whether a region can support reference or absence claims.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "vcf": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "region": {
+            "type": "string"
+          },
+          "db": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "active_genome_index_path": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "output": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "genome_build": {
+            "$ref": "#/schema_fragments/properties/genome_build_auto_contextual"
+          },
+          "min_depth": {
+            "type": "integer",
+            "default": 10
+          },
+          "min_covered_fraction": {
+            "type": "number",
+            "default": 0.95
+          },
+          "limit": {
+            "type": "integer",
+            "default": 5000
+          }
+        },
+        "required": [
+          "region"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "vcf",
+      "requires": [
+        "active_genome_index_or_source_param",
+        "region"
+      ],
+      "produces": [
+        "callability"
+      ],
+      "context_optional": [
+        "vcf",
+        "db",
+        "active_genome_index_path",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "active_genome_index_or_supplied_private_paths"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}
