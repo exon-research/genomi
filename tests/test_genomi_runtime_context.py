@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from pathlib import Path
 from unittest import mock
 
@@ -610,6 +611,73 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         popen.assert_not_called()
         self.assertEqual(job["job_id"], job_id)
         self.assertTrue(job["reused_existing"])
+
+    def _write_running_job(self, job_id: str, **overrides: object) -> Path:
+        job_path = background_jobs.jobs_dir() / f"{job_id}.json"
+        # A live pid (this process) so the pid probe alone never marks it dead;
+        # the staleness path is what these tests exercise.
+        job = {
+            "schema": background_jobs.JOB_SCHEMA,
+            "job_id": job_id,
+            "operation": "genomi.list_resources",
+            "params": {},
+            "params_digest": background_jobs.operation_params_digest("genomi.list_resources", {}),
+            "status": "running",
+            "pid": os.getpid(),
+            "created_at": "2026-05-20T00:00:00+00:00",
+            "started_at": background_jobs.utc_now(),
+            "heartbeat_at": background_jobs.utc_now(),
+        }
+        job.update(overrides)
+        background_jobs.write_job(job_path, job)
+        return job_path
+
+    def test_running_job_with_fresh_heartbeat_stays_active(self) -> None:
+        job_path = self._write_running_job("hb-fresh")
+        job = background_jobs.read_job(job_path=job_path)
+        self.assertEqual(job["status"], "running")
+        status = background_jobs.public_job_status(job)
+        self.assertEqual(status["status"], "in_progress")
+        self.assertIn("seconds_since_heartbeat", status)
+
+    def test_running_job_with_stale_heartbeat_is_marked_failed(self) -> None:
+        # A zombie/defunct worker still answers os.kill(pid, 0); the stale
+        # heartbeat is what flips it to failed instead of "running" forever.
+        stale = "2026-05-20T00:00:00+00:00"
+        job_path = self._write_running_job("hb-stale", heartbeat_at=stale, started_at=stale)
+        job = background_jobs.read_job(job_path=job_path)
+        self.assertEqual(job["status"], "failed")
+        self.assertEqual(job["error"]["code"], "background_job_stalled")
+        # Persisted, so a second read sees the terminal status.
+        self.assertEqual(background_jobs.read_job(job_path=job_path)["status"], "failed")
+
+    def test_record_heartbeat_advances_running_job_and_skips_terminal(self) -> None:
+        job_path = self._write_running_job("hb-advance", heartbeat_at="2026-05-20T00:00:00+00:00")
+        background_jobs.record_heartbeat(job_path)
+        bumped = background_jobs._read_job_file(job_path)
+        self.assertNotEqual(bumped["heartbeat_at"], "2026-05-20T00:00:00+00:00")
+
+        background_jobs.write_job(job_path, {**bumped, "status": "completed"})
+        background_jobs.record_heartbeat(job_path)
+        after = background_jobs._read_job_file(job_path)
+        self.assertEqual(after["status"], "completed")
+
+    def test_worker_termination_handler_records_failed_status(self) -> None:
+        from genomi.runtime import job_worker
+
+        job_path = self._write_running_job("signal-term")
+        registered: dict[int, object] = {}
+        with mock.patch("genomi.runtime.job_worker.signal.signal", side_effect=lambda sig, fn: registered.__setitem__(sig, fn)):
+            job_worker._install_termination_handlers(job_path, threading.Event())
+
+        handler = registered[job_worker.signal.SIGTERM]
+        with mock.patch("genomi.runtime.job_worker.os._exit") as exit_mock:
+            handler(int(job_worker.signal.SIGTERM), None)  # type: ignore[operator]
+        exit_mock.assert_called_once_with(1)
+
+        job = background_jobs._read_job_file(job_path)
+        self.assertEqual(job["status"], "failed")
+        self.assertEqual(job["error"]["code"], "background_job_signal")
 
     def test_mcp_parse_default_disclosure_hides_artifact_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

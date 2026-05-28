@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,16 @@ DEFAULT_BACKGROUND_TIMEOUT_SECONDS = 30.0
 POLL_INTERVAL_SECONDS = 0.25
 ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"completed", "failed"}
+
+# A running worker bumps `heartbeat_at` this often on a side thread, even while
+# the operation itself makes no externally visible progress. An observer can
+# watch the heartbeat advance to confirm the job is alive (vs. stuck), and a
+# running job whose heartbeat has not advanced in HEARTBEAT_STALE_AFTER_SECONDS
+# is treated as dead. The staleness check catches the two cases a pid probe
+# cannot: a SIGKILLed worker that left no status, and a zombie/defunct worker
+# that still answers `os.kill(pid, 0)`.
+HEARTBEAT_INTERVAL_SECONDS = 5.0
+HEARTBEAT_STALE_AFTER_SECONDS = 60.0
 
 
 def background_timeout_seconds() -> float:
@@ -115,20 +126,81 @@ def wait_for_job(job_id: str, *, timeout_seconds: float | None = None) -> JsonOb
 def read_job(*, job_id: str | None = None, job_path: str | Path | None = None) -> JsonObject:
     path = resolve_job_path(job_id=job_id, job_path=job_path)
     job = _read_job_file(path)
-    if job.get("status") in ACTIVE_STATUSES and _process_finished(job):
-        job.update(
-            {
-                "status": "failed",
-                "finished_at": utc_now(),
-                "updated_at": utc_now(),
-                "error": {
-                    "code": "background_job_stopped",
-                    "message": "The background worker stopped before writing a completed result.",
-                },
-            }
-        )
+    reason = _dead_worker_reason(job)
+    if reason is not None:
+        now = utc_now()
+        job.update({"status": "failed", "finished_at": now, "updated_at": now, "error": reason})
         write_job(path, job)
     return job
+
+
+def record_heartbeat(job_path: str | Path) -> None:
+    """Bump a running job's heartbeat. Best-effort: never raises.
+
+    Called periodically by the job worker so observers can see liveness and so
+    a stalled/dead worker can be told apart from a slow-but-progressing one.
+    No-op once the job has reached a terminal status.
+    """
+    try:
+        job = _read_job_file(job_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return
+    if job.get("status") not in ACTIVE_STATUSES:
+        return
+    now = utc_now()
+    job["heartbeat_at"] = now
+    job["updated_at"] = now
+    try:
+        write_job(job_path, job)
+    except OSError:
+        pass
+
+
+def _dead_worker_reason(job: JsonObject) -> JsonObject | None:
+    """Why a job that still claims to be active should be considered dead.
+
+    Returns the error payload to record, or None if the worker still looks
+    alive. Only `running` jobs are probed — a `queued` job has no worker yet.
+    """
+    if job.get("status") != "running":
+        return None
+    if _process_finished(job):
+        return {
+            "code": "background_job_stopped",
+            "message": "The background worker stopped before writing a completed result.",
+        }
+    # `os.kill(pid, 0)` succeeds for a zombie/defunct worker, so fall back to
+    # the heartbeat: if the worker has not bumped it (or, before its first
+    # heartbeat, since it started) within the stale window, treat it as dead.
+    age = _seconds_since(job.get("heartbeat_at") or job.get("started_at"))
+    if age is not None and age > HEARTBEAT_STALE_AFTER_SECONDS:
+        return {
+            "code": "background_job_stalled",
+            "message": (
+                f"The background worker has sent no heartbeat in {int(age)}s "
+                f"(stale after {int(HEARTBEAT_STALE_AFTER_SECONDS)}s); treating it as stopped."
+            ),
+        }
+    return None
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _seconds_since(value: Any) -> float | None:
+    parsed = _parse_timestamp(value)
+    if parsed is None:
+        return None
+    return (datetime.now(tz=timezone.utc) - parsed).total_seconds()
 
 
 def public_job_status(job: JsonObject, *, timeout_seconds: float | None = None) -> JsonObject:
@@ -144,6 +216,7 @@ def public_job_status(job: JsonObject, *, timeout_seconds: float | None = None) 
         "created_at": job.get("created_at"),
         "started_at": job.get("started_at"),
         "finished_at": job.get("finished_at"),
+        "heartbeat_at": job.get("heartbeat_at"),
         "pid": job.get("pid"),
         "timeout_seconds": timeout_seconds,
         "check": {
@@ -154,6 +227,13 @@ def public_job_status(job: JsonObject, *, timeout_seconds: float | None = None) 
     }
     if status == "failed":
         payload["error"] = job.get("error") or {"code": "background_job_failed", "message": "Background job failed."}
+    if status in ACTIVE_STATUSES:
+        # Surface how long since the last heartbeat so a caller can tell an
+        # alive-but-slow job (heartbeat advancing) from a stuck one without
+        # knowing the worker's internals.
+        age = _seconds_since(job.get("heartbeat_at"))
+        if age is not None:
+            payload["seconds_since_heartbeat"] = round(age, 1)
     payload = _drop_none(payload)
     if payload.get("status") in {"in_progress", "failed"}:
         payload["evidence_envelope"] = _env.derive_default_envelope(operation or "background_job", payload)
