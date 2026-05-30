@@ -111,10 +111,6 @@ Silent defaults for source bootstrap only: source checkout at
 User-owned choices: Q1 (`--libraries`), Q2 (`GENOMI_HOME`), and Q3
 (response tone).
 
-Python 3.10+. Runs on macOS, Linux, and Windows via WSL2. The bundled
-aligner binaries are Linux x86_64 — on other platforms the installer
-skips them with a notice and the rest of the install completes.
-
 ### Step 0.5: Note the platform
 
 Record the host platform for later. It's only a hard gate when the user
@@ -219,25 +215,12 @@ How should Genomi explain things in answers?
 4. expert    — full methods, QC, source provenance, structured evidence
 ```
 
-Persist the chosen profile in the Genomi registry as the primary source of
-truth by calling the **MCP tool** `genomi.set_response_profile` with
-`{"profile": "<id>"}` where `<id>` is one of `eli5`, `patient`, `literate`,
-`expert`. This is an MCP tool invocation from your agent runtime — not a
-shell command. There is no `genomi set-response-profile` CLI; trying to call
-it from the shell will (correctly) be rejected.
-
-Equivalent forms by host:
-
-- Claude Code / Gemini / Codex / any MCP host: invoke the `genomi` server's
-  `set_response_profile` tool with `{"profile": "<id>"}`.
-- From inside the Genomi host-agent skill: same call routed through the
-  Genomi MCP dispatcher.
-
-Sessions that inspect current personal context can read the active profile
-from `genomi.describe_context` (the `active_response_profile` field — also
-an MCP tool, not a shell command). Also write the chosen id into the host's
-durable memory (CLAUDE.md, Codex memory, etc.) as a redundant backup. On
-"default" / "doesn't matter", record `eli5`.
+Persist it by calling the **MCP tool** `genomi.set_response_profile` with
+`{"profile": "<id>"}` (`<id>` ∈ `eli5`, `patient`, `literate`, `expert`) — an
+MCP tool from your agent runtime, not a shell command (there is no
+`genomi set-response-profile` CLI). Also record the id in the host's durable
+memory (CLAUDE.md, Codex memory, etc.) as a backup. On "default" /
+"doesn't matter", use `eli5`.
 
 ### Step 4: Pre-flight checks
 
@@ -327,9 +310,9 @@ After install, add the shim directory to PATH so the MCP host can launch
 export PATH="<GENOMI_HOME>/bin:$PATH"
 ```
 
-**PEP 668 / managed-Python fallback.** If `python3 -m pip` is locked down
-("externally-managed-environment"), set up a venv first and pass
-`--skip-package`:
+**PEP 668 / managed-Python fallback.** If `python3 -m pip` is blocked
+("externally-managed-environment"), install `genomi` into a venv and run the
+installer with that venv's interpreter, then pass `--skip-package`:
 
 ```bash
 uv venv .venv && uv pip install -e . --python .venv/bin/python
@@ -337,13 +320,8 @@ export PATH="$PWD/.venv/bin:$PATH"
 .venv/bin/python scripts/install_for_agents.py --skip-package --libraries <Q1-value>
 ```
 
-Run the installer with the **venv's** interpreter (`.venv/bin/python …`, as
-above): the generated `genomi` launcher points at the interpreter that ran the
-installer, and the editable `genomi` package lives only in the venv's
-site-packages. The launcher uses the venv python as-is (it does not dereference
-the symlink), so a standard `uv venv` / `python -m venv` works; `python -m venv
---copies .venv` (a real interpreter file rather than a symlink) is an equivalent
-belt-and-suspenders option.
+Whatever interpreter runs the installer is the one the `genomi` shim launches,
+so `genomi` must be importable from it (any venv/conda/system setup is fine).
 
 **Re-running into a populated `GENOMI_HOME` is safe and idempotent.** Install
 skips any library whose files already exist and downloads only what's missing,

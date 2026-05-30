@@ -176,30 +176,35 @@ def _completed(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 
 
-def _git_pull_sequence(*, before: str, after: str):
-    """side_effect for handlers_admin._git simulating a clean, fast-forward pull."""
+def _git_pull_sequence(*, before: str, after: str, dep_diff: str = "pyproject.toml"):
+    """side_effect for handlers_admin._git simulating a clean, fast-forward pull.
+
+    `dep_diff` is the `git diff --name-only` output for the dependency-manifest
+    probe that runs after a code-changing pull (empty string = nothing changed).
+    """
     responses = iter(
         [
             _completed(stdout=""),          # status --porcelain (clean tree)
             _completed(stdout=before),      # rev-parse HEAD (before)
             _completed(stdout="Updated."),  # pull --ff-only
             _completed(stdout=after),       # rev-parse HEAD (after)
+            _completed(stdout=dep_diff),    # diff --name-only -- <manifests>
         ]
     )
     return lambda *args, **kwargs: next(responses)
 
 
 class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
-    def test_code_changing_pull_reinstalls_editable_package_for_deps(self) -> None:
-        # A git pull that moves HEAD must reinstall the editable package so a
-        # changed pyproject's dependencies are installed — pulled code can
-        # otherwise import a package that isn't present.
+    def test_manifest_changing_pull_reconciles_deps_with_pip(self) -> None:
+        # A pull that moves HEAD and changes a dependency manifest reconciles
+        # deps against the running interpreter — pulled code can otherwise
+        # import a package that isn't present.
         from genomi.operations.registry import handlers_admin
 
-        pip_calls: list[list[str]] = []
+        calls: list[list[str]] = []
 
         def _fake_run(command, **kwargs):
-            pip_calls.append(command)
+            calls.append(command)
             return _completed(stdout="Successfully installed genomi")
 
         with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
@@ -209,24 +214,37 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
                 "genomi.install", {"libraries": "setup-only", "update_runtime": True}
             )
 
-        runtime_update = result["runtime_update"]
-        self.assertEqual(runtime_update["status"], "completed")
-        self.assertTrue(runtime_update["changed"])
-        sync = runtime_update["dependency_sync"]
+        sync = result["runtime_update"]["dependency_sync"]
         self.assertEqual(sync["status"], "completed")
-        # Reinstalled editable, with the running interpreter, from the repo root.
-        self.assertEqual(len(pip_calls), 1)
-        self.assertEqual(pip_calls[0][:4], [handlers_admin.sys.executable, "-m", "pip", "install"])
-        self.assertIn("-e", pip_calls[0])
-        self.assertIn("/tmp/genomi-repo", pip_calls[0])
+        self.assertEqual(sync["tool"], "pip")
+        # Targets the running interpreter, editable, from the repo root.
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:4], [handlers_admin.sys.executable, "-m", "pip", "install"])
+        self.assertIn("-e", calls[0])
+        self.assertIn("/tmp/genomi-repo", calls[0])
 
-    def test_no_op_pull_does_not_reinstall(self) -> None:
-        # HEAD unchanged → nothing pulled → no dependency reinstall.
+    def test_pull_without_manifest_change_skips_reconcile(self) -> None:
+        # Code changed but no dependency manifest did → no installer runs (we
+        # don't assume/invoke a package manager when there's nothing to sync).
+        from genomi.operations.registry import handlers_admin
+
+        with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
+             mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="bbb", dep_diff="")), \
+             mock.patch.object(handlers_admin.subprocess, "run", side_effect=AssertionError("no installer must run")):
+            result = call_operation(
+                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+            )
+
+        sync = result["runtime_update"]["dependency_sync"]
+        self.assertEqual(sync["status"], "skipped")
+
+    def test_no_op_pull_does_not_reconcile(self) -> None:
+        # HEAD unchanged → nothing pulled → no dependency probe at all.
         from genomi.operations.registry import handlers_admin
 
         with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="aaa")), \
-             mock.patch.object(handlers_admin.subprocess, "run", side_effect=AssertionError("pip must not run")):
+             mock.patch.object(handlers_admin.subprocess, "run", side_effect=AssertionError("no installer must run")):
             result = call_operation(
                 "genomi.install", {"libraries": "setup-only", "update_runtime": True}
             )
@@ -235,16 +253,17 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
         self.assertFalse(runtime_update["changed"])
         self.assertNotIn("dependency_sync", runtime_update)
 
-    def test_dependency_sync_failure_is_non_fatal_with_hint(self) -> None:
-        # PEP 668 / no-pip hosts: a failed reinstall must not abort the update;
-        # it reports failed with a manual hint (code is already pulled).
+    def test_no_usable_installer_is_non_fatal_action_required(self) -> None:
+        # PEP 668 base interpreter with no pip and no uv: the update must not
+        # abort; it reports action_required with a tool-neutral hint.
         from genomi.operations.registry import handlers_admin
 
         def _fake_run(command, **kwargs):
-            return _completed(returncode=1, stderr="externally-managed-environment")
+            return _completed(returncode=1, stderr="No module named pip")
 
         with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="bbb")), \
+             mock.patch.object(handlers_admin.shutil, "which", return_value=None), \
              mock.patch.object(handlers_admin.subprocess, "run", side_effect=_fake_run):
             result = call_operation(
                 "genomi.install", {"libraries": "setup-only", "update_runtime": True}
@@ -252,7 +271,7 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
 
         self.assertEqual(result["status"], "completed")  # update did not abort
         sync = result["runtime_update"]["dependency_sync"]
-        self.assertEqual(sync["status"], "failed")
+        self.assertEqual(sync["status"], "action_required")
         self.assertIn("pip install -e", sync["hint"])
 
 

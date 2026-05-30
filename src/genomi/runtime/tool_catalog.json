@@ -72,7 +72,7 @@
     "genomi.install": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Install or update Genomi (`genomi install` and `genomi update` are the same operation). The `genomi install` / `genomi update` CLI commands update everything: runtime code + all reference libraries + a background reparse of any genome whose schema changed. As an operation it can do any subset: update the runtime code (when update_runtime=true and the runtime lives in a clean git checkout, run `git pull --ff-only`, unless GENOMI_SKIP_RUNTIME_GIT_PULL is set for a non-git distribution; a code-changing pull then reinstalls the editable package to sync changed dependencies), install or top up the selected public reference libraries in GENOMI_HOME (idempotent — already-present libraries are skipped; pass force to re-download), persist the selected response profile, rebuild public retrieval indexes, and — when reparse_stale=true — launch a background reparse for each registered genome whose stored index schema is older than the on-disk runtime schema (skipping genomes whose source is no longer available). To update everything from the agent, pass update_runtime=true, reparse_stale=true, libraries=everything. libraries defaults to setup-only and update_runtime/reparse_stale default off, so a bare operation call just updates setup. This tool only exists once Genomi is installed; for a first-time install on a machine without the genomi runtime, follow the source bootstrap in INSTALL_FOR_AGENTS.md instead.",
+      "description": "Install or update Genomi: runtime code, public reference libraries (in GENOMI_HOME, idempotent), and the response profile. The `genomi install` / `genomi update` CLI aliases do everything; as an operation the libraries / update_runtime / reparse_stale flags select what runs (see each flag). For a first-time install on a machine without the genomi runtime, follow INSTALL_FOR_AGENTS.md instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -113,7 +113,7 @@
           },
           "update_runtime": {
             "$ref": "#/schema_fragments/properties/boolean_default_false",
-            "description": "Update the runtime code: when the runtime is a clean git checkout, run `git pull --ff-only` (a no-op for package-managed installs). A code-changing pull then reinstalls the editable package with the running interpreter so changed dependencies are synced (non-fatal — reports a manual hint on PEP 668 hosts without pip). Set GENOMI_SKIP_RUNTIME_GIT_PULL to suppress the pull for distributions that update themselves. Set automatically by `genomi update`."
+            "description": "Update the runtime code: when the runtime is a clean git checkout, run `git pull --ff-only` (a no-op for package-managed installs), then reconcile dependencies if the pull changed a manifest. Set GENOMI_SKIP_RUNTIME_GIT_PULL to suppress the pull. Set automatically by `genomi update`."
           },
           "reparse_stale": {
             "$ref": "#/schema_fragments/properties/boolean_default_false",
@@ -254,7 +254,7 @@
     "genomi.describe_context": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Return the current personal/session context: Active Genome Index access state, current user, and active_response_profile — id + label + full guidance string for the user's selected tone (eli5 / patient / literate / expert, or the catalog default when none has been set). Use when the user asks about personal context, their own genome/context, a genome source, a previous run, a selected user, or before making sample-specific claims. Public-only context (no active genome) is a valid state. Do not require this as a universal bootstrap for public-only questions. When genome data exists but is not active+approved this session, the result's next_actions points at skills/active-genome-index/SKILL.md, whose active_genome_index.* selection/approval tools are invoke-only.",
+      "description": "Return the current personal/session context: Active Genome Index access state, current user, and active_response_profile (the user's selected tone). Use when the user asks about their genome/context, a previous run, or before sample-specific claims. Public-only context (no active genome) is a valid state — don't require this for public-only questions.",
       "input_schema": {
         "type": "object",
         "properties": {},
@@ -310,7 +310,7 @@
     "genomi.search_indexes": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Search Genomi metadata retrieval indexes across public capabilities (e.g. PGS Catalog) to discover relevant doc IDs before drilling in with a capability tool. Active Genome Index metadata is searched only when explicitly requested and approved. Requires query or semantic_context. Indexes are rebuilt automatically by genomi.install; use genomi.list_resources to enumerate installed reference libraries.",
+      "description": "Search Genomi metadata retrieval indexes across public capabilities (e.g. PGS Catalog) to find relevant doc IDs before drilling in with a capability tool. Requires query or semantic_context; Active Genome Index metadata is searched only when requested and approved.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -388,7 +388,7 @@
     "genomi.set_response_profile": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Persist the active host response-tone profile in the Genomi registry. The chosen profile is surfaced in genomi.describe_context.active_response_profile for sessions that inspect current personal/session context.",
+      "description": "Persist the host response-tone profile (eli5 / patient / literate / expert) in the Genomi registry. Surfaced in genomi.describe_context.",
       "input_schema": {
         "type": "object",
         "properties": {

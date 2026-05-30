@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -346,7 +347,7 @@ def _genomi_install_scope() -> JsonObject:
         "does_not_update": [
             "runtime_code_unless_update_runtime_is_requested",
         ],
-        "force_behavior": "force=true reinstalls selected public reference libraries; runtime code updates via git pull when update_runtime is requested, unless GENOMI_SKIP_RUNTIME_GIT_PULL is set. A code-changing pull also reinstalls the editable package so changed dependencies are synced.",
+        "force_behavior": "force=true reinstalls selected public reference libraries; runtime code updates via git pull when update_runtime is requested, unless GENOMI_SKIP_RUNTIME_GIT_PULL is set. A manifest-changing pull also reconciles dependencies.",
     }
 
 
@@ -456,46 +457,96 @@ def _git_pull_runtime_step() -> JsonObject:
     if changed:
         # A git pull updates the source in place (an editable install reads it
         # directly), but it does NOT install new or bumped dependencies from a
-        # changed pyproject — pulled code can then import a package that isn't
-        # present. Re-run the editable install with the running interpreter so
-        # those deps land in the right environment.
-        result["dependency_sync"] = _sync_runtime_dependencies(repo)
+        # changed manifest — pulled code can then import a package that isn't
+        # present. Reconcile the environment, but only if a dependency manifest
+        # actually changed in the pulled range.
+        result["dependency_sync"] = _sync_runtime_dependencies(repo, before=before, after=after)
         result["restart_hint"] = "Restart the host agent and reload the Genomi MCP server to load the pulled code."
     return result
 
 
-def _sync_runtime_dependencies(repo: Path) -> JsonObject:
-    """Reinstall the editable package so a pulled pyproject's deps are present.
+# Files that declare the runtime's dependencies. A pull that touches none of
+# these can't have changed deps, so no reinstall is attempted.
+_DEPENDENCY_MANIFESTS = (
+    "pyproject.toml",
+    "uv.lock",
+    "poetry.lock",
+    "requirements.txt",
+    "setup.cfg",
+    "setup.py",
+)
 
-    Uses the *running* interpreter (``sys.executable``) — which is the same venv
-    interpreter the ``genomi`` shim launches — so changed dependencies resolve
-    into the environment Genomi actually runs in. Non-fatal: on a PEP 668
-    externally-managed base interpreter or a host without pip this reports
-    ``failed`` with a manual hint rather than aborting an otherwise-successful
-    update (the code itself is already pulled and usable if deps are unchanged).
+
+def _dependency_manifests_changed(repo: Path, before: str | None, after: str | None) -> list[str] | None:
+    """Manifest files that changed between two SHAs, or None if it can't be told.
+
+    None means "couldn't determine" (missing SHAs or a failed/garbled diff) — the
+    caller treats that as "attempt a sync to be safe" rather than silently skip.
     """
-    base: JsonObject = {"interpreter": sys.executable}
-    command = [sys.executable, "-m", "pip", "install", "-e", str(repo)]
-    manual_hint = "Sync deps manually inside your venv: pip install -e . (or `uv pip install -e .`)."
-    try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except OSError as exc:
-        return {**base, "status": "failed", "error": str(exc), "hint": manual_hint}
+    if not (before and after):
+        return None
+    completed = _git(repo, "diff", "--name-only", f"{before}..{after}", "--", *_DEPENDENCY_MANIFESTS)
     if completed.returncode != 0:
-        return {
-            **base,
-            "status": "failed",
-            "returncode": completed.returncode,
-            "stderr_tail": _tail(completed.stderr),
-            "hint": manual_hint,
-        }
-    return {**base, "status": "completed", "stdout_tail": _tail(completed.stdout)}
+        return None
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _sync_runtime_dependencies(repo: Path, *, before: str | None, after: str | None) -> JsonObject:
+    """Reconcile the runtime's installed dependencies after a code-changing pull.
+
+    Deliberately makes no assumption about how the host installed Python. It
+    only runs when a dependency manifest changed, then tries the mechanisms that
+    can target *this* interpreter (``sys.executable`` — the same one the
+    ``genomi`` shim launches), in order, stopping at the first that works:
+
+    1. ``python -m pip`` bound to the running interpreter (venv-with-pip,
+       system, conda, …).
+    2. ``uv pip --python <interpreter>`` when ``uv`` is on PATH (uv venvs ship
+       no pip, so this is the common fallback there).
+
+    If a manifest changed but none of those are usable (PEP 668 base interpreter
+    with no pip and no uv, an exotic package manager, …) it reports
+    ``action_required`` with the changed manifests and a tool-neutral hint —
+    it never guesses a command for an environment it can't drive, and never
+    aborts the wider update (the pulled code is already in place).
+    """
+    interpreter = sys.executable
+    base: JsonObject = {"interpreter": interpreter}
+
+    changed = _dependency_manifests_changed(repo, before, after)
+    if changed == []:
+        return {**base, "status": "skipped", "reason": "no dependency manifest changed in the pulled range"}
+    base["changed_manifests"] = changed if changed is not None else "undetermined"
+
+    candidates: list[tuple[str, list[str]]] = [
+        ("pip", [interpreter, "-m", "pip", "install", "-e", str(repo)]),
+    ]
+    uv = shutil.which("uv")
+    if uv:
+        candidates.append(("uv", [uv, "pip", "install", "-e", str(repo), "--python", interpreter]))
+
+    attempts: list[JsonObject] = []
+    for tool, command in candidates:
+        try:
+            completed = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except OSError as exc:
+            attempts.append({"tool": tool, "status": "unavailable", "error": str(exc)})
+            continue
+        if completed.returncode == 0:
+            return {**base, "status": "completed", "tool": tool, "stdout_tail": _tail(completed.stdout)}
+        attempts.append({"tool": tool, "status": "failed", "returncode": completed.returncode, "stderr_tail": _tail(completed.stderr)})
+
+    return {
+        **base,
+        "status": "action_required",
+        "attempts": attempts,
+        "hint": (
+            "A dependency manifest changed but no installer could be driven for this "
+            "interpreter. Reinstall the package into the environment that runs Genomi "
+            f"using whatever manages it — e.g. `pip install -e .`, `uv pip install -e . "
+            f"--python {interpreter}`, conda, or your distro's package manager."
+        ),
+    }
 
 
 def _effective_runtime_schema() -> int:
