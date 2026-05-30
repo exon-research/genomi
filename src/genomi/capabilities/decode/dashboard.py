@@ -1,8 +1,13 @@
-"""Render the Genomi Dashboard self-contained HTML artifact.
+"""Render the Genomi Dashboard HTML artifact.
 
 The renderer is intentionally plain Python: read the template, splice in the
-inline logo data URL and the JSON evidence blob, write a single self-contained
-HTML file. Components in the embedded React/Babel block read evidence from
+inline logo data URL, the vendored React/ReactDOM runtime, the precompiled app
+JS, and the JSON evidence blob, then write a single HTML file. The page renders
+fully offline — no CDN and no in-browser Babel; the dashboard UI is authored in
+``templates/dashboard.jsx`` and precompiled to ``templates/vendor/
+dashboard.compiled.js`` by ``scripts/build_dashboard.py``. (The only external
+reference left is an optional Google Fonts stylesheet, which falls back to
+system fonts offline and carries no genome data.) Components read evidence from
 ``window.__GENOMI_DASHBOARD__`` and fall back to the "Not gathered yet"
 placeholder when a panel is missing.
 """
@@ -31,8 +36,16 @@ PANEL_KEYS: tuple[str, ...] = (
 )
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "shell.html"
+_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+_TEMPLATE_PATH = _TEMPLATE_DIR / "shell.html"
+_VENDOR_DIR = _TEMPLATE_DIR / "vendor"
 _LOGO_PATH = _PACKAGE_ROOT / "assets" / "genomi-logo-transparent.png"
+
+# Vendored, inlined at render time so the dashboard opens with zero external
+# script requests. React must load before ReactDOM, ReactDOM before the app.
+_REACT_PATH = _VENDOR_DIR / "react.production.min.js"
+_REACT_DOM_PATH = _VENDOR_DIR / "react-dom.production.min.js"
+_APP_JS_PATH = _VENDOR_DIR / "dashboard.compiled.js"
 
 _EVIDENCE_RE = re.compile(
     r"window\.__GENOMI_DASHBOARD__\s*=\s*(?P<json>\{.*?\})\s*;",
@@ -553,12 +566,34 @@ def _read_existing_evidence(path: Path) -> JsonObject:
     return loaded
 
 
+def _read_vendor_asset(path: Path) -> str:
+    if not path.is_file():
+        raise DashboardRenderError(
+            "vendor_asset_missing",
+            f"Vendored dashboard asset {path.name} is missing at {path}. "
+            f"Run scripts/build_dashboard.py to (re)generate the compiled app.",
+        )
+    return path.read_text(encoding="utf-8")
+
+
 def _render_html(evidence: JsonObject) -> str:
     template = _read_template()
     logo = _read_logo_data_url()
     blob = _json_blob(evidence)
-    return template.replace("__GENOMI_LOGO_DATA_URL__", logo).replace(
-        "__GENOMI_EVIDENCE__", blob
+    # Inline React + ReactDOM (UMD) and the precompiled app, in load order, so
+    # the artifact renders fully offline — no CDN, no in-browser transpile.
+    react = _read_vendor_asset(_REACT_PATH)
+    react_dom = _read_vendor_asset(_REACT_DOM_PATH)
+    app_js = _read_vendor_asset(_APP_JS_PATH)
+    vendor_scripts = f"<script>{react}</script>\n  <script>{react_dom}</script>"
+    # Inline the scripts first, then substitute logo/evidence across the whole
+    # document — the logo placeholder lives in the app JS, so it must already be
+    # spliced in before that replacement runs.
+    return (
+        template.replace("__GENOMI_VENDOR_SCRIPTS__", vendor_scripts)
+        .replace("__GENOMI_APP_JS__", app_js)
+        .replace("__GENOMI_LOGO_DATA_URL__", logo)
+        .replace("__GENOMI_EVIDENCE__", blob)
     )
 
 

@@ -71,8 +71,19 @@ class RenderDashboardTests(unittest.TestCase):
         html = out.read_text(encoding="utf-8")
         # Self-contained: inline logo data URL
         self.assertIn("data:image/png;base64,", html)
-        # React UMD URL inlined
-        self.assertIn("unpkg.com/react@18.3.1/umd/react.development.js", html)
+        # Renders offline: React/ReactDOM/app JS are inlined, no CDN script src,
+        # no in-browser Babel, and no placeholders left unresolved.
+        self.assertNotIn("unpkg.com", html)
+        self.assertNotIn('type="text/babel"', html)
+        for placeholder in (
+            "__GENOMI_VENDOR_SCRIPTS__",
+            "__GENOMI_APP_JS__",
+            "__GENOMI_LOGO_DATA_URL__",
+            "__GENOMI_EVIDENCE__",
+        ):
+            self.assertNotIn(placeholder, html)
+        self.assertEqual(re.findall(r'<script[^>]+src="https?://', html), [])
+        self.assertIn("ReactDOM", html)  # vendored runtime is inlined
         # Evidence blob present and contains keys
         parsed = _extract_evidence(html)
         self.assertEqual(parsed["overview"]["sampleId"], "HG-TEST-01")
@@ -413,6 +424,40 @@ class RegistryGatingTests(unittest.TestCase):
                 self.assertIn("evidence_envelope", result)
             finally:
                 os.chdir(previous)
+
+
+class DashboardOfflineAssetTests(unittest.TestCase):
+    """Guard the offline contract: vendored assets present and compiled JS in sync."""
+
+    _TEMPLATES = (
+        Path(decode_dashboard.__file__).resolve().parent / "templates"
+    )
+
+    def test_vendored_runtime_assets_present(self) -> None:
+        vendor = self._TEMPLATES / "vendor"
+        for name in ("react.production.min.js", "react-dom.production.min.js", "dashboard.compiled.js"):
+            self.assertTrue((vendor / name).is_file(), f"missing vendored asset {name}")
+
+    def test_template_has_no_cdn_or_runtime_babel(self) -> None:
+        shell = (self._TEMPLATES / "shell.html").read_text(encoding="utf-8")
+        self.assertNotIn("unpkg.com", shell)
+        self.assertNotIn('type="text/babel"', shell)
+
+    def test_compiled_js_matches_jsx_source(self) -> None:
+        # Drift guard: dashboard.compiled.js stamps the sha256 of the dashboard.jsx
+        # it was built from. If someone edits the JSX without re-running
+        # scripts/build_dashboard.py, this fails — no JS toolchain needed here.
+        import hashlib
+
+        jsx = (self._TEMPLATES / "dashboard.jsx").read_bytes()
+        compiled = (self._TEMPLATES / "vendor" / "dashboard.compiled.js").read_text(encoding="utf-8")
+        match = re.search(r"source-sha256:\s*([0-9a-f]{64})", compiled)
+        self.assertIsNotNone(match, "compiled JS is missing its source-sha256 header")
+        self.assertEqual(
+            match.group(1),
+            hashlib.sha256(jsx).hexdigest(),
+            "dashboard.compiled.js is stale — re-run scripts/build_dashboard.py after editing dashboard.jsx.",
+        )
 
 
 class DashboardCatalogTests(unittest.TestCase):

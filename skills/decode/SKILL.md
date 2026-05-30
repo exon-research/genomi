@@ -233,9 +233,11 @@ processes belong.
 - Active Genome Index session approval is required.
 - The renderer is pure layout — it does not call any upstream sources, the
   agent must gather panel evidence first and pass it in.
-- The artifact is a single self-contained HTML file (React + Babel via the
-  unpkg CDN). It opens by double-click; the local server is only there so
-  the user can hit a URL.
+- The artifact is a single self-contained HTML file that renders fully offline
+  — React/ReactDOM and the precompiled app JS are inlined, no CDN, no
+  in-browser Babel. (One optional Google Fonts stylesheet is referenced; it
+  falls back to system fonts offline and carries no genome data.) It opens by
+  double-click; the local server is only there so the user can hit a URL.
 
 ## Tool
 
