@@ -213,13 +213,24 @@ def _genomi_set_response_profile(params: JsonObject) -> JsonObject:
 
 
 def _genomi_install(params: JsonObject) -> JsonObject:
-    libraries = _str(params, "libraries", "setup-only").strip()
+    # `genomi install` / `genomi update` always update everything that can be
+    # updated: runtime code, reference libraries, retrieval indexes, and a
+    # background reparse of every stale genome. There are deliberately no
+    # per-step skip flags — exposing them only invited a host agent to
+    # rationalize a do-nothing "setup-only" call as a valid update. The single
+    # real gate is the env var GENOMI_SKIP_RUNTIME_GIT_PULL, for distributions
+    # that update the runtime outside git.
+    # `libraries` selects WHICH reference libraries to materialize. It defaults
+    # to "everything" — a bare install/update installs them all — and otherwise
+    # names a targeted subset (e.g. clinvar-grch38) for the on-demand
+    # "install this missing library" prompts surfaced across the capabilities.
+    # It is not a skip lever: install always runs, reindex always follows, and
+    # the runtime/reparse steps are unconditional.
+    libraries = _str(params, "libraries", "everything").strip()
     if not libraries:
-        raise OperationError("invalid_params", "libraries is required. Use setup-only, common-questions, medication-response, or another installer library selection.")
+        raise OperationError("invalid_params", "libraries is required. Use everything (the default) or a specific library selection such as common-questions or clinvar-grch38.")
 
-    update_runtime = _bool(params, "update_runtime")
-    reparse_stale = _bool(params, "reparse_stale")
-    runtime_update = _runtime_update_step(allow_git_pull=update_runtime)
+    runtime_update = _runtime_update_step()
 
     response_profile = _optional_str(params, "response_profile") or _optional_str(params, "profile")
     active_profile: JsonObject | None = None
@@ -230,65 +241,13 @@ def _genomi_install(params: JsonObject) -> JsonObject:
             raise OperationError("invalid_response_profile", str(exc)) from exc
         active_profile = host_response.resolve_active_response_profile(runtime_context.get_response_profile_id(registry))
 
-    install_result: JsonObject = {"status": "skipped", "reason": "setup-only selected"}
-    if libraries.lower() != "setup-only":
-        script = _install_for_agents_script()
-        genomi_home = genomi_data_root()
-        command = [
-            sys.executable,
-            str(script),
-            "--skip-package",
-            "--skip-host-skill",
-            "--skip-verify",
-            "--genomi-home",
-            str(genomi_home),
-            "--libraries",
-            libraries,
-        ]
-        if _bool(params, "force"):
-            command.append("--force")
-        for param_name, flag in (
-            ("msigdb_gmt", "--msigdb-gmt"),
-            ("msigdb_gmt_url", "--msigdb-gmt-url"),
-            ("pharmcat_version", "--pharmcat-version"),
-            ("ancestry_panel_url", "--ancestry-panel-url"),
-            ("ancestry_panel_dir", "--ancestry-panel-dir"),
-        ):
-            value = _optional_str(params, param_name)
-            if value:
-                command.extend([flag, value])
-
-        env = os.environ.copy()
-        env["GENOMI_HOME"] = str(genomi_home)
-        completed = subprocess.run(
-            command,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
-        install_result = {
-            "status": "completed" if completed.returncode == 0 else "failed",
-            "returncode": completed.returncode,
-            "command": _redacted_install_command(command),
-            "stdout_tail": _tail(completed.stdout),
-            "stderr_tail": _tail(completed.stderr),
-        }
-        if completed.returncode != 0:
-            raise OperationError("install_failed", f"Genomi install failed with exit code {completed.returncode}: {_tail(completed.stderr or completed.stdout)}")
+    install_result = _install_libraries_step(libraries, params)
 
     # Newly-installed libraries can change what is searchable in the public
     # retrieval indexes; rebuild them so list_resources / search_indexes return
-    # a coherent view immediately after install. setup-only installs don't
-    # touch library data, and `skip_reindex=true` is an escape hatch for
-    # callers chaining their own refresh.
+    # a coherent view immediately after install.
     reindex_result: JsonObject | None = None
-    if (
-        libraries.lower() != "setup-only"
-        and install_result.get("status") == "completed"
-        and not _bool(params, "skip_reindex")
-    ):
+    if install_result.get("status") == "completed":
         refreshed, errors = _refresh_public_retrieval_indexes()
         reindex_result = {
             "schema": "genomi-retrieval-index-refresh",
@@ -301,7 +260,7 @@ def _genomi_install(params: JsonObject) -> JsonObject:
     # index schema is older than the on-disk schema. Each reparse runs as a
     # background job (fresh subprocess at the new schema), so update returns
     # immediately with job ids to poll rather than blocking on full rebuilds.
-    reparse_result = _reparse_stale_genomes() if reparse_stale else None
+    reparse_result = _reparse_stale_genomes()
 
     return {
         "status": "completed",
@@ -315,6 +274,59 @@ def _genomi_install(params: JsonObject) -> JsonObject:
         "reparse": reparse_result,
         "active_response_profile": active_profile,
         "library_inventory": library_inventory(),
+    }
+
+
+def _install_libraries_step(libraries: str, params: JsonObject) -> JsonObject:
+    """Materialize the selected reference libraries via the installer script.
+
+    Idempotent: already-present libraries are skipped unless `force` is set.
+    Raises OperationError on a non-zero installer exit.
+    """
+    script = _install_for_agents_script()
+    genomi_home = genomi_data_root()
+    command = [
+        sys.executable,
+        str(script),
+        "--skip-package",
+        "--skip-host-skill",
+        "--skip-verify",
+        "--genomi-home",
+        str(genomi_home),
+        "--libraries",
+        libraries,
+    ]
+    if _bool(params, "force"):
+        command.append("--force")
+    for param_name, flag in (
+        ("msigdb_gmt", "--msigdb-gmt"),
+        ("msigdb_gmt_url", "--msigdb-gmt-url"),
+        ("pharmcat_version", "--pharmcat-version"),
+        ("ancestry_panel_url", "--ancestry-panel-url"),
+        ("ancestry_panel_dir", "--ancestry-panel-dir"),
+    ):
+        value = _optional_str(params, param_name)
+        if value:
+            command.extend([flag, value])
+
+    env = os.environ.copy()
+    env["GENOMI_HOME"] = str(genomi_home)
+    completed = subprocess.run(
+        command,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    if completed.returncode != 0:
+        raise OperationError("install_failed", f"Genomi install failed with exit code {completed.returncode}: {_tail(completed.stderr or completed.stdout)}")
+    return {
+        "status": "completed",
+        "returncode": completed.returncode,
+        "command": _redacted_install_command(command),
+        "stdout_tail": _tail(completed.stdout),
+        "stderr_tail": _tail(completed.stderr),
     }
 
 
@@ -341,13 +353,17 @@ def _genomi_install_scope() -> JsonObject:
     return {
         "updates": [
             "genomi_home_setup",
+            "runtime_code",
             "public_reference_libraries",
+            "retrieval_indexes",
+            "stale_genome_reparse",
             "response_profile",
         ],
         "does_not_update": [
-            "runtime_code_unless_update_runtime_is_requested",
+            "runtime_code_when_GENOMI_SKIP_RUNTIME_GIT_PULL_is_set",
+            "runtime_code_when_not_a_git_checkout",
         ],
-        "force_behavior": "force=true reinstalls selected public reference libraries; runtime code updates via git pull when update_runtime is requested, unless GENOMI_SKIP_RUNTIME_GIT_PULL is set. A manifest-changing pull also reconciles dependencies.",
+        "force_behavior": "Library install is idempotent — already-present libraries are skipped; force=true re-downloads them. Runtime code updates via git pull unless GENOMI_SKIP_RUNTIME_GIT_PULL is set or the runtime is not a git checkout. A manifest-changing pull also reconciles dependencies.",
     }
 
 
@@ -364,22 +380,16 @@ def _git_pull_suppressed_by() -> str | None:
     return None
 
 
-def _runtime_update_step(*, allow_git_pull: bool = False) -> JsonObject:
+def _runtime_update_step() -> JsonObject:
     """Update the runtime code via git pull, unless gated off.
 
-    The git pull is the runtime update mechanism: `genomi update` pulls the
-    checkout the runtime lives in. GENOMI_SKIP_RUNTIME_GIT_PULL suppresses it
-    for distributions that are not git-bound (they update via their package
-    manager); the pull is also a no-op when the runtime is not a git checkout.
+    The git pull is the runtime update mechanism: `genomi install` / `genomi
+    update` pulls the checkout the runtime lives in. GENOMI_SKIP_RUNTIME_GIT_PULL
+    suppresses it for distributions that are not git-bound (they update via
+    their package manager); the pull is also a no-op when the runtime is not a
+    git checkout.
     """
     base: JsonObject = {"provider": "git", "gate_env": SKIP_GIT_PULL_ENV}
-    if not allow_git_pull:
-        return {
-            **base,
-            "status": "not_requested",
-            "restart_required": False,
-            "message": "Runtime git pull runs on `genomi install` / `genomi update`, not on bare operation calls.",
-        }
     suppressed_by = _git_pull_suppressed_by()
     if suppressed_by is not None:
         return {

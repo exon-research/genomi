@@ -56,6 +56,25 @@ class GenomiRuntimeTestCase(unittest.TestCase):
         )
         self._env.start()
         self.addCleanup(self._env.stop)
+        # genomi.install now always attempts a runtime git pull. Treat the
+        # runtime as "not a git checkout" by default so no test ever performs a
+        # live pull against the developer's actual repo; pull-mechanism tests
+        # override this with their own _runtime_git_repo patch.
+        self._git_repo = mock.patch(
+            "genomi.operations.registry.handlers_admin._runtime_git_repo",
+            return_value=None,
+        )
+        self._git_repo.start()
+        self.addCleanup(self._git_repo.stop)
+        # genomi.install always materializes reference libraries. Stub the
+        # installer subprocess so tests never download anything; tests that
+        # assert install behavior override this with their own patch.
+        self._install_libraries = mock.patch(
+            "genomi.operations.registry.handlers_admin._install_libraries_step",
+            return_value={"status": "completed", "stub": True},
+        )
+        self._install_libraries.start()
+        self.addCleanup(self._install_libraries.stop)
 
     def approve_access(self) -> None:
         context = call_operation("genomi.describe_context")

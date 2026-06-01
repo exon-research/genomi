@@ -72,13 +72,13 @@
     "genomi.install": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Install or update Genomi: runtime code, public reference libraries (in GENOMI_HOME, idempotent), and the response profile. The `genomi install` / `genomi update` CLI aliases do everything; as an operation the libraries / update_runtime / reparse_stale flags select what runs (see each flag). For a first-time install on a machine without the genomi runtime, follow INSTALL_FOR_AGENTS.md instead.",
+      "description": "Install or update Genomi. `genomi install` and `genomi update` are the same operation: they update the runtime code, retrieval indexes, and reparse any stale genome, and install reference libraries — all of them by default, or the subset named in `libraries` (e.g. one library to add at runtime). For a first-time install on a machine without the genomi runtime, follow INSTALL_FOR_AGENTS.md instead.",
       "input_schema": {
         "type": "object",
         "properties": {
           "libraries": {
             "type": "string",
-            "description": "Installer library selection such as setup-only, common-questions, medication-response, ancestry-context, sequence-and-regions, cell-and-tissue, everything, or comma-separated exact library IDs."
+            "description": "Which reference libraries to materialize. Defaults to 'everything' (install all). Name a purpose or exact library IDs (e.g. common-questions, medication-response, clinvar-grch38) to install just that subset for on-demand single-library installs."
           },
           "response_profile": {
             "type": "string",
@@ -107,17 +107,6 @@
           },
           "ancestry_panel_dir": {
             "$ref": "#/schema_fragments/properties/local_path"
-          },
-          "skip_reindex": {
-            "$ref": "#/schema_fragments/properties/boolean_default_false"
-          },
-          "update_runtime": {
-            "$ref": "#/schema_fragments/properties/boolean_default_false",
-            "description": "Update the runtime code: when the runtime is a clean git checkout, run `git pull --ff-only` (a no-op for package-managed installs), then reconcile dependencies if the pull changed a manifest. Set GENOMI_SKIP_RUNTIME_GIT_PULL to suppress the pull. Set automatically by `genomi update`."
-          },
-          "reparse_stale": {
-            "$ref": "#/schema_fragments/properties/boolean_default_false",
-            "description": "Launch a background reparse for every registered genome whose stored index schema is older than the on-disk runtime schema. Set automatically by `genomi update`."
           }
         },
         "additionalProperties": false

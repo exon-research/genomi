@@ -106,12 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--libraries",
         default="everything",
         help=(
-            "Library purpose or exact comma-separated library IDs, e.g. "
-            "common-questions, medication-response, everything, or setup-only. "
-            "Defaults to 'everything' — `genomi install` / `genomi update` updates "
-            "all reference libraries. Idempotent: only missing libraries download "
-            "(pass --force to refresh). Use --libraries setup-only to update the "
-            "runtime without touching libraries."
+            "Which reference libraries to materialize. Defaults to 'everything' — "
+            "`genomi install` / `genomi update` updates all of them. Idempotent: "
+            "only missing libraries download (pass --force to refresh). Name a "
+            "purpose or exact library IDs (e.g. common-questions, clinvar-grch38) "
+            "to install just that subset."
         ),
     )
     install_parser.add_argument(
@@ -151,15 +150,13 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 
 def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
-    # `genomi install` and `genomi update` are the same command and both update
-    # everything: runtime + libraries + reparse-stale. (The operation itself
-    # leaves update_runtime/reparse_stale off by default for programmatic and
-    # first-time-bootstrap callers; the CLI is the "do it all" front door.)
+    # `genomi install` and `genomi update` are the same command. The operation
+    # always updates everything it can (runtime + libraries + reindex +
+    # reparse-stale) — there are no skip flags to pass. The CLI just forwards
+    # the library selection (default everything) and force.
     params: dict[str, Any] = {
         "libraries": args.libraries,
         "force": bool(args.force),
-        "update_runtime": True,
-        "reparse_stale": True,
     }
     for attr in (
         "response_profile",

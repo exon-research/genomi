@@ -125,17 +125,23 @@ context, a selected user, a genome source, or a previous run.
 
 ## Setup
 
-`genomi.install` installs **or updates** Genomi. The `genomi install` /
-`genomi update` CLI commands (aliases) update everything: the runtime code
-(`git pull --ff-only` on a git checkout, unless `GENOMI_SKIP_RUNTIME_GIT_PULL`
-is set for a non-git distribution), all public reference libraries into
-`GENOMI_HOME` (idempotent — present libraries are skipped), and a background
-reparse of any genome whose index schema is older than the updated runtime's.
-As an operation, `genomi.install` is more granular (libraries default to
-`setup-only`; `update_runtime` / `reparse_stale` default off) so programmatic
-callers can do a subset. This path only applies once Genomi is installed;
-first-time setup on a machine without the `genomi` runtime follows the source
-bootstrap in `INSTALL_FOR_AGENTS.md`.
+`genomi.install` installs **or updates** Genomi, and `genomi install` /
+`genomi update` are the same operation. It always updates everything that can
+be updated: the runtime code (`git pull --ff-only` on a git checkout, unless
+`GENOMI_SKIP_RUNTIME_GIT_PULL` is set for a non-git distribution), all public
+reference libraries into `GENOMI_HOME` (idempotent — present libraries are
+skipped, pass `force` to re-download), the public retrieval indexes, and a
+background reparse of any genome whose index schema is older than the updated
+runtime's. There are no per-step skip flags — `genomi update` does the full
+update by default. The `libraries` parameter only narrows *which* reference
+libraries to materialize (default `everything`): pass a specific library (or
+comma-separated set) to install just those — both for an install-time subset
+the user chose and to add a single new library on demand at runtime (the
+"install this missing library" path). To see which libraries are already
+installed vs missing before deciding, call `genomi.check_libraries` (its
+summary reports `installed_count` / `missing_count`). This applies once Genomi
+is installed; first-time setup on a machine without the `genomi` runtime
+follows the source bootstrap in `INSTALL_FOR_AGENTS.md`.
 
 ## Parsing A Genome Source
 

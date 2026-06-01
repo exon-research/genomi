@@ -38,8 +38,8 @@ def _register_stale_genome(home, *, stored_schema: int = 1):
 class GenomiInstallTests(GenomiRuntimeTestCase):
     def test_bare_install_defaults_to_everything(self) -> None:
         # `genomi install` / `genomi update` with no flags updates everything:
-        # libraries default to 'everything' (runtime + reparse-stale are set by
-        # the command handler, not via flags). setup-only stays available opt-in.
+        # libraries default to 'everything'; runtime update and reparse-stale
+        # are unconditional in the operation, not flags.
         args = build_parser().parse_args(["install"])
         self.assertEqual(args.libraries, "everything")
         self.assertFalse(args.force)
@@ -52,8 +52,9 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         self.assertEqual(build_parser().parse_args(["update"]).libraries, "everything")
 
     def test_cli_install_requests_everything(self) -> None:
-        # The command front door asks the operation to update everything; the
-        # operation's own defaults stay conservative (tested separately).
+        # The command front door forwards the library selection; runtime update,
+        # reindex, and reparse-stale are unconditional in the operation, so the
+        # CLI no longer passes (now-removed) skip flags.
         captured: dict[str, object] = {}
 
         def _capture(operation: str, params: dict[str, object]) -> dict[str, object]:
@@ -68,8 +69,8 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         self.assertEqual(captured["operation"], "genomi.install")
         params = captured["params"]
         self.assertEqual(params["libraries"], "everything")
-        self.assertTrue(params["update_runtime"])
-        self.assertTrue(params["reparse_stale"])
+        self.assertNotIn("update_runtime", params)
+        self.assertNotIn("reparse_stale", params)
 
     def test_no_separate_update_tool_and_install_description_covers_update(self) -> None:
         from genomi.operations.registry.table import OPERATIONS
@@ -85,30 +86,38 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
             by_name["genomi.install"].tool_definition()["inputSchema"].get("required", []),
         )
 
-    def test_setup_only_install_persists_response_profile_without_context_disclosure(self) -> None:
-        result = call_operation("genomi.install", {"libraries": "setup-only", "response_profile": "expert"})
+    def test_install_persists_response_profile_without_context_disclosure(self) -> None:
+        result = call_operation("genomi.install", {"response_profile": "expert"})
 
         self.assertEqual(result["status"], "completed")
-        self.assertEqual(result["install"]["status"], "skipped")
+        self.assertEqual(result["install"]["status"], "completed")
         self.assertEqual(result["active_response_profile"]["id"], "expert")
         self.assertEqual(result["install_scope"]["updates"][0], "genomi_home_setup")
-        # A bare operation call does not request a runtime git pull.
-        self.assertEqual(result["runtime_update"]["status"], "not_requested")
+        # The operation always attempts the runtime pull; here the runtime is
+        # not a git checkout (base test default), so it reports "unmanaged".
+        self.assertEqual(result["runtime_update"]["status"], "unmanaged")
 
     def test_library_inventory_points_to_genomi_install_command(self) -> None:
-        result = call_operation("genomi.install", {"libraries": "setup-only"})
+        result = call_operation("genomi.install", {})
         commands = [item["install_command"] for item in result["library_inventory"]["libraries"]]
 
         self.assertTrue(commands)
         self.assertTrue(all(command.startswith("genomi install --libraries ") for command in commands))
 
-    def test_bare_operation_call_does_not_reparse_or_pull(self) -> None:
-        # The operation stays conservative by default (only the CLI front door
-        # turns everything on): no git pull, no reparse scan.
-        _register_stale_genome(self.genomi_home)
-        result = call_operation("genomi.install", {"libraries": "setup-only"})
-        self.assertIsNone(result["reparse"])
-        self.assertEqual(result["runtime_update"]["status"], "not_requested")
+    def test_operation_always_reparses_and_attempts_runtime_update(self) -> None:
+        # No skip flags: a bare operation call reparses stale genomes and
+        # attempts the runtime update. There is no way to call the operation
+        # and have it silently skip those steps.
+        vcf, _index = _register_stale_genome(self.genomi_home)
+        with mock.patch(
+            "genomi.runtime.background_jobs.start_operation_job",
+            return_value={"job_id": "job-x", "job_path": "/tmp/job-x.json"},
+        ):
+            result = call_operation("genomi.install", {})
+        self.assertEqual(result["reparse"]["stale"], 1)
+        self.assertEqual(result["reparse"]["launched"][0]["source"], str(vcf))
+        # Runtime pull was attempted (unmanaged here — not a git checkout).
+        self.assertEqual(result["runtime_update"]["status"], "unmanaged")
 
     def test_reparse_stale_launches_background_job_per_genome(self) -> None:
         vcf, _index = _register_stale_genome(self.genomi_home)
@@ -122,9 +131,7 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         with mock.patch(
             "genomi.runtime.background_jobs.start_operation_job", side_effect=_fake_start
         ):
-            result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "reparse_stale": True}
-            )
+            result = call_operation("genomi.install", {})
 
         reparse = result["reparse"]
         self.assertEqual(reparse["stale"], 1)
@@ -137,9 +144,7 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         vcf.unlink()  # source no longer available — cannot rebuild
 
         with mock.patch("genomi.runtime.background_jobs.start_operation_job") as start:
-            result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "reparse_stale": True}
-            )
+            result = call_operation("genomi.install", {})
 
         start.assert_not_called()
         reparse = result["reparse"]
@@ -152,7 +157,7 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         # `genomi update` never tries to git pull.
         with mock.patch.dict("os.environ", {"GENOMI_SKIP_RUNTIME_GIT_PULL": "1"}):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
         runtime_update = result["runtime_update"]
         self.assertEqual(runtime_update["status"], "skipped")
@@ -164,7 +169,7 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         # must not suddenly start pulling.
         with mock.patch.dict("os.environ", {"GENOMI_RUNTIME_UPDATE": "anything"}):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
         self.assertEqual(result["runtime_update"]["status"], "skipped")
         self.assertIn("GENOMI_RUNTIME_UPDATE", result["runtime_update"]["message"])
@@ -207,11 +212,12 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
             calls.append(command)
             return _completed(stdout="Successfully installed genomi")
 
-        with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
+        with mock.patch.object(handlers_admin, "_reparse_stale_genomes", return_value=None), \
+             mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="bbb")), \
              mock.patch.object(handlers_admin.subprocess, "run", side_effect=_fake_run):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
 
         sync = result["runtime_update"]["dependency_sync"]
@@ -228,11 +234,12 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
         # don't assume/invoke a package manager when there's nothing to sync).
         from genomi.operations.registry import handlers_admin
 
-        with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
+        with mock.patch.object(handlers_admin, "_reparse_stale_genomes", return_value=None), \
+             mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="bbb", dep_diff="")), \
              mock.patch.object(handlers_admin.subprocess, "run", side_effect=AssertionError("no installer must run")):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
 
         sync = result["runtime_update"]["dependency_sync"]
@@ -242,11 +249,12 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
         # HEAD unchanged → nothing pulled → no dependency probe at all.
         from genomi.operations.registry import handlers_admin
 
-        with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
+        with mock.patch.object(handlers_admin, "_reparse_stale_genomes", return_value=None), \
+             mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="aaa")), \
              mock.patch.object(handlers_admin.subprocess, "run", side_effect=AssertionError("no installer must run")):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
 
         runtime_update = result["runtime_update"]
@@ -261,12 +269,13 @@ class GenomiRuntimeDependencySyncTests(GenomiRuntimeTestCase):
         def _fake_run(command, **kwargs):
             return _completed(returncode=1, stderr="No module named pip")
 
-        with mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
+        with mock.patch.object(handlers_admin, "_reparse_stale_genomes", return_value=None), \
+             mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=handlers_admin.Path("/tmp/genomi-repo")), \
              mock.patch.object(handlers_admin, "_git", side_effect=_git_pull_sequence(before="aaa", after="bbb")), \
              mock.patch.object(handlers_admin.shutil, "which", return_value=None), \
              mock.patch.object(handlers_admin.subprocess, "run", side_effect=_fake_run):
             result = call_operation(
-                "genomi.install", {"libraries": "setup-only", "update_runtime": True}
+                "genomi.install", {}
             )
 
         self.assertEqual(result["status"], "completed")  # update did not abort
