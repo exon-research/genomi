@@ -192,10 +192,6 @@
         "properties": {
           "hpo_gene_file": {
             "$ref": "#/schema_fragments/properties/local_path"
-          },
-          "hpo_gene_url": {
-            "type": "string",
-            "default": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype_to_genes.txt"
           }
         }
       },

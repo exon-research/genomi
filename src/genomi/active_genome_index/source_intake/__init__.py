@@ -55,7 +55,7 @@ from ...runtime.paths import (
     shared_evidence_db_path,
     shared_reference_dir,
 )
-from ...runtime.static_dependencies import ensure_reference_fasta, resolve_genome_build
+from ...runtime.static_dependencies import resolve_genome_build
 
 # Public and internal symbols defined across the topical submodules.
 from .agi_store import (

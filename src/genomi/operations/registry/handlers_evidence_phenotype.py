@@ -180,11 +180,9 @@ def _disease_compare_phenotype_evidence(params: JsonObject) -> JsonObject:
         use_hpo_annotations=_bool(resolved, "use_hpo_annotations", True),
         download_hpo_annotations=_bool(resolved, "download_hpo_annotations", False),
         hpo_disease_file=_optional_path(resolved, "hpo_disease_file"),
-        hpo_disease_url=_str(resolved, "hpo_disease_url", phenotype.HPO_DISEASE_ANNOTATION_URL),
         use_primary_gene_disease=_bool(resolved, "use_primary_gene_disease", True),
         download_primary_gene_disease=_bool(resolved, "download_primary_gene_disease", False),
         gencc_file=_optional_path(resolved, "gencc_file"),
-        gencc_url=_str(resolved, "gencc_url", phenotype.GENCC_SUBMISSIONS_URL),
         limit=_int(resolved, "limit", 25),
         semantic_context=resolved.get("semantic_context"),
     )
@@ -196,7 +194,6 @@ def _gene_retrieve_primary_disease_associations(params: JsonObject) -> JsonObjec
     result = phenotype.retrieve_primary_gene_disease_associations(
         genes=genes,
         gencc_file=_optional_path(params, "gencc_file"),
-        gencc_url=_str(params, "gencc_url", phenotype.GENCC_SUBMISSIONS_URL),
         download_gencc=_bool(params, "download_gencc", False),
         classifications=_list_str(params, "classifications"),
         limit=_int(params, "limit", 100),
@@ -366,7 +363,6 @@ def _phenotype_compare_gene_hpo_evidence(params: JsonObject) -> JsonObject:
         use_hpo_annotations=_bool(resolved, "use_hpo_annotations", True),
         download_hpo_annotations=_bool(resolved, "download_hpo_annotations", False),
         hpo_gene_file=_optional_path(resolved, "hpo_gene_file"),
-        hpo_gene_url=_str(resolved, "hpo_gene_url", phenotype.HPO_GENE_ANNOTATION_URL),
         limit=_int(resolved, "limit", 25),
         semantic_context=resolved.get("semantic_context"),
     )

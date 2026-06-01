@@ -195,7 +195,6 @@ def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
     run.add_argument("--reference-fasta", type=Path, default=None)
     run.add_argument("--genotype-reference-fasta", type=Path, default=None)
     run.add_argument("--no-auto-reference-fasta", dest="auto_reference_fasta", action="store_false")
-    run.add_argument("--reference-root", type=Path, default=None)
     run.add_argument("--clinvar-vcf", type=Path, default=None)
     run.add_argument("--population-vcf", type=Path, default=None)
     run.add_argument("--population-source", default=None)
@@ -440,7 +439,6 @@ def _cmd_static_run(args: argparse.Namespace) -> dict[str, Any]:
         reference_fasta=args.reference_fasta,
         genotype_reference_fasta=args.genotype_reference_fasta,
         auto_reference_fasta=args.auto_reference_fasta,
-        reference_root=args.reference_root,
         clinvar_vcf=args.clinvar_vcf,
         population_vcf=args.population_vcf,
         population_source=args.population_source,

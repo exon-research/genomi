@@ -186,9 +186,6 @@
           "auto_reference_fasta": {
             "$ref": "#/schema_fragments/properties/boolean_default_true"
           },
-          "reference_root": {
-            "$ref": "#/schema_fragments/properties/local_path"
-          },
           "genome_build": {
             "type": "string",
             "default": "auto"

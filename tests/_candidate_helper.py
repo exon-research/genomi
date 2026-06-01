@@ -29,7 +29,6 @@ def compare_candidate_payload(params: dict[str, Any]) -> dict[str, Any]:
         use_hpo_annotations=data.pop("use_hpo_annotations", True),
         download_hpo_annotations=data.pop("download_hpo_annotations", False),
         hpo_gene_file=data.pop("hpo_gene_file", None),
-        hpo_gene_url=data.pop("hpo_gene_url", "https://purl.obolibrary.org/obo/hp/hpoa/phenotype_to_genes.txt"),
         include_gwas=data.pop("include_gwas", True),
         gwas_api_url=data.pop("gwas_api_url", "https://www.ebi.ac.uk/gwas/rest/api/v2"),
         association_limit=data.pop("association_limit", 200),

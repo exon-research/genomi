@@ -3,16 +3,14 @@ from __future__ import annotations
 import csv
 import re
 import urllib.error
-import urllib.request
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from ....runtime.library_status import library_install_request
+from ....runtime.libraries import manager as library_manager
 from ....runtime.paths import genomi_data_root
 
 from ._base import (
-    GENCC_SUBMISSIONS_URL,
     HPO_DISEASE_ANNOTATION_URL,
     HPO_GENE_ANNOTATION_URL,
     HPO_ID_RE,
@@ -35,7 +33,6 @@ def retrieve_primary_gene_disease_associations(
     *,
     genes: Iterable[str],
     gencc_file: str | Path | None = None,
-    gencc_url: str = GENCC_SUBMISSIONS_URL,
     download_gencc: bool = True,
     classifications: Iterable[str] | None = None,
     limit: int = 100,
@@ -47,7 +44,6 @@ def retrieve_primary_gene_disease_associations(
     try:
         gencc_path = _resolve_gencc_file(
             gencc_file=gencc_file,
-            gencc_url=gencc_url,
             download_gencc=download_gencc,
         )
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
@@ -66,7 +62,7 @@ def retrieve_primary_gene_disease_associations(
         )
     if gencc_path is None:
         if gencc_file is None and not download_gencc:
-            request = library_install_request(
+            request = library_manager.missing_request(
                 "gencc",
                 intent=f"primary gene-disease associations for {', '.join(normalized_genes[:5])}",
                 operation="phenotype.retrieve_gene_disease_associations",
@@ -136,7 +132,6 @@ def _hpo_gene_annotation_context(
     use_hpo_annotations: bool,
     download_hpo_annotations: bool,
     hpo_gene_file: str | Path | None,
-    hpo_gene_url: str,
     limit: int,
 ) -> dict[str, Any]:
     if not use_hpo_annotations:
@@ -153,7 +148,6 @@ def _hpo_gene_annotation_context(
     try:
         annotation_path = _resolve_hpo_gene_file(
             hpo_gene_file=hpo_gene_file,
-            hpo_gene_url=hpo_gene_url,
             download_hpo_annotations=download_hpo_annotations,
         )
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
@@ -180,11 +174,9 @@ def _hpo_disease_annotation_context(
     use_hpo_annotations: bool,
     download_hpo_annotations: bool,
     hpo_disease_file: str | Path | None,
-    hpo_disease_url: str,
     use_primary_gene_disease: bool,
     download_primary_gene_disease: bool,
     gencc_file: str | Path | None,
-    gencc_url: str,
     limit: int,
 ) -> dict[str, Any]:
     if not use_hpo_annotations:
@@ -201,7 +193,6 @@ def _hpo_disease_annotation_context(
     try:
         disease_path = _resolve_public_annotation_file(
             annotation_file=hpo_disease_file,
-            annotation_url=hpo_disease_url,
             cache_name="phenotype.hpoa",
             download_annotations=download_hpo_annotations,
         )
@@ -216,7 +207,6 @@ def _hpo_disease_annotation_context(
             use_primary_gene_disease=use_primary_gene_disease,
             download_primary_gene_disease=download_primary_gene_disease,
             gencc_file=gencc_file,
-            gencc_url=gencc_url,
             limit=max(1, int(limit or 25)),
         ) if needs_primary_gene_disease else {
             "status": "not_applicable_supplied_candidates" if query.get("candidate_diseases") else "not_applicable_no_genes",
@@ -266,12 +256,10 @@ def _hpo_disease_annotation_context(
 def _resolve_hpo_gene_file(
     *,
     hpo_gene_file: str | Path | None,
-    hpo_gene_url: str,
     download_hpo_annotations: bool,
 ) -> Path | None:
     return _resolve_public_annotation_file(
         annotation_file=hpo_gene_file,
-        annotation_url=hpo_gene_url,
         cache_name="phenotype_to_genes.txt",
         download_annotations=download_hpo_annotations,
     )
@@ -292,7 +280,7 @@ def _library_install_annotation_context(
     operation: str,
     queried_hpo_ids: list[str],
 ) -> dict[str, Any]:
-    request = library_install_request(library, intent=intent, operation=operation)
+    request = library_manager.missing_request(library, intent=intent, operation=operation)
     return {
         "status": request["status"],
         "source_records": [],
@@ -307,47 +295,54 @@ def _library_install_annotation_context(
     }
 
 
+def _materialize_annotation(
+    *,
+    cache_path: Path,
+    library: str,
+    download: bool,
+) -> Path | None:
+    """Resolve a registry-managed annotation cache. A present file is returned
+    with no network round-trip (the runtime hot path); when ``download`` is set
+    (the installer / explicit fetch), the central manager is the single code
+    path that fetches it — agents reach uninstalled libraries via the install
+    request, not a silent download."""
+    if cache_path.exists():
+        return cache_path
+    if not download:
+        return None
+    library_manager.refresh(library)
+    return cache_path if cache_path.exists() else None
+
+
 def _resolve_public_annotation_file(
     *,
     annotation_file: str | Path | None,
-    annotation_url: str,
     cache_name: str,
     download_annotations: bool,
 ) -> Path | None:
     if annotation_file:
         path = Path(annotation_file).expanduser()
         return path if path.exists() else None
-    cache_path = genomi_data_root() / "resources" / "hpo" / cache_name
-    if cache_path.exists():
-        return cache_path
-    if not download_annotations:
-        return None
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(annotation_url, headers={"User-Agent": "genomi/0.1"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        cache_path.write_bytes(response.read())
-    return cache_path
+    return _materialize_annotation(
+        cache_path=genomi_data_root() / "resources" / "hpo" / cache_name,
+        library="hpo",
+        download=download_annotations,
+    )
 
 
 def _resolve_gencc_file(
     *,
     gencc_file: str | Path | None,
-    gencc_url: str,
     download_gencc: bool,
 ) -> Path | None:
     if gencc_file:
         path = Path(gencc_file).expanduser()
         return path if path.exists() else None
-    cache_path = genomi_data_root() / "resources" / "gencc" / "gencc-submissions.tsv"
-    if cache_path.exists():
-        return cache_path
-    if not download_gencc:
-        return None
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(gencc_url, headers={"Accept": "text/tab-separated-values", "User-Agent": "genomi/0.1"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        cache_path.write_bytes(response.read())
-    return cache_path
+    return _materialize_annotation(
+        cache_path=genomi_data_root() / "resources" / "gencc" / "gencc-submissions.tsv",
+        library="gencc",
+        download=download_gencc,
+    )
 
 
 def _primary_gene_disease_context(
@@ -356,7 +351,6 @@ def _primary_gene_disease_context(
     use_primary_gene_disease: bool,
     download_primary_gene_disease: bool,
     gencc_file: str | Path | None,
-    gencc_url: str,
     limit: int,
 ) -> dict[str, Any]:
     if not use_primary_gene_disease:
@@ -373,7 +367,6 @@ def _primary_gene_disease_context(
     return retrieve_primary_gene_disease_associations(
         genes=genes,
         gencc_file=gencc_file,
-        gencc_url=gencc_url,
         download_gencc=download_primary_gene_disease,
         limit=limit,
     )

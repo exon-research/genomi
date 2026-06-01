@@ -215,10 +215,6 @@
           "gencc_file": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
-          "gencc_url": {
-            "type": "string",
-            "default": "https://thegencc.org/download/action/submissions-export-tsv?format=new"
-          },
           "download_gencc": {
             "$ref": "#/schema_fragments/properties/boolean_default_false"
           },
@@ -303,10 +299,6 @@
           "hpo_disease_file": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
-          "hpo_disease_url": {
-            "type": "string",
-            "default": "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"
-          },
           "use_primary_gene_disease": {
             "$ref": "#/schema_fragments/properties/boolean_default_true"
           },
@@ -315,10 +307,6 @@
           },
           "gencc_file": {
             "$ref": "#/schema_fragments/properties/local_path"
-          },
-          "gencc_url": {
-            "type": "string",
-            "default": "https://thegencc.org/download/action/submissions-export-tsv?format=new"
           },
           "limit": {
             "$ref": "#/schema_fragments/properties/limit_25"

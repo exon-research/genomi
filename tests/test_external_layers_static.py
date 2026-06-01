@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import sqlite3
@@ -17,7 +16,6 @@ from tests._external_layers_helpers import (
     build_clinvar_gene_index,
     build_static_annotation,
     create_active_genome_index,
-    ensure_reference_fasta,
     extract_clinvar_candidates,
     fetch_static_population,
     import_clinvar_vcf,
@@ -112,13 +110,20 @@ class StaticRunTests(EvidenceImportTestBase):
             previous_cwd = Path.cwd()
             os.chdir(tmp_path)
             try:
-                with patch("genomi.capabilities.clinvar.static_annotation.ensure_clinvar_vcf") as ensure:
+                with (
+                    patch("genomi.runtime.libraries.manager.refresh") as ensure,
+                    patch("genomi.runtime.libraries.manager.status") as status,
+                ):
                     ensure.return_value = {
                         "status": "completed",
-                        "dependency": "clinvar_vcf",
-                        "genome_build": "GRCh38",
-                        "source_url": "fixture",
+                        "library": "clinvar-grch38",
                         "output": str(TINY_CLINVAR),
+                    }
+                    status.return_value = {
+                        "library": "clinvar-grch38",
+                        "installed": False,
+                        "status": "missing",
+                        "required_paths": [str(TINY_CLINVAR)],
                     }
                     result = build_static_annotation(
                         vcf.name,
@@ -137,33 +142,6 @@ class StaticRunTests(EvidenceImportTestBase):
             self.assertIn("match-clinvar", step_names)
             self.assertTrue((tmp_path / result["outputs"]["clinvar_matches"]).exists())
 
-    def test_reference_fasta_dependency_downloads_decompresses_and_indexes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            source = tmp_path / "source.fa.gz"
-            with gzip.open(source, "wb") as handle:
-                handle.write(b">chr1\nACGTACGT\n>chr2\nTTAA\n")
-
-            result = ensure_reference_fasta(
-                genome_build="GRCh38",
-                root=tmp_path / "reference",
-                source_url=source.as_uri(),
-            )
-
-            fasta = Path(result["output"])
-            fai = Path(result["fai"])
-            self.assertEqual(result["status"], "completed")
-            self.assertEqual(fasta.read_text(encoding="utf-8"), ">chr1\nACGTACGT\n>chr2\nTTAA\n")
-            self.assertTrue(fai.exists())
-            self.assertIn("chr1\t8\t6\t8\t9", fai.read_text(encoding="utf-8"))
-
-            cached = ensure_reference_fasta(
-                genome_build="GRCh38",
-                root=tmp_path / "reference",
-                source_url=source.as_uri(),
-            )
-            self.assertEqual(cached["status"], "cached")
-
     def test_static_run_auto_reference_fasta_publishes_and_uses_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -175,25 +153,36 @@ class StaticRunTests(EvidenceImportTestBase):
             previous_cwd = Path.cwd()
             os.chdir(tmp_path)
             try:
+                reference_refresh = {
+                    "status": "completed",
+                    "library": "reference-grch38",
+                    "output": str(reference),
+                    "fai": str(reference) + ".fai",
+                }
+                clinvar_refresh = {
+                    "status": "completed",
+                    "library": "clinvar-grch38",
+                    "output": str(TINY_CLINVAR),
+                }
+
+                def refresh_side_effect(library, *args, **kwargs):
+                    if str(library).startswith("reference-"):
+                        return reference_refresh
+                    return clinvar_refresh
+
                 with (
-                    patch("genomi.capabilities.clinvar.static_annotation.ensure_clinvar_vcf") as ensure_clinvar,
-                    patch("genomi.capabilities.clinvar.static_annotation.ensure_reference_fasta") as ensure_reference,
+                    patch(
+                        "genomi.runtime.libraries.manager.refresh",
+                        side_effect=refresh_side_effect,
+                    ) as ensure_reference,
+                    patch("genomi.runtime.libraries.manager.status") as status,
                     patch("genomi.capabilities.clinvar.static_annotation.normalize_vcf") as normalize,
                 ):
-                    ensure_clinvar.return_value = {
-                        "status": "completed",
-                        "dependency": "clinvar_vcf",
-                        "genome_build": "GRCh38",
-                        "source_url": "fixture",
-                        "output": str(TINY_CLINVAR),
-                    }
-                    ensure_reference.return_value = {
-                        "status": "completed",
-                        "dependency": "reference_fasta",
-                        "genome_build": "GRCh38",
-                        "source_url": "fixture",
-                        "output": str(reference),
-                        "fai": str(reference) + ".fai",
+                    status.return_value = {
+                        "library": "clinvar-grch38",
+                        "installed": False,
+                        "status": "missing",
+                        "required_paths": [str(TINY_CLINVAR)],
                     }
                     normalize.return_value = {
                         "status": "completed",
@@ -203,7 +192,6 @@ class StaticRunTests(EvidenceImportTestBase):
                         vcf.name,
                         genome_build="GRCh38",
                         auto_reference_fasta=True,
-                        reference_root=tmp_path / "reference-cache",
                         sync_shared=False,
                         max_records=10,
                         allow_long_running_static=True,
@@ -211,7 +199,7 @@ class StaticRunTests(EvidenceImportTestBase):
             finally:
                 os.chdir(previous_cwd)
 
-            ensure_reference.assert_called_once()
+            ensure_reference.assert_called()
             normalize.assert_called_once()
             self.assertEqual(normalize.call_args.args[1], reference)
             self.assertTrue(normalize.call_args.kwargs["allow_malformed_tags"])
@@ -231,8 +219,7 @@ class StaticRunTests(EvidenceImportTestBase):
             os.chdir(tmp_path)
             try:
                 with (
-                    patch("genomi.capabilities.clinvar.static_annotation.ensure_clinvar_vcf") as ensure_clinvar,
-                    patch("genomi.capabilities.clinvar.static_annotation.ensure_reference_fasta") as ensure_reference,
+                    patch("genomi.runtime.libraries.manager.refresh") as refresh,
                     patch("genomi.capabilities.clinvar.static_annotation.export_variants") as export,
                     patch("genomi.capabilities.clinvar.static_annotation.normalize_vcf") as normalize,
                 ):
@@ -246,8 +233,7 @@ class StaticRunTests(EvidenceImportTestBase):
             finally:
                 os.chdir(previous_cwd)
 
-            ensure_clinvar.assert_not_called()
-            ensure_reference.assert_not_called()
+            refresh.assert_not_called()
             export.assert_not_called()
             normalize.assert_not_called()
             self.assertEqual(result["status"], "completed_with_warnings")

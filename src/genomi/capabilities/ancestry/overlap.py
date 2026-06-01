@@ -72,10 +72,10 @@ def _load_panel_or_missing(
 
 
 def _panel_not_installed_payload(*, genome_build: str, active_genome_index_path: str) -> JsonObject:
-    from ...runtime.library_status import library_status
+    from ...runtime.libraries import manager
 
     library = source_context.panel_library_for_build(genome_build)
-    status = library_status(library)
+    status = manager.status(library)
     panel_id = source_context.panel_id_for_build(genome_build)
     note = (
         f"No ancestry panel is installed for the sample's {genome_build} build. "

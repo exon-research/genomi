@@ -13,7 +13,6 @@ from __future__ import annotations
 # patch ``static_annotation.<name>`` affect the call sites that resolve them.
 from ....active_genome_index.export import export_variants
 from ....active_genome_index.normalize import normalize_vcf
-from ....runtime.static_dependencies import ensure_clinvar_vcf, ensure_reference_fasta
 
 from ._helpers import (
     LONG_RUNNING_STATIC_REASON,
@@ -63,8 +62,6 @@ __all__ = [
     "WORKFLOW_AREA_NAME",
     "build_static_annotation",
     "default_static_outputs",
-    "ensure_clinvar_vcf",
-    "ensure_reference_fasta",
     "export_variants",
     "fetch_static_population",
     "init_static_run",

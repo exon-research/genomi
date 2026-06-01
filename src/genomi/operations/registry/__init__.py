@@ -64,10 +64,10 @@ from ...capabilities.variant import variant_lookup
 from ...evidence import init_evidence_db, research_scope_choices
 from ...runtime import context as runtime_context
 from ...runtime import host_response, resources
-from ...runtime.library_status import (
-    library_install_request,
-    library_inventory,
-    library_status,
+from ...runtime.libraries.manager import (
+    inventory as library_inventory,
+    missing_request as library_install_request,
+    status as library_status,
 )
 from ...runtime.paths import shared_evidence_db_path
 from ...retrieval import hybrid as retrieval_hybrid

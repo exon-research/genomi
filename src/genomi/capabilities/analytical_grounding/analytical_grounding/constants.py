@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from .. import entity_relationships
 
 PATHWAY_MEMBER_GENES_SCHEMA_VERSION = "genomi-pathway-member-genes-v1"
@@ -25,15 +23,6 @@ SUPPORTED_CELL_MARKER_SOURCES = {
     "encode": "ENCODE cell-type annotation marker table supplied as a source export.",
 }
 SUPPORTED_REGION_ASSEMBLIES = {"GRCH37": "GRCh37", "GRCH38": "GRCh38"}
-
-ANALYTICAL_LIBRARY_RELATIVE_PATHS = {
-    "gencode-grch38": Path("reference/gencode/gencode.v49.GRCh38.annotation.gtf.gz"),
-    "gencode-grch37": Path("reference/gencode/gencode.v49lift37.GRCh37.annotation.gtf.gz"),
-    "encode-ccre-grch38": Path("reference/encode/encode-cCREs.V4.GRCh38.bed.gz"),
-    "panglaodb-markers": Path("reference/cell-markers/PanglaoDB_markers_27_Mar_2020.tsv.gz"),
-    "cellmarker-human": Path("reference/cell-markers/CellMarker2_human_markers.normalized.tsv"),
-    "msigdb-hallmark": Path("reference/msigdb/hallmark.symbols.gmt"),
-}
 
 NOT_INTEGRATED_PATHWAY_SOURCES = [
     "WikiPathways",

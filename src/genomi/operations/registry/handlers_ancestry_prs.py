@@ -10,7 +10,7 @@ from ...capabilities.prs import pgs_catalog as prs_pgs_catalog
 from ...capabilities.prs import scorer as prs_scorer
 from ...capabilities.prs import scoring_files as prs_scoring_files
 from ...capabilities.prs import source_context as prs_source_context
-from ...runtime.library_status import library_install_request, library_status
+from ...runtime.libraries import manager as library_manager
 from .agi_access import open_agi
 from .coerce import (
     _bool,
@@ -115,10 +115,10 @@ def _ancestry_missing_library(operation: str, intent: str, genome_build: str) ->
         if panel_id == ancestry_source_context.PANEL_ID_GRCH38
         else ancestry_source_context.PANEL_TITLE_GRCH37
     )
-    status = library_status(library)
+    status = library_manager.status(library)
     if status["installed"]:
         return None
-    request = library_install_request(
+    request = library_manager.missing_request(
         library,
         intent=intent,
         operation=operation,

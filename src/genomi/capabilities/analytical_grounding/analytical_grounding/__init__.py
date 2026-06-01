@@ -15,7 +15,6 @@ from .cell_markers import (
     _retrieve_table_cell_type_markers,
 )
 from .constants import (
-    ANALYTICAL_LIBRARY_RELATIVE_PATHS,
     CELL_TYPE_MARKERS_SCHEMA_VERSION,
     HPA_API_BASE,
     HPA_TSV_DOWNLOAD_BASE,

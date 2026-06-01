@@ -62,7 +62,6 @@ def compare_candidate_evidence(
     use_hpo_annotations: bool = True,
     download_hpo_annotations: bool = True,
     hpo_gene_file: str | Path | None = None,
-    hpo_gene_url: str = phenotype.HPO_GENE_ANNOTATION_URL,
     include_gwas: bool = True,
     gwas_api_url: str = gwas.GWAS_CATALOG_V2_API_URL,
     association_limit: int = 200,
@@ -129,7 +128,6 @@ def compare_candidate_evidence(
         use_hpo_annotations=use_hpo_annotations,
         download_hpo_annotations=download_hpo_annotations,
         hpo_gene_file=hpo_gene_file,
-        hpo_gene_url=hpo_gene_url,
         include_gwas=include_gwas,
         gwas_api_url=gwas_api_url,
         association_limit=association_limit,
@@ -279,7 +277,6 @@ def compare_phenotype_annotation_gene_evidence(
     use_hpo_annotations: bool = True,
     download_hpo_annotations: bool = True,
     hpo_gene_file: str | Path | None = None,
-    hpo_gene_url: str = phenotype.HPO_GENE_ANNOTATION_URL,
     limit: int = 25,
     semantic_context: object = None,
 ) -> dict[str, Any]:
@@ -295,7 +292,6 @@ def compare_phenotype_annotation_gene_evidence(
         use_hpo_annotations=use_hpo_annotations,
         download_hpo_annotations=download_hpo_annotations,
         hpo_gene_file=hpo_gene_file,
-        hpo_gene_url=hpo_gene_url,
         limit=limit,
         semantic_context=semantic_context,
     )
@@ -353,7 +349,6 @@ def _component_results(
     use_hpo_annotations: bool,
     download_hpo_annotations: bool,
     hpo_gene_file: str | Path | None,
-    hpo_gene_url: str,
     include_gwas: bool,
     gwas_api_url: str,
     association_limit: int,
@@ -375,7 +370,6 @@ def _component_results(
             use_hpo_annotations=use_hpo_annotations,
             download_hpo_annotations=download_hpo_annotations,
             hpo_gene_file=hpo_gene_file,
-            hpo_gene_url=hpo_gene_url,
             limit=limit,
             semantic_context=semantic_context,
         )

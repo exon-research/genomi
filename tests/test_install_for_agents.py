@@ -3,25 +3,22 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
-import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from genomi.runtime.library_status import (
-    library_install_request,
-    library_inventory,
-    library_status,
-)
-from genomi.runtime.static_dependencies import (
-    CLINVAR_DOWNLOAD_URLS,
-    ensure_clinvar_vcf,
-    shared_clinvar_vcf_path,
-)
+from genomi.runtime.libraries import registry
+from genomi.runtime.libraries.manager import inventory as library_inventory
+from genomi.runtime.libraries.manager import missing_request as library_install_request
+from genomi.runtime.libraries.manager import status as library_status
 
-_OPENPYXL_AVAILABLE = importlib.util.find_spec("openpyxl") is not None
+# Catalog facts now live only in the central registry.
+DEFAULT_LIBRARIES = list(registry.default_everything())
+MANUAL_SOURCE_LIBRARIES = frozenset(
+    spec.id for spec in registry.all_specs() if spec.manual_source_required
+)
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "install_for_agents.py"
 SPEC = importlib.util.spec_from_file_location("install_for_agents", SCRIPT_PATH)
@@ -35,7 +32,7 @@ class InstallForAgentsTests(unittest.TestCase):
     def test_parse_library_selection_accepts_exact_purposes(self) -> None:
         self.assertEqual(
             install_for_agents.parse_library_selection("everything"),
-            list(install_for_agents.DEFAULT_LIBRARIES),
+            DEFAULT_LIBRARIES,
         )
         self.assertEqual(
             install_for_agents.parse_library_selection("setup-only"),
@@ -61,13 +58,13 @@ class InstallForAgentsTests(unittest.TestCase):
             install_for_agents.parse_library_selection("cell-and-tissue"),
             ["panglaodb-markers", "cellmarker-human"],
         )
-        self.assertIn("gencode-grch38", install_for_agents.DEFAULT_LIBRARIES)
-        self.assertIn("cellmarker-human", install_for_agents.DEFAULT_LIBRARIES)
-        manual_download_overlap = set(install_for_agents.DEFAULT_LIBRARIES) & install_for_agents.MANUAL_SOURCE_LIBRARIES
+        self.assertIn("gencode-grch38", DEFAULT_LIBRARIES)
+        self.assertIn("cellmarker-human", DEFAULT_LIBRARIES)
+        manual_download_overlap = set(DEFAULT_LIBRARIES) & MANUAL_SOURCE_LIBRARIES
         self.assertEqual(manual_download_overlap, set())
         # The ancestry panel is now a ~3 MB tarball download from the
         # genomi-ancestry-panel release; no longer an opt-in heavy build.
-        self.assertIn("ancestry-1000g-30x-grch38", install_for_agents.DEFAULT_LIBRARIES)
+        self.assertIn("ancestry-1000g-30x-grch38", DEFAULT_LIBRARIES)
 
     def test_parse_library_selection_accepts_exact_library_ids(self) -> None:
         self.assertEqual(
@@ -244,71 +241,6 @@ class InstallForAgentsTests(unittest.TestCase):
                 existing_users=[{"nickname": "Alex", "user_id": "user-alex"}],
             )
         self.assertIn("--user-nickname", str(raised.exception))
-
-    def test_msigdb_hallmark_requires_explicit_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(SystemExit):
-            install_for_agents.install_msigdb_hallmark(
-                Path(tmp) / "hallmark.gmt",
-                source_path=None,
-                source_url=None,
-                force=False,
-            )
-
-    @unittest.skipUnless(_OPENPYXL_AVAILABLE, "openpyxl not installed")
-    def test_normalize_cellmarker_xlsx_writes_genomi_marker_table(self) -> None:
-        from openpyxl import Workbook
-
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "cellmarker.xlsx"
-            output = Path(tmp) / "cellmarker.tsv"
-            workbook = Workbook()
-            worksheet = workbook.active
-            worksheet.append(
-                [
-                    "species",
-                    "tissue_type",
-                    "cancer_type",
-                    "cell_type",
-                    "cell_name",
-                    "cellontology_id",
-                    "marker",
-                    "Symbol",
-                ]
-            )
-            worksheet.append(["Human", "Liver", "Normal", "Normal cell", "Hepatocyte", "CL_0000182", "ALB", "ALB"])
-            workbook.save(source)
-
-            install_for_agents.normalize_cellmarker_xlsx(source, output)
-
-            text = output.read_text(encoding="utf-8")
-            self.assertIn("cell_type\tgene_symbol\tmarker", text)
-            self.assertIn("Hepatocyte\tALB\tALB\tLiver", text)
-
-    def test_ensure_clinvar_uses_shared_install_cache(self) -> None:
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}),
-        ):
-            output = shared_clinvar_vcf_path("GRCh38")
-            output.parent.mkdir(parents=True)
-            output.write_text("##fileformat=VCFv4.2\n", encoding="utf-8")
-            output.with_suffix(output.suffix + ".genomi-manifest.json").write_text(
-                json.dumps(
-                    {
-                        "dependency": "clinvar_vcf",
-                        "genome_build": "GRCh38",
-                        "source_url": CLINVAR_DOWNLOAD_URLS["GRCh38"],
-                        "output": str(output),
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with mock.patch("urllib.request.urlopen") as urlopen:
-                payload = ensure_clinvar_vcf(Path(tmp) / "sample.vcf", genome_build="GRCh38")
-
-            urlopen.assert_not_called()
-            self.assertEqual(payload["status"], "cached")
-            self.assertEqual(payload["output"], str(output))
 
     def test_library_status_reports_install_guidance_without_personal_context(self) -> None:
         with (

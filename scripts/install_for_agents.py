@@ -3,9 +3,9 @@
 
 The bulk of the implementation lives in sibling modules
 (``_install_for_agents_lib`` and ``_install_for_agents_downloads``) to keep
-each file under the line budget. This thin entry point re-exports the public
-API so the module stays importable both as a CLI and via ``importlib`` (the
-test suite loads this exact file path).
+each file small. Reference-library materialization is delegated entirely to the
+central library manager (``genomi.runtime.libraries.manager``) — this script
+only does package/skill/host wiring and then drives the manager per library.
 
 ``main`` is defined here so that the helpers it calls by name resolve against
 this module's namespace — that keeps ``mock.patch.object(install_for_agents,
@@ -25,32 +25,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _install_for_agents_lib import *  # noqa: F401,F403  (re-export public API)
 from _install_for_agents_lib import (  # noqa: F401  (explicit; incl. underscore names)
-    ANCESTRY_PANEL_TARBALL_SHA256,
-    ANCESTRY_PANEL_TARBALL_URL,
-    ANCESTRY_PANEL_VERSION,
-    BWA_MEM2_LINUX_X64_SHA256,
-    BWA_MEM2_LINUX_X64_URL,
-    BWA_MEM2_VERSION,
     CAPABILITY_SKILL_DIRS_TO_SKIP,
     CAPABILITY_SKILLS_ROOT,
-    CELLMARKER_HUMAN_URL,
     DEFAULT_HOST_SKILL_PARENTS,
-    DEFAULT_LIBRARIES,
-    ENCODE_CCRE_GRCH38_URL,
-    GENCODE_GRCH37_URL,
-    GENCODE_GRCH38_URL,
     GENOMI_USER_AGENT,
     HOST_AGENT_SKILL_DIR,
-    LIBRARIES,
-    LIBRARY_PURPOSES,
-    LIBRARY_SIZES,
-    MANUAL_SOURCE_LIBRARIES,
-    MINIMAP2_LINUX_X64_SHA256,
-    MINIMAP2_LINUX_X64_URL,
-    MINIMAP2_VERSION,
-    OPT_IN_LARGE_LIBRARIES,
-    PANGLAODB_MARKERS_URL,
-    PHARMCAT_RELEASES_API_URL,
     REPO_ROOT,
     SRC_DIR,
     _capability_skill_sources,
@@ -68,23 +47,35 @@ from _install_for_agents_lib import (  # noqa: F401  (explicit; incl. underscore
     resolve_library_selection,
 )
 from _install_for_agents_downloads import (  # noqa: F401  (explicit; incl. underscore names)
-    _copy_ancestry_panel,
     _report_existing_install,
-    _download_ancestry_panel,
-    _fetch_pharmcat_release,
-    _select_pharmcat_jar_asset,
-    _sha256_file,
     _verify,
-    download_library_file,
-    install_aligner_binary,
-    install_cellmarker_human,
-    install_libraries,
-    install_msigdb_hallmark,
-    install_pharmcat,
-    normalize_cellmarker_xlsx,
     run,
-    write_manifest,
 )
+
+# Per-library override args forwarded to the manager (manual sources, version
+# pins, ancestry-panel escape hatches).
+_OVERRIDE_ARGS = (
+    "msigdb_gmt",
+    "msigdb_gmt_url",
+    "pharmcat_version",
+    "ancestry_panel_url",
+    "ancestry_panel_dir",
+)
+
+
+def install_libraries(selected: list[str], *, force: bool, args=None) -> None:
+    """Materialize each selected library through the central manager."""
+    _ensure_src_on_path()
+    from genomi.runtime.libraries import manager as library_manager
+
+    overrides = {
+        name: value
+        for name in _OVERRIDE_ARGS
+        if (value := getattr(args, name, None))
+    }
+    for library in selected:
+        print(f"Installing {library} ...")
+        print_summary(library_manager.refresh(library, force=force, **overrides))
 
 
 def main(argv: list[str] | None = None) -> int:

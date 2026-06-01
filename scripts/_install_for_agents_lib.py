@@ -22,111 +22,19 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 
-LIBRARIES = {
-    "clinvar-grch38": "ClinVar VCF cache for GRCh38",
-    "clinvar-grch37": "ClinVar VCF cache for GRCh37",
-    "hpo": "HPO phenotype annotation files",
-    "gencc": "GenCC gene-disease validity TSV",
-    "reference-grch38": "UCSC hg38 reference FASTA and .fai",
-    "reference-grch37": "UCSC hg19 reference FASTA and .fai",
-    "gencode-grch38": "GENCODE v49 transcript annotation GTF for GRCh38",
-    "gencode-grch37": "GENCODE v49lift37 transcript annotation GTF for GRCh37",
-    "encode-ccre-grch38": "ENCODE SCREEN candidate cis-regulatory elements BED for GRCh38",
-    "panglaodb-markers": "PanglaoDB cell-type marker table",
-    "cellmarker-human": "CellMarker 2.0 human marker table normalized for Genomi",
-    "msigdb-hallmark": "MSigDB Hallmark GMT from a user-supplied official export",
-    "pharmcat": "PharmCAT all-in-one JAR for broad pharmacogenomic calling",
-    "ancestry-1000g-30x-grch38": "1000 Genomes 30x GRCh38 compact ancestry PCA panel",
-    "liftover-chains": "UCSC liftOver chain files for GRCh37 <-> GRCh38",
-    "ancestry-1000g-30x-grch37": "1000 Genomes ancestry PCA panel lifted to GRCh37 (built locally)",
-    "minimap2-binary": "minimap2 read aligner (long-read FASTQ → BAM)",
-    "bwa-mem2-binary": "bwa-mem2 read aligner (short-read FASTQ → BAM)",
-}
-
-# On-disk footprint after install. Surfaced to the user before download so a
-# multi-GB pull is not a surprise. Time-to-install depends on the user's
-# bandwidth and is left to the host agent to estimate from the size.
-LIBRARY_SIZES = {
-    "clinvar-grch38": "~180 MB",
-    "clinvar-grch37": "~180 MB",
-    "hpo": "~100 MB",
-    "gencc": "~25 MB",
-    "reference-grch38": "~3.2 GB",
-    "reference-grch37": "~3.1 GB",
-    "gencode-grch38": "~100 MB",
-    "gencode-grch37": "~100 MB",
-    "encode-ccre-grch38": "~30 MB",
-    "panglaodb-markers": "~5 MB",
-    "cellmarker-human": "~10 MB",
-    "msigdb-hallmark": "user-supplied",
-    "pharmcat": "~30 MB",
-    "ancestry-1000g-30x-grch38": "~3 MB",
-    "liftover-chains": "~3 MB",
-    "ancestry-1000g-30x-grch37": "~3 MB",
-    "minimap2-binary": "~5 MB",
-    "bwa-mem2-binary": "~50 MB",
-}
-
-MANUAL_SOURCE_LIBRARIES = {"msigdb-hallmark"}
-OPT_IN_LARGE_LIBRARIES: set[str] = set()
-
-# The 1000G ancestry panel is built once by the genomi-ancestry-panel project
-# at https://github.com/exon-research/genomi-ancestry-panel and distributed as
-# a GitHub release artifact. Bump version + sha256 here when consuming a new
-# release. Users can override the source with --ancestry-panel-url (mirror or
-# unreleased build) or --ancestry-panel-dir (local prebuilt copy).
-ANCESTRY_PANEL_VERSION = "1.0.0"
-ANCESTRY_PANEL_TARBALL_URL: str | None = (
-    f"https://github.com/exon-research/genomi-ancestry-panel/releases/download/"
-    f"v{ANCESTRY_PANEL_VERSION}/panel-1000g-30x-grch38-{ANCESTRY_PANEL_VERSION}.tar.gz"
-)
-ANCESTRY_PANEL_TARBALL_SHA256: str | None = (
-    "6ee6a021ec0bfe66c1808b077e423837c48a8962d09433a2bb4b4c0b5a230cf5"
-)
-DEFAULT_LIBRARIES = tuple(name for name in LIBRARIES if name not in MANUAL_SOURCE_LIBRARIES | OPT_IN_LARGE_LIBRARIES)
-LIBRARY_PURPOSES = {
-    "setup-only": (),
-    "common-questions": ("clinvar-grch38", "hpo", "gencc"),
-    "medication-response": ("clinvar-grch38", "hpo", "gencc", "pharmcat"),
-    "ancestry-context": ("ancestry-1000g-30x-grch38",),
-    "sequence-and-regions": ("clinvar-grch38", "reference-grch38", "gencode-grch38", "encode-ccre-grch38"),
-    "cell-and-tissue": ("panglaodb-markers", "cellmarker-human"),
-    "wgs-alignment": (
-        "minimap2-binary",
-        "bwa-mem2-binary",
-        "reference-grch38",
-    ),
-    "everything": DEFAULT_LIBRARIES,
-}
-
-# Pinned aligner releases. Bump the version + sha256 here to ship a newer
-# aligner. Linux x86_64 is the only platform currently published by Genomi's
-# installer; macOS and ARM builds fall back to `requires_library_install`
-# semantics surfaced by the FASTQ parser.
-MINIMAP2_VERSION = "2.28"
-MINIMAP2_LINUX_X64_URL = (
-    f"https://github.com/lh3/minimap2/releases/download/v{MINIMAP2_VERSION}/"
-    f"minimap2-{MINIMAP2_VERSION}_x64-linux.tar.bz2"
-)
-MINIMAP2_LINUX_X64_SHA256 = (
-    "51f2cf0e486d0f9f88ace1aa58fdc56571382a676ea0889ae607301c60693377"
-)
-BWA_MEM2_VERSION = "2.2.1"
-BWA_MEM2_LINUX_X64_URL = (
-    f"https://github.com/bwa-mem2/bwa-mem2/releases/download/v{BWA_MEM2_VERSION}/"
-    f"bwa-mem2-{BWA_MEM2_VERSION}_x64-linux.tar.bz2"
-)
-BWA_MEM2_LINUX_X64_SHA256 = (
-    "b4cfdbce8cc07cdf3f6a920facabc29c976cf77dd53573369508111d6d1c555b"
-)
-
-GENCODE_GRCH38_URL = "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_49/gencode.v49.annotation.gtf.gz"
-GENCODE_GRCH37_URL = "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_49/GRCh37_mapping/gencode.v49lift37.annotation.gtf.gz"
-ENCODE_CCRE_GRCH38_URL = "https://users.moore-lab.org/ENCODE-cCREs/Supplementary-Data/Supplementary-Data-1.GRCh38-cCREs-V4.bed.gz"
-PANGLAODB_MARKERS_URL = "https://panglaodb.se/markers/PanglaoDB_markers_27_Mar_2020.tsv.gz"
-CELLMARKER_HUMAN_URL = "https://bio-bigdata.hrbmu.edu.cn/CellMarker/CellMarker_download_files/file/Cell_marker_Human.xlsx"
-PHARMCAT_RELEASES_API_URL = "https://api.github.com/repos/PharmGKB/PharmCAT/releases/latest"
+# Every reference-library fact (ids, sizes, purposes, URLs, sha256/versions,
+# transforms, paths, freshness) lives once in the central registry
+# (``genomi.runtime.libraries.registry``); the installer drives the manager and
+# no longer keeps its own catalog. Only the install-script user agent stays here.
 GENOMI_USER_AGENT = "Genomi installer/0.1 (+https://www.genomiagent.com/)"
+
+
+def _library_manager():
+    """Import the central library manager, ensuring src/ is importable first."""
+    _ensure_src_on_path()
+    from genomi.runtime.libraries import manager
+
+    return manager
 
 
 def genomi_home_path() -> Path:
@@ -171,14 +79,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--libraries",
         help=(
-            "Public data purpose to install, or exact comma-separated library IDs. "
-            f"Purposes: {', '.join(LIBRARY_PURPOSES)}. Library IDs: {', '.join(LIBRARIES)}."
+            "Public data purpose to install (e.g. everything, common-questions, "
+            "medication-response), or exact comma-separated library IDs. See "
+            "genomi.runtime.libraries.registry for the full catalog."
         ),
     )
     parser.add_argument("--skip-package", action="store_true", help="Skip editable package installation.")
     parser.add_argument("--skip-verify", action="store_true", help="Skip post-install verification commands.")
     parser.add_argument("--genomi-home", help="Set GENOMI_HOME for installed libraries and runtime state.")
-    parser.add_argument("--force", action="store_true", help="Refresh selected library downloads when supported.")
+    parser.add_argument("--force", action="store_true", help="Re-download selected libraries even if present.")
     parser.add_argument(
         "--msigdb-gmt",
         help="Path to an official MSigDB Hallmark GMT export to copy when msigdb-hallmark is selected.",
@@ -241,39 +150,20 @@ def resolve_library_selection(value: str | None) -> list[str]:
     if value is None:
         raise SystemExit(
             "Library selection requires an explicit --libraries value. "
-            f"Pass one exact purpose ({', '.join(LIBRARY_PURPOSES)}) or exact library IDs."
+            "Pass one exact purpose (e.g. everything) or exact library IDs."
         )
     return parse_library_selection(value)
 
 
 def parse_library_selection(value: str) -> list[str]:
-    cleaned = value.strip().lower()
-    if not cleaned:
-        raise SystemExit(
-            f"Choose one exact purpose ({', '.join(LIBRARY_PURPOSES)}) or exact library IDs."
-        )
-    if cleaned in LIBRARY_PURPOSES:
-        return list(LIBRARY_PURPOSES[cleaned])
-
-    selected: list[str] = []
-    invalid: list[str] = []
-    for token in cleaned.split(","):
-        item = token.strip()
-        if not item:
-            continue
-        name = item
-        if name not in LIBRARIES:
-            invalid.append(item)
-            continue
-        if name not in selected:
-            selected.append(name)
-    if invalid:
-        expected = ", ".join([*LIBRARY_PURPOSES, *LIBRARIES])
-        raise SystemExit(
-            f"Unknown library selection: {', '.join(invalid)}. "
-            f"Expected one exact purpose or exact library IDs: {expected}"
-        )
-    return selected
+    """Resolve a purpose name or comma-separated library IDs through the central
+    registry (the single source of truth for the catalog)."""
+    if not value.strip():
+        raise SystemExit("Choose one exact purpose (e.g. everything) or exact library IDs.")
+    try:
+        return _library_manager().resolve_selection(value.strip().lower())
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 HOST_AGENT_SKILL_DIR = REPO_ROOT

@@ -2,17 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ....runtime.libraries import registry
 from ....runtime.paths import genomi_data_root
-from .constants import ANALYTICAL_LIBRARY_RELATIVE_PATHS
 from .helpers import _normalize_assembly, _normalize_cell_marker_source
 
 
 def analytical_library_path(name: str, *, root: str | Path | None = None) -> Path:
+    # The registry is the single source of truth for where each library lands;
+    # its first required path is the file analytical grounding reads.
     try:
-        relative = ANALYTICAL_LIBRARY_RELATIVE_PATHS[name]
-    except KeyError as exc:
+        spec = registry.get(name)
+    except ValueError as exc:
         raise ValueError(f"Unknown analytical grounding library: {name}") from exc
-    return genomi_data_root(root) / relative
+    return genomi_data_root(root) / spec.required_paths[0]
 
 
 def installed_analytical_library_path(name: str, *, root: str | Path | None = None) -> Path | None:

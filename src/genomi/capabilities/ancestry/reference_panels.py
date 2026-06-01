@@ -63,7 +63,7 @@ def panel_installed(genome_build: str = "GRCh38", root: str | Path | None = None
 
 
 def list_reference_panels() -> JsonObject:
-    from ...runtime.library_status import library_status
+    from ...runtime.libraries import manager
 
     panel_records: list[JsonObject] = []
     install_actions: list[JsonObject] = []
@@ -76,7 +76,7 @@ def list_reference_panels() -> JsonObject:
             if build == "GRCh38"
             else source_context.PANEL_TITLE_GRCH37
         )
-        status = library_status(library)
+        status = manager.status(library)
         paths = panel_paths(build)
         manifest = _read_json(paths["manifest"]) if status["installed"] else None
         stats = _read_json(paths["panel_stats"]) if paths["panel_stats"].exists() else {}

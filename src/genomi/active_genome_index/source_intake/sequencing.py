@@ -11,9 +11,8 @@ from ...runtime.paths import (
     run_work_dir_for_source,
     sample_slug_from_source,
     shared_evidence_db_path,
-    shared_reference_dir,
 )
-from ...runtime.static_dependencies import ensure_reference_fasta
+from ...runtime.libraries import manager as library_manager
 from ..alignment import (
     align_fastq_to_bam,
     detect_paired_fastq,
@@ -33,7 +32,6 @@ def parse_bam_source(
     shared_evidence_db: str | Path | None = None,
     reference_fasta: str | Path | None = None,
     auto_reference_fasta: bool = True,
-    reference_root: str | Path | None = None,
     genome_build: str = "auto",
     force: bool = False,
     max_records: int | None = None,
@@ -82,10 +80,8 @@ def parse_bam_source(
 
     resolved_reference_fasta = Path(reference_fasta) if reference_fasta is not None else None
     if resolved_reference_fasta is None and auto_reference_fasta:
-        dependency = ensure_reference_fasta(
-            genome_build=effective_build,
-            root=reference_root or shared_reference_dir(),
-            force=force,
+        dependency = library_manager.refresh(
+            f"reference-{effective_build.lower()}", force=force
         )
         steps.append(
             {
@@ -175,7 +171,6 @@ def parse_fastq_source(
     shared_evidence_db: str | Path | None = None,
     reference_fasta: str | Path | None = None,
     auto_reference_fasta: bool = True,
-    reference_root: str | Path | None = None,
     genome_build: str = "auto",
     force: bool = False,
     max_records: int | None = None,
@@ -240,10 +235,8 @@ def parse_fastq_source(
         }
     ]
     if resolved_reference_fasta is None and auto_reference_fasta:
-        dependency = ensure_reference_fasta(
-            genome_build=effective_build,
-            root=reference_root or shared_reference_dir(),
-            force=force,
+        dependency = library_manager.refresh(
+            f"reference-{effective_build.lower()}", force=force
         )
         steps.append(
             {
@@ -311,7 +304,6 @@ def parse_fastq_source(
         shared_evidence_db=shared_db,
         reference_fasta=resolved_reference_fasta,
         auto_reference_fasta=False,
-        reference_root=reference_root,
         genome_build=effective_build,
         force=force,
         max_records=max_records,

@@ -36,15 +36,7 @@ CHAIN_FILES: dict[tuple[str, str], str] = {
     ("GRCh38", "GRCh37"): "hg38ToHg19.over.chain.gz",
     ("GRCh37", "GRCh38"): "hg19ToHg38.over.chain.gz",
 }
-
-CHAIN_SOURCE_URLS: dict[str, str] = {
-    "hg38ToHg19.over.chain.gz": (
-        "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/liftOver/hg38ToHg19.over.chain.gz"
-    ),
-    "hg19ToHg38.over.chain.gz": (
-        "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz"
-    ),
-}
+# Chain-file source URLs live in the central registry ("liftover-chains").
 
 
 class LiftoverConfigurationError(RuntimeError):

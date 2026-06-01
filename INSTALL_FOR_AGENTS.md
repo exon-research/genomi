@@ -63,8 +63,9 @@ test -f "${GENOMI_HOME:-$HOME/.genomi}/genomi/pyproject.toml" && echo installed 
 
 - **Installed** → this is an **update**: run `genomi install` (alias
   `genomi update`), or `"${GENOMI_HOME:-$HOME/.genomi}/bin/genomi" install` if
-  `genomi` isn't on PATH. It git-pulls the runtime, reinstalls, and fills only
-  the missing libraries (idempotent). Then stop — skip the rest of this doc.
+  `genomi` isn't on PATH. It git-pulls the runtime, reinstalls, fills missing
+  libraries, and refreshes any whose upstream source changed (idempotent). Then
+  stop — skip the rest of this doc.
 - **Not installed** → **first-time install**: follow the steps below to
   bootstrap from source with `scripts/install_for_agents.py`.
 
@@ -324,11 +325,14 @@ Whatever interpreter runs the installer is the one the `genomi` shim launches,
 so `genomi` must be importable from it (any venv/conda/system setup is fine).
 
 **Re-running into a populated `GENOMI_HOME` is safe and idempotent.** Install
-skips any library whose files already exist and downloads only what's missing,
-so running `--libraries everything` against a near-complete home fills the one
-gap without re-fetching the multi-GB caches you already have. No `--force`
-needed for that. Use `--force` only to deliberately re-download (e.g. refresh a
-stale ClinVar cache). To find what's missing first, check the library inventory
+checks each present library against its source and re-downloads only what
+actually changed upstream (transferring nothing for caches already current),
+and fills any missing libraries — so running `--libraries everything` against a
+near-complete home fills the gaps and refreshes stale caches without re-fetching
+the multi-GB files you already have current. No `--force` needed for that; a
+normal re-run already refreshes a changed-upstream cache (e.g. the weekly ClinVar
+release). Use `--force` only to re-download unconditionally regardless of
+freshness. To find what's missing first, check the library inventory
 (`genomi.check_libraries` / `genomi tools`) — its summary reports
 `installed_count` / `missing_count`.
 
@@ -336,7 +340,7 @@ stale ClinVar cache). To find what's missing first, check the library inventory
 
 | Flag | When to use |
 | --- | --- |
-| `--force` | Re-download selected libraries even if already present (refresh). Not needed to fill gaps. |
+| `--force` | Re-download selected libraries unconditionally, even if unchanged upstream. Not needed to fill gaps or refresh changed caches — a normal run does both. |
 | `--ancestry-panel-dir /path` | Use a locally-built ancestry panel instead of the release tarball. |
 | `--ancestry-panel-url <URL>` | Mirror or unreleased panel build. |
 | `--pharmcat-version v2.15.5` | Pin a PharmCAT release. |

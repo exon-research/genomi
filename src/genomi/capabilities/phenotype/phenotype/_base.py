@@ -9,14 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from ....evidence import search_research_findings
-from ....runtime.library_status import library_install_request
+from ....runtime.libraries import registry as _library_registry
 from ....retrieval import semantic as retrieval_semantic
 
 PHENOTYPE_NORMALIZATION_SCHEMA_VERSION = "genomi-phenotype-normalization-v1"
 PHENOTYPE_PRIORITIZATION_SCHEMA_VERSION = "genomi-phenotype-prioritization-v1"
-HPO_GENE_ANNOTATION_URL = "https://purl.obolibrary.org/obo/hp/hpoa/phenotype_to_genes.txt"
-HPO_DISEASE_ANNOTATION_URL = "https://purl.obolibrary.org/obo/hp/hpoa/phenotype.hpoa"
-GENCC_SUBMISSIONS_URL = "https://thegencc.org/download/action/submissions-export-tsv?format=new"
+# Source URLs live only in the central registry; these names expose them as the
+# documented defaults for the phenotype operations and for record provenance.
+HPO_GENE_ANNOTATION_URL = _library_registry.get("hpo").source.urls[0]
+HPO_DISEASE_ANNOTATION_URL = _library_registry.get("hpo").source.urls[1]
+GENCC_SUBMISSIONS_URL = _library_registry.get("gencc").source.urls[0]
 PRIMARY_GENE_DISEASE_CLASSIFICATIONS = ("Definitive", "Strong")
 HPO_ID_RE = re.compile(r"\bHP:\d{7}\b", flags=re.I)
 TOKEN_RE = re.compile(r"[a-z0-9]+")

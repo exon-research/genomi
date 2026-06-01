@@ -71,7 +71,6 @@ from genomi.evidence.investigation import prepare_investigation_packet
 from genomi.evidence.sources import evidence_source_catalog
 from genomi.runtime.external import dependency_report
 from genomi.runtime.static_dependencies import (
-    ensure_reference_fasta,
     infer_genome_build_from_vcf,
     resolve_genome_build,
 )

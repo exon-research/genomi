@@ -18,11 +18,12 @@ from ....evidence import (
     init_evidence_db,
 )
 from ....runtime.handoff import attach_evidence_context, evidence_context
-from ....runtime.library_status import (
-    library_install_request,
-    library_name_for_clinvar,
-    library_status,
-)
+from ....runtime.libraries import manager as library_manager
+from ....runtime.libraries.manager import status as library_status
+
+
+def library_name_for_clinvar(genome_build: str) -> str:
+    return f"clinvar-{genome_build.strip().lower()}"
 from ....runtime.paths import (
     default_export_variants_path,
     enclosing_work_dir,
@@ -424,7 +425,7 @@ def _resolve_clinvar_cache_build(
             build_clinvar_rsid_index(db_path, force=force)
             return other_build, None
 
-    request = library_install_request(
+    request = library_manager.missing_request(
         matching_library,
         intent=intent,
         operation=operation,
@@ -452,7 +453,7 @@ def _ensure_clinvar_evidence(
     clinvar_library = library_name_for_clinvar(genome_build)
     clinvar_status = library_status(clinvar_library)
     if not clinvar_status["installed"]:
-        request = library_install_request(
+        request = library_manager.missing_request(
             clinvar_library,
             intent=intent,
             operation=operation,

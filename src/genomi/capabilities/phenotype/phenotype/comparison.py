@@ -29,9 +29,6 @@ from ....runtime.external import utc_now
 from ....retrieval import semantic as retrieval_semantic
 
 from ._base import (
-    GENCC_SUBMISSIONS_URL,
-    HPO_DISEASE_ANNOTATION_URL,
-    HPO_GENE_ANNOTATION_URL,
     HPO_ID_RE,
     PHENOTYPE_NORMALIZATION_SCHEMA_VERSION,
     PHENOTYPE_PRIORITIZATION_SCHEMA_VERSION,
@@ -128,11 +125,9 @@ def compare_disease_phenotype_evidence(
     use_hpo_annotations: bool = True,
     download_hpo_annotations: bool = True,
     hpo_disease_file: str | Path | None = None,
-    hpo_disease_url: str = HPO_DISEASE_ANNOTATION_URL,
     use_primary_gene_disease: bool = True,
     download_primary_gene_disease: bool = True,
     gencc_file: str | Path | None = None,
-    gencc_url: str = GENCC_SUBMISSIONS_URL,
     limit: int = 25,
     semantic_context: object = None,
 ) -> dict[str, Any]:
@@ -149,11 +144,9 @@ def compare_disease_phenotype_evidence(
         use_hpo_annotations=use_hpo_annotations,
         download_hpo_annotations=download_hpo_annotations,
         hpo_disease_file=hpo_disease_file,
-        hpo_disease_url=hpo_disease_url,
         use_primary_gene_disease=use_primary_gene_disease,
         download_primary_gene_disease=download_primary_gene_disease,
         gencc_file=gencc_file,
-        gencc_url=gencc_url,
         limit=limit,
     )
     records = _prepare_source_records(
@@ -219,7 +212,6 @@ def compare_gene_hpo_evidence(
     use_hpo_annotations: bool = True,
     download_hpo_annotations: bool = True,
     hpo_gene_file: str | Path | None = None,
-    hpo_gene_url: str = HPO_GENE_ANNOTATION_URL,
     limit: int = 25,
     semantic_context: object = None,
 ) -> dict[str, Any]:
@@ -236,7 +228,6 @@ def compare_gene_hpo_evidence(
         use_hpo_annotations=use_hpo_annotations,
         download_hpo_annotations=download_hpo_annotations,
         hpo_gene_file=hpo_gene_file,
-        hpo_gene_url=hpo_gene_url,
         limit=limit,
     )
     records = _prepare_source_records(

@@ -129,8 +129,10 @@ context, a selected user, a genome source, or a previous run.
 `genomi update` are the same operation. It always updates everything that can
 be updated: the runtime code (`git pull --ff-only` on a git checkout, unless
 `GENOMI_SKIP_RUNTIME_GIT_PULL` is set for a non-git distribution), all public
-reference libraries into `GENOMI_HOME` (idempotent — present libraries are
-skipped, pass `force` to re-download), the public retrieval indexes, and a
+reference libraries into `GENOMI_HOME` (idempotent — each installed library is
+checked against its source and re-downloaded only if it changed upstream, so
+re-running transfers nothing when nothing changed; pass `force` to re-download
+regardless), the public retrieval indexes, and a
 background reparse of any genome whose index schema is older than the updated
 runtime's. There are no per-step skip flags — `genomi update` does the full
 update by default. The `libraries` parameter only narrows *which* reference

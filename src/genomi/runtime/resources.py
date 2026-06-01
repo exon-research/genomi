@@ -9,7 +9,7 @@ from ..capabilities.pharmacogenomics import review as pgx
 from ..capabilities.prs import scoring_files as prs_scoring_files
 from ..evidence.sources import evidence_source_catalog
 from .host_response import host_response_profiles
-from .library_status import library_inventory
+from .libraries.manager import inventory as library_inventory
 from .paths import genomi_data_root, shared_evidence_db_path, shared_reference_dir
 
 RESOURCE_CATALOG_SCHEMA_VERSION = "genomi-resource-catalog-v1"

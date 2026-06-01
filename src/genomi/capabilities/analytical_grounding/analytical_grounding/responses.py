@@ -168,10 +168,10 @@ def _library_install_response(
     not_integrated: list[str],
     additional_missing_libraries: list[str] | None = None,
 ) -> dict[str, Any]:
-    from ....runtime.library_status import library_install_request, library_status
+    from ....runtime.libraries import manager
 
-    request = library_install_request(library, intent=intent, operation=operation)
-    extra_libraries = [library_status(name) for name in (additional_missing_libraries or [])]
+    request = manager.missing_request(library, intent=intent, operation=operation)
+    extra_libraries = [manager.status(name) for name in (additional_missing_libraries or [])]
     payload: dict[str, Any] = {
         **request,
         "schema": schema,

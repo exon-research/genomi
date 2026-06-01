@@ -10,10 +10,9 @@ from pathlib import Path
 from ...active_genome_index import source_intake
 from ...runtime import context as runtime_context
 from ...runtime import host_response, resources
-from ...runtime.library_status import (
-    library_inventory,
-    library_status,
-)
+from ...runtime.libraries import manager as library_manager
+from ...runtime.libraries.manager import inventory as library_inventory
+from ...runtime.libraries.manager import status as library_status
 from ...runtime.paths import genomi_data_root
 from ...retrieval import hybrid as retrieval_hybrid
 from ...retrieval import index as retrieval_index
@@ -21,7 +20,6 @@ from ...retrieval import semantic as retrieval_semantic
 from ...capabilities.prs import pgs_catalog as prs_pgs_catalog
 from .catalog_meta import (
     BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST,
-    PROJECT_ROOT,
     TOOL_CATALOG_OPERATIONS,
 )
 from .coerce import (
@@ -278,55 +276,37 @@ def _genomi_install(params: JsonObject) -> JsonObject:
 
 
 def _install_libraries_step(libraries: str, params: JsonObject) -> JsonObject:
-    """Materialize the selected reference libraries via the installer script.
-
-    Idempotent: already-present libraries are skipped unless `force` is set.
-    Raises OperationError on a non-zero installer exit.
+    """Materialize the selected reference libraries through the central manager,
+    in-process. Each selected library is checked against its source and only the
+    changed bytes are downloaded (missing libraries download in full; present
+    ones are conditionally refreshed). Idempotent: present + unchanged is a
+    no-op. ``force`` re-downloads. Raises OperationError on any failure.
     """
-    script = _install_for_agents_script()
-    genomi_home = genomi_data_root()
-    command = [
-        sys.executable,
-        str(script),
-        "--skip-package",
-        "--skip-host-skill",
-        "--skip-verify",
-        "--genomi-home",
-        str(genomi_home),
-        "--libraries",
-        libraries,
-    ]
-    if _bool(params, "force"):
-        command.append("--force")
-    for param_name, flag in (
-        ("msigdb_gmt", "--msigdb-gmt"),
-        ("msigdb_gmt_url", "--msigdb-gmt-url"),
-        ("pharmcat_version", "--pharmcat-version"),
-        ("ancestry_panel_url", "--ancestry-panel-url"),
-        ("ancestry_panel_dir", "--ancestry-panel-dir"),
-    ):
+    try:
+        selected = library_manager.resolve_selection(libraries)
+    except ValueError as exc:
+        raise OperationError("invalid_params", str(exc)) from exc
+
+    force = _bool(params, "force")
+    overrides: dict[str, str] = {}
+    for param_name in ("msigdb_gmt", "msigdb_gmt_url", "pharmcat_version", "ancestry_panel_url", "ancestry_panel_dir"):
         value = _optional_str(params, param_name)
         if value:
-            command.extend([flag, value])
+            overrides[param_name] = value
 
-    env = os.environ.copy()
-    env["GENOMI_HOME"] = str(genomi_home)
-    completed = subprocess.run(
-        command,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=env,
-    )
-    if completed.returncode != 0:
-        raise OperationError("install_failed", f"Genomi install failed with exit code {completed.returncode}: {_tail(completed.stderr or completed.stdout)}")
+    results: list[JsonObject] = []
+    for library_id in selected:
+        try:
+            results.append(library_manager.refresh(library_id, force=force, **overrides))
+        except Exception as exc:  # noqa: BLE001 — surface any materialization failure as an operation error
+            raise OperationError(
+                "install_failed", f"Genomi install failed for {library_id}: {exc}"
+            ) from exc
+
     return {
         "status": "completed",
-        "returncode": completed.returncode,
-        "command": _redacted_install_command(command),
-        "stdout_tail": _tail(completed.stdout),
-        "stderr_tail": _tail(completed.stderr),
+        "libraries": selected,
+        "results": results,
     }
 
 
@@ -658,34 +638,6 @@ def _reparse_stale_genomes() -> JsonObject:
     }
 
 
-def _install_for_agents_script() -> Path:
-    candidates = [
-        PROJECT_ROOT / "scripts" / "install_for_agents.py",
-        Path("/opt/genomi/scripts/install_for_agents.py"),
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise OperationError(
-        "installer_unavailable",
-        "The Genomi installer script is unavailable. Packaged runtimes must include /opt/genomi/scripts/install_for_agents.py.",
-    )
-
-
-def _redacted_install_command(command: list[str]) -> list[str]:
-    redacted: list[str] = []
-    redact_next = False
-    for token in command:
-        if redact_next:
-            redacted.append("[path]")
-            redact_next = False
-            continue
-        redacted.append(token)
-        if token in {"--msigdb-gmt", "--ancestry-panel-dir"}:
-            redact_next = True
-    return redacted
-
-
 def _tail(text: str, *, limit: int = 4000) -> str:
     stripped = text.strip()
     if len(stripped) <= limit:
@@ -973,7 +925,6 @@ def _genomi_parse_source(params: JsonObject) -> JsonObject:
         shared_evidence_db=_optional_path(params, "shared_db"),
         reference_fasta=_optional_path(params, "reference_fasta"),
         auto_reference_fasta=_bool(params, "auto_reference_fasta", True),
-        reference_root=_optional_path(params, "reference_root"),
         genome_build=_str(params, "genome_build", "auto"),
         force=_bool(params, "force"),
         max_records=params.get("max_records"),

@@ -6,7 +6,8 @@ from typing import Any
 
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...evidence import envelope as evidence_envelope
-from ...runtime.library_status import library_install_request, library_status
+from ...runtime.libraries import manager as library_manager
+from ...runtime.libraries.manager import status as library_status
 from . import harmonize, scoring_files, source_context
 
 JsonObject = dict[str, Any]
@@ -132,7 +133,7 @@ def collect_score_context(
     if score_build != normalized_build:
         liftover_status = library_status("liftover-chains")
         if not liftover_status["installed"]:
-            request = library_install_request(
+            request = library_manager.missing_request(
                 "liftover-chains",
                 intent=(
                     f"lifting PRS score variants from {score_build} to the active sample's "

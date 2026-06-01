@@ -24,15 +24,10 @@ from ....evidence import (
     summarize_clinvar_matches,
 )
 from ....runtime.handoff import attach_evidence_context, evidence_context, workflow_step
-from ....runtime.library_status import (
-    library_install_request,
-    library_name_for_clinvar,
-    library_status,
-)
+from ....runtime.libraries import manager as library_manager
 from ....runtime.paths import (
     default_export_variants_path,
     run_output_path,
-    shared_reference_dir,
 )
 from ....runtime.static_dependencies import resolve_genome_build
 
@@ -40,6 +35,7 @@ from ._helpers import (
     LONG_RUNNING_STATIC_REASON,
     WORKFLOW_AREA_ID,
     _has_clinvar_evidence,
+    library_name_for_clinvar,
     _link_run_db_to_shared_static,
     _resolve_clinvar_cache_build,
     _reusable_static_db_with_clinvar,
@@ -61,7 +57,6 @@ def build_static_annotation(
     reference_fasta: str | Path | None = None,
     genotype_reference_fasta: str | Path | None = None,
     auto_reference_fasta: bool = False,
-    reference_root: str | Path | None = None,
     clinvar_vcf: str | Path | None = None,
     population_vcf: str | Path | None = None,
     population_source: str | None = None,
@@ -79,8 +74,6 @@ def build_static_annotation(
     # Resolve patchable static dependencies from the package namespace so that
     # tests patching ``static_annotation.<name>`` affect this call site.
     from . import (
-        ensure_clinvar_vcf,
-        ensure_reference_fasta,
         export_variants,
         normalize_vcf,
     )
@@ -183,10 +176,8 @@ def build_static_annotation(
     resolved_genotype_reference_fasta = Path(genotype_reference_fasta) if genotype_reference_fasta is not None else None
     if auto_reference_fasta and resolved_genotype_reference_fasta is None:
         if allow_long_running_static:
-            dependency = ensure_reference_fasta(
-                genome_build=effective_genome_build,
-                root=reference_root or shared_reference_dir(),
-                force=force,
+            dependency = library_manager.refresh(
+                f"reference-{effective_genome_build.lower()}", force=force
             )
             steps.append(
                 workflow_step(
@@ -259,7 +250,7 @@ def build_static_annotation(
 
     if clinvar_vcf is None and not _has_clinvar_evidence(public_read_db_path, effective_genome_build):
         clinvar_library = library_name_for_clinvar(effective_genome_build)
-        clinvar_status = library_status(clinvar_library)
+        clinvar_status = library_manager.status(clinvar_library)
         if clinvar_status["installed"]:
             clinvar_vcf = Path(clinvar_status["required_paths"][0])
             steps.append(
@@ -277,19 +268,19 @@ def build_static_annotation(
                 )
             )
         elif allow_long_running_static:
-            dependency = ensure_clinvar_vcf(vcf_path, genome_build=effective_genome_build, force=public_force)
+            dependency = library_manager.refresh(clinvar_library, force=public_force)
             steps.append(
                 workflow_step(
                     "ensure-clinvar",
                     dependency,
                     "static",
-                    reason="The matching ClinVar VCF is available locally and can be imported into the shared static evidence DB.",
+                    reason="The matching ClinVar VCF is cached in the shared library and can be imported into the shared static evidence DB.",
                     commands=["genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],
                 )
             )
-            clinvar_vcf = Path(dependency["output"])
+            clinvar_vcf = Path(library_manager.status(clinvar_library)["required_paths"][0])
         else:
-            request = library_install_request(
+            request = library_manager.missing_request(
                 clinvar_library,
                 intent="exact ClinVar annotation for variants in the Active Genome Index",
                 operation="genomi.parse_source",
