@@ -54,8 +54,6 @@ does the work.
 
 ## See it in action
 
-Short demos:
-
 - [Genomi parses your raw DNA file into a local database your agent can query](https://youtu.be/mJUw6Lf8zEk)
 - [Genomi keeps your raw DNA file on your machine](https://youtu.be/Paj2ixdeZGk)
 - [Genomi knows when to say "No" and "I don't know"](https://youtu.be/-yXZhFDiYP0)

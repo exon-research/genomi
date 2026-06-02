@@ -38,9 +38,7 @@
   </a>
 </p>
 
-## 实际演示
-
-几个简短片段：
+## 实机演示
 
 - [Genomi 把你的原始 DNA 文件解析成本地数据库，让 agent 随手查询](https://youtu.be/mJUw6Lf8zEk)
 - [Genomi 让你的原始 DNA 文件留在自己机器上](https://youtu.be/Paj2ixdeZGk)
