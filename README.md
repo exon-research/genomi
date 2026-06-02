@@ -44,12 +44,12 @@ query, memory of what you explored, and report tools that turn DNA questions
 into evidence-backed answers. Your genome stays on your machine. The agent
 does the work.
 
+## Launch video
+
 <p align="center">
   <a href="https://youtu.be/8CkoDNlyvZ0">
-    <img src="https://img.youtube.com/vi/8CkoDNlyvZ0/maxresdefault.jpg" alt="Watch the Genomi launch video" width="640">
+    <img src="https://img.youtube.com/vi/8CkoDNlyvZ0/maxresdefault.jpg" alt="Genomi launch video" width="640">
   </a>
-  <br>
-  <em>▶ Watch the Genomi launch video</em>
 </p>
 
 ## See it in action
