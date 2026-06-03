@@ -6,8 +6,7 @@ from typing import Any
 
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...evidence import envelope as evidence_envelope
-from ...runtime.libraries import manager as library_manager
-from ...runtime.libraries.manager import status as library_status
+from ...runtime.liftover import liftover_preflight
 from . import harmonize, scoring_files, source_context
 
 JsonObject = dict[str, Any]
@@ -41,6 +40,7 @@ def check_score_overlap(
         "personal_context": {"uses_personal_dna": True},
         "polygenic_score": collected["polygenic_score"],
         "sample_qc": collected["sample_qc"],
+        "variant_accounting": collected["variant_accounting"],
         "limitations": source_context.limitations(),
         "next_actions": _overlap_next_actions(collected["sample_qc"], collected["polygenic_score"]),
     }
@@ -77,6 +77,7 @@ def calculate_score(
             "polygenic_score": collected["polygenic_score"],
             "sample_qc": sample_qc,
             "score_result": None,
+            "variant_accounting": collected["variant_accounting"],
             "interpretation": _interpretation(sample_qc, score_result=None),
             "limitations": source_context.limitations(),
             "next_actions": _overlap_next_actions(sample_qc, collected["polygenic_score"]),
@@ -130,27 +131,36 @@ def collect_score_context(
     variants = scoring_files.load_variants(cache["score_dir"])
     original_variant_count = len(variants)
     lift_summary: JsonObject | None = None
+    liftover_excluded: list[JsonObject] = []
     if score_build != normalized_build:
-        liftover_status = library_status("liftover-chains")
-        if not liftover_status["installed"]:
-            request = library_manager.missing_request(
-                "liftover-chains",
-                intent=(
-                    f"lifting PRS score variants from {score_build} to the active sample's "
-                    f"{normalized_build} build so the imported score can be calculated against this AGI"
-                ),
+        liftover_intent = (
+            f"lifting PRS score variants from {score_build} to the active sample's "
+            f"{normalized_build} build so the imported score can be calculated against this AGI"
+        )
+        preflight = liftover_preflight(
+            score_build,
+            normalized_build,
+            operation=operation,
+            intent=liftover_intent,
+            genome_build=normalized_build,
+        )
+        if preflight.get("status") != "available":
+            return _liftover_setup_required(
+                preflight,
                 operation=operation,
-                genome_build=normalized_build,
+                score=score_summary,
+                score_build=score_build,
+                sample_build=normalized_build,
             )
-            request["schema"] = "genomi-prs-score-v1"
-            request["polygenic_score"] = score_summary
-            request["score_genome_build"] = score_build
-            request["sample_genome_build"] = normalized_build
-            return request
         lift_result = harmonize.lift_score_variants(
             variants, source_build=score_build, target_build=normalized_build
         )
         variants = lift_result["lifted"]
+        liftover_excluded = _liftover_excluded_variants(
+            lift_result["dropped"],
+            source_build=score_build,
+            target_build=normalized_build,
+        )
         lift_summary = {
             "source_build": score_build,
             "target_build": normalized_build,
@@ -167,7 +177,7 @@ def collect_score_context(
     # dispatch chokepoint stamps reference_pending.
     matched: list[JsonObject] = []
     missing: list[JsonObject] = []
-    excluded: list[JsonObject] = []
+    excluded: list[JsonObject] = list(liftover_excluded)
     with reader.connect() as connection:
         dosages = harmonize.dosage_for_variants(
             connection,
@@ -219,6 +229,7 @@ def _sample_qc(
     matched_count = len(matched)
     missing_count = len(missing)
     excluded_count = len(excluded)
+    accounted_count = matched_count + missing_count + excluded_count
     denominator = score_variant_count or 1
     overlap_fraction = matched_count / denominator
     payload: JsonObject = {
@@ -229,6 +240,10 @@ def _sample_qc(
         "matched_variant_count": matched_count,
         "missing_variant_count": missing_count,
         "excluded_variant_count": excluded_count,
+        "accounted_variant_count": accounted_count,
+        "unaccounted_variant_count": max(score_variant_count - accounted_count, 0),
+        "overaccounted_variant_count": max(accounted_count - score_variant_count, 0),
+        "accounting_complete": accounted_count == score_variant_count,
         "overlap_fraction": overlap_fraction,
         "overlap_status": _overlap_status(matched_count, overlap_fraction),
         "calculation_allowed": matched_count >= MIN_SCORE_VARIANTS and overlap_fraction >= MIN_OVERLAP_FRACTION,
@@ -290,6 +305,10 @@ def _polygenic_score_summary(score_dir: str | Path, manifest: JsonObject) -> Jso
 
 def _variant_accounting(matched: list[JsonObject], missing: list[JsonObject], excluded: list[JsonObject]) -> JsonObject:
     return {
+        "matched_count": len(matched),
+        "missing_count": len(missing),
+        "excluded_count": len(excluded),
+        "accounted_variant_count": len(matched) + len(missing) + len(excluded),
         "matched_examples": _compact_variant_examples(matched[:20]),
         "missing_examples": _compact_variant_examples(missing[:20]),
         "excluded_examples": _compact_variant_examples(excluded[:20]),
@@ -311,6 +330,35 @@ def _compact_variant_examples(items: list[JsonObject]) -> list[JsonObject]:
         }
         for item in items
     ]
+
+
+def _liftover_excluded_variants(
+    dropped: list[JsonObject],
+    *,
+    source_build: str,
+    target_build: str,
+) -> list[JsonObject]:
+    excluded: list[JsonObject] = []
+    for variant in dropped:
+        liftover_reason = str(variant.get("liftover_reason") or "unknown")
+        excluded.append(
+            {
+                "status": "excluded",
+                "reason": f"liftover_{liftover_reason}",
+                "liftover_reason": liftover_reason,
+                "liftover_source_build": source_build,
+                "liftover_target_build": target_build,
+                "variant_index": variant.get("variant_index"),
+                "variant_id": variant.get("variant_id"),
+                "rsid": variant.get("rsid"),
+                "chrom": variant.get("chrom"),
+                "pos": variant.get("pos"),
+                "effect_allele": variant.get("effect_allele"),
+                "other_allele": variant.get("other_allele"),
+                "effect_weight": variant.get("effect_weight"),
+            }
+        )
+    return excluded
 
 
 def _overlap_status(matched_count: int, overlap_fraction: float) -> str:
@@ -400,6 +448,71 @@ def _score_import_required_envelope(operation: str, result: JsonObject, genome_b
         reason="The requested polygenic score has not been imported into the local score cache.",
         personal_context={"uses_personal_dna": True},
         query_scope={"pgs_id": pgs_id or None, "genome_build": genome_build},
+        next_actions=result.get("next_actions") or [],
+    )
+
+
+def _liftover_setup_required(
+    preflight: JsonObject,
+    *,
+    operation: str,
+    score: JsonObject,
+    score_build: str,
+    sample_build: str,
+) -> JsonObject:
+    result = dict(preflight)
+    result["schema"] = "genomi-prs-score-v1"
+    result["personal_context"] = {"uses_personal_dna": True}
+    result["polygenic_score"] = score
+    result["score_genome_build"] = score_build
+    result["sample_genome_build"] = sample_build
+    result["evidence_envelope"] = _liftover_setup_required_envelope(
+        operation,
+        result,
+        score=score,
+        score_build=score_build,
+        sample_build=sample_build,
+    )
+    return result
+
+
+def _liftover_setup_required_envelope(
+    operation: str,
+    result: JsonObject,
+    *,
+    score: JsonObject,
+    score_build: str,
+    sample_build: str,
+) -> JsonObject:
+    missing = result.get("missing_library") if isinstance(result.get("missing_library"), dict) else {}
+    if missing and missing.get("install_command"):
+        library = str(missing.get("library") or "liftover")
+        return evidence_envelope.missing_library(
+            operation=operation,
+            library=library,
+            library_status_payload=missing,
+            query_scope={
+                "method": "published_polygenic_score",
+                "pgs_id": score.get("pgs_id"),
+                "score_genome_build": score_build,
+                "sample_genome_build": sample_build,
+            },
+            personal_context={"uses_personal_dna": True},
+            intent=str(result.get("intent") or "lifting PRS score variants between genome builds"),
+            next_actions=result.get("next_actions") or [],
+            notes=[str(result.get("reason") or "liftover_setup_unavailable")],
+            guidance=["blocked_missing_library:ask_user_to_install"],
+        )
+    return evidence_envelope.not_assessed(
+        operation=operation,
+        reason=str(result.get("reason") or "Liftover setup is unavailable."),
+        personal_context={"uses_personal_dna": True},
+        query_scope={
+            "method": "published_polygenic_score",
+            "pgs_id": score.get("pgs_id"),
+            "score_genome_build": score_build,
+            "sample_genome_build": sample_build,
+        },
         next_actions=result.get("next_actions") or [],
     )
 

@@ -13,6 +13,7 @@ from genomi.capabilities.prs import pgs_catalog as prs_pgs_catalog
 from genomi.capabilities.prs import scorer as prs_scorer
 from genomi.operations import OperationError, call_operation, list_operations
 from genomi.runtime import context as runtime_context
+from genomi.runtime.liftover import chain_file_path, liftover_preflight
 
 
 class PolygenicScoreCapabilityTests(unittest.TestCase):
@@ -270,6 +271,34 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         self.assertEqual(result["sample_genome_build"], "GRCh37")
         self.assertEqual(result["polygenic_score"]["pgs_id"], "PGS900001")
 
+    def test_cross_build_score_with_chains_but_missing_pyliftover_prompts_install(self) -> None:
+        scoring_file = self._write_scoring_file()
+        imported = call_operation(
+            "prs.import_scoring_file",
+            {"pgs_id": "PGS900001", "scoring_file": str(scoring_file), "genome_build": "GRCh38"},
+        )
+        vcf = self._write_indexed_vcf("sample_grch37_missing_pyliftover.vcf")
+        runtime_context.set_active_genome_index(
+            vcf,
+            status="parsed",
+            active_genome_index_path=default_active_genome_index_path(vcf),
+            genome_build="GRCh37",
+        )
+        runtime_context.approve_agi_access(reason="test approved Active Genome Index access")
+        self._write_fake_liftover_chains()
+
+        with mock.patch("genomi.runtime.liftover.importlib.import_module", side_effect=ImportError("missing pyliftover")):
+            result = call_operation("prs.check_score_overlap", {"score_dir": imported["score_cache"]["score_dir"]})
+
+        self.assertEqual(result["status"], "requires_library_install")
+        self.assertEqual(result["reason"], "missing_python_dependency")
+        self.assertEqual(result["missing_library"]["library"], "pyliftover")
+        self.assertEqual(result["score_genome_build"], "GRCh38")
+        self.assertEqual(result["sample_genome_build"], "GRCh37")
+        self.assertEqual(result["polygenic_score"]["pgs_id"], "PGS900001")
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "blocked_missing_library")
+        self.assertEqual(result["evidence_envelope"]["coverage"]["libraries"][0]["library"], "pyliftover")
+
     def test_cross_build_score_with_liftover_chains_lifts_variants(self) -> None:
         # Same scenario but with the real UCSC chain files linked into the
         # test GENOMI_HOME. The scoring file declares GRCh38 coordinates for
@@ -277,7 +306,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         # their GRCh37 coordinates. The runtime must lift the score variants
         # onto GRCh37 and match them in the Active Genome Index, completing the calculation.
         if not self._link_real_liftover_chains():
-            self.skipTest("liftover-chains library not available on this host")
+            self.skipTest("liftover setup not available on this host")
         from genomi.capabilities.prs import harmonize as prs_harmonize
 
         prs_harmonize.get_liftover.cache_clear()
@@ -343,6 +372,59 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         self.assertEqual(liftover["dropped_variant_count"], 0)
         self.assertEqual(result["sample_qc"]["matched_variant_count"], 2)
 
+    def test_cross_build_liftover_drops_are_excluded_in_variant_accounting(self) -> None:
+        scoring_file = self._write_scoring_file()
+        imported = call_operation(
+            "prs.import_scoring_file",
+            {"pgs_id": "PGS900001", "scoring_file": str(scoring_file), "genome_build": "GRCh38"},
+        )
+        vcf = self._write_indexed_vcf("sample_grch37_liftover_drops.vcf")
+        runtime_context.set_active_genome_index(
+            vcf,
+            status="parsed",
+            active_genome_index_path=default_active_genome_index_path(vcf),
+            genome_build="GRCh37",
+        )
+        runtime_context.approve_agi_access(reason="test approved Active Genome Index access")
+
+        class FakeLifter:
+            def lift_position_full(self, chrom: str, pos: int) -> tuple[str, int, str] | None:
+                if pos == 200:
+                    return None
+                if pos == 300:
+                    return str(chrom), pos, "-"
+                return str(chrom), pos, "+"
+
+        with (
+            mock.patch.object(prs_scorer, "liftover_preflight", return_value={"status": "available"}),
+            mock.patch.object(prs_harmonize, "get_liftover", return_value=FakeLifter()),
+            self._tiny_thresholds(min_variants=1, min_fraction=0.10),
+        ):
+            result = call_operation(
+                "prs.calculate_score",
+                {"score_dir": imported["score_cache"]["score_dir"]},
+            )
+
+        self.assertEqual(result["status"], "completed", result)
+        sample_qc = result["sample_qc"]
+        self.assertEqual(sample_qc["score_variant_count"], 4)
+        self.assertEqual(sample_qc["matched_variant_count"], 2)
+        self.assertEqual(sample_qc["missing_variant_count"], 0)
+        self.assertEqual(sample_qc["excluded_variant_count"], 2)
+        self.assertEqual(sample_qc["accounted_variant_count"], 4)
+        self.assertEqual(sample_qc["unaccounted_variant_count"], 0)
+        self.assertEqual(sample_qc["overaccounted_variant_count"], 0)
+        self.assertTrue(sample_qc["accounting_complete"])
+        self.assertEqual(sample_qc["excluded_reasons"]["liftover_unmapped"], 1)
+        self.assertEqual(sample_qc["excluded_reasons"]["liftover_strand_flipped"], 1)
+        self.assertEqual(sample_qc["liftover"]["dropped_variant_count"], 2)
+        self.assertEqual(sample_qc["liftover"]["dropped_reasons"], {"unmapped": 1, "strand_flipped": 1})
+        accounting = result["variant_accounting"]
+        self.assertEqual(accounting["accounted_variant_count"], 4)
+        self.assertEqual(accounting["excluded_count"], 2)
+        excluded_reasons = {item["reason"] for item in accounting["excluded_examples"]}
+        self.assertEqual(excluded_reasons, {"liftover_unmapped", "liftover_strand_flipped"})
+
     def _link_real_liftover_chains(self) -> bool:
         from genomi.runtime.paths import DEFAULT_GENOMI_HOME
 
@@ -359,7 +441,13 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             link = target_dir / chain.name
             if not link.exists():
                 link.symlink_to(chain)
-        return True
+        return liftover_preflight("GRCh38", "GRCh37", root=self.genomi_home)["status"] == "available"
+
+    def _write_fake_liftover_chains(self) -> None:
+        for source_build, target_build in (("GRCh38", "GRCh37"), ("GRCh37", "GRCh38")):
+            path = chain_file_path(source_build, target_build, root=self.genomi_home)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"")
 
     def test_low_overlap_blocks_default_score_calculation(self) -> None:
         scoring_file = self._write_scoring_file()

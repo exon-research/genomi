@@ -12,11 +12,13 @@ boundary.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from .libraries import manager as library_manager
 from .paths import genomi_data_root
 
 _BUILD_ALIASES: dict[str, str] = {
@@ -37,6 +39,9 @@ CHAIN_FILES: dict[tuple[str, str], str] = {
     ("GRCh37", "GRCh38"): "hg19ToHg38.over.chain.gz",
 }
 # Chain-file source URLs live in the central registry ("liftover-chains").
+LIFTOVER_CHAIN_LIBRARY = "liftover-chains"
+PYLIFTOVER_REQUIREMENT = "pyliftover>=0.4"
+PYLIFTOVER_INSTALL_COMMAND = f"python3 -m pip install '{PYLIFTOVER_REQUIREMENT}'"
 
 
 class LiftoverConfigurationError(RuntimeError):
@@ -74,6 +79,148 @@ def normalize_build(value: str) -> str:
         ) from exc
 
 
+def liftover_preflight(
+    source_build: str,
+    target_build: str,
+    *,
+    root: str | Path | None = None,
+    operation: str = "liftover.preflight",
+    intent: str | None = None,
+    genome_build: str | None = None,
+) -> dict[str, Any]:
+    """Return the single setup-readiness contract for coordinate liftover.
+
+    Liftover needs two independent resources: UCSC chain data on disk and the
+    Python ``pyliftover`` dependency that parses those chains. Callers should
+    use this preflight instead of checking only the library registry.
+    """
+
+    src, tgt = normalize_build(source_build), normalize_build(target_build)
+    setup_intent = intent or f"lifting coordinates from {src} to {tgt}"
+    if src == tgt:
+        return {
+            "status": "not_required",
+            "tool_will_work": True,
+            "operation": operation,
+            "intent": setup_intent,
+            "genome_build": genome_build,
+            "liftover_setup": {
+                "source_build": src,
+                "target_build": tgt,
+                "required": False,
+                "reason": "same_build",
+            },
+        }
+
+    chain_path = chain_file_path(src, tgt, root=root)
+    chain_status = library_manager.status(LIFTOVER_CHAIN_LIBRARY, root=root)
+    package_status = _pyliftover_status()
+    setup = {
+        "source_build": src,
+        "target_build": tgt,
+        "required": True,
+        "chain_file": {"path": str(chain_path), "exists": chain_path.is_file()},
+        "chain_library": chain_status,
+        "python_dependency": package_status,
+    }
+    if not chain_path.is_file():
+        request = library_manager.missing_request(
+            LIFTOVER_CHAIN_LIBRARY,
+            intent=setup_intent,
+            operation=operation,
+            genome_build=genome_build,
+            root=root,
+        )
+        request["reason"] = "missing_liftover_chain"
+        request["liftover_setup"] = setup
+        return request
+    if not package_status["installed"]:
+        request = _missing_pyliftover_request(
+            package_status,
+            operation=operation,
+            intent=setup_intent,
+            genome_build=genome_build,
+        )
+        request["reason"] = "missing_python_dependency"
+        request["liftover_setup"] = setup
+        return request
+    return {
+        "status": "available",
+        "tool_will_work": True,
+        "operation": operation,
+        "intent": setup_intent,
+        "genome_build": genome_build,
+        "liftover_setup": setup,
+    }
+
+
+def _pyliftover_status() -> dict[str, Any]:
+    error: str | None = None
+    try:
+        module = importlib.import_module("pyliftover")
+        getattr(module, "LiftOver")
+        installed = True
+    except Exception as exc:
+        installed = False
+        error = str(exc)
+    status = {
+        "library": "pyliftover",
+        "title": "pyliftover Python package",
+        "kind": "python_package",
+        "size_class": "small",
+        "manual_source_required": False,
+        "install_libraries": ["pyliftover"],
+        "install_command": PYLIFTOVER_INSTALL_COMMAND,
+        "helps": "parses UCSC liftOver chain files and performs local GRCh37/GRCh38 coordinate translation",
+        "installed": installed,
+        "status": "installed" if installed else "not_installed",
+        "required_paths": [],
+        "existing_paths": [],
+        "missing_paths": [],
+        "requirement": PYLIFTOVER_REQUIREMENT,
+    }
+    if error:
+        status["error"] = error
+    return status
+
+
+def _missing_pyliftover_request(
+    status: Mapping[str, Any],
+    *,
+    operation: str,
+    intent: str,
+    genome_build: str | None,
+) -> dict[str, Any]:
+    return {
+        "status": "requires_library_install",
+        "tool_will_work": False,
+        "operation": operation,
+        "intent": intent,
+        "genome_build": genome_build,
+        "missing_library": status,
+        "how_it_helps": (
+            f"For this intent ({intent}), pyliftover {status['helps']}."
+        ),
+        "ask_user": {
+            "question": "The pyliftover Python package is not importable. Install it so Genomi can use UCSC chain files for this request?",
+            "install_command": status["install_command"],
+            "decline_effect": "The tool should skip liftover-dependent evidence and avoid interpreting setup gaps as negative evidence.",
+        },
+    }
+
+
+def _preflight_error_message(preflight: Mapping[str, Any]) -> str:
+    reason = str(preflight.get("reason") or preflight.get("status") or "unavailable")
+    missing = preflight.get("missing_library")
+    if isinstance(missing, Mapping):
+        command = missing.get("install_command")
+        title = missing.get("title") or missing.get("library")
+        if command:
+            return f"liftover setup unavailable ({reason}): {title}. Install with: {command}"
+        return f"liftover setup unavailable ({reason}): {title}"
+    return f"liftover setup unavailable ({reason})"
+
+
 @dataclass(frozen=True)
 class LiftRecordResult:
     lifted: list[dict[str, Any]]
@@ -100,20 +247,20 @@ class LiftOver:
             raise ValueError(
                 "source_build and target_build are identical; no liftover needed"
             )
-        self._chain_path = chain_file_path(
-            self.source_build, self.target_build, root=root
-        )
-        if not self._chain_path.is_file():
-            raise LiftoverConfigurationError(
-                f"liftover chain file not found at {self._chain_path}. "
-                f"Install with: python3 scripts/install_for_agents.py "
-                f"--libraries liftover-chains"
-            )
+        preflight = liftover_preflight(self.source_build, self.target_build, root=root)
+        if preflight.get("status") != "available":
+            raise LiftoverConfigurationError(_preflight_error_message(preflight))
+        self._chain_path = chain_file_path(self.source_build, self.target_build, root=root)
         try:
             from pyliftover import LiftOver as _PyLiftOver
         except ImportError as exc:  # pragma: no cover - declared as a hard dep
             raise LiftoverConfigurationError(
-                "pyliftover is not installed; reinstall Genomi to pick up the dependency"
+                _preflight_error_message(
+                    {
+                        "reason": "missing_python_dependency",
+                        "missing_library": _pyliftover_status(),
+                    }
+                )
             ) from exc
         self._lifter = _PyLiftOver(
             str(self._chain_path),

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from genomi.runtime.liftover import (
     LiftOver,
     LiftoverConfigurationError,
     chain_file_path,
     get_liftover,
+    liftover_preflight,
     normalize_build,
 )
 
@@ -29,9 +33,16 @@ def _chain_files_available() -> bool:
     )
 
 
+def _liftover_available() -> bool:
+    return (
+        liftover_preflight("GRCh38", "GRCh37")["status"] == "available"
+        and liftover_preflight("GRCh37", "GRCh38")["status"] == "available"
+    )
+
+
 @unittest.skipUnless(
-    _chain_files_available(),
-    "liftover-chains library not installed; run scripts/install_for_agents.py --libraries liftover-chains",
+    _liftover_available(),
+    "liftover setup unavailable; install liftover-chains and the pyliftover Python package",
 )
 class LiftoverChainTests(unittest.TestCase):
     def test_grch38_to_grch37_known_snps(self) -> None:
@@ -99,6 +110,33 @@ class LiftoverConfigTests(unittest.TestCase):
     def test_chain_file_path_unknown_pair_raises(self) -> None:
         with self.assertRaises(LiftoverConfigurationError):
             chain_file_path("GRCh38", "GRCh38")
+
+    def test_preflight_reports_missing_pyliftover_with_chains_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for source_build, target_build in (("GRCh38", "GRCh37"), ("GRCh37", "GRCh38")):
+                path = chain_file_path(source_build, target_build, root=root)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"")
+
+            with mock.patch("genomi.runtime.liftover.importlib.import_module", side_effect=ImportError("missing pyliftover")):
+                result = liftover_preflight(
+                    "GRCh38",
+                    "GRCh37",
+                    root=root,
+                    operation="prs.calculate_score",
+                    intent="testing PRS liftover setup",
+                    genome_build="GRCh37",
+                )
+                with self.assertRaisesRegex(LiftoverConfigurationError, "pyliftover"):
+                    LiftOver("GRCh38", "GRCh37", root=root)
+
+        self.assertEqual(result["status"], "requires_library_install")
+        self.assertEqual(result["reason"], "missing_python_dependency")
+        self.assertEqual(result["missing_library"]["library"], "pyliftover")
+        self.assertFalse(result["missing_library"]["installed"])
+        self.assertTrue(result["liftover_setup"]["chain_file"]["exists"])
+        self.assertFalse(result["liftover_setup"]["python_dependency"]["installed"])
 
     def test_identical_builds_rejected(self) -> None:
         # Even when the chain file exists, lifting a build onto itself is a bug.
