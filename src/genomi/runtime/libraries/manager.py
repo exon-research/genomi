@@ -566,7 +566,7 @@ def _refresh_derived(spec: LibrarySpec, *, force: bool, root: str | Path | None)
             refresh(dependency, force=force, root=root)
     from ...capabilities.ancestry.panel_build import build_grch37_panel_from_grch38
 
-    result = build_grch37_panel_from_grch38(force=force)
+    result = build_grch37_panel_from_grch38(force=force, root=root)
     return {**result, "library": spec.id} if isinstance(result, dict) else {"status": "completed", "library": spec.id}
 
 

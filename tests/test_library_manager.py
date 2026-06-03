@@ -150,6 +150,18 @@ class RefreshTests(unittest.TestCase):
             result = manager.refresh("minimap2-binary", root=self.root)
         self.assertEqual(result["status"], "skipped")
 
+    def test_refresh_derived_ancestry_panel_passes_root_to_builder(self) -> None:
+        _seed(self.root, "ancestry-1000g-30x-grch38")
+        _seed(self.root, "liftover-chains")
+        with mock.patch(
+            "genomi.capabilities.ancestry.panel_build.build_grch37_panel_from_grch38",
+            return_value={"status": "completed", "panel_id": "1000g_30x_grch37"},
+        ) as build:
+            result = manager.refresh("ancestry-1000g-30x-grch37", force=True, root=self.root)
+        build.assert_called_once_with(force=True, root=self.root)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["library"], "ancestry-1000g-30x-grch37")
+
 
 if __name__ == "__main__":
     unittest.main()
