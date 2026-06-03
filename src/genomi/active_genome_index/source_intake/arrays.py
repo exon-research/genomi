@@ -30,6 +30,7 @@ from .agi_store import (
     _insert_source_active_genome_index_metadata,
     _insert_source_record_batch,
     _insert_source_stat_rows,
+    _mark_source_active_genome_index_completed,
     _reset_source_active_genome_index_schema,
 )
 from .detection import (
@@ -156,6 +157,7 @@ def build_23andme_active_genome_index(
         )
         _create_source_query_indexes(connection)
         _insert_source_stat_rows(connection, stats)
+        _mark_source_active_genome_index_completed(connection)
         connection.commit()
     return {
         "status": "completed",
@@ -363,6 +365,7 @@ def build_ancestrydna_active_genome_index(
         )
         _create_source_query_indexes(connection)
         _insert_source_stat_rows(connection, stats)
+        _mark_source_active_genome_index_completed(connection)
         connection.commit()
     return {
         "status": "completed",
@@ -678,6 +681,7 @@ def _build_consumer_array_active_genome_index(
         )
         _create_source_query_indexes(connection)
         _insert_source_stat_rows(connection, stats)
+        _mark_source_active_genome_index_completed(connection)
         connection.commit()
     return {
         "status": "completed",

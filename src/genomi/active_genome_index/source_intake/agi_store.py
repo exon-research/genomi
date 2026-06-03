@@ -7,13 +7,18 @@ from pathlib import Path
 from typing import Any
 
 from ...evidence import connect_evidence, init_evidence_db
-from ...runtime.external import file_metadata
+from ...runtime.external import file_metadata, utc_now
 from ...runtime.paths import (
     run_evidence_dir_for_source,
     run_project_dir_for_source,
     run_reference_dir_for_source,
     run_work_dir_for_source,
     sample_slug_from_source,
+)
+from .._agi_schema import (
+    ACTIVE_GENOME_INDEX_BUILD_STATUS_COMPLETED,
+    ACTIVE_GENOME_INDEX_BUILD_STATUS_IN_PROGRESS,
+    REQUIRED_QUERY_OBJECTS,
 )
 from ..active_genome_index import SCHEMA_VERSION, _chrom_sort
 from ..active_genome_index import connect as connect_active_genome_index
@@ -69,6 +74,7 @@ def _reset_source_active_genome_index_schema(connection: sqlite3.Connection) -> 
         drop table if exists stats;
         drop table if exists spans;
         drop table if exists records;
+        drop table if exists source_header_lines;
 
         create table metadata (
             key text primary key,
@@ -112,6 +118,11 @@ def _reset_source_active_genome_index_schema(connection: sqlite3.Connection) -> 
             offset integer not null,
             sample_index integer not null default 0
         );
+
+        create table source_header_lines (
+            line_number integer primary key,
+            line text not null
+        );
         """
     )
 
@@ -146,15 +157,54 @@ def _insert_source_active_genome_index_metadata(
         "source_member": detection.member_name,
         "genome_build": genome_build,
         "max_records": max_records,
+        "active_genome_index_build_status": ACTIVE_GENOME_INDEX_BUILD_STATUS_IN_PROGRESS,
+        "active_genome_index_complete": False,
+        "active_genome_index_started_at": utc_now(),
+        "active_genome_index_completed_at": None,
+        "variants_complete": False,
+        "reference_complete": None,
         "record_semantics": {
             "ref": "N placeholder for genotype-array sources",
             "alt": "observed genotype string for genotype-array sources",
             "depth": None,
             "genotype_quality": None,
+            "reference_blocks": "not_available_for_consumer_genotype_array_sources",
         },
     }
     connection.executemany(
         "insert into metadata(key, value) values(?, ?)",
+        [(key, json.dumps(value, sort_keys=True)) for key, value in values.items()],
+    )
+    _insert_source_header_lines(connection, detection=detection)
+
+
+def _insert_source_header_lines(connection: sqlite3.Connection, *, detection: SourceDetection) -> None:
+    source_label = detection.source_format or "consumer_array"
+    lines = [
+        "##fileformat=VCFv4.2",
+        f"##source=Genomi consumer genotype array ({source_label})",
+        f"##genomiSourceFormat={source_label}",
+        f"##genomiSourceKind={detection.source_kind}",
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    ]
+    connection.executemany(
+        "insert into source_header_lines(line_number, line) values(?, ?)",
+        [(index, line) for index, line in enumerate(lines)],
+    )
+
+
+def _mark_source_active_genome_index_completed(connection: sqlite3.Connection) -> None:
+    values = {
+        "active_genome_index_build_status": ACTIVE_GENOME_INDEX_BUILD_STATUS_COMPLETED,
+        "active_genome_index_complete": True,
+        "active_genome_index_completed_at": utc_now(),
+        "variants_complete": True,
+    }
+    connection.executemany(
+        """
+        insert into metadata(key, value) values(?, ?)
+        on conflict(key) do update set value = excluded.value
+        """,
         [(key, json.dumps(value, sort_keys=True)) for key, value in values.items()],
     )
 
@@ -191,6 +241,16 @@ def _cached_array_active_genome_index_if_usable(
         with connect_active_genome_index(active_genome_index_path) as connection:
             metadata = {row["key"]: json.loads(row["value"]) for row in connection.execute("select key, value from metadata")}
             stats = {row["key"]: int(row["value"]) for row in connection.execute("select key, value from stats")}
+            objects = {
+                (row["type"], row["name"])
+                for row in connection.execute(
+                    """
+                    select type, name
+                    from sqlite_master
+                    where type in ('table', 'index')
+                    """
+                )
+            }
     except (sqlite3.Error, ValueError, json.JSONDecodeError):
         return None
     if metadata.get("schema_version") != SCHEMA_VERSION:
@@ -204,6 +264,12 @@ def _cached_array_active_genome_index_if_usable(
     if metadata.get("genome_build") != genome_build:
         return None
     if metadata.get("max_records") != max_records:
+        return None
+    if metadata.get("active_genome_index_build_status") != ACTIVE_GENOME_INDEX_BUILD_STATUS_COMPLETED:
+        return None
+    if metadata.get("active_genome_index_complete") is not True:
+        return None
+    if REQUIRED_QUERY_OBJECTS - objects:
         return None
     expected_metadata = file_metadata(source_path)
     actual_metadata = metadata.get("source_metadata") or {}
