@@ -76,6 +76,10 @@
       "external_io": [
         "pgs_catalog_metadata"
       ],
+      "optional_libraries": [
+        "pgs-catalog-score-metadata"
+      ],
+      "library_check_operation": "genomi.check_libraries",
       "data_access": [
         "public_catalog_metadata"
       ],

@@ -10,7 +10,7 @@ from unittest import mock
 from genomi.active_genome_index import dosage as agi_dosage
 from genomi.capabilities.prs import scorer as prs_scorer
 from genomi.capabilities.prs import scoring_files as prs_scoring_files
-from genomi.operations import call_operation
+from genomi.operations import call_operation, list_operations
 from genomi.runtime import context as runtime_context
 from genomi.runtime.libraries import manager as library_manager
 
@@ -56,6 +56,15 @@ class PrsScoreCacheContractTests(unittest.TestCase):
         self.assertEqual(result["genome_build"], "CHM13")
         self.assertEqual(result["supported_genome_builds"], ["GRCh37", "GRCh38"])
         self.assertEqual(result["next_actions"][0]["action"], "choose_supported_genome_build")
+
+    def test_search_scores_tool_declares_metadata_library_dependency(self) -> None:
+        tools = {tool["name"]: tool for tool in list_operations(capability="polygenic-score")}
+
+        contract = tools["prs.search_scores"]["annotations"]["dependencyContract"]
+
+        self.assertEqual(contract["installedLibraries"], ["pgs-catalog-score-metadata"])
+        self.assertEqual(contract["missingInstalledLibraryStatus"], "requires_library_install")
+        self.assertEqual(contract["libraryCheckOperation"], "genomi.check_libraries")
 
     def test_validate_score_cache_rejects_unsupported_manifest_build(self) -> None:
         score_dir = Path(self._home_tmp.name) / "score-cache"
