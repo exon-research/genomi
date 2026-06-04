@@ -215,7 +215,7 @@ def compare_gwas_variant_evidence(
             "research",
             reason="GWAS association candidates are compared; record selected reviewed findings or gather genotype support before reporting.",
             commands=[
-                "genomi call active_genome_index.classify_genotype_support --params '{\"vcf\":\"<vcf>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\"}'",
+                "genomi call active_genome_index.classify_genotype_support --params '{\"agi_path\":\"<agi.sqlite>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\"}'",
                 "genomi call research.record --params '{\"db\":\"<evidence.sqlite>\",\"input\":\"<finding.json>\",\"scope\":\"shared\"}'",
             ],
         )

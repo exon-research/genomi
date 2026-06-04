@@ -72,31 +72,31 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(pharmcat["externalIO"], [])
         self.assertEqual(pharmcat["dependencyContract"]["installedLibraries"], ["pharmcat"])
         self.assertEqual(pharmcat["dependencyContract"]["missingInstalledLibraryStatus"], "requires_library_install")
-        self.assertIn("active_genome_index_or_supplied_private_paths", pharmcat["dataAccess"])
+        self.assertEqual(pharmcat["dataAccess"], ["active_genome_index"])
 
         preflight = by_name["pharmacogenomics.preflight_pharmcat"]["annotations"]
         self.assertEqual(preflight["operationScope"], "read")
         self.assertFalse(preflight["mutating"])
         self.assertEqual(preflight["externalIO"], [])
-        self.assertIn("active_genome_index_or_supplied_private_paths", preflight["dataAccess"])
+        self.assertEqual(preflight["dataAccess"], ["active_genome_index"])
 
         outside = by_name["pharmacogenomics.validate_outside_call_tsv"]["annotations"]
         self.assertEqual(outside["operationScope"], "read")
         self.assertFalse(outside["mutating"])
         self.assertEqual(outside["externalIO"], [])
-        self.assertIn("active_genome_index_or_supplied_private_paths", outside["dataAccess"])
+        self.assertEqual(outside["dataAccess"], ["local_private_artifact"])
 
         pharmcat_import = by_name["pharmacogenomics.import_pharmcat_artifacts"]["annotations"]
         self.assertEqual(pharmcat_import["operationScope"], "read")
         self.assertFalse(pharmcat_import["mutating"])
         self.assertEqual(pharmcat_import["externalIO"], [])
-        self.assertIn("active_genome_index_or_supplied_private_paths", pharmcat_import["dataAccess"])
+        self.assertEqual(pharmcat_import["dataAccess"], ["local_private_artifacts"])
 
         outside_prepare = by_name["pharmacogenomics.prepare_outside_call_tsv"]["annotations"]
         self.assertEqual(outside_prepare["operationScope"], "write")
         self.assertTrue(outside_prepare["mutating"])
         self.assertEqual(outside_prepare["externalIO"], [])
-        self.assertIn("active_genome_index_or_supplied_private_paths", outside_prepare["dataAccess"])
+        self.assertEqual(outside_prepare["dataAccess"], ["local_private_artifact"])
 
         clinpgx = by_name["pharmacogenomics.fetch_clinpgx"]["annotations"]
         self.assertEqual(clinpgx["operationScope"], "read")
@@ -270,7 +270,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(ancestry["privacyScope"], "local_reference_panel_private_projection")
         self.assertEqual(ancestry["dependencyContract"]["installedLibraries"], list(ancestry_policy.PANEL_LIBRARIES))
         self.assertEqual(ancestry["dependencyContract"]["missingInstalledLibraryStatus"], "requires_library_install")
-        self.assertIn("active_genome_index_or_supplied_private_paths", ancestry["dataAccess"])
+        self.assertIn("active_genome_index", ancestry["dataAccess"])
         self.assertIn("installed_public_reference_panel", ancestry["dataAccess"])
         self.assertIn("pca_projection", ancestry["produces"])
         ancestry_list = by_name["ancestry.list_reference_panels"]["annotations"]
@@ -282,12 +282,13 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertFalse(prs["mutating"])
         self.assertEqual(prs["externalIO"], [])
         self.assertEqual(prs["privacyScope"], "local_private_prs_score")
-        self.assertIn("active_genome_index_or_supplied_private_paths", prs["dataAccess"])
+        self.assertIn("active_genome_index", prs["dataAccess"])
         self.assertIn("local_public_score_cache", prs["dataAccess"])
         self.assertIn("raw_polygenic_score", prs["produces"])
         prs_search = by_name["prs.search_scores"]["annotations"]
         self.assertEqual(prs_search["privacyScope"], "public_metadata")
         self.assertEqual(prs_search["externalIO"], ["pgs_catalog_metadata"])
+
         self.assertEqual(prs_search["dependencyContract"]["externalNetwork"], ["pgs_catalog_metadata"])
         prs_import = by_name["prs.import_scoring_file"]["annotations"]
         self.assertTrue(prs_import["mutating"])
@@ -302,6 +303,29 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         record = by_name["research.record"]["annotations"]
         self.assertEqual(record["operationScope"], "write")
         self.assertTrue(record["mutating"])
+
+    def test_agi_consuming_operation_schemas_use_agi_path(self) -> None:
+        by_name = {tool["name"]: tool for tool in all_operations()}
+        agi_operations = [
+            "active_genome_index.summarize",
+            "active_genome_index.classify_callset_qc",
+            "active_genome_index.classify_genotype_support",
+            "active_genome_index.classify_region_callability",
+            "ancestry.check_sample_overlap",
+            "ancestry.project_pca",
+            "ancestry.estimate_population_context",
+            "clinvar.match_variants",
+            "clinvar.scan_candidates",
+            "pharmacogenomics.preflight_pharmcat",
+            "pharmacogenomics.run_pharmcat",
+            "prs.check_score_overlap",
+            "prs.calculate_score",
+        ]
+
+        for operation in agi_operations:
+            properties = set(by_name[operation]["inputSchema"].get("properties") or {})
+            self.assertEqual(properties & {"source", "vcf"}, set(), operation)
+            self.assertTrue("agi_path" in properties, operation)
 
     def test_tool_definitions_expose_parameter_defaults(self) -> None:
         by_name = {tool["name"]: tool for tool in all_operations()}

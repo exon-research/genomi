@@ -114,10 +114,8 @@ from .model import (
 from .coerce import (
     _SKIP_DEFAULT,
     _UNRESOLVED_DEFAULT,
-    _approve_supplied_dna_source,
     _bool,
     _float,
-    _has_supplied_dna_source,
     _hidden_intake_path_strings,
     _hide_intake_source_after_digitization,
     _int,
@@ -169,7 +167,6 @@ from .handlers_vcf_variant import (
     _agi_qc,
     _agi_summary,
     _variant_lookup,
-    _vcf_init,
 )
 from .handlers_clinvar import (
     _clinvar_match,
