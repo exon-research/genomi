@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 import tempfile
@@ -8,7 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 from genomi.active_genome_index.active_genome_index import active_genome_index_readiness
-from genomi.evidence import import_clinvar_vcf
+from genomi.active_genome_index.source_intake.arrays import SUPPORTED_CONSUMER_ARRAY_FORMATS
+from genomi.evidence import build_clinvar_rsid_index, import_clinvar_vcf
 from genomi.operations import call_operation
 
 from _active_genome_index_contract_fixtures import (
@@ -20,9 +22,6 @@ from _active_genome_index_contract_fixtures import (
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
 
 
-CONSUMER_ARRAY_FORMATS = {"23andme", "ancestrydna", "myheritage", "ftdna", "livingdna"}
-
-
 @dataclass(frozen=True)
 class SourceContractCase:
     case_id: str
@@ -32,7 +31,7 @@ class SourceContractCase:
 
     @property
     def is_consumer_array(self) -> bool:
-        return self.expected_format in CONSUMER_ARRAY_FORMATS
+        return self.expected_format in SUPPORTED_CONSUMER_ARRAY_FORMATS
 
     @property
     def expected_record_stats(self) -> dict[str, int]:
@@ -102,14 +101,14 @@ class LocusContract:
 
 
 LOCUS_CONTRACTS = (
-    LocusContract("rsagi1", "1", 100, "A", "C", True, 2, "homozygous_alternate"),
-    LocusContract("rsagi2", "1", 200, "T", "G", True, 1, "heterozygous"),
-    LocusContract("rsagi3", "1", 300, "A", "G", False, 0, "reference_or_other_alternate"),
-    LocusContract("rsagi4", "1", 400, "C", "T", False, 0, "reference_or_other_alternate"),
+    LocusContract("rs900000001", "1", 100, "A", "C", True, 2, "homozygous_alternate"),
+    LocusContract("rs900000002", "1", 200, "T", "G", True, 1, "heterozygous"),
+    LocusContract("rs900000003", "1", 300, "A", "G", False, 0, "reference_or_other_alternate"),
+    LocusContract("rs900000004", "1", 400, "C", "T", False, 0, "reference_or_other_alternate"),
 )
 
 UNREPRESENTED_LOCUS = LocusContract(
-    rsid="rsagi_missing",
+    rsid="rs900000099",
     chrom="1",
     pos=500,
     ref="A",
@@ -152,6 +151,7 @@ class ActiveGenomeIndexDownstreamContractTests(
                 clinvar_db = Path("contract-clinvar.sqlite")
                 clinvar_vcf = self._write_clinvar_fixture(Path("contract.clinvar.vcf"))
                 import_clinvar_vcf(clinvar_vcf, clinvar_db, source_version="contract-fixture", genome_build="GRCh37")
+                build_clinvar_rsid_index(clinvar_db, force=True)
 
                 for contract in self._source_contract_cases():
                     with self.subTest(source=contract.case_id):
@@ -297,6 +297,8 @@ class ActiveGenomeIndexDownstreamContractTests(
         matches_path = self._assert_clinvar_contract(contract, clinvar_db)
         self._assert_clinvar_scan_contract(matches_path, contract, clinvar_db)
         self._assert_genotype_support_contracts(contract)
+        pgx_result = self._assert_pgx_contract(contract, clinvar_db)
+        self._assert_decode_dashboard_contract(contract, pgx_result, matches_path)
 
     def _parse_contract_source(self, source: Path, *, contract: SourceContractCase) -> dict[str, object]:
         parse_params = {"source": str(source), "genome_build": "GRCh37", "force": True}
@@ -508,3 +510,139 @@ class ActiveGenomeIndexDownstreamContractTests(
         self.assertEqual(observation["target_alt_observed"], False)
         self.assertIsNone(observation["alt_allele_count"])
         self.assertFalse(observation["reference_call_supported"])
+
+    def _assert_pgx_contract(self, contract: SourceContractCase, clinvar_db: Path) -> dict[str, object]:
+        with self.subTest(source=contract.case_id, contract="pharmacogenomics.review_medication"):
+            with self._mock_contract_pgx_sources():
+                result = call_operation(
+                    "pharmacogenomics.review_medication",
+                    {
+                        "drug": "contractdrug",
+                        "rsid": "rs900000002",
+                        "genome_build": "GRCh37",
+                        "db": str(clinvar_db),
+                        "include_active_genome_index": True,
+                        "limit": 5,
+                    },
+                )
+            self.assertEqual(result["status"], "completed", result)
+            self.assertEqual(result["sample_evidence"]["sample_match_count"], 1, result)
+            self.assertEqual(result["sample_evidence"]["variant_lookups"][0]["sample_context"]["matches"][0]["source_format"], contract.expected_format)
+            self.assertEqual(result["target_inventory"]["rsid_targets"], ["rs900000002"])
+            self.assertEqual(
+                result["target_inventory"]["genotype_support_loci"],
+                [{"chrom": "1", "pos": 200, "ref": "T", "alt": "G", "genome_build": "GRCh37"}],
+            )
+            self.assertTrue(result["evidence_state"]["has_sample_evidence"])
+            self.assertTrue(result["evidence_state"]["has_active_genome_variant_match"])
+            self.assertNotIn("has_vcf_technical_support", result["evidence_state"])
+            self.assertNotIn("has_vcf_derived_sample_signal", result["evidence_state"])
+            if contract.is_consumer_array:
+                self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "observed_genotype_available")
+            return result
+
+    def _assert_decode_dashboard_contract(
+        self,
+        contract: SourceContractCase,
+        pgx_result: dict[str, object],
+        matches_path: Path,
+    ) -> None:
+        with self.subTest(source=contract.case_id, contract="decode.render_dashboard"):
+            call_operation(
+                "active_genome_index.approve_access",
+                {"approved_by_user": True, "reason": "contract dashboard render"},
+            )
+            out = Path(f"{contract.case_id}.dashboard.html")
+            result = call_operation(
+                "decode.render_dashboard",
+                {
+                    "evidence": {
+                        "overview": {
+                            "sampleId": contract.case_id,
+                            "genomeBuild": "GRCh37",
+                            "variantCount": contract.expected_record_stats["variant_records"],
+                            "sourceFormat": contract.expected_format,
+                        },
+                        "variants": [
+                            {
+                                "rsid": "rs900000002",
+                                "gene": "GENE2",
+                                "chrom": "1",
+                                "pos": 200,
+                                "ref": "T",
+                                "alt": "G",
+                                "zygosity": "heterozygous",
+                            }
+                        ],
+                        "pgx": [
+                            {
+                                "drug": "contractdrug",
+                                "rsid": "rs900000002",
+                                "sampleMatchCount": pgx_result["sample_evidence"]["sample_match_count"],
+                                "technicalSupport": pgx_result["answer_support"]["technical_sample_support"]["status"],
+                            }
+                        ],
+                    },
+                    "variants_all_source": str(matches_path),
+                    "mode": "full",
+                    "output": str(out),
+                },
+            )
+            self.assertEqual(result["status"], "completed", result)
+            self.assertTrue(out.is_file())
+            self.assertIn("overview", result["panels_rendered"])
+            self.assertIn("variants", result["panels_rendered"])
+            self.assertIn("variants_all", result["panels_rendered"])
+            self.assertIn("pgx", result["panels_rendered"])
+
+    @contextmanager
+    def _mock_contract_pgx_sources(self):
+        clinpgx_result = {
+            "source": {"source_id": "clinpgx"},
+            "status": "completed",
+            "summary": {
+                "guideline_annotation_count": 1,
+                "clinical_annotation_count": 0,
+                "label_annotation_count": 0,
+            },
+            "sample_follow_up_targets": {"rsids": ["rs900000002"], "genes": []},
+            "clinical_verification": {"requires_before_personal_actionability": []},
+            "guideline_annotations": [],
+            "clinical_annotations": [],
+            "label_annotations": [],
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        pgxdb_result = {
+            "source": {"source_id": "pgxdb"},
+            "status": "completed",
+            "summary": {
+                "pgx_record_count": 1,
+                "medication_scoped_gene_drug_record_count": 0,
+            },
+            "pgx_records": [
+                {
+                    "rsid": "rs900000002",
+                    "variant_or_haplotype": "rs900000002",
+                    "drug": "contractdrug",
+                    "alleles": "GT",
+                    "sentence": "Genotype GT is fixture evidence for contractdrug response context.",
+                }
+            ],
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        fda_result = {
+            "source": {"source_id": "fda_pgx"},
+            "status": "no_matching_fda_pgx_records",
+            "summary": {"biomarker_labeling_count": 0, "association_count": 0},
+            "biomarker_labeling": [],
+            "associations": [],
+            "raw_calls": [],
+        }
+        with (
+            mock.patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            mock.patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            mock.patch("genomi.capabilities.pharmacogenomics.review.fda_pgx.lookup_fda_pgx", return_value=fda_result),
+        ):
+            yield

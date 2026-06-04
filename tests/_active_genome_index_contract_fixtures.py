@@ -20,7 +20,7 @@ from genomi.operations import call_operation
 
 LOCUS_MODEL = [
     {
-        "rsid": "rsagi1",
+        "rsid": "rs900000001",
         "chrom": "1",
         "pos": 100,
         "ref": "A",
@@ -32,7 +32,7 @@ LOCUS_MODEL = [
         "weight": 0.5,
     },
     {
-        "rsid": "rsagi2",
+        "rsid": "rs900000002",
         "chrom": "1",
         "pos": 200,
         "ref": "T",
@@ -44,7 +44,7 @@ LOCUS_MODEL = [
         "weight": 1.0,
     },
     {
-        "rsid": "rsagi3",
+        "rsid": "rs900000003",
         "chrom": "1",
         "pos": 300,
         "ref": "A",
@@ -56,7 +56,7 @@ LOCUS_MODEL = [
         "weight": -0.25,
     },
     {
-        "rsid": "rsagi4",
+        "rsid": "rs900000004",
         "chrom": "1",
         "pos": 400,
         "ref": "C",
@@ -137,9 +137,9 @@ class ActiveGenomeIndexContractFixtureMixin:
     @contextmanager
     def _mock_derived_vcf_materialization(self):
         with (
-            mock.patch("genomi.active_genome_index.source_intake.infer_genome_build_from_bam", return_value="GRCh37"),
+            mock.patch("genomi.active_genome_index.source_intake.sequencing.infer_genome_build_from_bam", return_value="GRCh37"),
             mock.patch(
-                "genomi.active_genome_index.source_intake.materialize_bam_variant_vcf",
+                "genomi.active_genome_index.source_intake.sequencing.materialize_bam_variant_vcf",
                 side_effect=self._fake_materialize_bam_variant_vcf,
             ),
         ):
@@ -223,7 +223,7 @@ class ActiveGenomeIndexContractFixtureMixin:
                         ".",
                         ".",
                         (
-                            f"ALLELEID={9000 + index};CLNSIG=Pathogenic;"
+                            f"ALLELEID={9000 + index};RS={str(locus['rsid']).removeprefix('rs')};CLNSIG=Pathogenic;"
                             "CLNREVSTAT=criteria_provided,_single_submitter;"
                             f"CLNDN=Contract_condition_{index};GENEINFO=GENE{index}:{index}"
                         ),
