@@ -236,7 +236,7 @@ class DrugTargetEvidenceComparisonTests(unittest.TestCase):
         )
 
         self.assertEqual(result["mode"], "gene_membership")
-        self.assertEqual(result["coverage_status"], "data_returned")
+        self.assertEqual(result["coverage_state"], "data_returned")
         self.assertEqual(result["gene_membership"][0]["gene_symbol"], "ADRB2")
         self.assertTrue(result["gene_membership"][0]["is_clinical_target"])
         self.assertEqual(result["gene_membership"][0]["highest_phase"], "PHASE_3")

@@ -626,7 +626,6 @@
         "gene_membership",
         "source_records",
         "coverage_state",
-        "coverage_status",
         "source_coverage",
         "telemetry"
       ],

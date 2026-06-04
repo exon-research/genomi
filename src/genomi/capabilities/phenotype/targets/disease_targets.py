@@ -482,7 +482,6 @@ def _disease_drug_target_response(
     return {
         "status": status,
         "mode": mode,
-        "coverage_status": coverage_state,
         "coverage_state": coverage_state,
         "agent_decision_required": True,
         "query": {
