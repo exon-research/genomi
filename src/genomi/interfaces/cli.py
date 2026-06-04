@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .. import __version__
 from ..capabilities.clinvar import static_annotation
 from ..capabilities.research import intent_research
 from ..evidence import research_scope_choices, research_target_type_choices
@@ -59,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="genomi",
         description="Agent-facing genomics runtime for local genome analysis and evidence-grounded DNA research.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     tools_parser = subparsers.add_parser("tools", help="List Genomi operation tools for agents and MCP clients.")

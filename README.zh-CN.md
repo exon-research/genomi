@@ -5,13 +5,14 @@
   <br>
   <a href="https://www.genomiagent.com/">官网</a>
   ·
-  <a href="https://raw.githubusercontent.com/exon-research/genomi/main/INSTALL_FOR_AGENTS.md">安装指南</a>
+  <a href="https://raw.githubusercontent.com/exon-research/genomi/master/INSTALL_FOR_AGENTS.md">安装指南</a>
   ·
   <a href="README.md">English</a>
 </p>
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=111827"></a>
+  <a href="https://github.com/exon-research/genomi/releases/tag/v0.1.0"><img alt="Version" src="https://img.shields.io/badge/version-0.1.0-2563EB?style=flat-square&labelColor=111827"></a>
   <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-agent--native-7C3AED?style=flat-square&labelColor=111827"></a>
   <a href="SKILL.md"><img alt="Skill" src="https://img.shields.io/badge/skill-agent--ready-0E7490?style=flat-square&labelColor=111827"></a>
   <a href="#privacy"><img alt="Local-first" src="https://img.shields.io/badge/privacy-local--first-15803D?style=flat-square&labelColor=111827"></a>
@@ -52,7 +53,7 @@
 ```text
 Hey please read this and tell me why Genomi is different from other AI
 agent harnesses. Why is this actually useful for understanding my DNA privately?
-https://raw.githubusercontent.com/exon-research/genomi/main/llms-full.txt
+https://raw.githubusercontent.com/exon-research/genomi/master/llms-full.txt
 ```
 
 ## 直接装就完事了
@@ -61,7 +62,7 @@ https://raw.githubusercontent.com/exon-research/genomi/main/llms-full.txt
 
 ```text
 Install and configure Genomi by following the instructions here:
-https://raw.githubusercontent.com/exon-research/genomi/main/INSTALL_FOR_AGENTS.md
+https://raw.githubusercontent.com/exon-research/genomi/master/INSTALL_FOR_AGENTS.md
 ```
 
 安装指南里写了依赖检查、库的挑选、MCP 注册、可选的基因组源导入，以及最后的校验。

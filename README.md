@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white&labelColor=111827"></a>
+  <a href="https://github.com/exon-research/genomi/releases/tag/v0.1.0"><img alt="Version" src="https://img.shields.io/badge/version-0.1.0-2563EB?style=flat-square&labelColor=111827"></a>
   <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-agent--native-7C3AED?style=flat-square&labelColor=111827"></a>
   <a href="SKILL.md"><img alt="Skill" src="https://img.shields.io/badge/skill-agent--ready-0E7490?style=flat-square&labelColor=111827"></a>
   <a href="#privacy"><img alt="Local-first" src="https://img.shields.io/badge/privacy-local--first-15803D?style=flat-square&labelColor=111827"></a>

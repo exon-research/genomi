@@ -27,7 +27,7 @@ authors:
         value: "https://x.com/JingeWok"
 abstract: "Genomi is a local genomics harness for AI agents that creates local Active Genome Index records from personal genome files and grounds DNA questions in public genetics evidence."
 version: "0.1.0"
-date-released: "2026-05-25"
+date-released: "2026-06-04"
 license: "Apache-2.0"
 repository-code: "https://github.com/exon-research/genomi"
 url: "https://www.genomiagent.com/"
