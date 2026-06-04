@@ -20,7 +20,7 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
     # final at variants_ready). Personal-genome context comes only from the
     # Active Genome Index, never a raw VCF.
     reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
-    resolved = _with_context(params, db=True, genome_build=True)
+    resolved = _with_context(params, db=True, genome_build=True, allow_shared_db_without_vcf=False)
     agi_path = reader.agi_path
     if not agi_path.exists():
         raise OperationError(
@@ -41,7 +41,7 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
 
 def _clinvar_scan(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
-    resolved = _with_context(params, db=True, genome_build=True)
+    resolved = _with_context(params, db=True, genome_build=True, allow_shared_db_without_vcf=False)
     materialized = _materialize_clinvar_matches_for_scan(reader, resolved)
     if isinstance(materialized, dict):
         return materialized
