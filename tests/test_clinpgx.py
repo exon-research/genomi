@@ -117,6 +117,7 @@ class ClinPGxTests(unittest.TestCase):
         self.assertEqual(result["sample_follow_up_targets"]["haplotypes"][0]["symbol"], "CYP2C19*2")
         self.assertEqual(result["clinical_verification"]["status"], "informational_evidence_review_requires_clinical_confirmation")
         self.assertIn("guideline_annotation", result["clinical_verification"]["public_evidence_classes"])
+        self.assertEqual(result["evidence_envelope"]["coverage"]["libraries"][0]["library"], "clinpgx")
         self.assertGreaterEqual(result["summary"]["record_research_payload_count"], 3)
         self.assertEqual(result["record_research_payloads"][0]["captured_by"], "genomi call pharmacogenomics.fetch_clinpgx")
         self.assertIn("CPIC recommends", result["record_research_payloads"][0]["finding"]["text"])

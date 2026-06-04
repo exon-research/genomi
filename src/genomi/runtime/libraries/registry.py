@@ -320,6 +320,15 @@ _SPECS: tuple[LibrarySpec, ...] = (
         required_paths=(),
     ),
     LibrarySpec(
+        id="clinpgx",
+        title="ClinPGx / PharmGKB pharmacogenomics (live REST API)",
+        helps="fetches public guideline, clinical annotation, and label pharmacogenomic records from the ClinPGx REST API",
+        kind=Kind.ONLINE,
+        size_class="online",
+        source=Source(api_base="https://api.pharmgkb.org/v1"),
+        freshness=Freshness.LIVE,
+    ),
+    LibrarySpec(
         id="pgxdb",
         title="PGxDB pharmacogenomics (live REST API)",
         helps="fetches gene-drug and variant pharmacogenomic records from the PGxDB REST API",

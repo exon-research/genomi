@@ -44,7 +44,7 @@ class LibraryRegistryTests(unittest.TestCase):
 
     def test_online_specs_carry_api_base(self) -> None:
         online = [s for s in registry.all_specs() if s.kind is Kind.ONLINE]
-        self.assertEqual({s.id for s in online}, {"gnomad", "pgs-catalog", "pgxdb", "fda-pgx"})
+        self.assertEqual({s.id for s in online}, {"gnomad", "pgs-catalog", "clinpgx", "pgxdb", "fda-pgx"})
         for spec in online:
             self.assertTrue(spec.is_online)
             self.assertEqual(spec.freshness, Freshness.LIVE)

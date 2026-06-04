@@ -604,7 +604,8 @@ def _build_pgx_envelope(
     sources = source_availability.get("sources") or []
     consulted = [str(item.get("source_id")) for item in sources if item.get("source_id") and item.get("availability") not in {"unavailable", "source_unavailable"}]
     unavailable = [str(item.get("source_id")) for item in sources if item.get("availability") in {"unavailable", "source_unavailable"}]
-    coverage = _env._coverage(consulted_sources=consulted, unavailable_sources=unavailable)
+    libraries = [_pgx_source_library_use(item) for item in sources if item.get("source_id")]
+    coverage = _env._coverage(libraries=libraries, consulted_sources=consulted, unavailable_sources=unavailable)
     observations = {
         "source_evidence_count": evidence_state.get("source_evidence_count"),
         "sample_evidence_count": evidence_state.get("sample_evidence_count"),
@@ -651,6 +652,16 @@ def _build_pgx_envelope(
         observations=observations,
         answer_readiness=answer_readiness,
     )
+
+
+def _pgx_source_library_use(source: JsonObject) -> JsonObject:
+    source_id = str(source.get("source_id") or "")
+    library_id = {"fda_pgx": "fda-pgx"}.get(source_id, source_id)
+    failed_states = {"unavailable", "source_unavailable"}
+    return {
+        "library": library_id,
+        "state": "failed" if source.get("availability") in failed_states else "installed",
+    }
 
 
 def _pgx_candidate_evidence_view(

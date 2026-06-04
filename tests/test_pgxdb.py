@@ -55,6 +55,7 @@ class PGxDBTests(unittest.TestCase):
         self.assertEqual(result["pgx_records"][0]["rsid"], "rs1061622")
         self.assertEqual(result["pgx_records"][0]["direction_of_effect"], "decreased")
         self.assertNotIn("raw", result["pgx_records"][0])
+        self.assertEqual(result["evidence_envelope"]["coverage"]["libraries"][0]["library"], "pgxdb")
         self.assertEqual(result["record_research_payloads"][0]["target"]["topic"], "rs1061622 Infliximab pharmacogenomic response")
         self.assertEqual(result["record_research_payloads"][0]["target"]["type"], "topic")
         self.assertEqual(result["record_research_payloads"][0]["source"]["source_id"], "pgxdb")

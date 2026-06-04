@@ -10,9 +10,11 @@ import urllib.request
 from html.parser import HTMLParser
 from typing import Any
 
+from ...evidence import envelope as _env
 from ...runtime.external import utc_now
+from ...runtime.libraries import registry as library_registry
 
-FDA_BIOMARKERS_URL = "https://www.fda.gov/drugs/science-and-research-drugs/table-pharmacogenomic-biomarkers-drug-labeling"
+FDA_BIOMARKERS_URL = library_registry.get("fda-pgx").source.api_base or ""
 FDA_ASSOCIATIONS_URL = "https://www.fda.gov/medical-devices/precision-medicine/table-pharmacogenetic-associations"
 FDA_TIMEOUT_SECONDS = 20
 FDA_MAX_LIMIT = 50
@@ -95,7 +97,7 @@ def lookup_fda_pgx(
     }
     if raw_errors:
         result["warnings"] = raw_errors
-    return result
+    return _attach_evidence_envelope(result)
 
 
 def _empty_result(
@@ -105,7 +107,7 @@ def _empty_result(
     status: str,
     missing_inputs: list[str],
 ) -> dict[str, Any]:
-    return {
+    result = {
         "ok": False,
         "status": status,
         "source": {
@@ -133,6 +135,103 @@ def _empty_result(
             }
         ],
     }
+    return _attach_evidence_envelope(result)
+
+
+def _attach_evidence_envelope(result: dict[str, Any]) -> dict[str, Any]:
+    result["evidence_envelope"] = _fda_pgx_evidence_envelope(result)
+    return result
+
+
+def _fda_pgx_evidence_envelope(result: dict[str, Any]) -> dict[str, Any]:
+    operation = "pharmacogenomics.fetch_fda_labels"
+    target = dict(result.get("query") or {})
+    summary = dict(result.get("summary") or {})
+    raw_calls = result.get("raw_calls") or []
+    status = str(result.get("status") or "")
+    observations = {
+        "status": status,
+        "row_count": summary.get("row_count", 0),
+        "biomarker_labeling_count": summary.get("biomarker_labeling_count", 0),
+        "association_count": summary.get("association_count", 0),
+    }
+    coverage = _env._coverage(
+        libraries=[{"library": "fda-pgx", "state": "failed" if status == "source_unavailable" else "installed"}],
+        consulted_sources=["fda_pgx"] if raw_calls and status != "source_unavailable" else [],
+        unavailable_sources=["fda_pgx"] if status == "source_unavailable" else [],
+    )
+    if status == "invalid_target":
+        return _env.not_assessed(
+            operation=operation,
+            reason="Missing FDA PGx public target.",
+            query_scope=target,
+            coverage=coverage,
+            observations=observations,
+            next_actions=[
+                {
+                    "action": "provide_public_fda_pgx_target",
+                    "missing_inputs": ["drug", "gene"],
+                }
+            ],
+            guidance=["target_missing:provide_drug_or_gene"],
+        )
+    if status == "source_unavailable":
+        return _env.not_assessed(
+            operation=operation,
+            reason="FDA PGx source lookup was unavailable.",
+            query_scope=target,
+            coverage=coverage,
+            observations=observations,
+            next_actions=[
+                {
+                    "action": "use_alternate_pgx_source_or_retry",
+                    "operations": [
+                        "pharmacogenomics.fetch_clinpgx",
+                        "pharmacogenomics.fetch_pgxdb",
+                    ],
+                }
+            ],
+            guidance=["source_unavailable:retry_or_use_other_pgx_sources"],
+        )
+    if status == "no_matching_fda_pgx_records":
+        return _env.empty_consulted_scope(
+            operation=operation,
+            query_scope=target,
+            coverage=coverage,
+            observations=observations,
+            next_actions=[
+                {
+                    "action": "try_alternate_pgx_source_or_target_spelling",
+                    "operations": [
+                        "pharmacogenomics.fetch_clinpgx",
+                        "pharmacogenomics.fetch_pgxdb",
+                    ],
+                    "target_fields": ["drug", "gene"],
+                }
+            ],
+            guidance=[
+                "not_observed_in_consulted_scope:fda_pgx_no_records_for_target",
+                "negative_inference_disallowed:check_other_pgx_sources",
+            ],
+        )
+    return _env.evidence_present(
+        operation=operation,
+        query_scope=target,
+        coverage=coverage,
+        observations=observations,
+        answer_readiness=_env.SCOPED_ANSWER_ONLY,
+        next_actions=[
+            {
+                "action": "check_sample_support_before_personal_statement",
+                "operation": "variant.resolve",
+                "target_fields": ["gene"],
+            }
+        ],
+        guidance=[
+            "fda_pgx_evidence_present:public_label_context_only",
+            "sample_context:check_genotype_separately",
+        ],
+    )
 
 
 def _lookup_biomarker_rows(

@@ -56,6 +56,11 @@ class FdaPgxTests(unittest.TestCase):
         self.assertEqual(result["record_research_payloads"][0]["source"]["source_id"], "fda_pgx")
         self.assertEqual(result["record_research_payloads"][0]["source"]["biomarkers_url"], "https://example.test/biomarker")
         self.assertEqual(result["record_research_payloads"][1]["source"]["associations_url"], "https://example.test/association")
+        envelope = result["evidence_envelope"]
+        self.assertEqual(envelope["finding_state"], "evidence_present")
+        self.assertEqual(envelope["answer_readiness"], "scoped_answer_only")
+        self.assertEqual(envelope["coverage"]["libraries"][0]["library"], "fda-pgx")
+        self.assertEqual(envelope["observations"]["row_count"], 2)
 
     def test_lookup_filters_gene(self) -> None:
         with patch("genomi.capabilities.pharmacogenomics.fda_pgx._fetch_text", side_effect=_fake_fetch):
@@ -68,6 +73,11 @@ class FdaPgxTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "no_matching_fda_pgx_records")
         self.assertEqual(result["summary"]["row_count"], 0)
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "not_observed_in_consulted_scope")
+        self.assertIn(
+            "not_observed_in_consulted_scope:fda_pgx_no_records_for_target",
+            result["evidence_envelope"]["guidance"],
+        )
 
     def test_lookup_can_include_raw_rows(self) -> None:
         with patch("genomi.capabilities.pharmacogenomics.fda_pgx._fetch_text", side_effect=_fake_fetch):
@@ -87,6 +97,8 @@ class FdaPgxTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["status"], "invalid_target")
         self.assertEqual(result["unanswered_answer_components"][0]["missing_inputs"], ["drug", "gene"])
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "not_assessed")
+        self.assertEqual(result["evidence_envelope"]["next_actions"][0]["action"], "provide_public_fda_pgx_target")
 
     def test_lookup_source_unavailable_asks_retry_question(self) -> None:
         def unavailable(url: str, *, raw_calls: list[dict[str, object]]) -> str:
@@ -99,6 +111,9 @@ class FdaPgxTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["status"], "source_unavailable")
         self.assertEqual(len(result["warnings"]), 2)
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "not_assessed")
+        self.assertEqual(result["evidence_envelope"]["coverage"]["unavailable_sources"], ["fda_pgx"])
+        self.assertEqual(result["evidence_envelope"]["next_actions"][0]["action"], "use_alternate_pgx_source_or_retry")
 
     def test_fda_pgx_lookup_is_agent_tool_and_source_catalog_entry(self) -> None:
         tools = {tool["name"]: tool for tool in list_operations(capability="pharmacogenomics")}

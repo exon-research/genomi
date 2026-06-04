@@ -12,8 +12,9 @@ from typing import Any
 
 from ...evidence import envelope as _env
 from ...runtime.external import utc_now
+from ...runtime.libraries import registry as library_registry
 
-CLINPGX_API_URL = "https://api.pharmgkb.org/v1"
+CLINPGX_API_URL = library_registry.get("clinpgx").source.api_base or ""
 CLINPGX_SWAGGER_URL = "https://api.pharmgkb.org/swagger/"
 CLINPGX_TIMEOUT_SECONDS = 20
 CLINPGX_MAX_LIMIT = 25
@@ -197,7 +198,7 @@ def _clinpgx_evidence_envelope(result: dict[str, Any]) -> dict[str, Any]:
         "label_annotation_count": summary.get("label_annotation_count", 0),
     }
     coverage = {
-        "libraries": [],
+        "libraries": [{"library": "clinpgx", "state": "failed" if status == "source_unavailable" else "installed"}],
         "consulted_sources": ["clinpgx"] if raw_calls and status != "source_unavailable" else [],
         "unavailable_sources": ["clinpgx"] if status == "source_unavailable" else [],
         "materialization": [],

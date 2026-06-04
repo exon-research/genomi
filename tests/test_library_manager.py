@@ -72,10 +72,10 @@ class StatusAndInventoryTests(unittest.TestCase):
 
     def test_inventory_counts(self) -> None:
         inv = manager.inventory(root=self.root)
-        # 18 offline-family (incl. derived + manual) + 4 online = 22.
-        self.assertEqual(inv["summary"]["library_count"], 22)
-        # The 4 online sources count as installed; everything offline is missing here.
-        self.assertEqual(inv["summary"]["installed_count"], 4)
+        # 18 offline-family (incl. derived + manual) + 5 online = 23.
+        self.assertEqual(inv["summary"]["library_count"], 23)
+        # The 5 online sources count as installed; everything offline is missing here.
+        self.assertEqual(inv["summary"]["installed_count"], 5)
         self.assertEqual(inv["summary"]["missing_count"], 18)
         ids = {item["library"] for item in inv["libraries"]}
         self.assertIn("gnomad", ids)

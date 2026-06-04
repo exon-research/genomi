@@ -9,8 +9,9 @@ from typing import Any
 
 from ...evidence import envelope as _env
 from ...runtime.external import utc_now
+from ...runtime.libraries import registry as library_registry
 
-PGXDB_API_URL = "https://pgx-db.org/rest-api"
+PGXDB_API_URL = library_registry.get("pgxdb").source.api_base or ""
 PGXDB_TIMEOUT_SECONDS = 20
 PGXDB_MAX_LIMIT = 50
 PGXDB_MAX_RAW_LIST_ITEMS = 10
@@ -184,7 +185,7 @@ def _pgxdb_evidence_envelope(result: dict[str, Any]) -> dict[str, Any]:
         "variant_context_record_count": summary.get("variant_context_record_count", 0),
     }
     coverage = {
-        "libraries": [],
+        "libraries": [{"library": "pgxdb", "state": "failed" if status == "source_unavailable" else "installed"}],
         "consulted_sources": ["pgxdb"] if raw_calls and status != "source_unavailable" else [],
         "unavailable_sources": ["pgxdb"] if status == "source_unavailable" else [],
         "materialization": [],

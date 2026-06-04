@@ -173,6 +173,10 @@ class PGxMedicationReviewCompositionTests(PGxMedicationReviewTestBase):
         self.assertEqual(result["sample_evidence"]["star_allele_call_count"], 1)
         self.assertEqual(result["sample_evidence"]["star_marker_match_count"], 1)
         self.assertEqual(result["public_evidence"]["source_availability"]["status"], "source_evidence_available")
+        envelope_libraries = {item["library"]: item["state"] for item in result["evidence_envelope"]["coverage"]["libraries"]}
+        self.assertEqual(envelope_libraries["clinpgx"], "installed")
+        self.assertEqual(envelope_libraries["pgxdb"], "installed")
+        self.assertEqual(envelope_libraries["fda-pgx"], "installed")
         self.assertEqual(result["answer_support"]["status"], "source_and_sample_evidence_present")
         self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "ready")
         self.assertEqual(result["answer_support"]["matched_variant_associations"][0]["match_status"], "reported_genotype_matches_sample")
