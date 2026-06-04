@@ -263,7 +263,7 @@ def _prs_build_source_context(_: JsonObject) -> JsonObject:
 
 
 def _prs_check_score_overlap(params: JsonObject) -> JsonObject:
-    agi_reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="checking sample overlap with a local polygenic-score file", params=params)
+    agi_reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="checking sample overlap with a local polygenic-score file", params=params)
     return prs_scorer.check_score_overlap(
         agi_reader,
         pgs_id=_optional_str(params, "pgs_id"),
@@ -274,7 +274,7 @@ def _prs_check_score_overlap(params: JsonObject) -> JsonObject:
 
 
 def _prs_calculate_score(params: JsonObject) -> JsonObject:
-    agi_reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="calculating a polygenic score from local Active Genome Index artifacts", params=params)
+    agi_reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="calculating a polygenic score from local Active Genome Index artifacts", params=params)
     return prs_scorer.calculate_score(
         agi_reader,
         pgs_id=_optional_str(params, "pgs_id"),

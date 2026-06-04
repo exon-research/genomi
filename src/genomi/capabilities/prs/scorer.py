@@ -195,8 +195,9 @@ def collect_score_context(
         }
     # No readiness / incompleteness handling here: open_agi has already gated
     # access (missing / incomplete -> active_genome_index_incomplete; reparse /
-    # schema-too-new surfaced upstream). PRS reads variant-surface records, so a
-    # variants_ready index is final for this capability.
+    # schema-too-new surfaced upstream). PRS dosage uses reference blocks when
+    # available, so the operation metadata marks these results reference-aware
+    # and the dispatcher stamps provisional gVCF phase-A results.
     matched: list[JsonObject] = []
     missing: list[JsonObject] = []
     excluded: list[JsonObject] = list(liftover_excluded)

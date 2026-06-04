@@ -48,8 +48,8 @@ class ActiveGenomeIndexNeed(Enum):
     - ``NONE``: the caller reads no AGI rows (it may only need the resolved
       paths / approval). No readiness gate.
     - ``VARIANT``: the variant interpretation surface (rsID, gene, region,
-      exact-allele, ClinVar, PRS markers). Final at ``variants_ready`` — never
-      stamped ``reference_pending``.
+      exact-allele, ClinVar). Final at ``variants_ready`` — never stamped
+      ``reference_pending``.
     - ``REFERENCE``: a reference-dependent read (coverage, callability,
       genotype-support, callset-QC, reference-block stats). Usable at
       ``completed`` and *degraded* at ``variants_ready`` — a negative/empty

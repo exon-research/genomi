@@ -229,12 +229,19 @@ def _dosage_from_record(record: JsonObject, variant: JsonObject) -> JsonObject:
             return _missing(variant, "unparseable_genotype", record=record)
     if not allele_bases:
         return _missing(variant, "empty_genotype", record=record)
-    if _is_spanning_reference_block(record, variant, genotype_tokens):
-        reference_allele = str(variant.get("reference_allele") or "").upper()
-        if reference_allele:
+    if _is_homozygous_reference_block(record, genotype_tokens):
+        if effect == ref:
             return _matched(
                 variant,
-                effect_allele_dosage=float(len(allele_bases) if effect == reference_allele else 0),
+                effect_allele_dosage=float(len(allele_bases)),
+                ploidy=len(allele_bases),
+                record=record,
+                match_type="reference_homozygous_inferred",
+            )
+        if other == ref:
+            return _matched(
+                variant,
+                effect_allele_dosage=0.0,
                 ploidy=len(allele_bases),
                 record=record,
                 match_type="reference_homozygous_inferred",
@@ -300,13 +307,8 @@ def _chrom_candidates(chrom: str) -> list[str]:
     return [chrom, f"chr{chrom}"]
 
 
-def _is_spanning_reference_block(record: JsonObject, variant: JsonObject, genotype_tokens: list[str]) -> bool:
+def _is_homozygous_reference_block(record: JsonObject, genotype_tokens: list[str]) -> bool:
     if record.get("record_kind") != RECORD_KIND_REFERENCE_BLOCK:
-        return False
-    try:
-        if int(record.get("pos") or -1) == int(variant["pos"]):
-            return False
-    except (TypeError, ValueError):
         return False
     return all(token == "0" for token in genotype_tokens)
 

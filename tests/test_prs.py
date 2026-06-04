@@ -241,7 +241,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         )
         self.assertEqual(tools["prs.calculate_score"]["annotations"]["discoveryRole"], "entry_tool")
         self.assertEqual(tools["prs.calculate_score"]["annotations"]["privacyScope"], "local_private_prs_score")
-        self.assertEqual(tools["prs.calculate_score"]["annotations"]["agiNeed"], "variant")
+        self.assertEqual(tools["prs.calculate_score"]["annotations"]["agiNeed"], "reference")
         self.assertIn("pgs_catalog_ftp", tools["prs.import_scoring_file"]["annotations"]["externalIO"])
 
     def test_local_scoring_file_import_overlap_and_score(self) -> None:
@@ -859,6 +859,17 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "matched")
         self.assertEqual(result["effect_allele_dosage"], 0.0)
+        self.assertEqual(result["match_type"], "reference_homozygous_inferred")
+
+    def test_harmonization_counts_exact_gvcf_reference_block_effect_dosage(self) -> None:
+        connection = self._memory_prs_index()
+        self._insert_prs_record(connection, pos=100, ref="A", alt="<NON_REF>", genotype="0/0")
+        variant = self._score_variant(pos=100, effect_allele="A", other_allele="G")
+
+        result = agi_dosage.dosage_for_variant(connection, variant)
+
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual(result["effect_allele_dosage"], 2.0)
         self.assertEqual(result["match_type"], "reference_homozygous_inferred")
 
     def test_array_harmonization_counts_effect_without_other_allele(self) -> None:
