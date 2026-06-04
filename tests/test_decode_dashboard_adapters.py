@@ -34,7 +34,6 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         result = decode_dashboard.render_dashboard(
             evidence={
                 "pgx": {
-                    "schema": "genomi-pgx-medication-review-v1",
                     "status": "completed",
                     "query": {"drug": "clopidogrel", "gene": "CYP2C19"},
                     "answer_support": {
@@ -75,7 +74,6 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         decode_dashboard.render_dashboard(
             evidence={
                 "pgx": {
-                    "schema": "genomi-pharmcat-run-v1",
                     "status": "completed",
                     "artifacts": {
                         "calls_only": {
@@ -167,7 +165,6 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         result = decode_dashboard.render_dashboard(
             evidence={
                 "pgx": {
-                    "schema": "genomi-pharmcat-run-v1",
                     "status": "requires_library_install",
                     "missing_library": {"library": "pharmcat"},
                 },
@@ -192,7 +189,6 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
             evidence={
                 "overview": {"sampleId": "HG-RSID-PGX", "variantCount": 10},
                 "pgx": {
-                    "schema": "genomi-pgx-medication-review-v1",
                     "status": "completed",
                     "query": {"drug": "example-drug"},
                     "sample_evidence": {
@@ -218,7 +214,6 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
                 "pgx",
                 {
                     "pgx": {
-                        "schema": "genomi-pharmcat-run-v1",
                         "status": "completed",
                         "artifacts": {
                             "calls_only": {

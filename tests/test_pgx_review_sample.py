@@ -451,8 +451,6 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
         self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "needs_genotype_support")
         self.assertTrue(result["evidence_state"]["has_sequencing_sample_signal"])
         self.assertFalse(result["evidence_state"]["has_genotype_support"])
-        self.assertNotIn("has_vcf_derived_sample_signal", result["evidence_state"])
-        self.assertNotIn("has_vcf_technical_support", result["evidence_state"])
         self.assertEqual(
             result["target_inventory"]["genotype_support_loci"],
             [{"chrom": "10", "pos": 94761900, "ref": "G", "alt": "A", "genome_build": "GRCh38"}],

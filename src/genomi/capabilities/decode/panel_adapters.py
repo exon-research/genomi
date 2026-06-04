@@ -280,11 +280,10 @@ def _normalize_risk_row(raw: Any) -> JsonObject | None:
 
 
 def _is_native_pgx_result(raw: JsonObject) -> bool:
-    schema = str(raw.get("schema") or "")
     return (
-        schema in {"genomi-pharmcat-run-v1", "genomi-pharmcat-artifact-import-v1", "genomi-pgx-medication-review-v1"}
-        or isinstance(raw.get("artifacts"), dict)
+        isinstance(raw.get("artifacts"), dict)
         or _is_pgx_review_result(raw)
+        or _is_empty_pgx_result(raw)
     )
 
 
@@ -305,6 +304,16 @@ def _pgx_has_native_content(raw: JsonObject) -> bool:
             or _as_dicts(phenotype.get("records"))
         )
     return _pgx_review_has_mappable_content(raw)
+
+
+def _is_empty_pgx_result(raw: JsonObject) -> bool:
+    return str(raw.get("status") or "") in {
+        "requires_library_install",
+        "source_unavailable",
+        "out_of_scope_for_input",
+        "skipped_missing_library",
+        "skipped_tool_unavailable",
+    }
 
 
 def _pgx_review_has_mappable_content(raw: JsonObject) -> bool:

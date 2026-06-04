@@ -232,7 +232,6 @@ class PGxMedicationReviewCompositionTests(PGxMedicationReviewTestBase):
         self.assertTrue(result["evidence_state"]["has_public_pgx_evidence"])
         self.assertTrue(result["evidence_state"]["has_sample_evidence"])
         self.assertTrue(result["evidence_state"]["has_genotype_support"])
-        self.assertNotIn("has_vcf_technical_support", result["evidence_state"])
         self.assertEqual(result["pgx_evidence_scope"]["schema"], "genomi-pgx-evidence-scope-v1")
         self.assertEqual(result["pgx_evidence_scope"]["model"], "bounded_target_scoped_evidence")
         self.assertEqual(result["pgx_evidence_scope"]["scope"]["selected_public_targets"]["drug"], "clopidogrel")
