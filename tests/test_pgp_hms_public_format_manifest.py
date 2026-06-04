@@ -8,7 +8,10 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from genomi.active_genome_index.source_intake.arrays import SUPPORTED_CONSUMER_ARRAY_FORMATS
+from genomi.active_genome_index.source_intake import (
+    SUPPORTED_CONSUMER_ARRAY_FORMATS,
+    SUPPORTED_SOURCE_FORMATS,
+)
 
 from _active_genome_index_contract_fixtures import ActiveGenomeIndexContractFixtureMixin
 
@@ -68,6 +71,7 @@ class PGPHMSPublicFormatManifestTests(ActiveGenomeIndexContractFixtureMixin, uni
             for case_id in spec["contract_fixture_cases"]
         }
         self.assertEqual(case_to_format, manifest_cases)
+        self.assertEqual(set(case_to_format.values()), set(supported))
 
     def test_public_sample_shape_observations_cover_supported_formats(self) -> None:
         manifest = self._manifest()
@@ -143,6 +147,10 @@ class PGPHMSPublicFormatManifestTests(ActiveGenomeIndexContractFixtureMixin, uni
             if source_format in SUPPORTED_CONSUMER_ARRAY_FORMATS
         }
         self.assertEqual(manifest_arrays, set(SUPPORTED_CONSUMER_ARRAY_FORMATS))
+
+    def test_runtime_supported_formats_and_manifest_cannot_drift(self) -> None:
+        manifest = self._manifest()
+        self.assertEqual(set(manifest["supported_intake_formats"]), set(SUPPORTED_SOURCE_FORMATS))
 
     def test_unsupported_pgp_genetic_providers_are_explicitly_not_fixture_gaps(self) -> None:
         manifest = self._manifest()

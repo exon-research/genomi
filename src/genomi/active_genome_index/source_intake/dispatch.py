@@ -12,6 +12,15 @@ from .sequencing import parse_bam_source, parse_fastq_source
 from .vcf import _parse_vcf_active_genome_index
 
 
+SUPPORTED_VARIANT_CALLSET_FORMATS = frozenset({"vcf", "gvcf"})
+SUPPORTED_SEQUENCING_SOURCE_FORMATS = frozenset({"bam", "fastq"})
+SUPPORTED_SOURCE_FORMATS = (
+    SUPPORTED_VARIANT_CALLSET_FORMATS
+    | SUPPORTED_SEQUENCING_SOURCE_FORMATS
+    | SUPPORTED_CONSUMER_ARRAY_FORMATS
+)
+
+
 def parse_source(
     source: str | Path,
     *,
@@ -27,7 +36,7 @@ def parse_source(
 ) -> JsonObject:
     source_path = Path(source)
     detection = detect_source(source_path)
-    if detection.source_format in {"vcf", "gvcf"}:
+    if detection.source_format in SUPPORTED_VARIANT_CALLSET_FORMATS:
         result = _parse_vcf_active_genome_index(
             source_path,
             detection=detection,
