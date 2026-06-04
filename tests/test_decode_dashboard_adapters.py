@@ -183,6 +183,74 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         self.assertEqual(_panel_keys(parsed), {"overview"})
         self.assertTrue({"pgx", "risk"}.issubset(set(result["panels_empty"])))
 
+    def test_native_empty_results_clear_stale_clinvar_and_nutrigenomics_panels(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "overview": {"sampleId": "HG-NATIVE-EMPTY-2", "variantCount": 10},
+                "variants": [{"rsid": "rs1", "gene": "GENE1"}],
+                "variants_all": [{"rsid": "rs2", "gene": "GENE2"}],
+                "nutrigenomics": [{"marker": "Folate Metabolism", "gene": "MTHFR"}],
+            },
+            mode="full",
+            output=out,
+        )
+
+        result = decode_dashboard.render_dashboard(
+            evidence={
+                "variants": {"status": "completed", "candidate_inventory": []},
+                "variants_all": {"status": "requires_library_install", "missing_library": {"library": "clinvar-grch38"}},
+                "nutrigenomics": {"coverage_status": "in_scope_empty", "markers": []},
+            },
+            mode="update",
+            output=out,
+        )
+
+        parsed = _extract_evidence(out.read_text(encoding="utf-8"))
+        self.assertEqual(_panel_keys(parsed), {"overview"})
+        self.assertTrue({"variants", "variants_all", "nutrigenomics"}.issubset(set(result["panels_empty"])))
+
+    def test_normalizes_native_clinvar_and_nutrigenomics_results(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "variants": {
+                    "status": "completed",
+                    "candidate_inventory": [
+                        {
+                            "variant": {"id": "rs777", "chrom": "1", "pos": 100, "ref": "A", "alt": "G", "genotype": "0/1"},
+                            "clinvar": {
+                                "clinical_significance_counts": [["Pathogenic", 1]],
+                                "conditions": ["example_condition"],
+                            },
+                            "genes": ["GENE7"],
+                        }
+                    ],
+                },
+                "nutrigenomics": {
+                    "coverage_status": "data_returned",
+                    "markers": [
+                        {
+                            "domain": "folate_metabolism",
+                            "gene": {"symbol": "MTHFR"},
+                            "variant": {"rsid": "rs1801133"},
+                            "established_effect": {"claim": "Associated with folate and homocysteine markers."},
+                            "evidence_tier": "established",
+                        }
+                    ],
+                },
+            },
+            mode="full",
+            output=out,
+        )
+
+        parsed = _extract_evidence(out.read_text(encoding="utf-8"))
+        self.assertEqual(parsed["variants"][0]["rsid"], "rs777")
+        self.assertEqual(parsed["variants"][0]["gene"], "GENE7")
+        self.assertEqual(parsed["variants"][0]["zygosity"], "het")
+        self.assertEqual(parsed["nutrigenomics"][0]["gene"], "MTHFR")
+        self.assertEqual(parsed["nutrigenomics"][0]["marker"], "Folate Metabolism")
+
     def test_gene_less_native_pgx_review_is_empty_for_dashboard_cards(self) -> None:
         out = self.tmpdir / "dash.html"
         result = decode_dashboard.render_dashboard(

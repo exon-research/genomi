@@ -27,6 +27,7 @@ from ...active_genome_index.array_genotypes import called_genotype_tokens
 from .panel_adapters import (
     PanelNormalizationError,
     is_native_empty_panel,
+    native_panel_rows,
     normalize_pgx_panel,
     normalize_risk_panel,
 )
@@ -370,12 +371,25 @@ def _normalize_variants_row(raw: Any) -> dict[str, Any] | None:
     return out or None
 
 
-def _normalize_variants(raw: Any) -> list[dict[str, Any]] | None:
+def _normalize_variants_panel(raw: Any, *, panel: str) -> list[dict[str, Any]] | None:
+    if isinstance(raw, dict):
+        rows = native_panel_rows(panel, raw)
+        if rows is None:
+            return None
+        raw = rows
     return _normalize_required_rows(
         raw,
-        panel="variants",
+        panel=panel,
         row_normalizer=_normalize_variants_row,
     )
+
+
+def _normalize_variants(raw: Any) -> list[dict[str, Any]] | None:
+    return _normalize_variants_panel(raw, panel="variants")
+
+
+def _normalize_variants_all(raw: Any) -> list[dict[str, Any]] | None:
+    return _normalize_variants_panel(raw, panel="variants_all")
 
 
 _NUTRI_DOMAIN_LABELS: dict[str, str] = {
@@ -430,6 +444,11 @@ def _normalize_nutrigenomics_row(raw: Any) -> dict[str, Any] | None:
 
 
 def _normalize_nutrigenomics(raw: Any) -> list[dict[str, Any]] | None:
+    if isinstance(raw, dict):
+        rows = native_panel_rows("nutrigenomics", raw)
+        if rows is None:
+            return None
+        raw = rows
     return _normalize_required_rows(
         raw,
         panel="nutrigenomics",
@@ -463,7 +482,7 @@ _PANEL_NORMALIZERS: dict[str, Any] = {
     "ancestry": _normalize_ancestry,
     "journal": _normalize_journal,
     "variants": _normalize_variants,
-    "variants_all": _normalize_variants,
+    "variants_all": _normalize_variants_all,
     "pgx": normalize_pgx_panel,
     "risk": normalize_risk_panel,
     "nutrigenomics": _normalize_nutrigenomics,

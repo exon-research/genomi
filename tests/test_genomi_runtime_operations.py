@@ -47,6 +47,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             "ancestry.project_pca",
             "ancestry.estimate_population_context",
             "pharmacogenomics.preflight_pharmcat",
+            "decode.build_dashboard_evidence",
             "decode.render_dashboard",
             "prs.check_score_overlap",
             "prs.calculate_score",

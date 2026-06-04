@@ -1,5 +1,5 @@
-"""Decode capability — renders the Genomi Dashboard HTML artifact."""
+"""Decode capability — builds and renders the Genomi Dashboard HTML artifact."""
 
-from . import dashboard
+from . import dashboard, evidence_builder
 
-__all__ = ["dashboard"]
+__all__ = ["dashboard", "evidence_builder"]

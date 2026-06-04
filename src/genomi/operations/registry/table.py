@@ -98,6 +98,7 @@ from .handlers_pgx import (
     _pgx_pharmcat_status,
 )
 from .handlers_screen_journal import (
+    _decode_build_dashboard_evidence,
     _decode_render_dashboard,
     _journal_append_entry,
     _journal_export_memory_artifact,
@@ -227,6 +228,7 @@ OPERATIONS: list[Operation] = [
     Operation('functional_genomics.query_geo', _screen_query_geo),
     Operation('functional_genomics.import_perturbation_table', _screen_import_table_evidence_records),
     Operation('functional_genomics.compare_gene_perturbation', _screen_answer_gene),
+    Operation('decode.build_dashboard_evidence', _decode_build_dashboard_evidence, agi_need=_AGI_REFERENCE),
     Operation('decode.render_dashboard', _decode_render_dashboard, agi_need=_AGI_REFERENCE),
 ]
 
@@ -437,6 +439,7 @@ EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
         "ancestry.estimate_population_context",
         "prs.check_score_overlap",
         "prs.calculate_score",
+        "decode.build_dashboard_evidence",
         "decode.render_dashboard",
     }
 )

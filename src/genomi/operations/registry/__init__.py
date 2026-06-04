@@ -239,6 +239,7 @@ from .handlers_pgx import (
     _pgx_pharmcat_status,
 )
 from .handlers_screen_journal import (
+    _decode_build_dashboard_evidence,
     _decode_render_dashboard,
     _journal_append_entry,
     _journal_error,

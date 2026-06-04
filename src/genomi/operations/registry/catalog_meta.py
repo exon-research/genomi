@@ -39,6 +39,7 @@ WRITE_OPERATIONS = {
     "pharmacogenomics.run_pharmcat",
     "prs.import_scoring_file",
     "journal.append_entry",
+    "decode.build_dashboard_evidence",
     "decode.render_dashboard",
 }
 

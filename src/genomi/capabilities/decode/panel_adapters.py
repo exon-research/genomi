@@ -34,12 +34,59 @@ def normalize_risk_panel(raw: Any) -> list[JsonObject] | None:
     return rows or None
 
 
+def native_panel_rows(panel: str, raw: Any) -> list[JsonObject] | None:
+    if not isinstance(raw, dict):
+        return None
+    if panel in {"variants", "variants_all"}:
+        return _native_clinvar_rows(raw)
+    if panel == "nutrigenomics":
+        return _native_nutrigenomics_rows(raw)
+    return None
+
+
 def is_native_empty_panel(panel: str, raw: Any) -> bool:
     if panel == "pgx" and isinstance(raw, dict) and _is_native_pgx_result(raw):
         return not _pgx_has_native_content(raw)
     if panel == "risk" and isinstance(raw, list) and raw:
         return all(_is_empty_prs_result(item) for item in raw)
+    if panel in {"variants", "variants_all", "nutrigenomics"} and isinstance(raw, dict):
+        rows = native_panel_rows(panel, raw)
+        if rows is not None:
+            return not rows
+        return _has_empty_native_status(raw)
+    if panel == "ancestry" and isinstance(raw, dict):
+        return _has_empty_native_status(raw)
     return False
+
+
+def _native_clinvar_rows(raw: JsonObject) -> list[JsonObject] | None:
+    if "candidate_inventory" in raw:
+        return _as_dicts(raw.get("candidate_inventory"))
+    return None
+
+
+def _native_nutrigenomics_rows(raw: JsonObject) -> list[JsonObject] | None:
+    if "markers" in raw:
+        return _as_dicts(raw.get("markers"))
+    if "records" in raw:
+        return _as_dicts(raw.get("records"))
+    return None
+
+
+def _has_empty_native_status(raw: JsonObject) -> bool:
+    status = str(raw.get("status") or "")
+    coverage_status = str(raw.get("coverage_status") or "")
+    return status in {
+        "requires_library_install",
+        "source_unavailable",
+        "out_of_scope_for_input",
+        "skipped_missing_library",
+        "skipped_tool_unavailable",
+        "domain_id_required",
+        "unknown_domain",
+        "domain_out_of_scope_by_construction",
+        "invalid_evidence_tier",
+    } or coverage_status in {"in_scope_empty", "out_of_scope_for_input"}
 
 
 def _normalize_pgx_list(raw: list[Any]) -> list[JsonObject] | None:

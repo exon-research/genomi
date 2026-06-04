@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ...capabilities.decode import dashboard as decode_dashboard
+from ...capabilities.decode import evidence_builder as decode_evidence_builder
 from ...capabilities.functional_genomics import evidence_acquisition, geo, screen
 from ...capabilities.journal import journal
 from ...capabilities.research import intent_research
@@ -162,6 +163,35 @@ def _journal_export_memory_artifact(params: JsonObject) -> JsonObject:
         raise _journal_error(exc) from exc
 
 
+def _run_decode_panel_operation(name: str, params: JsonObject | None = None) -> JsonObject:
+    from .table import call_operation
+
+    return call_operation(name, params or {})
+
+
+def _decode_build_dashboard_evidence(params: JsonObject) -> JsonObject:
+    resolved = _with_context(params)
+    active = runtime_context.active_agi_record()
+    if active is None:
+        raise OperationError(
+            "active_genome_index_required",
+            "Select or parse an Active Genome Index before building Genomi Dashboard evidence.",
+        )
+    reader = open_agi(
+        need=ActiveGenomeIndexNeed.REFERENCE,
+        action="building Genomi Dashboard evidence from Active Genome Index artifacts",
+        params=params,
+    )
+    reader.ensure_ready()
+    try:
+        return decode_evidence_builder.build_dashboard_evidence(
+            params=resolved,
+            run_operation=_run_decode_panel_operation,
+        )
+    except ValueError as exc:
+        raise OperationError("invalid_params", str(exc)) from exc
+
+
 def _decode_render_dashboard(params: JsonObject) -> JsonObject:
     resolved = _with_context(params)
     # The dashboard writes a transient view artifact and consumes personal
@@ -189,15 +219,31 @@ def _decode_render_dashboard(params: JsonObject) -> JsonObject:
     evidence = resolved.get("evidence")
     if evidence is not None and not isinstance(evidence, dict):
         raise OperationError("invalid_params", "evidence must be a JSON object.")
+    build_result: JsonObject | None = None
+    variants_all_source = resolved.get("variants_all_source")
+    if evidence is None:
+        build_result = _decode_build_dashboard_evidence(resolved)
+        render_params = build_result.get("render_params") if isinstance(build_result, dict) else None
+        if not isinstance(render_params, dict) or not isinstance(render_params.get("evidence"), dict):
+            raise OperationError("invalid_dashboard_evidence", "decode.build_dashboard_evidence did not return renderable evidence.")
+        evidence = render_params["evidence"]
+        variants_all_source = variants_all_source or render_params.get("variants_all_source")
 
     try:
         result = decode_dashboard.render_dashboard(
             evidence=evidence,
             mode=_str(resolved, "mode", "full"),
             output=output,
-            variants_all_source=resolved.get("variants_all_source"),
+            variants_all_source=variants_all_source,
             clear_panels=resolved.get("clear_panels"),
         )
     except decode_dashboard.DashboardRenderError as exc:
         raise OperationError(exc.code, exc.message) from exc
+    if build_result is not None:
+        result["evidence_build"] = {
+            "panels_ready": build_result.get("panels_ready", []),
+            "panels_empty": build_result.get("panels_empty", []),
+            "panels_blocked": build_result.get("panels_blocked", []),
+            "panel_states": build_result.get("panel_states", []),
+        }
     return result

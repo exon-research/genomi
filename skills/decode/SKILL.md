@@ -13,6 +13,7 @@ description: |
   self-contained Genomi Dashboard.html, then returns a localhost serve
   command the host agent runs in the background. Active genome required.
 tools:
+  - decode.build_dashboard_evidence
   - decode.render_dashboard
 mutating: true
 ---
@@ -29,9 +30,10 @@ genome", or asks for a one-shot full report.
 
 This skill requires an Active Genome Index session and explicit approval to
 read it. The same approval gate that protects `variant.resolve`, `clinvar.*`,
-and the PGx ops protects `decode.render_dashboard`. If no active genome is
-selected the op fails with `active_genome_index_required`; if approval has
-not been granted it fails with `active_genome_index_approval_required`.
+and the PGx ops protects `decode.build_dashboard_evidence` and
+`decode.render_dashboard`. If no active genome is selected the op fails with
+`active_genome_index_required`; if approval has not been granted it fails with
+`active_genome_index_approval_required`.
 
 ## Reconcile Active Genome Index lifecycle before gathering panels
 
@@ -51,42 +53,25 @@ Summary for decode:
    the current path and parse that. Don't continue with a stale Active Genome Index.
 3. If `schema_too_new`, the user's runtime is out of date — tell them to
    upgrade Genomi, stop.
-4. Only after `active_genome_index_readiness.status == "complete"` do you start
-   gathering the seven panel objects below.
+4. Only after `active_genome_index_readiness.status == "complete"` call the
+   decode operation.
 
-## Per-panel evidence checklist
+## Default build
 
-The dashboard has seven panels. The agent gathers each one with the matching
-capability op (call via `genomi.invoke({ tool: "...", params: { ... } })`),
-then passes them as a single `evidence` dict to `decode.render_dashboard`.
+For a brand-new dashboard, call `decode.render_dashboard` with no `evidence`
+parameter. The operation first runs the code-owned
+`decode.build_dashboard_evidence` path, then renders the returned
+`render_params`.
 
-| Panel             | Default no-args gathering op                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| overview          | `active_genome_index.summarize` (no args)                                                                          |
-| variants          | `clinvar.scan_candidates` for P/LP-highlighted rows — pass result rows directly as `evidence.variants`             |
-| variants_all      | Do **not** pass rows inline. Pass the path to the ClinVar matches JSONL written by `clinvar.match_variants` as `variants_all_source` — the renderer reads it server-side |
-| pgx               | `pharmacogenomics.run_pharmcat` (no drug arg — diplotypes across ~20 PGx genes; report cached in work_dir/pharmcat/) |
-| risk              | `prs.list_imported_scores` to enumerate, then `prs.calculate_score` per score (`{db, score_id}`)                  |
-| ancestry          | `ancestry.estimate_population_context` (no args)                                                                   |
-| nutrigenomics     | `nutrigenomics.retrieve_domain_markers` (no args) — pass the `markers` array directly as `evidence.nutrigenomics` |
-| journal           | `journal.search_entries` (no args — returns recent entries)                                                        |
+Call `decode.build_dashboard_evidence` directly only when you need to inspect
+or reuse the built panel states before rendering. It returns:
 
-## Ask once before rendering
+- `render_params.evidence`
+- `render_params.variants_all_source` when ClinVar matches were materialized
+- `panel_states`, `panels_ready`, `panels_empty`, and `panels_blocked`
 
-After active-genome approval and lifecycle reconciliation, ask the user
-a single batched question and wait for the reply:
-
-> Before I build your dashboard:
-> 1. Any medications you take or want guidance on?
-> 2. Anything running in your family I should scan for?
-> 3. Install a standard PRS panel (CVD / T2D / lipids) if none are present?
->
-> Say "skip" to any line for defaults.
-
-Fold the user's specifics into gathering. Treat "skip" / "defaults" /
-"go ahead" as explicit consent to render with native gathering only.
-Follow-ups ("add metformin", "calculate PRS for stroke") use
-`mode: "update"`.
+Do not manually orchestrate the default seven-panel sweep in prompt text. Use
+explicit panel evidence only for a targeted refresh or user-supplied override.
 
 The renderer normalizes common upstream-op shapes automatically:
 
@@ -112,10 +97,8 @@ For the all-variants explorer panel, pass a file path via `variants_all_source`
 instead of the evidence dict — the renderer reads and normalizes the JSONL
 file server-side.
 
-If no PRS scores are installed in the user's library, leave the panel
-out of the evidence dict — it falls through to the EmptyPanel
-placeholder with a hint that the user can install scores with
-`prs.import_scoring_file`.
+If no PRS scores are installed in the user's library, the builder supplies a
+typed empty risk state so stale risk evidence is cleared rather than preserved.
 
 ## Verify before claiming success
 
@@ -150,9 +133,9 @@ When only one or two panels need refresh, call `decode.render_dashboard` with
 `mode: "update"` and only the refreshed panels; the previously-inlined
 evidence for other panels is preserved.
 
-For a brand-new dashboard, call `mode: "full"`. Panels not supplied render
-as empty cards with a "Not gathered yet" placeholder that names the upstream
-`genomi.invoke` op the user can ask for next.
+For a brand-new dashboard, call `mode: "full"` and omit `evidence` unless you
+are deliberately overriding the code-owned builder output. Panels not supplied
+render as empty cards with a "Not gathered yet" placeholder.
 
 ## Output location
 
@@ -193,8 +176,8 @@ processes belong.
 ## Boundaries
 
 - Active Genome Index session approval is required.
-- The renderer is pure layout — it does not call any upstream sources, the
-  agent must gather panel evidence first and pass it in.
+- Omitted `evidence` uses the code-owned builder path. Explicit `evidence`
+  remains supported for targeted updates and overrides.
 - The artifact is a single self-contained HTML file that renders fully offline
   — React/ReactDOM and the precompiled app JS are inlined, no CDN, no
   in-browser Babel. (One optional Google Fonts stylesheet is referenced; it
@@ -203,10 +186,17 @@ processes belong.
 
 ## Tool
 
+### decode.build_dashboard_evidence
+
+Build dashboard panel evidence from the approved Active Genome Index using
+existing capability operations. Returns `render_params` plus panel state
+metadata.
+
 ### decode.render_dashboard
 
-Render the Genomi Dashboard HTML artifact from the supplied per-panel
-evidence dict. Active genome required. Returns
+Render the Genomi Dashboard HTML artifact. If `evidence` is omitted, it first
+builds panel evidence through `decode.build_dashboard_evidence`. Active genome
+required. Returns
 `{ status, dashboard_path, panels_rendered, panels_empty, serve }` plus the
 standard `evidence_envelope`. The `serve` block tells the host agent how to
 expose the dashboard at a localhost URL — see the "Serving the dashboard"

@@ -8,24 +8,116 @@
         "skills/decode/SKILL.md"
       ],
       "entry_operations": [
+        "decode.build_dashboard_evidence",
         "decode.render_dashboard"
       ],
       "operations": [
+        "decode.build_dashboard_evidence",
         "decode.render_dashboard"
       ]
     }
   },
   "operations": {
+    "decode.build_dashboard_evidence": {
+      "capability": "decode",
+      "namespace": "decode",
+      "description": "Build Genomi Dashboard panel evidence from the approved Active Genome Index and existing capability operations. Returns render_params that can be passed to decode.render_dashboard.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "panels": {
+            "type": "array",
+            "description": "Optional subset of dashboard panels to gather. Omitted means every dashboard panel.",
+            "items": {
+              "type": "string",
+              "enum": ["overview", "variants", "variants_all", "pgx", "risk", "ancestry", "nutrigenomics", "journal"]
+            },
+            "uniqueItems": true
+          },
+          "include_pgx": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to run pharmacogenomics.run_pharmcat for the PGx panel."
+          },
+          "pgx_timeout_seconds": {
+            "type": "integer",
+            "default": 7200,
+            "minimum": 1,
+            "description": "Timeout forwarded to pharmacogenomics.run_pharmcat when PGx gathering is enabled."
+          },
+          "risk_score_ids": {
+            "type": "array",
+            "description": "Optional PGS IDs to score for the risk panel. Omitted means use imported local scores up to risk_score_limit.",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "risk_score_limit": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "description": "Maximum imported local PGS scores to calculate when risk_score_ids is omitted."
+          },
+          "nutrigenomics_domain_ids": {
+            "type": "array",
+            "description": "Optional nutrigenomics domains to retrieve. Omitted means every declared in-scope domain.",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "journal_limit": {
+            "type": "integer",
+            "default": 8,
+            "minimum": 1,
+            "description": "Maximum journal entries to gather for the journal panel."
+          },
+          "force": {
+            "type": "boolean",
+            "default": false,
+            "description": "Forwarded to ClinVar candidate scanning to refresh cached materialization."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/decode/SKILL.md",
+      "area": "decode",
+      "requires": [
+        "active_genome_index"
+      ],
+      "produces": [
+        "dashboard_panel_evidence",
+        "dashboard_render_params"
+      ],
+      "context_optional": [
+        "risk_score_ids",
+        "nutrigenomics_domain_ids"
+      ],
+      "privacy_scope": "active_genome_index",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "optional_libraries": [
+        "clinvar-grch38",
+        "pharmcat",
+        "ancestry-1000g-30x-grch38"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "data_access": [
+        "active_genome_index",
+        "public_catalog_metadata",
+        "installed_public_reference_panel"
+      ],
+      "discovery_role": "entry_tool"
+    },
     "decode.render_dashboard": {
       "capability": "decode",
       "namespace": "decode",
-      "description": "Render the Genomi Dashboard self-contained HTML artifact from supplied panel evidence. Active Genome Index approval required.",
+      "description": "Render the Genomi Dashboard self-contained HTML artifact. If evidence is omitted, the operation first builds dashboard evidence from the approved Active Genome Index.",
       "input_schema": {
         "type": "object",
         "properties": {
           "evidence": {
             "type": "object",
-            "description": "Dashboard panel evidence keyed by panel name. In full mode, missing or empty panels render the 'Not gathered yet' placeholder. In update mode, omitted panels preserve previous evidence while explicitly empty panels clear stale evidence.",
+            "description": "Dashboard panel evidence keyed by panel name. Omit this parameter to build evidence through decode.build_dashboard_evidence. In full mode, missing or empty panels render the 'Not gathered yet' placeholder. In update mode, omitted panels preserve previous evidence while explicitly empty panels clear stale evidence.",
             "properties": {
               "overview": {
                 "type": "object",
