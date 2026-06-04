@@ -436,8 +436,8 @@ def canonical_source_for_active_genome_index(connection: sqlite3.Connection) -> 
     This is also the lifecycle gate. Every capability tool resolves
     through here, so we enforce schema-version compatibility once:
     older Active Genome Indexes raise `ActiveGenomeIndexNeedsReparse`;
-    newer ones raise `ActiveGenomeIndexSchemaTooNew`. Same `< / == / >`
-    semantics the parse path uses in `_cached_active_genome_index_if_usable`.
+    newer ones raise `ActiveGenomeIndexSchemaTooNew`. The same `< / == / >`
+    compatibility rule is used by `_cached_active_genome_index_if_usable`.
     """
 
     compatibility = check_agi_schema_compatibility(connection)

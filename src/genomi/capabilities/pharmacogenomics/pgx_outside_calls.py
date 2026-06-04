@@ -118,11 +118,6 @@ def validate_outside_call_file(
         "rows": records,
         "invalid_rows": invalid_rows,
         "warnings": warnings,
-        "semantics": [
-            "PharmCAT outside calls supply diplotype, phenotype, or activity-score evidence for genes that need specialized callers.",
-            "Outside calls override VCF-derived PharmCAT named-allele calls for the same gene.",
-            "Upstream caller biological correctness requires caller provenance, sample identity, and caller-specific quality review.",
-        ],
         "traceability": _traceability(),
     }
 

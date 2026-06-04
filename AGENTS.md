@@ -138,6 +138,58 @@ Edit this section only with explicit owner approval.
    Missing library evidence must never be interpreted as absence of variants,
    genes, associations, or risk.
 
+23. The Active Genome Index reader is the read boundary.
+   Production code outside `src/genomi/active_genome_index/` must not open,
+   attach, or query Active Genome Index SQLite files directly. Route every AGI
+   row read through `ActiveGenomeIndexReader` or through a narrow
+   active-genome-index-owned helper exposed by that reader. If a capability
+   needs a new AGI record contract, add a typed reader method instead of
+   re-parsing AGI records in the capability.
+
+24. Do not preserve broken backward compatibility.
+   When an old contract is wrong, replace it with the correct contract and
+   update callers, fixtures, tests, and docs together. Do not keep aliases,
+   duplicate fields, compatibility modes, or fallback parsers that let the old
+   incorrect behavior keep leaking through.
+
+25. Do not anti-prompt around code defects.
+   Avoid adding warning prose, prompt instructions, skill text, or schema
+   verbosity to compensate for weak implementation. Fix the implementation,
+   contract, evidence shape, or tests so the correct behavior is enforced in
+   code.
+
+26. Keep schemas and fields minimal.
+   Only the Active Genome Index has schema versioning. Elsewhere, add schema
+   fields only when they carry necessary data or enforce a real contract.
+   Remove redundant provenance, duplicated labels, and parallel ways to express
+   the same state.
+
+27. Broad changes require independent functionality review.
+   For AGI or capability-wide changes, spawn independent review/test agents in
+   separate worktrees when feasible. Give each agent one functionality scope
+   (for example AGI, PRS, ancestry, ClinVar, pharmacogenomics, decode, or
+   source intake), enough context to review the whole behavior, and an explicit
+   instruction to inspect functionality rather than only the latest diff. Use
+   public fixtures for reproducible CI coverage; inspect private genome files
+   only when the current session explicitly approves that exact path.
+
+28. CI must exercise supported source formats and downstream capabilities.
+   Public sample-derived fixtures, including PGP-HMS-derived minimal fakes,
+   should cover every supported input form and the downstream capabilities that
+   consume parsed AGI records. A parser fixture that only proves ingestion is
+   not enough when PRS, ancestry, ClinVar, pharmacogenomics, variant lookup, or
+   decode depend on the resulting record behavior.
+
+29. Data-source libraries live in `genomi.runtime.libraries`.
+   Shared public/reference assets, live APIs, derived panels, and per-key caches
+   are `LibrarySpec` entries in `src/genomi/runtime/libraries/registry.py` and
+   are materialized through `src/genomi/runtime/libraries/manager.py`.
+   Capabilities must not add their own downloaders, URL catalogs, install roots,
+   freshness checks, cache directories, or install-status shapes. Runtime code
+   should use the library manager's `ensure`, `status`, or `missing_request`
+   paths; install/update code should use `install` or `refresh`. Add a registry
+   spec and transform when a new shared asset family is needed.
+
 ## Connect
 
 Prefer MCP:

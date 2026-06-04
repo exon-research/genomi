@@ -654,7 +654,7 @@ def _genomi_invoke(params: JsonObject) -> JsonObject:
 
     The agent reads the relevant capability's SKILL.md (via Anthropic Claude
     Code Skills' filesystem-based progressive disclosure) to learn parameter
-    shapes and result semantics, then calls this dispatcher with the qualified
+    shapes and result contracts, then calls this dispatcher with the qualified
     tool name and params.
     """
     from .model import _operation_capability

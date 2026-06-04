@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 class Kind(str, Enum):
-    """What sort of source this is — decides install/status/freshness semantics."""
+    """What sort of source this is; decides install, status, and freshness behavior."""
 
     OFFLINE = "offline"  # downloaded + cached under GENOMI_HOME
     ONLINE = "online"  # live public API; never cached offline

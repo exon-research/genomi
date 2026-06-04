@@ -663,7 +663,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
 
     Used as a contract floor by the operations dispatcher: any evidence-producing
     operation whose handler did not emit an envelope gets one here. Per-tool
-    handlers that need richer semantics should still emit their own envelope.
+    handlers that need a richer contract should still emit their own envelope.
 
     Heuristics (low → high specificity):
       - status == "requires_library_install" → blocked_missing_library / needs_user_install

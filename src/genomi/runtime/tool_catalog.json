@@ -31,7 +31,7 @@
     "genomi.invoke": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Dispatch a Genomi capability operation. Use this for any tool outside the genomi.* / journal.* / research.* namespaces. The agent must read the relevant capability skill (e.g. skills/pharmacogenomics/SKILL.md) for parameter shapes and result semantics before invoking. Returns the underlying tool's response unchanged.",
+      "description": "Dispatch a Genomi capability operation. Use this for any tool outside the genomi.* / journal.* / research.* namespaces. The agent must read the relevant capability skill (e.g. skills/pharmacogenomics/SKILL.md) for parameter shapes and result contracts before invoking. Returns the underlying tool's response unchanged.",
       "input_schema": {
         "type": "object",
         "properties": {

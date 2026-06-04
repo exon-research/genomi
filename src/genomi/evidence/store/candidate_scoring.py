@@ -624,7 +624,7 @@ def _candidate_decision_points(
     if MATCH_BASIS_CONSUMER_ARRAY_ALLELE_INFERENCE in match_bases:
         decisions.append(
             "Treat consumer-array ClinVar hits as allele inference from array genotype strings, "
-            "not exact VCF allele observations; confirm source semantics before clinical use."
+            "not exact VCF allele observations; confirm the source evidence before clinical use."
         )
     decisions.append("Use family, segregation, and phased sample data for de novo status, segregation, or cis/trans phase.")
     return decisions

@@ -146,11 +146,6 @@ def _parse_vcf_active_genome_index(
             }
         ],
         "warnings": [],
-        "semantics": [
-            "The VCF/gVCF source is digitized into a local Active Genome Index.",
-            "Targeted rsID, locus, region, and exact allele lookup can use the Active Genome Index.",
-            "Public evidence libraries are materialized lazily by focused tools such as ClinVar, HPO, GenCC, panel, and region annotation operations.",
-        ],
     }
 
 

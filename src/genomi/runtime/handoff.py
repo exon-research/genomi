@@ -45,7 +45,6 @@ def evidence_context(
         "id": stage_id,
         "name": contract["name"],
         "reason": reason,
-        "semantics": "related skill context; the host agent decides whether it matters for the user's question",
         "skill_contract": {
             "path": SKILL_PATH,
             "section": contract["section"],

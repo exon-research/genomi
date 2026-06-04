@@ -60,11 +60,8 @@ def _present_active_genome_index_parse(result: JsonObject) -> JsonObject:
         "active_genome_index": active,
         "steps": steps,
         "warnings": result.get("warnings") or [],
-        "source_observation_contract": result.get("source_observation_contract"),
         "digitization_contract": result.get("digitization_contract"),
     }
-    if result.get("semantics"):
-        payload["semantics"] = result.get("semantics")
     return _drop_none(payload)
 
 
@@ -353,7 +350,6 @@ def _compact_answer_support(answer_support: JsonObject) -> JsonObject:
             "sample_signal_count",
             "technical_sample_support",
             "clinical_boundary",
-            "semantics",
         ),
     )
     compact["matched_variant_associations"] = [

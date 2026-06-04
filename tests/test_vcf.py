@@ -371,11 +371,11 @@ class IndexTests(unittest.TestCase):
 
         self.assertEqual(records[0]["info_genes"], ["HFE"])
 
-    def test_parallel_index_preserves_query_semantics(self) -> None:
+    def test_parallel_index_preserves_query_behavior(self) -> None:
         # The canonical is bgzip with a `.gzi`, so the parse partitions it by
         # bgzip block across worker processes (genomi.active_genome_index.
         # parallel_build). Enough records to span multiple bgzip blocks so the
-        # build genuinely runs more than one worker; query semantics must match
+        # build genuinely runs more than one worker; query behavior must match
         # a single-threaded build.
         with tempfile.TemporaryDirectory() as tmp:
             vcf_path = Path(tmp) / "parallel.vcf"
