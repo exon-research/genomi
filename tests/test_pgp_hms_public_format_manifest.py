@@ -46,10 +46,7 @@ class PGPHMSPublicFormatManifestTests(ActiveGenomeIndexContractFixtureMixin, uni
             case_id: source_format
             for case_id, source_format, _writer in self._source_cases()
         }
-        case_to_format["bam"] = "bam"
-        case_to_format["bam_zip"] = "bam"
-        case_to_format["fastq"] = "fastq"
-        case_to_format["fastq_zip"] = "fastq"
+        case_to_format.update(self._sequencing_source_case_formats())
 
         manifest_cases = {
             case_id: source_format

@@ -30,7 +30,8 @@
       ],
       "contract_fixture_cases": [
         "23andme_txt",
-        "23andme_zip"
+        "23andme_zip",
+        "23andme_tar"
       ]
     },
     "ancestrydna": {
@@ -57,7 +58,8 @@
       ],
       "contract_fixture_cases": [
         "myheritage_csv",
-        "myheritage_zip"
+        "myheritage_zip",
+        "myheritage_tar"
       ]
     },
     "ftdna": {
@@ -69,7 +71,9 @@
       ],
       "contract_fixture_cases": [
         "ftdna_csv",
-        "ftdna_csv_gz"
+        "ftdna_csv_gz",
+        "ftdna_zip",
+        "ftdna_tar"
       ]
     },
     "livingdna": {
@@ -78,7 +82,9 @@
         "No Living DNA examples were present in the public PGP-HMS data-type inventory checked for this manifest; Genomi still supports this provider format."
       ],
       "contract_fixture_cases": [
-        "livingdna_txt"
+        "livingdna_txt",
+        "livingdna_zip",
+        "livingdna_tar"
       ]
     },
     "vcf": {
@@ -126,7 +132,8 @@
       ],
       "contract_fixture_cases": [
         "bam",
-        "bam_zip"
+        "bam_zip",
+        "bam_tar"
       ]
     },
     "fastq": {
@@ -139,7 +146,8 @@
       ],
       "contract_fixture_cases": [
         "fastq",
-        "fastq_zip"
+        "fastq_zip",
+        "fastq_tar"
       ]
     }
   },

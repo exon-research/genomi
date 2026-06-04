@@ -184,6 +184,20 @@ class ArchiveContentTests(unittest.TestCase):
             self.assertEqual(detection.source_format, "fastq")
             self.assertEqual(detection.member_name, "reads/sample_R1_001.fastq.gz")
 
+    def test_fastq_tar_archive_selects_r1_member_for_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reads.tar.gz"
+            with tarfile.open(path, "w:gz") as archive:
+                for member_name in ("reads/sample_R2_001.fastq.gz", "reads/sample_R1_001.fastq.gz"):
+                    data = gzip.compress(_FASTQ_TXT.encode())
+                    info = tarfile.TarInfo(member_name)
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+
+            detection = detect_source(path)
+            self.assertEqual(detection.source_format, "fastq")
+            self.assertEqual(detection.member_name, "reads/sample_R1_001.fastq.gz")
+
     def test_fastq_archive_skips_sample_sheet_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "reads-with-sidecar.zip"

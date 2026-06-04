@@ -307,6 +307,16 @@ class ActiveGenomeIndexDownstreamContractTests(
             ),
             (
                 SourceContractCase(
+                    case_id="bam_tar",
+                    expected_format="bam",
+                    writer=self._write_bam_tar_source,
+                    parse_overrides={"reference_fasta": str(reference)},
+                ),
+                Path("Nebula_Genomics_BAM_format.tar.gz"),
+                False,
+            ),
+            (
+                SourceContractCase(
                     case_id="fastq",
                     expected_format="fastq",
                     writer=self._write_fastq_sources,
@@ -323,6 +333,16 @@ class ActiveGenomeIndexDownstreamContractTests(
                     parse_overrides={"reference_fasta": str(reference)},
                 ),
                 Path("GENOS_fastq_pair.zip"),
+                True,
+            ),
+            (
+                SourceContractCase(
+                    case_id="fastq_tar",
+                    expected_format="fastq",
+                    writer=self._write_fastq_tar_sources,
+                    parse_overrides={"reference_fasta": str(reference)},
+                ),
+                Path("GENOS_fastq_pair.tar.gz"),
                 True,
             ),
         ]

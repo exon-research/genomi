@@ -238,13 +238,15 @@ Direct-to-consumer providers are supported natively too. Hand Genomi the
 deliverable straight from your account export and it figures out the rest:
 
 - **23andMe**, **AncestryDNA**, **MyHeritage**, **FamilyTreeDNA** (Family
-  Finder), and **Living DNA** — raw genotype text, zip, or `.csv.gz`.
+  Finder), and **Living DNA** — raw genotype text/CSV as exported by the
+  provider, including gzip/bzip2/xz-compressed files and zip/tar archives.
 - **Nebula Genomics**, **Dante Labs**, and **Sequencing.com** — their VCF
   deliverables are recognized and tagged with the originating provider.
 - **Nebula / Dante / Sequencing.com FASTQ** — paired-end raw reads are
-  aligned locally (minimap2 for long reads, bwa-mem2 for short reads),
-  sorted, and then fed into the same BAM → derived-VCF path. The
-  `wgs-alignment` install purpose pulls down both aligners.
+  aligned locally from sibling R1/R2 files or a zip/tar archive containing
+  the pair (minimap2 for long reads, bwa-mem2 for short reads), sorted, and
+  then fed into the same BAM → derived-VCF path. The `wgs-alignment`
+  install purpose pulls down both aligners.
 
 ### No DNA file yet? Try a public one
 

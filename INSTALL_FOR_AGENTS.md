@@ -457,23 +457,30 @@ If they decline (skip / no / later), go to Step 9.
 Answer from this list. Genomi reads any of these locally — **nothing is
 uploaded off-machine**:
 
-- **VCF** or **gVCF** from anywhere (`.vcf`, `.vcf.gz`, `.gvcf`, `.gvcf.gz`).
-- **BAM** of aligned reads (Genomi derives a local VCF).
+- **VCF** or **gVCF** from anywhere (`.vcf`, `.vcf.gz`, `.vcf.bz2`,
+  `.vcf.xz`, `.gvcf`, `.gvcf.gz`, or a zip/tar archive containing the
+  VCF/gVCF).
+- **BAM** of aligned reads, either as a file or as a zip/tar archive member
+  (Genomi derives a local VCF).
 - **Direct-to-consumer raw DNA exports**, used as-is from the provider account:
-  - 23andMe — raw genotype `.txt` / `.zip`
-  - AncestryDNA — raw genotype `.txt` / `.zip`
-  - MyHeritage — raw genotype `.csv` / `.zip` (the `# MyHeritage DNA raw data` banner file)
-  - FamilyTreeDNA (Family Finder autosomal) — `.csv` / `.csv.gz`
-  - Living DNA — autosomal `.txt`
+  - 23andMe — raw genotype `.txt`, compressed file, or zip/tar archive
+  - AncestryDNA — raw genotype `.txt`, compressed file, or zip/tar archive
+  - MyHeritage — raw genotype `.csv`, compressed file, or zip/tar archive
+    (the `# MyHeritage DNA raw data` banner file)
+  - FamilyTreeDNA (Family Finder autosomal) — `.csv`, compressed file, or
+    zip/tar archive
+  - Living DNA — autosomal `.txt`, compressed file, or zip/tar archive
 - **Whole-genome VCF or paired FASTQ** from a sequencing service:
-  - Nebula Genomics — `.vcf` / `.vcf.gz` or paired `_R1_/_R2_` FASTQ
-  - Dante Labs — `.vcf.gz` (DRAGEN) or paired FASTQ
-  - Sequencing.com — `.vcf.gz` (SNV+indel gVCF / CNV / SV) or paired FASTQ
+  - Nebula Genomics — `.vcf` / `.vcf.gz` or paired `_R1_/_R2_` FASTQ files
+  - Dante Labs — `.vcf.gz` (DRAGEN) or paired FASTQ files
+  - Sequencing.com — `.vcf.gz` (SNV+indel gVCF / CNV / SV) or paired FASTQ files
 
 For consumer-DNA providers, **do not** ask the user to convert their file.
 Hand the original deliverable straight to Genomi; source-type auto-detection
 figures out the rest. The user must point at the actual data file — not a
-manifest, folder, or screenshot.
+manifest, folder, or screenshot. If their FASTQ is archived, the zip/tar must
+contain both R1 and R2 files with recognized pair suffixes such as `_R1_` /
+`_R2_` or `_1` / `_2`; a single archived FASTQ member is not enough.
 
 **Paired-end FASTQ needs `minimap2` and `bwa-mem2` on PATH or under
 `<GENOMI_HOME>/tools/aligners/`.** On Linux x86_64, `--libraries

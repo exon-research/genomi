@@ -151,9 +151,10 @@ follows the source bootstrap in `INSTALL_FOR_AGENTS.md`.
 ## Parsing A Genome Source
 
 `genomi.parse_source` is a core `genomi.*` tool: it detects, parses, and
-digitizes a genome source (VCF/gVCF, BAM, or a consumer-array raw genotype
-export from 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA, or Living DNA —
-text, zip, or `.csv.gz`) into a queryable Active Genome Index.
+digitizes a genome source (VCF/gVCF, BAM, paired-end FASTQ, or a
+consumer-array raw genotype export from 23andMe, AncestryDNA, MyHeritage,
+FamilyTreeDNA, or Living DNA; bare text/CSV, gzip/bzip2/xz-compressed, or
+inside a zip/tar archive) into a queryable Active Genome Index.
 
 - **Use when**: the user supplied a genome source in this chat and downstream
   questions need a queryable Active Genome Index this session.
