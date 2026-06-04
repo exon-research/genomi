@@ -628,6 +628,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
             result = call_operation("pharmacogenomics.preflight_pharmcat")
 
         self.assertEqual(result["status"], "completed")
+        self.assertIn("evidence_envelope", result)
         self.assertTrue(result["input_preflight"]["input"]["hidden_agi_path"])
 
     def test_call_operation_uses_active_genome_index_context(self) -> None:

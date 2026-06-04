@@ -75,6 +75,48 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
         self.assertEqual(components["technical_sample_support"]["state"], "user_provided")
         star_lookup.assert_called_once()
 
+    def test_sample_only_evidence_is_not_presented_as_empty_scope(self) -> None:
+        clinpgx_result = {
+            "source": {"source_id": "clinpgx"},
+            "status": "no_matching_clinpgx_records",
+            "summary": {"guideline_annotation_count": 0, "clinical_annotation_count": 0, "label_annotation_count": 0},
+            "sample_follow_up_targets": {"rsids": [], "genes": []},
+            "clinical_verification": {"requires_before_personal_actionability": []},
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        pgxdb_result = {
+            "source": {"source_id": "pgxdb"},
+            "status": "no_matching_pgxdb_records",
+            "summary": {"pgx_record_count": 0, "gene_drug_record_count": 0, "variant_context_record_count": 0},
+            "pgx_records": [],
+            "gene_drug_records": [],
+            "variant_context_records": [],
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+
+        with (
+            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch(
+                "genomi.capabilities.pharmacogenomics.review.pgx_star.call_star_alleles",
+                return_value={"status": "no_sample_context", "marker_calls": [], "diplotype": {}},
+            ),
+        ):
+            result = review_medication_interaction(
+                drug="clopidogrel",
+                gene="CYP2C19",
+                known_diplotype="*1/*2",
+                known_pgx_source="outside PGx report",
+            )
+
+        self.assertEqual(result["status"], "no_public_pgx_evidence")
+        self.assertFalse(result["evidence_state"]["has_public_pgx_evidence"])
+        self.assertTrue(result["evidence_state"]["has_sample_evidence"])
+        self.assertEqual(result["answer_support"]["status"], "sample_evidence_present")
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "evidence_present")
+
     def test_review_asks_for_target_when_known_sample_pgx_fact_is_ambiguous(self) -> None:
         clinpgx_result = {
             "source": {"source_id": "clinpgx"},

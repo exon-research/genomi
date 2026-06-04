@@ -622,7 +622,7 @@ def _build_pgx_envelope(
     }
     pgx_status = pgx_evidence_scope.get("status")
     has_public = bool(evidence_state.get("has_public_pgx_evidence"))
-    has_sample = bool(evidence_state.get("has_sample_pgx_evidence"))
+    has_sample = bool(evidence_state.get("has_sample_evidence"))
     if pgx_status == "source_unavailable":
         return _env.not_assessed(
             operation="pharmacogenomics.review_medication",

@@ -419,6 +419,7 @@ EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
         "pharmacogenomics.fetch_pgxdb",
         "pharmacogenomics.fetch_clinpgx",
         "pharmacogenomics.fetch_fda_labels",
+        "pharmacogenomics.preflight_pharmcat",
         "pharmacogenomics.run_pharmcat",
         "pharmacogenomics.describe_gene_requirements",
         "pharmacogenomics.import_pharmcat_artifacts",
