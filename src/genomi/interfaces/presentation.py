@@ -48,7 +48,6 @@ def _present_active_genome_index_parse(result: JsonObject) -> JsonObject:
             )
         steps.append(compact_step)
     payload: JsonObject = {
-        "schema": result.get("schema"),
         "status": result.get("status"),
         "workflow_area": result.get("workflow_area"),
         "source_format": result.get("source_format"),
@@ -78,7 +77,6 @@ def _present_pgx_medication_review(result: JsonObject) -> JsonObject:
     if envelope:
         payload["evidence_envelope"] = envelope
     payload.update({
-        "schema": result.get("schema"),
         "ok": result.get("ok"),
         "status": result.get("status"),
         "query": result.get("query"),
@@ -89,7 +87,6 @@ def _present_pgx_medication_review(result: JsonObject) -> JsonObject:
         "target_inventory": _select(
             target_inventory,
             (
-                "schema",
                 "drug",
                 "selected_gene",
                 "rsid_targets",
@@ -120,7 +117,6 @@ def _present_risk_investigation(result: JsonObject) -> JsonObject:
     if envelope:
         payload["evidence_envelope"] = envelope
     payload.update({
-        "schema": result.get("schema"),
         "status": result.get("status"),
         "context_scope": result.get("context_scope"),
         "target": result.get("target"),
@@ -167,7 +163,6 @@ def _compact_envelope(envelope: object) -> JsonObject | None:
     if not isinstance(envelope, dict):
         return None
     order = (
-        "schema",
         "operation",
         "headline",
         "finding_state",
@@ -247,7 +242,7 @@ def _compact_review_target_summary(summary: object) -> JsonObject:
 
 
 def _compact_evidence_view(evidence: JsonObject) -> JsonObject:
-    compact = _select(evidence, ("schema", "agent_decision_required", "top_observed_candidate", "coverage", "warnings"))
+    compact = _select(evidence, ("agent_decision_required", "top_observed_candidate", "coverage", "warnings"))
     compact["rankings"] = [
         _select(candidate, ("candidate_id", "candidate_type", "rank", "score", "evidence_support_level", "answerability", "best_evidence_lane"))
         for candidate in (evidence.get("rankings") or [])[:MAX_LIST_ITEMS]
@@ -344,7 +339,6 @@ def _compact_answer_support(answer_support: JsonObject) -> JsonObject:
     compact = _select(
         answer_support,
         (
-            "schema",
             "status",
             "public_signal_count",
             "sample_signal_count",
@@ -393,7 +387,7 @@ def _variant_match_summaries(lookups: list[object]) -> list[JsonObject]:
                     ),
                 )
             )
-    return matches[:MAX_LIST_ITEMS]
+    return [_rename_agi_source_metadata(match) for match in matches[:MAX_LIST_ITEMS]]
 
 
 def _star_call_summaries(calls: list[object]) -> list[JsonObject]:
@@ -482,7 +476,7 @@ def _compact_shallow_scalar_dict(value: object) -> JsonObject:
 def _compact_active_index(value: object) -> JsonObject | None:
     if not isinstance(value, dict):
         return None
-    return _select(
+    compact = _select(
         value,
         (
             "agi_id",
@@ -497,6 +491,7 @@ def _compact_active_index(value: object) -> JsonObject | None:
             "intake_source",
         ),
     )
+    return _rename_agi_source_metadata(compact)
 
 
 def _truncate_record(value: object) -> object:
@@ -513,6 +508,8 @@ def _select(value: object, keys: tuple[str, ...]) -> JsonObject:
 
 def _omit_key(key: str) -> bool:
     lowered = key.lower()
+    if lowered == "schema":
+        return True
     if lowered in {"raw", "raw_json", "raw_calls", "external_calls", "record_research_payloads"}:
         return True
     if lowered in {
@@ -537,3 +534,15 @@ def _looks_like_local_path(value: str) -> bool:
 
 def _drop_none(value: JsonObject) -> JsonObject:
     return {key: item for key, item in value.items() if item is not None}
+
+
+def _rename_agi_source_metadata(value: JsonObject) -> JsonObject:
+    renamed = dict(value)
+    for old_key, new_key in (
+        ("source_format", "agi_source_format"),
+        ("source_kind", "agi_source_kind"),
+        ("source_member", "agi_source_member"),
+    ):
+        if old_key in renamed:
+            renamed[new_key] = renamed.pop(old_key)
+    return renamed

@@ -85,6 +85,37 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         self.assertEqual(top_evidence["evidence_trace"]["supporting_record_ids"], ["screen-1"])
         self.assertEqual(top_evidence["evidence_trace"]["supporting_evidence_count"], 1)
 
+    def test_parse_presentation_names_active_index_source_metadata_as_agi_metadata(self) -> None:
+        presented = present_result(
+            "genomi.parse_source",
+            {
+                "status": "completed",
+                "source_format": "vcf",
+                "active_genome_index": {
+                    "agi_id": "agi-fixture",
+                    "sample_slug": "agi-fixture",
+                    "status": "parsed",
+                    "source_format": "vcf",
+                    "source_kind": "variant_callset",
+                    "source_member": "sample.vcf",
+                    "genome_build": "GRCh38",
+                },
+            },
+        )
+
+        self.assertEqual(
+            presented["active_genome_index"],
+            {
+                "agi_id": "agi-fixture",
+                "sample_slug": "agi-fixture",
+                "status": "parsed",
+                "agi_source_format": "vcf",
+                "agi_source_kind": "variant_callset",
+                "agi_source_member": "sample.vcf",
+                "genome_build": "GRCh38",
+            },
+        )
+
     # NOTE: test_panel_tools_are_agent_native_and_hide_intake_source was
     # removed when nutrition_core/common_risk_core panels were deleted (their
     # content moved into the nutrigenomics capability). Re-add when a new
@@ -507,19 +538,16 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         content = response["result"]["content"][0]
         self.assertEqual(content["type"], "text")
         payload = json.loads(content["text"])
-        self.assertEqual(payload["schema"], "genomi-resource-catalog-v1")
+        self.assertEqual(set(payload), {"context_policy", "host_response_profiles", "local_runtime", "resource_groups", "source_catalog", "toolset_disclosure"})
         self.assertIn("resource_groups", payload)
-        # disclosure block was removed; single shape now.
-        self.assertNotIn("disclosure", payload)
 
     def test_cli_call_returns_presented_shape(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["call", "genomi.list_resources"])
         payload = args.func(args)
 
-        self.assertEqual(payload["schema"], "genomi-resource-catalog-v1")
+        self.assertEqual(set(payload), {"context_policy", "host_response_profiles", "local_runtime", "resource_groups", "source_catalog", "toolset_disclosure"})
         self.assertIn("resource_groups", payload)
-        self.assertNotIn("disclosure", payload)
 
     def test_cli_call_debug_raw_returns_raw_dict(self) -> None:
         parser = build_parser()
@@ -563,7 +591,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         self.assertEqual(payload["status"], "in_progress")
         self.assertEqual(payload["job_id"], "runtime-list-resources-test")
         self.assertEqual(payload["check"]["operation"], "genomi.check_background_job")
-        self.assertEqual(payload["evidence_envelope"]["schema"], "genomi-evidence-envelope-v1")
+        self.assertEqual(payload["evidence_envelope"]["operation"], "genomi.list_resources")
         self.assertEqual(payload["evidence_envelope"]["finding_state"], "materialization_incomplete")
         self.assertIn("in_progress:poll_runtime_check_background_job", payload["evidence_envelope"]["guidance"])
         self.assertEqual(payload["evidence_envelope"]["next_actions"][0]["operation"], "genomi.check_background_job")
@@ -634,9 +662,8 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         self.assertIsNotNone(response)
         assert response is not None
         payload = json.loads(response["result"]["content"][0]["text"])
-        self.assertEqual(payload["schema"], "genomi-resource-catalog-v1")
+        self.assertEqual(set(payload), {"context_policy", "host_response_profiles", "local_runtime", "resource_groups", "source_catalog", "toolset_disclosure"})
         self.assertIn("resource_groups", payload)
-        self.assertNotIn("disclosure", payload)
 
     def test_runtime_check_background_job_returns_presented_result(self) -> None:
         job_id = "runtime-list-resources-completed"
@@ -663,9 +690,8 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
 
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["job_id"], job_id)
-        self.assertEqual(result["operation_result"]["schema"], "genomi-resource-catalog-v1")
+        self.assertEqual(set(result["operation_result"]), {"context_policy", "host_response_profiles", "local_runtime", "resource_groups", "source_catalog", "toolset_disclosure"})
         self.assertIn("resource_groups", result["operation_result"])
-        self.assertNotIn("disclosure", result["operation_result"])
 
         response = handle_request(
             {
@@ -677,7 +703,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         )
         assert response is not None
         payload = json.loads(response["result"]["content"][0]["text"])
-        self.assertNotIn("disclosure", payload)
+        self.assertEqual(set(payload["operation_result"]), {"context_policy", "host_response_profiles", "local_runtime", "resource_groups", "source_catalog", "toolset_disclosure"})
 
     def test_background_job_reuses_active_same_operation_and_params(self) -> None:
         digest = background_jobs.operation_params_digest("genomi.list_resources", {})

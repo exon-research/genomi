@@ -9,6 +9,7 @@ from pathlib import Path
 from genomi.active_genome_index.active_genome_index import create_active_genome_index
 from genomi.evidence import init_evidence_db
 from genomi.operations import call_operation
+from genomi.operations.registry.errors import OperationError
 from genomi.runtime import context as runtime_context
 
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
@@ -272,15 +273,12 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                     {"nickname": "Test user", "source": str(vcf), "agi_path": str(index), "genome_build": "GRCh38"},
                 )
                 current = call_operation("genomi.describe_context")
-                lookup = call_operation("variant.resolve", {"rsid": "rs555"})
 
                 self.assertFalse(current["active_genome_index"]["digitized"])
                 self.assertFalse(current["active_genome_index"]["active_genome_index_readiness"]["complete"])
-                self.assertEqual(lookup["sample_context"]["count"], 0)
-                searched = lookup["sample_context"]["searched_active_genome_indexes"][0]
-                self.assertFalse(searched["query_available"])
-                self.assertEqual(searched["availability_note"], "completion_marker_missing_or_false")
-                self.assertTrue(any("not complete" in warning for warning in lookup["warnings"]))
+                with self.assertRaises(OperationError) as raised:
+                    call_operation("variant.resolve", {"rsid": "rs555"})
+                self.assertEqual(raised.exception.code, "active_genome_index_incomplete")
             finally:
                 os.chdir(previous)
 
