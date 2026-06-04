@@ -165,24 +165,31 @@ def _normalize_overview(raw: Any) -> JsonObject | None:
     sample_id = _pick(raw, "sampleId", "sample_id", "nickname", "user_nickname") or _deep_pick(
         raw, "run_sample_slug", "sample_slug"
     )
+    genome_source = _pick(raw, "genomeSource", "genome_source", "agi_source_format") or _deep_pick(
+        raw, "agi_source_format", "source_format", "dataSourceType"
+    )
+    is_consumer_array = _is_consumer_array_overview(raw, genome_source)
     variant_count = _pick(raw, "variantCount", "variant_count")
     if variant_count is None:
-        variant_count = _deep_pick(raw, "variant_count", "variant_records", "record_count")
+        if is_consumer_array:
+            variant_count = _deep_pick(raw, "array_call_records", "pass_records", "rsid_records", "total_records")
+        else:
+            variant_count = _deep_pick(raw, "variant_count", "variant_records", "record_count")
     if sample_id is None:
         samples = _deep_pick(raw, "samples")
         if isinstance(samples, list) and samples:
             sample_id = samples[0]
     out = {
         "sampleId": sample_id,
-        "genomeBuild": _pick(raw, "genomeBuild", "genome_build") or _deep_pick(raw, "reference"),
+        "genomeBuild": _pick(raw, "genomeBuild", "genome_build") or _deep_pick(raw, "genome_build", "reference"),
         "variantCount": variant_count,
+        "variantCountLabel": "Markers Indexed" if is_consumer_array else "Variants Indexed",
         "genotypeQuality": (
             _deep_pick(raw, "genotypeQuality", "genotype_quality", "mean_gq")
             or _pass_rate(raw)
         ),
         "meanDepth": _deep_pick(raw, "meanDepth", "mean_depth", "mean_dp"),
-        "genomeSource": _pick(raw, "genomeSource", "genome_source", "agi_source_format")
-            or _deep_pick(raw, "agi_source_format", "dataSourceType"),
+        "genomeSource": genome_source,
         "parsedAt": _pick(raw, "parsedAt", "parsed_at", "active_genome_index_completed_at", "updated_at", "file_date"),
         "sourceCoverage": _pick(raw, "sourceCoverage", "source_coverage"),
     }
@@ -197,6 +204,14 @@ def _normalize_overview(raw: Any) -> JsonObject | None:
         ]
         out["sourceCoverage"] = normalized_sources or None
     return {k: v for k, v in out.items() if v is not None}
+
+
+def _is_consumer_array_overview(raw: JsonObject, genome_source: Any) -> bool:
+    source_kind = str(_deep_pick(raw, "agi_source_kind", "source_kind") or "").lower()
+    if source_kind == "consumer_genotype_array":
+        return True
+    source = str(genome_source or "").lower()
+    return source in {"23andme", "ancestrydna", "myheritage", "ftdna", "livingdna"}
 
 
 def _normalize_ancestry(raw: Any) -> JsonObject | None:

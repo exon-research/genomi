@@ -488,6 +488,40 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertEqual(ov["genomeBuild"], "GRCh38.p13")
         self.assertEqual(ov["genotypeQuality"], 94.9)
 
+    def test_normalizes_consumer_array_overview_marker_count(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "overview": {
+                    "active_genome_index": {
+                        "metadata": {
+                            "source_format": "23andme",
+                            "source_kind": "consumer_genotype_array",
+                            "genome_build": "GRCh37",
+                        },
+                        "stats": {
+                            "total_records": 643_161,
+                            "variant_records": 0,
+                            "pass_records": 633_413,
+                            "fail_records": 9_748,
+                            "array_call_records": 633_413,
+                            "array_no_call_records": 9_748,
+                        },
+                    },
+                    "sample_slug": "23andme-fixture",
+                },
+            },
+            mode="full",
+            output=out,
+        )
+        html = out.read_text(encoding="utf-8")
+        ov = _extract_evidence(html)["overview"]
+        self.assertEqual(ov["variantCount"], 633_413)
+        self.assertEqual(ov["variantCountLabel"], "Markers Indexed")
+        self.assertEqual(ov["genomeBuild"], "GRCh37")
+        self.assertEqual(ov["genotypeQuality"], 98.5)
+        self.assertIn("Markers Indexed", html)
+
     def test_supplied_list_panel_wrong_type_raises(self) -> None:
         """A list panel handed a dict fails loudly instead of rendering odd."""
         out = self.tmpdir / "dash.html"

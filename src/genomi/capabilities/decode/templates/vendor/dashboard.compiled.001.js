@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: a9c18c6f4576392346a5914c1eb4ba3dff6aa22a7d24f1d7c4468df14f8c2435
+// source-sha256: 0fabf1b45edbc11c72e93debd7c46245d6d6e3d9c8349c09af4c5359a679c242
 // All evidence comes from the decode pipeline via window.__GENOMI_DASHBOARD__.
 // Anything below this line is presentation/layout only — no genome data is
 // prefilled in the template.
@@ -167,6 +167,7 @@ function OverviewView({
   });
   const gs = GENOME_SUMMARY;
   const variantCount = gs.variantCount != null ? Number(gs.variantCount).toLocaleString() : '-';
+  const variantCountLabel = gs.variantCountLabel || 'Variants Indexed';
   const gq = gs.genotypeQuality != null ? `${gs.genotypeQuality}%` : '-';
   const gqSub = gs.meanDepth != null ? `${gs.meanDepth}× mean depth` : gs.genotypeQuality != null ? 'PASS rate' : '';
   const sources = Array.isArray(gs.sourceCoverage) ? gs.sourceCoverage : [];
@@ -212,7 +213,7 @@ function OverviewView({
     }
   }, variantCount), /*#__PURE__*/React.createElement("div", {
     className: "stat-label"
-  }, "Variants Indexed"), /*#__PURE__*/React.createElement("div", {
+  }, variantCountLabel), /*#__PURE__*/React.createElement("div", {
     className: "stat-sub"
   }, gs.genomeSource || '')), /*#__PURE__*/React.createElement("div", {
     className: "stat-card"
@@ -897,4 +898,3 @@ function VariantsView() {
       }
     }, " ", v.zygosity) : null)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
       className: "badge",
-      style: {

@@ -92,6 +92,7 @@
       if (!GENOME_SUMMARY) return <EmptyPanel title="Overview" op={PANEL_OPS.overview} />;
       const gs = GENOME_SUMMARY;
       const variantCount = gs.variantCount != null ? Number(gs.variantCount).toLocaleString() : '-';
+      const variantCountLabel = gs.variantCountLabel || 'Variants Indexed';
       const gq = gs.genotypeQuality != null ? `${gs.genotypeQuality}%` : '-';
       const gqSub = gs.meanDepth != null
         ? `${gs.meanDepth}× mean depth`
@@ -125,7 +126,7 @@
           </div>
 
           <div className="stats-grid">
-            <div className="stat-card"><div className="stat-value" style={{ color: '#10b981' }}>{variantCount}</div><div className="stat-label">Variants Indexed</div><div className="stat-sub">{gs.genomeSource || ''}</div></div>
+            <div className="stat-card"><div className="stat-value" style={{ color: '#10b981' }}>{variantCount}</div><div className="stat-label">{variantCountLabel}</div><div className="stat-sub">{gs.genomeSource || ''}</div></div>
             <div className="stat-card"><div className="stat-value" style={{ color: '#3b82f6' }}>{gs.genomeBuild || '-'}</div><div className="stat-label">Genome Build</div><div className="stat-sub">{gs.parsedAt || ''}</div></div>
             {gs.genotypeQuality != null
               ? <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6' }}>{gq}</div><div className="stat-label">Genotype Quality</div><div className="stat-sub">{gqSub}</div></div>
