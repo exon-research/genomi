@@ -685,7 +685,6 @@ def _resources_libraries(params: JsonObject) -> JsonObject:
     names = _list_str(params, "libraries")
     if names:
         return {
-            "schema": "genomi-library-inventory-v1",
             "libraries": [library_status(name) for name in names],
         }
     return library_inventory()
