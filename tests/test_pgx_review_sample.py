@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from genomi.active_genome_index.active_genome_index import create_active_genome_index
+from genomi.active_genome_index.source_capabilities import agi_record_has_sequence_variant_context
 from genomi.capabilities.pharmacogenomics.review import review_medication_interaction
 from genomi.operations import call_operation
 
@@ -14,6 +15,14 @@ from tests._pgx_review_helpers import PGxMedicationReviewTestBase
 
 
 class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
+    def test_sequence_context_classification_is_owned_by_agi(self) -> None:
+        self.assertTrue(agi_record_has_sequence_variant_context({"agi_source_format": "vcf"}))
+        self.assertTrue(agi_record_has_sequence_variant_context({"agi_source_format": "gvcf"}))
+        self.assertTrue(agi_record_has_sequence_variant_context({"agi_source_format": "bam"}))
+        self.assertTrue(agi_record_has_sequence_variant_context({"agi_source_format": "fastq"}))
+        self.assertFalse(agi_record_has_sequence_variant_context({"agi_source_format": "23andme"}))
+        self.assertFalse(agi_record_has_sequence_variant_context({"agi_source_format": "ancestrydna"}))
+
     def test_review_uses_user_provided_known_sample_pgx_facts(self) -> None:
         clinpgx_result = {
             "source": {"source_id": "clinpgx"},
