@@ -260,6 +260,43 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             finally:
                 os.chdir(previous)
 
+    def test_clinvar_scan_missing_library_request_names_scan_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                vcf = Path("sample.vcf")
+                index = Path("sample.active-genome-index.sqlite")
+                evidence_db = Path("evidence.sqlite")
+                vcf.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample\n"
+                    "1\t100\trsClinvarMissing\tA\tG\t50\tPASS\t.\tGT\t0/1\n",
+                    encoding="utf-8",
+                )
+                create_active_genome_index(vcf, index)
+                init_evidence_db(evidence_db)
+                runtime_context.set_active_agi_from_source(
+                    vcf,
+                    status="parsed",
+                    operation_result={
+                        "sample_slug": "sample",
+                        "agi_intake_source_path": str(vcf),
+                        "evidence_db": str(evidence_db),
+                        "genome_build": "GRCh38",
+                        "outputs": {"agi_path": str(index)},
+                    },
+                )
+                self.approve_access()
+
+                result = call_operation("clinvar.scan_candidates", {})
+
+                self.assertEqual(result["status"], "requires_library_install")
+                self.assertEqual(result["operation"], "clinvar.scan_candidates")
+                self.assertEqual(result["missing_library"]["library"], "clinvar-grch38")
+            finally:
+                os.chdir(previous)
+
 if __name__ == "__main__":
     import unittest
 

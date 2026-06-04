@@ -541,6 +541,8 @@ def match_static_clinvar_from_active_genome_index(
     output: str | Path,
     genome_build: str = "GRCh38",
     force: bool = False,
+    operation: str = "clinvar.match_variants",
+    intent: str = "ClinVar matching for this Active Genome Index",
 ) -> dict[str, Any]:
     agi_path = reader.agi_path
     db_path = Path(evidence_db)
@@ -550,8 +552,8 @@ def match_static_clinvar_from_active_genome_index(
         db_path,
         effective_genome_build,
         force=force,
-        operation="clinvar.scan_candidates",
-        intent="ClinVar candidate scanning for this Active Genome Index",
+        operation=operation,
+        intent=intent,
     )
     if missing_library is not None:
         return missing_library

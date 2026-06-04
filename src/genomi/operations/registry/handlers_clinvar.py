@@ -34,6 +34,8 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
         output=Path(str(output)),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
         force=_bool(resolved, "force"),
+        operation="clinvar.match_variants",
+        intent="ClinVar matching for this Active Genome Index",
     )
 
 
@@ -68,6 +70,8 @@ def _materialize_clinvar_matches_for_scan(
         output=output_path,
         genome_build=_str(resolved, "genome_build", "GRCh38"),
         force=_bool(resolved, "force"),
+        operation="clinvar.scan_candidates",
+        intent="ClinVar candidate scanning for this Active Genome Index",
     )
     if materialized.get("status") == "requires_library_install":
         return materialized

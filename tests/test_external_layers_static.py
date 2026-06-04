@@ -265,6 +265,7 @@ class StaticRunTests(EvidenceImportTestBase):
 
         self.assertEqual(result["status"], "requires_library_install")
         self.assertFalse(result["tool_will_work"])
+        self.assertEqual(result["operation"], "clinvar.match_variants")
         self.assertEqual(result["missing_library"]["library"], "clinvar-grch38")
         self.assertIn("--libraries clinvar-grch38", result["ask_user"]["install_command"])
 
