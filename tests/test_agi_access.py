@@ -12,6 +12,7 @@ from genomi.active_genome_index.active_genome_index import (
     ActiveGenomeIndexIncomplete,
     ActiveGenomeIndexNeed,
     ActiveGenomeIndexNeedsReparse,
+    SCHEMA_VERSION,
     append_reference_pass,
     active_genome_index_readiness,
     create_active_genome_index,
@@ -269,6 +270,21 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
             with self.subTest(operation=operation), self.assertRaises(OperationError) as raised:
                 call_operation(operation, params)
             self.assertEqual(raised.exception.code, "active_genome_index_incomplete")
+
+    def test_variant_lookup_rejects_too_new_selected_index(self) -> None:
+        index = self._set_active(stem="too_new_schema")
+        with sqlite3.connect(index) as connection:
+            connection.execute(
+                "update metadata set value = ? where key = 'schema_version'",
+                (json.dumps(SCHEMA_VERSION + 1),),
+            )
+            connection.commit()
+        runtime_context.approve_agi_access()
+
+        with self.assertRaises(OperationError) as raised:
+            call_operation("variant.resolve", {"rsid": "rs500"})
+
+        self.assertEqual(raised.exception.code, "active_genome_index_schema_too_new")
 
 
 if __name__ == "__main__":

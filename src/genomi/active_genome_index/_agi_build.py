@@ -30,10 +30,12 @@ def create_active_genome_index(
     progress: Callable[[int, int], None] | None = None,
     reuse_existing: bool = True,
     defer_reference: bool = False,
+    source_format: str | None = None,
 ) -> dict[str, Any]:
     vcf_path = Path(vcf_path)
     agi_path = Path(agi_path) if agi_path is not None else default_agi_path(vcf_path)
     agi_path.parent.mkdir(parents=True, exist_ok=True)
+    effective_source_format = source_format or ("gvcf" if include_reference else "vcf")
     # Schema v3 contract: the Active Genome Index must always carry a
     # canonical bgzip source so capability tools never reopen the intake.
     # Skip the canonical step ONLY when the caller passed us a bgzf-indexed
@@ -86,6 +88,7 @@ def create_active_genome_index(
             agi_path,
             include_reference=include_reference,
             max_records=max_records,
+            source_format=effective_source_format,
         )
         if cached is not None:
             return cached
@@ -103,6 +106,7 @@ def create_active_genome_index(
                 agi_path,
                 include_reference=include_reference,
                 max_records=max_records,
+                source_format=effective_source_format,
             )
             if cached is not None:
                 return cached
@@ -118,6 +122,7 @@ def create_active_genome_index(
                 workers=workers,
                 max_records=max_records,
                 defer_reference=defer_reference,
+                source_format=effective_source_format,
             )
         # Phase A defers the reference tail exactly like the parallel path: store
         # only variants now (mark variants_ready), let append_reference_pass fill
@@ -136,7 +141,7 @@ def create_active_genome_index(
                 header,
                 include_reference,
                 max_records=max_records,
-                source_format="gvcf" if include_reference else "vcf",
+                source_format=effective_source_format,
             )
             stats = _populate_records(
                 connection,
@@ -177,6 +182,7 @@ def _cached_active_genome_index_if_usable(
     *,
     include_reference: bool,
     max_records: int | None,
+    source_format: str | None,
 ) -> dict[str, Any] | None:
     if not agi_path.exists():
         return None
@@ -205,6 +211,8 @@ def _cached_active_genome_index_if_usable(
             "Genomi before reading this Active Genome Index."
         )
     if metadata.get("vcf_path") != str(vcf_path):
+        return None
+    if source_format is not None and metadata.get("source_format") != source_format:
         return None
     if int(metadata.get("vcf_size_bytes") or -1) != stat.st_size:
         return None
@@ -246,6 +254,7 @@ def _create_active_genome_index_parallel(
     workers: int,
     max_records: int | None,
     defer_reference: bool = False,
+    source_format: str = "vcf",
 ) -> dict[str, Any]:
     # `mode` drives which rows each shard stores:
     # - include_reference=False  → "variants" forever (a complete variant-only
@@ -273,7 +282,7 @@ def _create_active_genome_index_parallel(
             header,
             include_reference,
             max_records=max_records,
-            source_format="gvcf" if include_reference else "vcf",
+            source_format=source_format,
         )
         ranges, shard_worker = _shard_ranges_and_worker(vcf_path, workers)
         shard_paths = [_shard_path(agi_path, shard_index) for shard_index in range(len(ranges))]

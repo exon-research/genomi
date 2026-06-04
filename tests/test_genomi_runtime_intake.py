@@ -11,9 +11,33 @@ from unittest import mock
 
 from genomi.operations import call_operation
 from genomi.operations.registry.errors import OperationError
-from genomi.active_genome_index.active_genome_index import SCHEMA_VERSION, active_genome_index_readiness
+from genomi.active_genome_index.active_genome_index import SCHEMA_VERSION, active_genome_index_readiness, active_genome_index_summary
 
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
+
+
+def _hidden_path_leaks(payload: object, *paths: Path) -> list[str]:
+    hidden = {
+        value
+        for path in paths
+        for value in (str(path), str(path.expanduser().resolve(strict=False)))
+    }
+    leaks: list[str] = []
+
+    def visit(value: object, location: str) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                visit(item, f"{location}.{key}")
+            return
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                visit(item, f"{location}[{index}]")
+            return
+        if isinstance(value, str) and any(path in value for path in hidden):
+            leaks.append(location)
+
+    visit(payload, "$")
+    return leaks
 
 
 class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
@@ -43,19 +67,18 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual([step["name"] for step in parsed["steps"]], ["build-active-genome-index"])
                 self.assertEqual(parsed["warnings"], [])
                 self.assertEqual(set(parsed["outputs"]), {"agi_path"})
-                self.assertNotIn("static_profile", parsed)
-                self.assertNotIn("long_running_steps_deferred", parsed)
-                self.assertNotIn("clinvar_matches", parsed["outputs"])
-                self.assertNotIn(str(vcf), json.dumps(parsed))
-                self.assertNotIn(str(vcf.resolve(strict=False)), json.dumps(parsed))
+                agi_summary = active_genome_index_summary(parsed["outputs"]["agi_path"])
+                self.assertEqual(agi_summary["metadata"]["source_format"], "vcf")
+                self.assertIsNone(parsed.get("static_profile"))
+                self.assertIsNone(parsed.get("long_running_steps_deferred"))
+                self.assertEqual(_hidden_path_leaks(parsed, vcf), [])
 
                 lookup = call_operation("variant.resolve", {"rsid": "rs4244285"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
                 match = lookup["sample_context"]["matches"][0]
                 self.assertEqual(match["genotype"], "0/1")
                 self.assertEqual(match["source_format"], "vcf")
-                self.assertNotIn(str(vcf), json.dumps(lookup))
-                self.assertNotIn(str(vcf.resolve(strict=False)), json.dumps(lookup))
+                self.assertEqual(_hidden_path_leaks(lookup, vcf), [])
             finally:
                 os.chdir(previous)
 
@@ -90,9 +113,11 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
 
                 agi_path = parsed["outputs"]["agi_path"]
                 readiness = active_genome_index_readiness(agi_path)
+                agi_summary = active_genome_index_summary(agi_path)
+                self.assertEqual(agi_summary["metadata"]["source_format"], "gvcf")
                 # Inline Phase B finished, so the index is complete and not stuck.
                 self.assertTrue(readiness["complete"])
-                self.assertNotIn("reference_pending", readiness)
+                self.assertFalse(readiness.get("reference_pending", False))
 
                 lookup = call_operation("variant.resolve", {"rsid": "rs400"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
@@ -148,10 +173,10 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["annotation_scope"], "active_genome_index")
                 self.assertEqual(parsed["warnings"], [])
-                self.assertNotIn("static_profile", parsed)
-                self.assertNotIn("long_running_steps_deferred", parsed)
-                self.assertNotIn("evidence_summary", parsed)
-                self.assertNotIn("clinvar_matches", parsed["outputs"])
+                self.assertIsNone(parsed.get("static_profile"))
+                self.assertIsNone(parsed.get("long_running_steps_deferred"))
+                self.assertIsNone(parsed.get("evidence_summary"))
+                self.assertEqual(set(parsed["outputs"]), {"agi_path"})
                 lookup = call_operation("variant.resolve", {"rsid": "rs4244285"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
             finally:
@@ -220,8 +245,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(stats["array_call_records"], 1)
                 self.assertEqual(stats["reference_records"], 0)
                 self.assertEqual(stats["array_no_call_records"], 2)
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(parsed))
-                self.assertNotIn(str(raw), json.dumps(parsed))
+                self.assertEqual(_hidden_path_leaks(parsed, raw), [])
 
                 agi_path = Path(parsed["outputs"]["agi_path"])
                 with sqlite3.connect(agi_path) as connection:
@@ -249,7 +273,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 current_readiness = current["active_genome_index"]["active_genome_index_readiness"]
                 self.assertTrue(current_readiness["complete"])
                 self.assertEqual(current_readiness["status"], "completed")
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(current))
+                self.assertEqual(_hidden_path_leaks(current, raw), [])
 
                 lookup = call_operation("variant.resolve", {"rsid": "rs123"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
@@ -258,7 +282,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(match["source_format"], "23andme")
                 self.assertEqual(match["record_kind"], "array_call")
                 self.assertEqual(match["observed_alleles"], ["A", "G"])
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(lookup))
+                self.assertEqual(_hidden_path_leaks(lookup, raw), [])
 
                 no_call_lookup = call_operation("variant.resolve", {"rsid": "rs999", "include_fail": True})
                 self.assertEqual(no_call_lookup["sample_context"]["count"], 1)
@@ -374,13 +398,12 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(parsed["source_format"], "ancestrydna")
                 self.assertEqual(parsed["source_kind"], "consumer_genotype_array")
                 self.assertIn("active_genome_index", parsed)
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(parsed))
-                self.assertNotIn(str(raw), json.dumps(parsed))
+                self.assertEqual(_hidden_path_leaks(parsed, raw), [])
 
                 current = call_operation("genomi.describe_context")
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertEqual(current["active_genome_index"]["source_format"], "ancestrydna")
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(current))
+                self.assertEqual(_hidden_path_leaks(current, raw), [])
 
                 lookup = call_operation("variant.resolve", {"rsid": "rs3131972"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
@@ -389,7 +412,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(match["source_format"], "ancestrydna")
                 self.assertEqual(match["record_kind"], "array_call")
                 self.assertEqual(match["observed_alleles"], ["A", "G"])
-                self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(lookup))
+                self.assertEqual(_hidden_path_leaks(lookup, raw), [])
             finally:
                 os.chdir(previous)
 
@@ -415,7 +438,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "ancestrydna")
                 self.assertEqual(parsed["source_member"], "AncestryDNA.txt")
-                self.assertNotIn(str(archive_path.resolve(strict=False)), json.dumps(parsed))
+                self.assertEqual(_hidden_path_leaks(parsed, archive_path), [])
 
                 lookup = call_operation("variant.resolve", {"rsid": "rs3131972"})
                 self.assertEqual(lookup["sample_context"]["count"], 1)
@@ -826,17 +849,15 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual([step["name"] for step in parsed["steps"]], ["init-source", "materialize-variants-from-bam", "build-active-genome-index-from-derived-vcf"])
                 self.assertEqual(set(parsed["outputs"]), {"agi_path", "bam_variant_call_manifest", "derived_vcf"})
                 self.assertTrue(Path(parsed["outputs"]["derived_vcf"]).exists())
-                self.assertNotIn("clinvar_matches", parsed["outputs"])
-                self.assertNotIn("genotype_reference_fasta", parsed)
-                self.assertNotIn("evidence_summary", parsed)
-                self.assertNotIn(str(bam.resolve(strict=False)), json.dumps(parsed))
-                self.assertNotIn(str(bam), json.dumps(parsed))
+                self.assertIsNone(parsed.get("genotype_reference_fasta"))
+                self.assertIsNone(parsed.get("evidence_summary"))
+                self.assertEqual(_hidden_path_leaks(parsed, bam), [])
 
                 current = call_operation("genomi.describe_context")
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertEqual(current["active_genome_index"]["source_format"], "bam")
                 self.assertTrue(current["active_genome_index"]["digitized"])
-                self.assertNotIn(str(bam.resolve(strict=False)), json.dumps(current))
+                self.assertEqual(_hidden_path_leaks(current, bam), [])
             finally:
                 os.chdir(previous)
 

@@ -99,29 +99,21 @@ def _sample_context(
         if not agi_path:
             summary["query_available"] = False
             continue
-        # The reader is the one door to AGI data. need=NONE: variant.resolve
-        # does its own format-aware availability check below — consumer-array
-        # indexes (23andme etc.) are queryable without the vcf-centric
-        # completion marker, and a variants_ready gVCF is fine since variant
-        # rows are final — so the generic readiness gate must not apply here.
+        # The reader is the one door to AGI data. need=VARIANT admits
+        # variants_ready indexes while still surfacing schema lifecycle errors
+        # as operation-level failures instead of silently turning them into an
+        # empty sample context.
         reader = open_reader(
             Path(str(agi_path)),
-            need=ActiveGenomeIndexNeed.NONE,
+            need=ActiveGenomeIndexNeed.VARIANT,
             genome_build=run.get("genome_build"),
         )
-        if run.get("source_format") in {"vcf", "gvcf"}:
-            summary["active_genome_index_readiness"] = reader.readiness
-            if not reader.variants_ready:
-                summary["query_available"] = False
-                summary["availability_note"] = reader.readiness.get("reason") or "active_genome_index_not_complete"
-                warnings.append(
-                    f"Active Genome Index {run.get('agi_id')} is not complete; rerun genomi.parse_source to resume/rebuild it."
-                )
-                continue
-        elif not reader.agi_path.exists():
+        summary["active_genome_index_readiness"] = reader.readiness
+        if not reader.agi_path.exists():
             summary["query_available"] = False
             summary["availability_note"] = "active_genome_index_not_found"
             continue
+        reader.ensure_ready()
         summary["query_available"] = True
         for target in targets:
             matches.extend(
