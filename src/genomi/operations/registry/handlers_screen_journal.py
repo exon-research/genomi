@@ -164,9 +164,9 @@ def _journal_export_memory_artifact(params: JsonObject) -> JsonObject:
 
 def _decode_render_dashboard(params: JsonObject) -> JsonObject:
     resolved = _with_context(params)
-    # The dashboard reads/writes inside the active genome work_dir and the
-    # evidence dict is personal. Require an Active Genome Index, then auth-gate
-    # via open_agi (approves a supplied source, raises approval_required for a
+    # The dashboard writes a transient view artifact and consumes personal
+    # evidence. Require an Active Genome Index, then auth-gate via open_agi
+    # (approves a supplied source, raises approval_required for a
     # selected-but-unapproved AGI) — the one central session gate.
     active = runtime_context.active_run()
     if active is None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import shlex
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -455,16 +456,35 @@ _PANEL_NORMALIZERS: dict[str, Any] = {
 # didn't map surfaces as a loud error rather than a misleading empty stat.
 #
 # Object panels require every listed field to be present after normalization.
-# List panels require a list whose every row is a non-empty object.
+# List panels require a list whose every row is a non-empty object with at
+# least one field the dashboard actually renders.
 _PANEL_SCHEMAS: dict[str, dict[str, Any]] = {
     "overview": {"kind": "object", "required": ("sampleId", "variantCount")},
     "ancestry": {"kind": "object", "required": ("dominantAncestry", "neighbors")},
-    "variants": {"kind": "list"},
-    "variants_all": {"kind": "list"},
-    "pgx": {"kind": "list"},
-    "risk": {"kind": "list"},
-    "nutrigenomics": {"kind": "list"},
-    "journal": {"kind": "list"},
+    "variants": {
+        "kind": "list",
+        "row_fields": ("rsid", "gene", "clinvarSignificance", "conditionShort"),
+    },
+    "variants_all": {
+        "kind": "list",
+        "row_fields": ("rsid", "gene", "clinvarSignificance", "conditionShort"),
+    },
+    "pgx": {
+        "kind": "list",
+        "row_fields": ("gene", "diplotype", "phenotype", "impact", "drugs"),
+    },
+    "risk": {
+        "kind": "list",
+        "row_fields": ("trait", "score", "percentile", "overlap", "sources"),
+    },
+    "nutrigenomics": {
+        "kind": "list",
+        "row_fields": ("marker", "gene", "rsid", "status", "recommendation", "evidenceTier"),
+    },
+    "journal": {
+        "kind": "list",
+        "row_fields": ("title", "body", "kind", "ts", "evidenceLinks"),
+    },
 }
 
 
@@ -555,6 +575,13 @@ def _validate_panel(panel: str, normalized: Any) -> None:
                 raise DashboardRenderError(
                     "panel_schema_mismatch",
                     f"Panel '{panel}' row {i} must be a non-empty object; got {row!r}.",
+                )
+            row_fields = tuple(schema.get("row_fields") or ())
+            if row_fields and all(row.get(field) in (None, "", []) for field in row_fields):
+                raise DashboardRenderError(
+                    "panel_schema_mismatch",
+                    f"Panel '{panel}' row {i} has no recognized dashboard field. "
+                    f"Recognized row fields: {', '.join(row_fields)}.",
                 )
 
 
@@ -786,7 +813,8 @@ def render_dashboard(
     serve_port = 8765
     serve_url = f"http://127.0.0.1:{serve_port}/{resolved_path.name}"
     serve_command = (
-        f"python3 -m http.server {serve_port} --bind 127.0.0.1 --directory {serve_dir}"
+        f"python3 -m http.server {serve_port} --bind 127.0.0.1 "
+        f"--directory {shlex.quote(str(serve_dir))}"
     )
     return {
         "status": "completed",

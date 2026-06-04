@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 610e39da2aece30d32937c4f578cbbe7c8c7a78900b480cc54fe81c0021da7b9
+// source-sha256: a9c18c6f4576392346a5914c1eb4ba3dff6aa22a7d24f1d7c4468df14f8c2435
 // All evidence comes from the decode pipeline via window.__GENOMI_DASHBOARD__.
 // Anything below this line is presentation/layout only — no genome data is
 // prefilled in the template.
@@ -50,8 +50,8 @@ function prsLevel(p) {
 const RENDERED_AT = EV.__renderedAt || '';
 const PANEL_OPS = {
   overview: 'active_genome_index.summarize',
-  variants: 'variant.resolve',
-  pgx: 'pharmacogenomics.review_medication',
+  variants: 'clinvar.scan_candidates',
+  pgx: 'pharmacogenomics.run_pharmcat',
   risk: 'prs.calculate_score',
   ancestry: 'ancestry.estimate_population_context',
   nutrigenomics: 'nutrigenomics.retrieve_domain_markers',
@@ -101,24 +101,9 @@ const NAV_ITEMS = [{
   panel: 'journal'
 }];
 
-// A panel is "gathered" only when it carries real data. Ungathered panels
-// are hidden from the sidebar rather than shown as placeholders.
-const PANEL_DATA = {
-  overview: GENOME_SUMMARY,
-  variants: VARIANTS_DATA || VARIANTS_ALL_DATA,
-  pgx: PGX_DATA,
-  risk: PRS_DATA,
-  ancestry: ANCESTRY_DATA,
-  nutrigenomics: NUTRI_DATA,
-  journal: JOURNAL_ENTRIES
-};
-function panelPresent(v) {
-  if (v == null) return false;
-  if (Array.isArray(v)) return v.length > 0;
-  if (typeof v === 'object') return Object.keys(v).length > 0;
-  return true;
-}
-const AVAILABLE_NAV = NAV_ITEMS.filter(item => panelPresent(PANEL_DATA[item.panel]));
+// Keep ungathered panels navigable so their EmptyPanel placeholders make
+// the dashboard state explicit after partial renders or cleared updates.
+const AVAILABLE_NAV = NAV_ITEMS;
 const ACCENT_MAP = {
   green: {
     primary: '#10b981',
@@ -898,3 +883,18 @@ function VariantsView() {
     }, v.rsid)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
       style: {
         color: '#3b82f6',
+        fontWeight: 600,
+        fontSize: 13
+      }
+    }, v.gene)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "mono-text"
+    }, "chr", v.chrom, ":", v.pos != null ? Number(v.pos).toLocaleString() : '')), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "genotype-badge"
+    }, v.ref, '>', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#555',
+        fontSize: 10
+      }
+    }, " ", v.zygosity) : null)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "badge",
+      style: {

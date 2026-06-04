@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,7 +54,7 @@ class RenderDashboardTests(unittest.TestCase):
         self.tmpdir = Path(self._tmp.name)
 
     def test_render_full_writes_self_contained_html(self) -> None:
-        out = self.tmpdir / "dash.html"
+        out = self.tmpdir / "dashboard output" / "dash.html"
         evidence = {
             "overview": {
                 "sampleId": "HG-TEST-01",
@@ -100,6 +101,7 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertTrue(serve["url"].endswith("/dash.html"))
         self.assertIn("python3 -m http.server", serve["command"])
         self.assertIn("--bind 127.0.0.1", serve["command"])
+        self.assertIn(f"--directory {shlex.quote(str(out.parent.resolve()))}", serve["command"])
 
     def test_render_full_empty_panel_placeholders(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -345,6 +347,20 @@ class RenderDashboardTests(unittest.TestCase):
                 output=out,
             )
         self.assertEqual(ctx.exception.code, "panel_schema_mismatch")
+
+    def test_supplied_list_row_without_dashboard_fields_raises(self) -> None:
+        out = self.tmpdir / "dash.html"
+        with self.assertRaises(decode_dashboard.DashboardRenderError) as ctx:
+            decode_dashboard.render_dashboard(
+                evidence={
+                    "overview": {"sampleId": "HG-L", "variantCount": 10},
+                    "pgx": [{"drug": "contractdrug", "sampleMatchCount": 1}],
+                },
+                mode="full",
+                output=out,
+            )
+        self.assertEqual(ctx.exception.code, "panel_schema_mismatch")
+        self.assertIn("no recognized dashboard field", ctx.exception.message)
 
     def test_overview_renders_panel_highlights_when_panels_have_data(self) -> None:
         out = self.tmpdir / "dash.html"

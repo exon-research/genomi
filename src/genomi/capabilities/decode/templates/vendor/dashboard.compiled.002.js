@@ -1,20 +1,5 @@
 // AUTO-GENERATED chunk 2/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 610e39da2aece30d32937c4f578cbbe7c8c7a78900b480cc54fe81c0021da7b9
-        fontWeight: 600,
-        fontSize: 13
-      }
-    }, v.gene)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "mono-text"
-    }, "chr", v.chrom, ":", v.pos != null ? Number(v.pos).toLocaleString() : '')), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "genotype-badge"
-    }, v.ref, '>', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: '#555',
-        fontSize: 10
-      }
-    }, " ", v.zygosity) : null)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "badge",
-      style: {
+// source-sha256: a9c18c6f4576392346a5914c1eb4ba3dff6aa22a7d24f1d7c4468df14f8c2435
         background: sc.bg,
         color: sc.fg,
         borderColor: sc.border

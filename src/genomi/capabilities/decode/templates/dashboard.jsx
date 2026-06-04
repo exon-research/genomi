@@ -25,8 +25,8 @@
 
     const PANEL_OPS = {
       overview: 'active_genome_index.summarize',
-      variants: 'variant.resolve',
-      pgx: 'pharmacogenomics.review_medication',
+      variants: 'clinvar.scan_candidates',
+      pgx: 'pharmacogenomics.run_pharmcat',
       risk: 'prs.calculate_score',
       ancestry: 'ancestry.estimate_population_context',
       nutrigenomics: 'nutrigenomics.retrieve_domain_markers',
@@ -43,24 +43,9 @@
       { id: 'journal', label: 'Journal', icon: '▤', section: 'Memory', panel: 'journal' },
     ];
 
-    // A panel is "gathered" only when it carries real data. Ungathered panels
-    // are hidden from the sidebar rather than shown as placeholders.
-    const PANEL_DATA = {
-      overview: GENOME_SUMMARY,
-      variants: VARIANTS_DATA || VARIANTS_ALL_DATA,
-      pgx: PGX_DATA,
-      risk: PRS_DATA,
-      ancestry: ANCESTRY_DATA,
-      nutrigenomics: NUTRI_DATA,
-      journal: JOURNAL_ENTRIES,
-    };
-    function panelPresent(v) {
-      if (v == null) return false;
-      if (Array.isArray(v)) return v.length > 0;
-      if (typeof v === 'object') return Object.keys(v).length > 0;
-      return true;
-    }
-    const AVAILABLE_NAV = NAV_ITEMS.filter(item => panelPresent(PANEL_DATA[item.panel]));
+    // Keep ungathered panels navigable so their EmptyPanel placeholders make
+    // the dashboard state explicit after partial renders or cleared updates.
+    const AVAILABLE_NAV = NAV_ITEMS;
 
     const ACCENT_MAP = {
       green: { primary: '#10b981', glow: '#10b98120' },

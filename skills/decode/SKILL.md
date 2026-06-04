@@ -171,13 +171,13 @@ them next").
 A panel you supply with real content must satisfy the panel schema after
 normalization. Object panels require their key fields (overview:
 `sampleId` + `variantCount`; ancestry: `dominantAncestry` + `neighbors`);
-list panels (`variants`, `pgx`, `risk`, `nutrigenomics`) require a list of
-non-empty row objects. If a supplied panel's content maps to none of those
-fields, the renderer raises `panel_schema_mismatch` naming the panel and the
-missing field — it does not render a blank stat. This means a field that
-didn't map (wrong key, wrong nesting) fails loudly at render time instead of
-showing the user a misleading empty value. When you hit it, fix the field
-mapping and re-render rather than dropping the panel.
+list panels (`variants`, `pgx`, `risk`, `nutrigenomics`) require row objects
+with at least one recognized dashboard field. If a supplied panel's content
+maps to none of those fields, the renderer raises `panel_schema_mismatch`
+naming the panel and the missing field — it does not render a blank stat. This
+means a field that didn't map (wrong key, wrong nesting) fails loudly at render
+time instead of showing the user a misleading empty value. When you hit it, fix
+the field mapping and re-render rather than dropping the panel.
 
 ## Refresh vs. reuse
 
@@ -195,9 +195,9 @@ as empty cards with a "Not gathered yet" placeholder that names the upstream
 ## Output location
 
 By default the artifact is written to
-`<active-genome-index work_dir>/dashboards/dashboard.html`. The user may
-override `output` with any absolute filesystem path; the parent directory is
-created on demand.
+`<tmp>/genomi-dashboards/<sample>/dashboard.html`. The user may override
+`output` with any absolute filesystem path; the parent directory is created on
+demand.
 
 ## Serving the dashboard (agent runs this, not the MCP server)
 
