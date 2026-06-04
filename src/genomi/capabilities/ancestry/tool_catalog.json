@@ -8,7 +8,8 @@
         "skills/ancestry/SKILL.md"
       ],
       "optional_libraries": [
-        "ancestry-1000g-30x-grch38"
+        "ancestry-1000g-30x-grch38",
+        "ancestry-1000g-30x-grch37"
       ],
       "library_check_operation": "genomi.check_libraries",
       "entry_operations": [
@@ -78,8 +79,8 @@
       "skill": "skills/ancestry/SKILL.md",
       "area": "ancestry",
       "requires": [
-        "approved_active_genome_index_or_supplied_grch38_source",
-        "ancestry-1000g-30x-grch38"
+        "approved_active_genome_index_or_supplied_matching_build_source",
+        "matching_build_ancestry_panel"
       ],
       "produces": [
         "ancestry_marker_overlap",
@@ -101,7 +102,8 @@
         "installed_public_reference_panel"
       ],
       "optional_libraries": [
-        "ancestry-1000g-30x-grch38"
+        "ancestry-1000g-30x-grch38",
+        "ancestry-1000g-30x-grch37"
       ],
       "library_check_operation": "genomi.check_libraries",
       "discovery_role": "focused_tool"
@@ -136,8 +138,8 @@
       "skill": "skills/ancestry/SKILL.md",
       "area": "ancestry",
       "requires": [
-        "approved_active_genome_index_or_supplied_grch38_source",
-        "ancestry-1000g-30x-grch38",
+        "approved_active_genome_index_or_supplied_matching_build_source",
+        "matching_build_ancestry_panel",
         "sufficient_marker_overlap"
       ],
       "produces": [
@@ -161,7 +163,8 @@
         "installed_public_reference_panel"
       ],
       "optional_libraries": [
-        "ancestry-1000g-30x-grch38"
+        "ancestry-1000g-30x-grch38",
+        "ancestry-1000g-30x-grch37"
       ],
       "library_check_operation": "genomi.check_libraries",
       "discovery_role": "focused_tool"
@@ -169,7 +172,7 @@
     "ancestry.estimate_population_context": {
       "capability": "ancestry",
       "namespace": "ancestry",
-      "description": "Estimate qualitative reference-panel similarity for an approved GRCh38 sample using local 1000 Genomes PCA projection.",
+      "description": "Estimate qualitative reference-panel similarity for an approved GRCh37 or GRCh38 sample using local 1000 Genomes PCA projection.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -196,8 +199,8 @@
       "skill": "skills/ancestry/SKILL.md",
       "area": "ancestry",
       "requires": [
-        "approved_active_genome_index_or_supplied_grch38_source",
-        "ancestry-1000g-30x-grch38"
+        "approved_active_genome_index_or_supplied_matching_build_source",
+        "matching_build_ancestry_panel"
       ],
       "produces": [
         "population_context",
@@ -221,7 +224,8 @@
         "installed_public_reference_panel"
       ],
       "optional_libraries": [
-        "ancestry-1000g-30x-grch38"
+        "ancestry-1000g-30x-grch38",
+        "ancestry-1000g-30x-grch37"
       ],
       "library_check_operation": "genomi.check_libraries",
       "discovery_role": "entry_tool"

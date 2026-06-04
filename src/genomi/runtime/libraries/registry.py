@@ -346,7 +346,7 @@ _PURPOSES: dict[str, tuple[str, ...]] = {
     "setup-only": (),
     "common-questions": ("clinvar-grch38", "hpo", "gencc"),
     "medication-response": ("clinvar-grch38", "hpo", "gencc", "pharmcat"),
-    "ancestry-context": ("ancestry-1000g-30x-grch38",),
+    "ancestry-context": ("ancestry-1000g-30x-grch38", "ancestry-1000g-30x-grch37"),
     "sequence-and-regions": ("clinvar-grch38", "reference-grch38", "gencode-grch38", "encode-ccre-grch38"),
     "cell-and-tissue": ("panglaodb-markers", "cellmarker-human"),
     "wgs-alignment": ("minimap2-binary", "bwa-mem2-binary", "reference-grch38"),

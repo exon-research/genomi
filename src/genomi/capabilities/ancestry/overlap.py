@@ -8,7 +8,7 @@ from typing import Any
 from ...active_genome_index.array_genotypes import count_array_allele, is_array_genotype_record
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 from ...active_genome_index.vcf import parse_sample
-from . import reference_panels, source_context
+from . import policy, reference_panels, source_context
 
 JsonObject = dict[str, Any]
 # Overlap is graded purely as a fraction of the loaded panel. The
@@ -18,9 +18,9 @@ JsonObject = dict[str, Any]
 # 10,000 informative markers"). Small-by-design ≠ low quality, so there
 # is no absolute marker-count floor; what matters is how much of the
 # chosen panel the sample's AGI actually covers.
-HIGH_OVERLAP_FRACTION = 0.80
-MODERATE_OVERLAP_FRACTION = 0.50
-LOW_OVERLAP_FRACTION = 0.20
+HIGH_OVERLAP_FRACTION = policy.HIGH_OVERLAP_FRACTION
+MODERATE_OVERLAP_FRACTION = policy.MODERATE_OVERLAP_FRACTION
+LOW_OVERLAP_FRACTION = policy.LOW_OVERLAP_FRACTION
 
 
 def check_sample_overlap(
@@ -144,12 +144,33 @@ def collect_sample_genotypes(
     # reference_pending.
     dosages: dict[str, float] = {}
     missing_marker_ids: list[str] = []
+    missing_marker_reasons: dict[str, int] = {}
+    missing_marker_examples: list[JsonObject] = []
     with reader.connect() as connection:
         for marker in markers:
-            dosage = _marker_dosage(connection, marker)
+            marker_result = _marker_dosage_result(connection, marker)
             marker_id = str(marker["marker_id"])
+            if marker_result.get("status") != "matched":
+                missing_marker_ids.append(marker_id)
+                reason = str(marker_result.get("reason") or "unusable_marker")
+                missing_marker_reasons[reason] = missing_marker_reasons.get(reason, 0) + 1
+                if len(missing_marker_examples) < 10:
+                    missing_marker_examples.append(
+                        {
+                            "marker_id": marker_id,
+                            "reason": reason,
+                            **(
+                                {"detail": marker_result["detail"]}
+                                if marker_result.get("detail") is not None
+                                else {}
+                            ),
+                        }
+                    )
+                continue
+            dosage = marker_result.get("dosage")
             if dosage is None or not math.isfinite(float(dosage)):
                 missing_marker_ids.append(marker_id)
+                missing_marker_reasons["nonfinite_dosage"] = missing_marker_reasons.get("nonfinite_dosage", 0) + 1
                 continue
             dosages[marker_id] = float(dosage)
 
@@ -166,27 +187,43 @@ def collect_sample_genotypes(
         projection_allowed=fraction >= LOW_OVERLAP_FRACTION,
         marker_overlap_quality=_marker_overlap_quality(fraction),
         note=_overlap_note(fraction),
+        missing_marker_reasons=missing_marker_reasons,
+        missing_marker_examples=missing_marker_examples,
     )
     return {
         "sample_qc": sample_qc,
         "dosages": dosages,
         "usable_marker_ids": usable_marker_ids,
         "missing_marker_ids": missing_marker_ids,
+        "missing_marker_reasons": missing_marker_reasons,
+        "missing_marker_examples": missing_marker_examples,
     }
 
 
-def _marker_dosage(connection: sqlite3.Connection, marker: JsonObject) -> float | None:
+def _marker_dosage_result(connection: sqlite3.Connection, marker: JsonObject) -> JsonObject:
     records = _records_for_marker(connection, marker)
     if not records:
-        return None
+        return {"status": "missing", "reason": "no_record_at_locus"}
     ref = str(marker["ref"]).upper()
     alt = str(marker["alt"]).upper()
+    missing_reasons: list[JsonObject] = []
     for record in records:
         if int(record["pos"]) != int(marker["pos"]) or not is_array_genotype_record(record):
             continue
         array_dosage = count_array_allele(record, target_allele=alt, allowed_alleles=[ref, alt])
         if array_dosage["status"] == "matched":
-            return float(array_dosage["dosage"])
+            return {"status": "matched", "dosage": float(array_dosage["dosage"]), "basis": "consumer_array"}
+        missing_reasons.append(
+            {
+                "reason": str(array_dosage.get("reason") or "array_genotype_unusable"),
+                "basis": "consumer_array",
+                **(
+                    {"allele_bases": array_dosage["allele_bases"]}
+                    if array_dosage.get("allele_bases") is not None
+                    else {}
+                ),
+            }
+        )
     exact_records = [
         record for record in records
         if int(record["pos"]) == int(marker["pos"]) and str(record["ref"]).upper() == ref
@@ -194,13 +231,21 @@ def _marker_dosage(connection: sqlite3.Connection, marker: JsonObject) -> float 
     for record in exact_records:
         dosage = _dosage_from_record(record, ref=ref, alt=alt)
         if dosage is not None:
-            return dosage
+            return {"status": "matched", "dosage": float(dosage), "basis": "exact_genotype"}
+        missing_reasons.append({"reason": _vcf_unusable_reason(record, ref=ref, alt=alt), "basis": "exact_genotype"})
     for record in records:
-        if not bool(record["is_variant"]):
+        if not bool(record["is_variant"]) and not is_array_genotype_record(record):
             dosage = _reference_dosage_from_record(record, ref=ref)
             if dosage is not None:
-                return dosage
-    return None
+                return {"status": "matched", "dosage": float(dosage), "basis": "reference_block"}
+            missing_reasons.append({"reason": _vcf_unusable_reason(record, ref=ref, alt=alt), "basis": "reference_block"})
+    if missing_reasons:
+        return {
+            "status": "missing",
+            "reason": _primary_missing_reason(missing_reasons),
+            "detail": missing_reasons[:3],
+        }
+    return {"status": "missing", "reason": "no_usable_record_at_locus"}
 
 
 def _records_for_marker(connection: sqlite3.Connection, marker: JsonObject) -> list[JsonObject]:
@@ -295,6 +340,38 @@ def _reference_dosage_from_record(record: JsonObject, *, ref: str) -> float | No
     return None
 
 
+def _vcf_unusable_reason(record: JsonObject, *, ref: str, alt: str) -> str:
+    if str(record.get("filter") or "") not in {"PASS", "."}:
+        return "filtered_record"
+    genotype = str(record.get("genotype") or "")
+    if not genotype or "." in genotype:
+        return "missing_genotype"
+    if str(record.get("ref") or "").upper() != ref:
+        return "reference_allele_mismatch"
+    alts = {str(value).upper() for value in record.get("alts") or []}
+    if alt not in alts and bool(record.get("is_variant")):
+        return "alternate_allele_mismatch"
+    return "genotype_unusable"
+
+
+def _primary_missing_reason(reasons: list[JsonObject]) -> str:
+    priority = [
+        "missing_genotype",
+        "array_genotype_allele_outside_allowed_alleles",
+        "array_target_allele_not_single_base",
+        "array_allele_model_not_single_base",
+        "filtered_record",
+        "reference_allele_mismatch",
+        "alternate_allele_mismatch",
+        "genotype_unusable",
+    ]
+    observed = [str(item.get("reason") or "") for item in reasons]
+    for reason in priority:
+        if reason in observed:
+            return reason
+    return observed[0] if observed else "unusable_marker"
+
+
 def _chrom_candidates(chrom: str) -> list[str]:
     candidates = [chrom]
     if chrom.startswith("chr"):
@@ -319,6 +396,8 @@ def _sample_qc(
     projection_allowed: bool,
     marker_overlap_quality: str,
     note: str,
+    missing_marker_reasons: dict[str, int] | None = None,
+    missing_marker_examples: list[JsonObject] | None = None,
 ) -> JsonObject:
     return {
         "genome_build": genome_build,
@@ -327,16 +406,13 @@ def _sample_qc(
         "panel_marker_count": marker_count,
         "usable_marker_count": usable_marker_count,
         "missing_marker_count": missing_marker_count,
+        "missing_marker_reasons": dict(missing_marker_reasons or {}),
+        "missing_marker_examples": list(missing_marker_examples or []),
         "overlap_fraction": usable_marker_count / marker_count if marker_count else 0.0,
         "overlap_status": overlap_status,
         "projection_allowed": projection_allowed,
         "marker_overlap_quality": marker_overlap_quality,
-        "thresholds": {
-            "graded_by": "fraction of loaded panel covered by usable sample dosages",
-            "high_overlap_fraction": f">={HIGH_OVERLAP_FRACTION:.0%}",
-            "moderate_overlap_fraction": f">={MODERATE_OVERLAP_FRACTION:.0%}",
-            "low_overlap_fraction": f">={LOW_OVERLAP_FRACTION:.0%}",
-        },
+        "thresholds": policy.overlap_thresholds(),
         "note": note,
     }
 
@@ -346,30 +422,15 @@ def _overlap_fraction(usable_marker_count: int, panel_marker_count: int) -> floa
 
 
 def _overlap_status(fraction: float) -> str:
-    if fraction < LOW_OVERLAP_FRACTION:
-        return "low_overlap"
-    return "completed"
+    return policy.overlap_status(fraction)
 
 
 def _marker_overlap_quality(fraction: float) -> str:
-    if fraction >= HIGH_OVERLAP_FRACTION:
-        return "high"
-    if fraction >= MODERATE_OVERLAP_FRACTION:
-        return "moderate"
-    if fraction >= LOW_OVERLAP_FRACTION:
-        return "low"
-    return "insufficient"
+    return policy.marker_overlap_quality(fraction)
 
 
 def _overlap_note(fraction: float) -> str:
-    pct = f"{fraction:.0%}"
-    if fraction >= HIGH_OVERLAP_FRACTION:
-        return f"Projection covers {pct} of the loaded panel — high marker-overlap quality."
-    if fraction >= MODERATE_OVERLAP_FRACTION:
-        return f"Projection covers {pct} of the loaded panel — moderate marker-overlap quality."
-    if fraction >= LOW_OVERLAP_FRACTION:
-        return f"Projection covers {pct} of the loaded panel — low marker-overlap quality; reference-neighbor context only."
-    return f"Projection covers only {pct} of the loaded panel; do not produce a default reference-similarity interpretation."
+    return policy.overlap_note(fraction)
 
 
 def _overlap_next_actions(sample_qc: JsonObject) -> list[JsonObject]:
@@ -408,9 +469,4 @@ def _reference_panel_summary(panel: JsonObject) -> JsonObject:
 
 
 def _normalize_build(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"grch38", "hg38", "38"}:
-        return "GRCh38"
-    if normalized in {"grch37", "hg19", "37"}:
-        return "GRCh37"
-    return str(value or "unknown")
+    return policy.normalize_build(value, default="unknown")

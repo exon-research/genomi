@@ -48,7 +48,7 @@ class InstallForAgentsTests(unittest.TestCase):
         )
         self.assertEqual(
             install_for_agents.parse_library_selection("ancestry-context"),
-            ["ancestry-1000g-30x-grch38"],
+            ["ancestry-1000g-30x-grch38", "ancestry-1000g-30x-grch37"],
         )
         self.assertEqual(
             install_for_agents.parse_library_selection("sequence-and-regions"),
@@ -63,8 +63,10 @@ class InstallForAgentsTests(unittest.TestCase):
         manual_download_overlap = set(DEFAULT_LIBRARIES) & MANUAL_SOURCE_LIBRARIES
         self.assertEqual(manual_download_overlap, set())
         # The ancestry panel is now a ~3 MB tarball download from the
-        # genomi-ancestry-panel release; no longer an opt-in heavy build.
+        # genomi-ancestry-panel release plus a small derived GRCh37 panel;
+        # no longer an opt-in heavy build.
         self.assertIn("ancestry-1000g-30x-grch38", DEFAULT_LIBRARIES)
+        self.assertIn("ancestry-1000g-30x-grch37", DEFAULT_LIBRARIES)
 
     def test_parse_library_selection_accepts_exact_library_ids(self) -> None:
         self.assertEqual(

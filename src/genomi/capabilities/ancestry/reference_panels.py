@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from ...runtime.paths import ancestry_reference_panel_dir
-from . import source_context
+from . import policy, source_context
 
 JsonObject = dict[str, Any]
 PANEL_ID = source_context.PANEL_ID
 PANEL_LIBRARY = source_context.PANEL_LIBRARY
 PANEL_TITLE = source_context.PANEL_TITLE
-SUPPORTED_BUILDS: tuple[str, ...] = ("GRCh38", "GRCh37")
+SUPPORTED_BUILDS: tuple[str, ...] = policy.SUPPORTED_BUILDS
 MANIFEST_NAME = "manifest.json"
 SAMPLES_NAME = "samples.tsv"
 MARKERS_NAME = "markers.tsv"
@@ -69,13 +69,10 @@ def list_reference_panels() -> JsonObject:
     install_actions: list[JsonObject] = []
     installed_count = 0
     for build in SUPPORTED_BUILDS:
-        library = source_context.panel_library_for_build(build)
-        panel_id = source_context.panel_id_for_build(build)
-        title = (
-            source_context.PANEL_TITLE_GRCH38
-            if build == "GRCh38"
-            else source_context.PANEL_TITLE_GRCH37
-        )
+        panel_policy = policy.panel_for_build(build)
+        library = panel_policy.library
+        panel_id = panel_policy.panel_id
+        title = panel_policy.title
         status = manager.status(library)
         paths = panel_paths(build)
         manifest = _read_json(paths["manifest"]) if status["installed"] else None
@@ -114,11 +111,11 @@ def list_reference_panels() -> JsonObject:
                 "install_command": status["install_command"],
                 **(
                     {
-                        "source_panel_id": source_context.PANEL_ID_GRCH38,
-                        "source_genome_build": "GRCh38",
-                        "build_method": "produced locally by lifting the GRCh38 panel via UCSC chain files",
+                        "source_panel_id": panel_policy.source_panel_id,
+                        "source_genome_build": panel_policy.source_genome_build,
+                        "build_method": panel_policy.build_method,
                     }
-                    if build == "GRCh37"
+                    if panel_policy.source_panel_id
                     else {}
                 ),
             }

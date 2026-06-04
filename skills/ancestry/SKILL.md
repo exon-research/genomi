@@ -2,7 +2,7 @@
 name: ancestry
 version: 1.0.0
 description: |
-  Use local ancestry reference-panel tools for 1000 Genomes GRCh38 PCA
+  Use local ancestry reference-panel tools for 1000 Genomes GRCh37/GRCh38 PCA
   projection, marker overlap QC, and qualitative reference-neighbor context.
 tools:
   - genomi.check_libraries
@@ -32,9 +32,9 @@ genome is closest to.
 - Public metadata tools do not read an Active Genome Index.
 - Private genotype data stays local. Do not upload sample genotypes to external
   APIs or URLs.
-- The MVP supports GRCh38 only. If `genome_build` is omitted, the tool default
-  is GRCh38 unless an approved Active Genome Index provides another build; the
-  returned `defaults_applied` records that default.
+- The MVP supports GRCh38 and GRCh37. If `genome_build` is omitted, the tool
+  default is GRCh38 unless an approved Active Genome Index provides another
+  build; the returned `defaults_applied` records that default.
 - Labels are 1000 Genomes reference-panel labels, not ethnicity, nationality,
   race, tribe, caste, religion, or personal identity.
 - Output is qualitative reference-panel similarity in PCA space. Do not produce
@@ -47,8 +47,8 @@ genome is closest to.
 
 ## First Actions
 
-1. Use `ancestry.list_reference_panels` to check whether the 1000 Genomes
-   30x GRCh38 panel is installed and to inspect source URLs and label
+1. Use `ancestry.list_reference_panels` to check whether the matching-build
+   1000 Genomes 30x panel is installed and to inspect source URLs and label
    definitions.
 2. Use `ancestry.build_source_context` when the user asks what the panel means
    or when you need explicit label and method boundaries before answering.
@@ -65,10 +65,11 @@ genome is closest to.
 
 ## Library Handling
 
-The required optional library is `ancestry-1000g-30x-grch38`. If a private
-ancestry tool returns `requires_library_install`, explain that the compact local
-panel is needed for marker overlap and PCA projection, then ask before
-installing:
+The required optional library is build-specific:
+`ancestry-1000g-30x-grch38` for GRCh38 samples and
+`ancestry-1000g-30x-grch37` for GRCh37 samples. If a private ancestry tool
+returns `requires_library_install`, explain that the compact local panel is
+needed for marker overlap and PCA projection, then ask before installing:
 
 ```bash
 python3 scripts/install_for_agents.py --libraries ancestry-1000g-30x-grch38
@@ -80,13 +81,15 @@ Do not treat a missing panel as evidence about the sample.
 
 - Report marker overlap, projection readiness, marker-overlap quality, nearest reference
   group labels, and the method boundary.
-- If fewer than 500 panel markers are usable, do not project.
-- If 500-1999 panel markers are usable, do not produce a default reference
-  similarity interpretation.
-- If 2000-9999 panel markers are usable, projection is allowed with low
+- Marker-overlap quality is graded by the fraction of the loaded panel covered
+  by usable sample dosages. There is no absolute marker-count floor.
+- If less than 20% of the loaded panel is usable, do not project.
+- If 20%-49% of the loaded panel is usable, projection is allowed with low
+  marker-overlap quality and reference-neighbor context only.
+- If 50%-79% of the loaded panel is usable, projection is allowed with moderate
   marker-overlap quality.
-- If at least 10000 panel markers are usable, projection is allowed with
-  moderate marker-overlap quality.
+- If at least 80% of the loaded panel is usable, projection is allowed with
+  high marker-overlap quality.
 - Use wording like: "The sample projects closest to the EUR reference cluster
   in this panel."
 - Do not say "predict ethnicity", "determine origin", or imply personal
@@ -137,7 +140,7 @@ Check how many installed 1000 Genomes ancestry panel markers are usable in an ap
 
 ### ancestry.estimate_population_context
 
-Estimate qualitative reference-panel similarity for an approved GRCh38 sample using local 1000 Genomes PCA projection.
+Estimate qualitative reference-panel similarity for an approved GRCh37 or GRCh38 sample using local 1000 Genomes PCA projection.
 
 **Use when**: The user asks for ancestry or population context from their genome and has approved Active Genome Index use in this session.
 
@@ -173,6 +176,6 @@ Project an approved sample into the installed 1000 Genomes ancestry PCA space an
 
 **Not for**: Haplogroups, local ancestry, relative matching, component proportions, or identity/origin prediction.
 
-**Example prompts**: Project my GRCh38 genome into the 1000 Genomes PCA panel.
+**Example prompts**: Project my genome into the matching-build 1000 Genomes PCA panel.
 
 **Result semantics**: Returns PCA coordinates and reference-neighbor distances only; labels are reference-panel labels, not personal identity labels.

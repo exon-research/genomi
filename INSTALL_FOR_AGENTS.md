@@ -654,6 +654,7 @@ Default downloadable libraries:
 | `cellmarker-human` | CellMarker 2.0 human marker table normalized for Genomi. | ~10 MB |
 | `pharmcat` | PharmCAT all-in-one JAR for broad pharmacogenomic calling. Requires `java` on `PATH` at runtime. | ~30 MB |
 | `ancestry-1000g-30x-grch38` | 1000 Genomes 30x GRCh38 compact ancestry PCA panel used by `ancestry.estimate_population_context`. Downloaded as a pre-built tarball from [`exon-research/genomi-ancestry-panel`](https://github.com/exon-research/genomi-ancestry-panel/releases) and SHA-256 verified. | ~3 MB |
+| `ancestry-1000g-30x-grch37` | GRCh37 coordinate version of the ancestry PCA panel, produced locally from the GRCh38 panel plus `liftover-chains`, for GRCh37 samples. | ~3 MB |
 | `minimap2-binary` | Pinned [minimap2](https://github.com/lh3/minimap2) release used for long-read FASTQ → BAM alignment. Linux x86_64 only; the tarball is SHA-256 verified and dropped at `<GENOMI_HOME>/tools/aligners/minimap2/minimap2`. Do not select this library on native macOS or ARM hosts. | ~5 MB |
 | `bwa-mem2-binary` | Pinned [bwa-mem2](https://github.com/bwa-mem2/bwa-mem2) release used for short-read FASTQ → BAM alignment. Linux x86_64 only, with the same platform boundary as `minimap2-binary`. Builds a reference index on first use (~5 min for GRCh38). Do not select this library on native macOS or ARM hosts. | ~50 MB |
 

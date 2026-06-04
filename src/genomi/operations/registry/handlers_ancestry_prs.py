@@ -3,6 +3,7 @@ from __future__ import annotations
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed, ActiveGenomeIndexReader
 from ...capabilities.ancestry import overlap as ancestry_overlap
 from ...capabilities.ancestry import pca as ancestry_pca
+from ...capabilities.ancestry import policy as ancestry_policy
 from ...capabilities.ancestry import reference_panels as ancestry_reference_panels
 from ...capabilities.ancestry import source_context as ancestry_source_context
 from ...capabilities.nutrigenomics import operations as nutrigenomics_operations
@@ -37,7 +38,7 @@ def _ancestry_build_source_context(_: JsonObject) -> JsonObject:
 
 def _ancestry_check_sample_overlap(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="checking sample overlap with an ancestry reference panel", params=params)
-    genome_build = _private_build(reader, params)
+    genome_build = ancestry_policy.normalize_build(_private_build(reader, params))
     missing = _ancestry_missing_library(
         "ancestry.check_sample_overlap",
         "checking sample overlap with the 1000 Genomes ancestry PCA panel",
@@ -53,7 +54,7 @@ def _ancestry_check_sample_overlap(params: JsonObject) -> JsonObject:
 
 def _ancestry_project_pca(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="projecting a sample into ancestry reference-panel PCA space", params=params)
-    genome_build = _private_build(reader, params)
+    genome_build = ancestry_policy.normalize_build(_private_build(reader, params))
     missing = _ancestry_missing_library(
         "ancestry.project_pca",
         "projecting a sample into the 1000 Genomes ancestry PCA panel",
@@ -70,7 +71,7 @@ def _ancestry_project_pca(params: JsonObject) -> JsonObject:
 
 def _ancestry_estimate_population_context(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="estimating qualitative ancestry reference-panel similarity", params=params)
-    genome_build = _private_build(reader, params)
+    genome_build = ancestry_policy.normalize_build(_private_build(reader, params))
     missing = _ancestry_missing_library(
         "ancestry.estimate_population_context",
         "estimating qualitative 1000 Genomes reference-panel similarity",
@@ -108,13 +109,8 @@ def _nutrigenomics_retrieve_variant_records(params: JsonObject) -> JsonObject:
 
 
 def _ancestry_missing_library(operation: str, intent: str, genome_build: str) -> JsonObject | None:
-    library = ancestry_source_context.panel_library_for_build(genome_build)
-    panel_id = ancestry_source_context.panel_id_for_build(genome_build)
-    title = (
-        ancestry_source_context.PANEL_TITLE_GRCH38
-        if panel_id == ancestry_source_context.PANEL_ID_GRCH38
-        else ancestry_source_context.PANEL_TITLE_GRCH37
-    )
+    panel_policy = ancestry_policy.panel_for_build(genome_build)
+    library = panel_policy.library
     status = library_manager.status(library)
     if status["installed"]:
         return None
@@ -126,10 +122,10 @@ def _ancestry_missing_library(operation: str, intent: str, genome_build: str) ->
     )
     request["schema"] = "genomi-ancestry-library-required-v1"
     request["reference_panel"] = {
-        "panel_id": panel_id,
-        "title": title,
+        "panel_id": panel_policy.panel_id,
+        "title": panel_policy.title,
         "library": library,
-        "genome_build": genome_build,
+        "genome_build": panel_policy.genome_build,
         "source_urls": ancestry_source_context.source_urls(),
         "limitations": ancestry_source_context.limitations(),
     }

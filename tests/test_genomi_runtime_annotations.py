@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from genomi.capabilities.ancestry import policy as ancestry_policy
 from genomi.operations import all_operations, call_operation
 
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
@@ -267,7 +268,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertFalse(ancestry["mutating"])
         self.assertEqual(ancestry["externalIO"], [])
         self.assertEqual(ancestry["privacyScope"], "local_reference_panel_private_projection")
-        self.assertEqual(ancestry["dependencyContract"]["installedLibraries"], ["ancestry-1000g-30x-grch38"])
+        self.assertEqual(ancestry["dependencyContract"]["installedLibraries"], list(ancestry_policy.PANEL_LIBRARIES))
         self.assertEqual(ancestry["dependencyContract"]["missingInstalledLibraryStatus"], "requires_library_install")
         self.assertIn("active_genome_index_or_supplied_private_paths", ancestry["dataAccess"])
         self.assertIn("installed_public_reference_panel", ancestry["dataAccess"])
