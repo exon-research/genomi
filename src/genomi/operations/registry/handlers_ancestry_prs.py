@@ -264,23 +264,23 @@ def _prs_build_source_context(_: JsonObject) -> JsonObject:
 
 
 def _prs_check_score_overlap(params: JsonObject) -> JsonObject:
-    agi_reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="checking sample overlap with a local polygenic-score file", params=params)
+    agi_reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="checking sample overlap with a local polygenic-score file", params=params)
     return prs_scorer.check_score_overlap(
         agi_reader,
         pgs_id=_optional_str(params, "pgs_id"),
         score_dir=_optional_path(params, "score_dir"),
-        genome_build=agi_reader.genome_build or "GRCh38",
+        genome_build=_private_build(agi_reader, params),
         skip_ambiguous_palindromic=_bool(params, "skip_ambiguous_palindromic", True),
     )
 
 
 def _prs_calculate_score(params: JsonObject) -> JsonObject:
-    agi_reader = open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="calculating a polygenic score from local Active Genome Index artifacts", params=params)
+    agi_reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="calculating a polygenic score from local Active Genome Index artifacts", params=params)
     return prs_scorer.calculate_score(
         agi_reader,
         pgs_id=_optional_str(params, "pgs_id"),
         score_dir=_optional_path(params, "score_dir"),
-        genome_build=agi_reader.genome_build or "GRCh38",
+        genome_build=_private_build(agi_reader, params),
         skip_ambiguous_palindromic=_bool(params, "skip_ambiguous_palindromic", True),
         score_mean=_optional_float(params, "score_mean"),
         score_sd=_optional_float(params, "score_sd"),

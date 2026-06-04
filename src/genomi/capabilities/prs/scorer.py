@@ -122,6 +122,14 @@ def collect_score_context(
             genome_build=normalized_build,
         )
         return result
+    mismatch = _active_genome_index_build_mismatch(
+        agi_reader,
+        normalized_build,
+        operation=operation,
+        pgs_id=pgs_id,
+    )
+    if mismatch is not None:
+        return mismatch
     cache = scoring_files.resolve_score_cache(pgs_id=pgs_id, score_dir=score_dir, genome_build=normalized_build)
     if cache.get("status") == "out_of_scope_for_input":
         result = dict(cache)
@@ -142,7 +150,6 @@ def collect_score_context(
     score_build = scoring_files.normalize_build(str(manifest.get("genome_build") or normalized_build))
     score_summary = _polygenic_score_summary(cache["score_dir"], manifest)
 
-    agi_path = agi_reader.agi_path
     variants = scoring_files.load_variants(cache["score_dir"])
     original_variant_count = len(variants)
     lift_summary: JsonObject | None = None
@@ -188,8 +195,8 @@ def collect_score_context(
         }
     # No readiness / incompleteness handling here: open_agi has already gated
     # access (missing / incomplete -> active_genome_index_incomplete; reparse /
-    # schema-too-new surfaced upstream). A variants_ready index proceeds and the
-    # dispatch chokepoint stamps reference_pending.
+    # schema-too-new surfaced upstream). PRS reads variant-surface records, so a
+    # variants_ready index is final for this capability.
     matched: list[JsonObject] = []
     missing: list[JsonObject] = []
     excluded: list[JsonObject] = list(liftover_excluded)
@@ -208,7 +215,6 @@ def collect_score_context(
     sample_qc = _sample_qc(
         genome_build=normalized_build,
         score_build=score_build,
-        agi_path=agi_path,
         score_variant_count=original_variant_count,
         matched=matched,
         missing=missing,
@@ -231,7 +237,6 @@ def _sample_qc(
     *,
     genome_build: str,
     score_build: str,
-    agi_path: Path,
     score_variant_count: int,
     matched: list[JsonObject],
     missing: list[JsonObject],
@@ -248,7 +253,6 @@ def _sample_qc(
     payload: JsonObject = {
         "genome_build": genome_build,
         "score_genome_build": score_build,
-        "agi_path": str(agi_path),
         "score_variant_count": score_variant_count,
         "matched_variant_count": matched_count,
         "missing_variant_count": missing_count,
@@ -268,6 +272,64 @@ def _sample_qc(
     if liftover is not None:
         payload["liftover"] = liftover
     return payload
+
+
+def _active_genome_index_build_mismatch(
+    agi_reader: ActiveGenomeIndexReader,
+    requested_build: str,
+    *,
+    operation: str,
+    pgs_id: str | None,
+) -> JsonObject | None:
+    reader_build = str(getattr(agi_reader, "genome_build", "") or "").strip()
+    if not reader_build or reader_build == "auto":
+        return None
+    agi_build = scoring_files.normalize_build(reader_build)
+    if not scoring_files.is_supported_build(agi_build):
+        result = scoring_files.unsupported_genome_build_result(agi_build)
+        result["active_genome_index_genome_build"] = agi_build
+        _add_unsupported_genome_build_envelope(
+            result,
+            operation=operation,
+            pgs_id=pgs_id,
+            genome_build=agi_build,
+        )
+        return result
+    if agi_build == requested_build:
+        return None
+    result: JsonObject = {
+        "status": "out_of_scope_for_input",
+        "coverage_status": "out_of_scope_for_input",
+        "requested_genome_build": requested_build,
+        "active_genome_index_genome_build": agi_build,
+        "supported_genome_builds": list(scoring_files.SUPPORTED_GENOME_BUILDS),
+        "personal_context": {"uses_personal_dna": True},
+        "next_actions": [
+            {
+                "action": "use_active_genome_index_build",
+                "genome_build": agi_build,
+            }
+        ],
+    }
+    result["evidence_envelope"] = evidence_envelope.not_assessed(
+        operation=operation,
+        reason="requested genome build conflicts with Active Genome Index metadata",
+        query_scope={
+            "method": "published_polygenic_score",
+            "pgs_id": pgs_id,
+            "requested_genome_build": requested_build,
+            "active_genome_index_genome_build": agi_build,
+        },
+        personal_context={"uses_personal_dna": True},
+        observations={
+            "status": "out_of_scope_for_input",
+            "requested_genome_build": requested_build,
+            "active_genome_index_genome_build": agi_build,
+        },
+        next_actions=result["next_actions"],
+        guidance=["out_of_scope_for_input:use_active_genome_index_genome_build"],
+    )
+    return result
 
 
 def _score_result(
@@ -585,5 +647,19 @@ def _prs_envelope(operation: str, result: JsonObject) -> JsonObject:
         reason=str(sample_qc.get("note") or result.get("message") or "PRS score was not assessed."),
         query_scope={"method": "published_polygenic_score", "pgs_id": score.get("pgs_id"), "genome_build": sample_qc.get("genome_build")},
         personal_context={"uses_personal_dna": True},
+        coverage={
+            "libraries": [{"library": str(score.get("pgs_id") or "local_prs_score"), "state": "installed"}],
+            "consulted_sources": ["local_active_genome_index", "local_prs_score_cache"],
+            "unavailable_sources": [],
+            "materialization": [],
+        },
+        observations={
+            "matched_variant_count": sample_qc.get("matched_variant_count"),
+            "missing_variant_count": sample_qc.get("missing_variant_count"),
+            "excluded_variant_count": sample_qc.get("excluded_variant_count"),
+            "overlap_fraction": sample_qc.get("overlap_fraction"),
+            "overlap_status": sample_qc.get("overlap_status"),
+        },
         next_actions=result.get("next_actions") or [],
+        guidance=["insufficient_overlap:use_more_complete_or_matching_genotype_source"],
     )

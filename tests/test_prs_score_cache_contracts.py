@@ -17,6 +17,16 @@ from genomi.runtime.libraries import manager as library_manager
 from _prs_contract_helpers import insert_prs_record, memory_prs_index, score_variant
 
 
+class _FakeAgiReader:
+    agi_path = Path("/tmp/fake.agi.sqlite")
+    genome_build = "GRCh38"
+
+
+class _UnsupportedBuildAgiReader:
+    agi_path = Path("/tmp/fake-chm13.agi.sqlite")
+    genome_build = "CHM13"
+
+
 class PrsScoreCacheContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self._home_tmp = tempfile.TemporaryDirectory()
@@ -99,6 +109,35 @@ class PrsScoreCacheContractTests(unittest.TestCase):
             result["evidence_envelope"]["observations"]["supported_genome_builds"],
             ["GRCh37", "GRCh38"],
         )
+
+    def test_collect_score_context_rejects_sample_build_mismatch_before_cache_lookup(self) -> None:
+        result = prs_scorer.collect_score_context(
+            _FakeAgiReader(),
+            pgs_id="PGS900004",
+            genome_build="GRCh37",
+            operation="prs.calculate_score",
+        )
+
+        self.assertEqual(result["status"], "out_of_scope_for_input")
+        self.assertEqual(result["requested_genome_build"], "GRCh37")
+        self.assertEqual(result["active_genome_index_genome_build"], "GRCh38")
+        self.assertEqual(
+            result["evidence_envelope"]["guidance"],
+            ["out_of_scope_for_input:use_active_genome_index_genome_build"],
+        )
+        self.assertEqual(result["next_actions"][0]["action"], "use_active_genome_index_build")
+
+    def test_collect_score_context_rejects_unsupported_active_agi_build(self) -> None:
+        result = prs_scorer.collect_score_context(
+            _UnsupportedBuildAgiReader(),
+            pgs_id="PGS900004",
+            genome_build="GRCh38",
+            operation="prs.calculate_score",
+        )
+
+        self.assertEqual(result["status"], "out_of_scope_for_input")
+        self.assertEqual(result["active_genome_index_genome_build"], "CHM13")
+        self.assertEqual(result["evidence_envelope"]["query_scope"]["genome_build"], "CHM13")
 
     def test_vcf_harmonization_preserves_no_call_reason(self) -> None:
         connection = memory_prs_index()

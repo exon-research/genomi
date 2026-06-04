@@ -128,6 +128,7 @@ from .handlers_vcf_variant import (
 
 
 _AGI_REFERENCE = "reference"
+_AGI_VARIANT = "variant"
 
 
 OPERATIONS: list[Operation] = [
@@ -166,8 +167,8 @@ OPERATIONS: list[Operation] = [
     Operation('prs.fetch_score_metadata', _prs_fetch_score_metadata),
     Operation('prs.import_scoring_file', _prs_import_scoring_file),
     Operation('prs.list_imported_scores', _prs_list_imported_scores),
-    Operation('prs.check_score_overlap', _prs_check_score_overlap, agi_need=_AGI_REFERENCE),
-    Operation('prs.calculate_score', _prs_calculate_score, agi_need=_AGI_REFERENCE),
+    Operation('prs.check_score_overlap', _prs_check_score_overlap, agi_need=_AGI_VARIANT),
+    Operation('prs.calculate_score', _prs_calculate_score, agi_need=_AGI_VARIANT),
     Operation('prs.build_source_context', _prs_build_source_context),
     Operation('nutrigenomics.list_domains', _nutrigenomics_list_domains),
     Operation('nutrigenomics.build_source_context', _nutrigenomics_build_source_context),

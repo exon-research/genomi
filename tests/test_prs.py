@@ -234,6 +234,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         )
         self.assertEqual(tools["prs.calculate_score"]["annotations"]["discoveryRole"], "entry_tool")
         self.assertEqual(tools["prs.calculate_score"]["annotations"]["privacyScope"], "local_private_prs_score")
+        self.assertEqual(tools["prs.calculate_score"]["annotations"]["agiNeed"], "variant")
         self.assertIn("pgs_catalog_ftp", tools["prs.import_scoring_file"]["annotations"]["externalIO"])
 
     def test_local_scoring_file_import_overlap_and_score(self) -> None:
@@ -806,6 +807,31 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         self.assertEqual(result["status"], "insufficient_overlap")
         self.assertIsNone(result["score_result"])
         self.assertFalse(result["sample_qc"]["calculation_allowed"])
+        self.assertLessEqual(
+            set(result["sample_qc"]),
+            {
+                "genome_build",
+                "score_genome_build",
+                "score_variant_count",
+                "matched_variant_count",
+                "missing_variant_count",
+                "excluded_variant_count",
+                "accounted_variant_count",
+                "unaccounted_variant_count",
+                "overaccounted_variant_count",
+                "accounting_complete",
+                "overlap_fraction",
+                "overlap_status",
+                "calculation_allowed",
+                "overlap_quality",
+                "missing_reasons",
+                "excluded_reasons",
+                "note",
+                "liftover",
+            },
+        )
+        self.assertEqual(result["evidence_envelope"]["coverage"]["consulted_sources"], ["local_active_genome_index", "local_prs_score_cache"])
+        self.assertEqual(result["evidence_envelope"]["observations"]["matched_variant_count"], 1)
 
     def test_harmonization_does_not_count_third_allele_as_reference_homozygous(self) -> None:
         connection = self._memory_prs_index()
