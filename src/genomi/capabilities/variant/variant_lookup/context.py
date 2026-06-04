@@ -228,7 +228,7 @@ def _unanswered_components(
     elif not sample_context.get("matches"):
         components.append(_unanswered_component("sample_context", "no_match_in_selected_active_genome_indexes", []))
     if sample_context.get("matches") and not support_context.get("genotype_support"):
-        components.append(_unanswered_component("technical_support", "vcf_signal_without_genotype_support", ["genotype_support"]))
+        components.append(_unanswered_component("technical_support", "sample_signal_without_genotype_support", ["genotype_support"]))
     return components
 
 

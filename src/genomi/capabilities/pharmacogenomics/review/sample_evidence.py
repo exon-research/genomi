@@ -171,7 +171,7 @@ def _answer_support(
         user_sample_signal_count=len(user_sample_summaries),
         sample_signal_count=sample_signal_count,
     )
-    if source_evidence_count and sample_signal_count and technical_status == "needs_vcf_genotype_support":
+    if source_evidence_count and sample_signal_count and technical_status == "needs_genotype_support":
         status = "source_and_sample_evidence_present_technical_support_pending"
     elif source_evidence_count and sample_signal_count:
         status = "source_and_sample_evidence_present"
@@ -201,7 +201,7 @@ def _answer_support(
         "clinical_boundary": "informational_evidence_review",
         "semantics": [
             "This section links selected sample evidence to source evidence for host-agent synthesis.",
-            "VCF-derived sample evidence needs genotype-support follow-up before stronger personal actionability language.",
+            "Sample variant evidence needs genotype-support follow-up before stronger personal actionability language.",
             "User-provided sample PGx facts are treated as supplied evidence and need independent confirmation for clinical use.",
             "Clinical medication decisions require clinician or pharmacist confirmation.",
         ],
@@ -219,7 +219,7 @@ def _answer_technical_status(
     if technical_support_count:
         return "ready"
     if sequencing_sample_signal_count:
-        return "needs_vcf_genotype_support"
+        return "needs_genotype_support"
     if stored_sample_signal_count:
         return "stored_sample_pgx_evidence_available"
     if user_sample_signal_count:
@@ -563,6 +563,17 @@ def _genotype_support_loci(sample_lookups: list[JsonObject]) -> list[JsonObject]
     loci: list[JsonObject] = []
     for lookup in sample_lookups:
         genome_build = str(lookup.get("query", {}).get("genome_build") or "GRCh38")
+        target_inventory = lookup.get("target_inventory")
+        if isinstance(target_inventory, dict):
+            for item in target_inventory.get("genotype_support_loci") or []:
+                if not isinstance(item, dict):
+                    continue
+                params = _genotype_support_params(
+                    {**item, "genome_build": item.get("genome_build") or genome_build},
+                    genome_build=str(item.get("genome_build") or genome_build),
+                )
+                if params:
+                    loci.append(params)
         for match in lookup.get("sample_context", {}).get("matches") or []:
             if match.get("source_format") not in {"vcf", "gvcf"}:
                 continue

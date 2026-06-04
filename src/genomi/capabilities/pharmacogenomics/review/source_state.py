@@ -141,8 +141,8 @@ def _evidence_state(
         "has_star_marker_evidence": bool(star_marker_match_count),
         "has_stored_sample_evidence": bool(stored_sample_evidence_count),
         "has_user_provided_sample_evidence": bool(user_sample_evidence_count),
-        "has_vcf_technical_support": bool(technical_support_count),
-        "has_vcf_derived_sample_signal": bool(sequencing_sample_match_count),
+        "has_genotype_support": bool(technical_support_count),
+        "has_sequencing_sample_signal": bool(sequencing_sample_match_count),
         "sample_context_requested": sample_context_requested,
         "source_evidence_count": source_evidence_count,
         "live_public_evidence_count": live_public_evidence_count,
@@ -330,7 +330,7 @@ def _evidence_components(
     elif technical_support_count:
         technical_state = "present"
     elif sequencing_sample_match_count:
-        technical_state = "vcf_signal_without_genotype_support"
+        technical_state = "sample_signal_without_genotype_support"
     elif sample_match_count:
         technical_state = "observed"
     elif user_sample_evidence_count:
@@ -401,7 +401,7 @@ def _evidence_components(
                     "sequencing_sample_match_count": sequencing_sample_match_count,
                     "user_provided_sample_evidence_count": user_sample_evidence_count,
                 },
-                "missing_inputs": ["genotype_support"] if technical_state == "vcf_signal_without_genotype_support" else [],
+                "missing_inputs": ["genotype_support"] if technical_state == "sample_signal_without_genotype_support" else [],
             },
             {
                 "id": "broad_pgx_call_artifact",

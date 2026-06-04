@@ -274,7 +274,7 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
             result["target_inventory"]["genotype_support_loci"][0],
             {"chrom": "10", "pos": 94761900, "ref": "G", "alt": "A", "genome_build": "GRCh38"},
         )
-        self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "needs_vcf_genotype_support")
+        self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "needs_genotype_support")
         variant_lookup.assert_not_called()
 
     def test_medication_review_uses_active_genome_index_without_source_path_leak(self) -> None:
@@ -330,7 +330,7 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
                 self.assertEqual(result["sample_evidence"]["variant_lookups"][0]["sample_context"]["matches"][0]["genotype"], "0/1")
                 components = {item["id"]: item for item in result["evidence_components"]["items"]}
                 self.assertEqual(components["sample_variant_or_marker_evidence"]["state"], "present")
-                self.assertEqual(components["technical_sample_support"]["state"], "vcf_signal_without_genotype_support")
+                self.assertEqual(components["technical_sample_support"]["state"], "sample_signal_without_genotype_support")
                 genotype_loci = result["target_inventory"]["genotype_support_loci"]
                 self.assertEqual(len(genotype_loci), 1)
                 self.assertEqual(
@@ -396,14 +396,79 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
             result = review_medication_interaction(drug="clopidogrel", rsid="rs4244285", has_active_genome_index_context=True)
 
         self.assertEqual(result["answer_support"]["status"], "source_and_sample_evidence_present_technical_support_pending")
-        self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "needs_vcf_genotype_support")
-        self.assertTrue(result["evidence_state"]["has_vcf_derived_sample_signal"])
-        self.assertFalse(result["evidence_state"]["has_vcf_technical_support"])
+        self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "needs_genotype_support")
+        self.assertTrue(result["evidence_state"]["has_sequencing_sample_signal"])
+        self.assertFalse(result["evidence_state"]["has_genotype_support"])
+        self.assertNotIn("has_vcf_derived_sample_signal", result["evidence_state"])
+        self.assertNotIn("has_vcf_technical_support", result["evidence_state"])
         self.assertEqual(
             result["target_inventory"]["genotype_support_loci"],
             [{"chrom": "10", "pos": 94761900, "ref": "G", "alt": "A", "genome_build": "GRCh38"}],
         )
         self.assertEqual(result["answer_support"]["matched_variant_associations"][0]["match_status"], "reported_genotype_matches_sample")
+
+    def test_array_sample_evidence_uses_resolved_target_inventory_for_genotype_support_followup(self) -> None:
+        clinpgx_result = {
+            "source": {"source_id": "clinpgx"},
+            "summary": {"guideline_annotation_count": 1, "clinical_annotation_count": 0, "label_annotation_count": 0},
+            "sample_follow_up_targets": {"rsids": ["rs4244285"], "genes": []},
+            "clinical_verification": {"requires_before_personal_actionability": []},
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        pgxdb_result = {
+            "source": {"source_id": "pgxdb"},
+            "summary": {"pgx_record_count": 1},
+            "pgx_records": [
+                {
+                    "rsid": "rs4244285",
+                    "variant_or_haplotype": "rs4244285",
+                    "drug": "clopidogrel",
+                    "alleles": "GG",
+                    "sentence": "Genotype GG is listed for clopidogrel response context.",
+                }
+            ],
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        variant_result = {
+            "query": {"rsid": "rs4244285", "genome_build": "GRCh37"},
+            "sample_context": {
+                "count": 1,
+                "matches": [
+                    {
+                        "rsid": "rs4244285",
+                        "genotype": "GG",
+                        "ref": "N",
+                        "alt": "GG",
+                        "source_format": "23andme",
+                        "chrom": "10",
+                        "pos": 96541616,
+                    }
+                ],
+            },
+            "support_context": {"genotype_support": []},
+            "target_inventory": {
+                "genotype_support_loci": [
+                    {"chrom": "10", "pos": 96541616, "ref": "G", "alt": "A", "genome_build": "GRCh37"}
+                ]
+            },
+        }
+
+        with (
+            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.review.variant_lookup.lookup_variant", return_value=variant_result),
+        ):
+            result = review_medication_interaction(drug="clopidogrel", rsid="rs4244285", has_active_genome_index_context=True)
+
+        self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "observed_genotype_available")
+        components = {item["id"]: item for item in result["evidence_components"]["items"]}
+        self.assertEqual(components["technical_sample_support"]["state"], "observed")
+        self.assertEqual(
+            result["target_inventory"]["genotype_support_loci"],
+            [{"chrom": "10", "pos": 96541616, "ref": "G", "alt": "A", "genome_build": "GRCh37"}],
+        )
 
     def test_answer_support_matches_separator_genotype_expressions(self) -> None:
         clinpgx_result = {
