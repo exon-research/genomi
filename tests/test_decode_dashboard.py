@@ -321,6 +321,40 @@ class RenderDashboardTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "variants_all_source_not_found")
 
+    def test_render_update_malformed_variants_all_source_raises(self) -> None:
+        out = self.tmpdir / "dash.html"
+        for source_name, content, expected_message in (
+            ("bad-json.jsonl", "{not json}\n", "not valid JSON"),
+            (
+                "unmapped-row.jsonl",
+                json.dumps({"legacy_unmapped_field": "x"}) + "\n",
+                "did not map to a dashboard variant row",
+            ),
+        ):
+            with self.subTest(source_name=source_name):
+                source = self.tmpdir / source_name
+                source.write_text(content, encoding="utf-8")
+                decode_dashboard.render_dashboard(
+                    evidence={
+                        "overview": {"sampleId": "HG-SOURCE-BAD", "variantCount": 4500000},
+                        "variants_all": [{"rsid": "rs-old", "gene": "OLD"}],
+                    },
+                    mode="full",
+                    output=out,
+                )
+
+                with self.assertRaises(decode_dashboard.DashboardRenderError) as ctx:
+                    decode_dashboard.render_dashboard(
+                        evidence={},
+                        mode="update",
+                        output=out,
+                        variants_all_source=source,
+                    )
+
+                self.assertEqual(ctx.exception.code, "variants_all_source_malformed")
+                self.assertIn("line 1", ctx.exception.message)
+                self.assertIn(expected_message, ctx.exception.message)
+
     def test_render_update_reads_existing_evidence_with_brace_semicolon_text(self) -> None:
         out = self.tmpdir / "dash.html"
         decode_dashboard.render_dashboard(

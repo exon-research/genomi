@@ -772,17 +772,24 @@ def _load_variants_all_source(source: str | Path) -> list[dict[str, Any]]:
         )
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
+        for line_number, line in enumerate(fh, start=1):
+            raw_line = line.strip()
+            if not raw_line:
                 continue
             try:
-                raw = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+                raw = json.loads(raw_line)
+            except json.JSONDecodeError as exc:
+                raise DashboardRenderError(
+                    "variants_all_source_malformed",
+                    f"variants_all_source line {line_number} is not valid JSON: {exc.msg}.",
+                ) from exc
             normalized = _normalize_variants_row(raw)
-            if normalized:
-                rows.append(normalized)
+            if not normalized:
+                raise DashboardRenderError(
+                    "variants_all_source_malformed",
+                    f"variants_all_source line {line_number} did not map to a dashboard variant row.",
+                )
+            rows.append(normalized)
     return rows
 
 

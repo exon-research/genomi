@@ -47,6 +47,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             "ancestry.project_pca",
             "ancestry.estimate_population_context",
             "pharmacogenomics.preflight_pharmcat",
+            "decode.render_dashboard",
         }
 
         actual_reference = {

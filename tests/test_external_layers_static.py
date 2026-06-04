@@ -457,11 +457,13 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             matches.write_text(
                 "\n".join(
                     [
-                        '{"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
                         '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"Pathogenic","review_status":"criteria_provided,_single_submitter",'
                         '"gene_info":"GENE1:1","conditions":"condition","clinvar_id":"12345"}}',
-                        '{"sample_variant":{"chrom":"1","pos":99999,"ref":"A","alt":"G","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"1","pos":99999,"ref":"A","alt":"G","filter":"PASS",'
                         '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"Pathogenic","review_status":"criteria_provided,_single_submitter",'
                         '"gene_info":"GENE2:2","conditions":"condition","clinvar_id":"67890"}}',
@@ -487,12 +489,14 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             matches.write_text(
                 "\n".join(
                     [
-                        '{"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
                         '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"Conflicting_classifications_of_pathogenicity|protective",'
                         '"review_status":"criteria_provided,_conflicting_classifications","gene_info":"GENE1:1",'
                         '"conditions":"condition","clinvar_id":"123"}}',
-                        '{"sample_variant":{"chrom":"14","pos":94847262,"ref":"T","alt":"A","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"14","pos":94847262,"ref":"T","alt":"A","filter":"PASS",'
                         '"genotype":"0/1","depth":"35","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"Pathogenic/Pathogenic,_low_penetrance|other",'
                         '"review_status":"criteria_provided,_multiple_submitters,_no_conflicts","gene_info":"SERPINA1:5265",'
@@ -529,11 +533,13 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             matches.write_text(
                 "\n".join(
                     [
-                        '{"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
                         '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"association","review_status":"no_assertion_criteria_provided",'
                         '"gene_info":"GENE1:1","conditions":"common trait","clinvar_id":"123"}}',
-                        '{"sample_variant":{"chrom":"1","pos":10257,"ref":"A","alt":"G","filter":"PASS",'
+                        '{"match_basis":"exact_allele",'
+                        '"sample_variant":{"chrom":"1","pos":10257,"ref":"A","alt":"G","filter":"PASS",'
                         '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
                         '"clinvar":{"clinical_significance":"drug_response","review_status":"criteria_provided,_single_submitter",'
                         '"gene_info":"GENE2:2","conditions":"drug response","clinvar_id":"456"}}',
