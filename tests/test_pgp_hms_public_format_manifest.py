@@ -58,6 +58,23 @@ class PGPHMSPublicFormatManifestTests(ActiveGenomeIndexContractFixtureMixin, uni
         }
         self.assertEqual(case_to_format, manifest_cases)
 
+    def test_manifest_distinguishes_supported_formats_without_public_pgp_examples(self) -> None:
+        manifest = self._manifest()
+        supported = manifest["supported_intake_formats"]
+        formats_without_public_pgp_examples = {
+            source_format
+            for source_format, spec in supported.items()
+            if not spec["public_pgp_hms_examples_observed"]
+        }
+        self.assertEqual(formats_without_public_pgp_examples, {"livingdna"})
+        for source_format, spec in supported.items():
+            evidence = spec["pgp_public_evidence"]
+            if source_format in formats_without_public_pgp_examples:
+                self.assertEqual(len(evidence), 1)
+                self.assertIn("No Living DNA examples were present", evidence[0])
+            else:
+                self.assertTrue(evidence, source_format)
+
     def test_consumer_array_code_and_manifest_cannot_drift(self) -> None:
         manifest = self._manifest()
         manifest_arrays = {

@@ -22,6 +22,7 @@
   ],
   "supported_intake_formats": {
     "23andme": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "genetic data - 23andMe (e.g., exome or genotyping data)",
         "23andMe",
@@ -33,6 +34,7 @@
       ]
     },
     "ancestrydna": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         ".txt from AncestryDNA",
         "Ancestry",
@@ -47,6 +49,7 @@
       ]
     },
     "myheritage": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "My Heritage",
         "MyHeritage",
@@ -58,6 +61,7 @@
       ]
     },
     "ftdna": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "genetic data - Family Tree DNA",
         "Family Tree DNA",
@@ -69,6 +73,7 @@
       ]
     },
     "livingdna": {
+      "public_pgp_hms_examples_observed": false,
       "pgp_public_evidence": [
         "No Living DNA examples were present in the public PGP-HMS data-type inventory checked for this manifest; Genomi still supports this provider format."
       ],
@@ -77,6 +82,7 @@
       ]
     },
     "vcf": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "genetic data - Gencove low-pass (e.g. Nebula Genomics)",
         "genetic data - Illumina (e.g., Understand Your Genome data)",
@@ -95,6 +101,7 @@
       ]
     },
     "gvcf": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "GeneDX converted to gVCF 4.1",
         "Illumina gVCF",
@@ -110,6 +117,7 @@
       ]
     },
     "bam": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "BAM",
         "GENOS mapped sorted .BAM",
@@ -122,6 +130,7 @@
       ]
     },
     "fastq": {
+      "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
         "FASTQ data",
         "GENOS Data Fastq part 1",
@@ -164,7 +173,7 @@
     "other"
   ],
   "fixture_policy": {
-    "source_shape": "Derived from public PGP-HMS provider labels, filenames, wrappers, columns, and comments.",
+    "source_shape": "Derived from public PGP-HMS provider labels, filenames, wrappers, columns, and comments when public examples were observed; supported formats without observed PGP-HMS examples are marked explicitly.",
     "genotypes": "Synthetic tiny rows only.",
     "personal_files": "No personal Downloads file is used as a test fixture."
   },

@@ -490,13 +490,17 @@ FASTQ parse without the aligners present, the parse returns a
 Point them at the **Personal Genome Project — Harvard Medical School**
 public catalog: <https://my.pgp-hms.org/public_genetic_data>. PGP-HMS
 participants have published real, freely-licensed consumer-DNA
-deliverables covering every provider listed above. Download any
-participant's export and pass the path as `--genome-source <path>` exactly
-like a personal file.
+deliverables covering most listed source shapes, including public examples
+for 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA, VCF/gVCF, BAM, and
+paired FASTQ. The checked public inventory did not include a Living DNA
+example even though Genomi supports Living DNA autosomal text exports.
+Download a matching participant export and pass the path as
+`--genome-source <path>` exactly like a personal file.
 
-If asked: Genomi's multi-provider support exists because PGP-HMS makes
-real participant exports freely available under a permissive re-use
-license.
+If asked: Genomi's multi-provider support is validated where possible by
+PGP-HMS real participant exports freely available under a permissive re-use
+license; formats not present in the public inventory are explicitly tracked
+as supported-without-PGP-example.
 
 #### If they give you a path
 

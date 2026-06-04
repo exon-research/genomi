@@ -251,9 +251,11 @@ deliverable straight from your account export and it figures out the rest:
 If you don't have your own genome yet but want to see what Genomi actually
 does, the [Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)
 publishes real consumer-DNA deliverables from real participants. Their
-catalog covers every provider in the list above — pick any participant's
-export, point Genomi at it, and ask questions. It is the cleanest way to
-kick the tires without sequencing yourself.
+catalog includes public examples for the common consumer-array, VCF, gVCF,
+BAM, and paired FASTQ shapes above; the checked public inventory did not
+include a Living DNA example, even though Genomi supports that export shape.
+Pick a matching participant export, point Genomi at it, and ask questions.
+It is the cleanest way to kick the tires without sequencing yourself.
 
 Genome data is optional; Genomi also handles public-only genetics questions.
 
@@ -532,14 +534,14 @@ Genomi owes a direct implementation debt to the
 public genetic data catalog.
 
 That same PGP-HMS public dataset also did the unglamorous work of letting
-Genomi support all of these providers natively. Every detector, every
-column quirk, every header banner, and every test fixture for the
-consumer-array and provider-tagged VCF paths was sanity-checked against
-real PGP participant exports. Native MyHeritage, FamilyTreeDNA, Living
-DNA, Nebula, Dante, and Sequencing.com support exists because PGP-HMS
-makes real-world examples freely available under a permissive re-use
-license — a quiet contribution to open consumer genomics that Genomi
-inherits directly.
+Genomi support these provider shapes natively. Detectors, column quirks,
+header banners, archive wrappers, and provider-tagged VCF paths are
+sanity-checked against real PGP participant exports when the public catalog
+contains that format. Native 23andMe, AncestryDNA, MyHeritage,
+FamilyTreeDNA, Nebula, Dante, Sequencing.com, VCF, gVCF, BAM, and FASTQ
+coverage benefits directly from those examples; Living DNA remains a
+supported format, but the checked PGP-HMS public inventory did not include
+a Living DNA example.
 
 Thanks also to [GBrain](https://github.com/garrytan/gbrain), Garry Tan's
 OpenClaw/Hermes agent-brain project, for inspiration around making agent
