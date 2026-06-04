@@ -16,17 +16,26 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(current["privacyScope"], "metadata_only")
         self.assertIn("local_artifact_metadata", current["dataAccess"])
 
+        invoke = by_name["genomi.invoke"]["annotations"]
+        self.assertEqual(invoke["operationScope"], "read")
+        self.assertIn("local_private_artifacts_when_supplied", invoke["dataAccess"])
+        self.assertIn("active_genome_index_when_selected", invoke["dataAccess"])
+
         parse = by_name["genomi.parse_source"]["annotations"]
         self.assertEqual(parse["operationScope"], "write")
         self.assertTrue(parse["mutating"])
         self.assertEqual(parse["privacyScope"], "local_private")
-        self.assertIn("active_genome_index_or_supplied_private_paths", parse["dataAccess"])
+        self.assertIn("genome_source_file", parse["dataAccess"])
+        self.assertIn("active_genome_index_created_or_updated", parse["dataAccess"])
         parse_properties = by_name["genomi.parse_source"]["inputSchema"]["properties"]
         self.assertIn("parallel_workers", parse_properties)
         self.assertEqual(
             by_name["genomi.parse_source"]["annotations"]["title"],
             "Using Genomi to parse a genome source",
         )
+        background_job = by_name["genomi.check_background_job"]["annotations"]
+        self.assertIn("background_job_result", background_job["dataAccess"])
+        self.assertIn("active_genome_index_when_job_targets_agi", background_job["dataAccess"])
         libraries = by_name["genomi.check_libraries"]["annotations"]
         self.assertEqual(libraries["operationScope"], "read")
         self.assertFalse(libraries["mutating"])

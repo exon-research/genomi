@@ -133,6 +133,8 @@ def _normalize_agi_record(record: JsonObject, agi_id_hint: str | None = None) ->
     normalized.pop("default", None)
     normalized.pop("default_set_at", None)
     normalized.pop("source" + "_label", None)
+    normalized.pop("vcf", None)
+    normalized.pop("vcf_path", None)
     return normalized
 
 

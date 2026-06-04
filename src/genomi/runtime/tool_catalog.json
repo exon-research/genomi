@@ -64,7 +64,8 @@
       "external_io": [],
       "data_access": [
         "local_artifact_metadata",
-        "active_genome_index_or_supplied_private_paths",
+        "local_private_artifacts_when_supplied",
+        "active_genome_index_when_selected",
         "public_catalog_metadata"
       ],
       "discovery_role": "entry_tool"
@@ -163,7 +164,9 @@
       "mutating": false,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "background_job_result",
+        "local_private_artifacts_when_job_targets_source",
+        "active_genome_index_when_job_targets_agi"
       ],
       "discovery_role": "entry_tool"
     },
@@ -233,7 +236,8 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "genome_source_file",
+        "active_genome_index_created_or_updated"
       ],
       "discovery_role": "entry_tool"
     },

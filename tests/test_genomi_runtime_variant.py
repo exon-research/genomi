@@ -354,8 +354,8 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 searched = result["sample_context"]["searched_active_genome_indexes"][0]
                 self.assertEqual(support["agi_id"], searched["agi_id"])
                 self.assertEqual(support["sample_slug"], searched["sample_slug"])
-                self.assertEqual(searched["availability"].get("source"), None)
-                self.assertEqual(searched["availability"].get("vcf"), None)
+                self.assertTrue(searched["availability"]["agi_path"])
+                self.assertTrue(searched["availability"]["evidence_db"])
             finally:
                 os.chdir(previous)
 

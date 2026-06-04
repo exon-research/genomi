@@ -325,6 +325,31 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             self.assertEqual(allowed["search_results"][-1]["source"], "active_genome_index_metadata")
             self.assertEqual(allowed["search_results"][-1]["hits"][0]["metadata"]["genome_build"], "GRCh38")
 
+    def test_context_normalization_removes_legacy_vcf_aliases_from_agi_records(self) -> None:
+        runtime_context.save_context(
+            {
+                "active_agi_id": "legacy-agi",
+                "agis": {
+                    "legacy-agi": {
+                        "agi_id": "legacy-agi",
+                        "sample_slug": "legacy-agi",
+                        "status": "parsed",
+                        "vcf": "/tmp/legacy-source.vcf",
+                        "vcf_path": "/tmp/legacy-source.vcf",
+                        "agi_path": "/tmp/legacy-active-genome-index.sqlite",
+                    }
+                },
+            }
+        )
+
+        current = call_operation("genomi.describe_context")
+        active = current["active_genome_index"]
+
+        self.assertEqual(active["agi_id"], "legacy-agi")
+        self.assertEqual(active["intake_source"]["role"], "ingestion_source_for_digitization")
+        self.assertIsNone(active.get("vcf"))
+        self.assertIsNone(active.get("vcf_path"))
+
     def test_record_research_accepts_inline_payload_for_shared_evidence(self) -> None:
         payload = {
             "target": {"type": "drug", "drug": "clopidogrel"},

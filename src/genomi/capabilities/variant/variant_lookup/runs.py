@@ -94,7 +94,7 @@ def _run_summary(run: JsonObject, selection: str) -> JsonObject:
         "source_format": run.get("source_format"),
         "source_kind": run.get("source_kind"),
         "genome_build": run.get("genome_build"),
-        "availability": {key: bool(value) for key, value in availability.items() if key not in {"source", "vcf"}},
+        "availability": {key: bool(value) for key, value in availability.items() if key != "source"},
     }
 
 
