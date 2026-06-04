@@ -64,8 +64,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
             )
 
             with (
-                patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+                patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+                patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
             ):
                 result = review_medication_interaction(
                     drug="clopidogrel",
@@ -136,9 +136,9 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
             )
 
             with (
-                patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgx_star.call_star_alleles") as star_lookup,
+                patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+                patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+                patch("genomi.capabilities.pharmacogenomics.pgx_star.call_star_alleles") as star_lookup,
             ):
                 result = review_medication_interaction(
                     drug="clopidogrel",
@@ -207,9 +207,9 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
             )
 
             with (
-                patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgx_star.call_star_alleles", return_value={"status": "completed", "marker_calls": [], "diplotype": {}}),
+                patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+                patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+                patch("genomi.capabilities.pharmacogenomics.pgx_star.call_star_alleles", return_value={"status": "completed", "marker_calls": [], "diplotype": {}}),
             ):
                 result = review_medication_interaction(
                     drug="clopidogrel",
@@ -305,8 +305,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
             )
 
             with (
-                patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+                patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+                patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
             ):
                 result = review_medication_interaction(
                     drug="clopidogrel",
@@ -362,8 +362,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(
                 drug="clopidogrel",
@@ -422,8 +422,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(drug="clopidogrel", gene="CYP2C19")
 
@@ -462,8 +462,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(drug="clopidogrel", gene="CYP2C19")
 
@@ -511,8 +511,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
             )
 
             with (
-                patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-                patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+                patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+                patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
             ):
                 result = review_medication_interaction(drug="clopidogrel", db=private_db)
 
@@ -586,8 +586,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(drug="clopidogrel", gene="CYP2C19")
 
@@ -642,9 +642,9 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
-            patch("genomi.capabilities.pharmacogenomics.review.fda_pgx.lookup_fda_pgx", return_value=fda_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.fda_pgx.lookup_fda_pgx", return_value=fda_result),
         ):
             result = review_medication_interaction(drug="clopidogrel", gene="CYP2C19")
 
@@ -682,8 +682,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(drug="clopidogrel")
 
@@ -721,8 +721,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         }
 
         with (
-            patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
         ):
             result = review_medication_interaction(drug="clopidogrel")
 

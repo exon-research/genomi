@@ -729,8 +729,8 @@ class ActiveGenomeIndexDownstreamContractTests(
             "raw_calls": [],
         }
         with (
-            mock.patch("genomi.capabilities.pharmacogenomics.review.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
-            mock.patch("genomi.capabilities.pharmacogenomics.review.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
-            mock.patch("genomi.capabilities.pharmacogenomics.review.fda_pgx.lookup_fda_pgx", return_value=fda_result),
+            mock.patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            mock.patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            mock.patch("genomi.capabilities.pharmacogenomics.fda_pgx.lookup_fda_pgx", return_value=fda_result),
         ):
             yield

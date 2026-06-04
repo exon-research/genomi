@@ -1,22 +1,7 @@
-"""Pharmacogenomics medication-review facade package.
-
-This package replaces the former ``review.py`` module. It preserves the full
-public surface (functions and module aliases) at
-``genomi.capabilities.pharmacogenomics.review`` so that imports and test
-monkeypatches that target ``review.<module>.<symbol>`` keep working.
-"""
+"""Pharmacogenomics medication-review facade package."""
 
 from __future__ import annotations
 
-# The import order below mirrors the original ``review.py`` module so the
-# heavier evidence/retrieval/research dependencies are resolved before the
-# pharmacogenomics sibling modules, avoiding circular-import ordering issues.
-#
-# Module aliases (clinpgx, fda_pgx, pgx_requirements, pgx_star, pgxdb, pharmcat,
-# variant_lookup) are preserved for test monkeypatching and historical attribute
-# access (e.g. ``patch("...review.clinpgx.lookup_clinpgx")``). They point at the
-# shared sibling module objects, so patching attributes on them affects the call
-# sites in this package, which resolve the attributes at call time.
 from ....evidence import envelope as _env  # noqa: F401
 from ....evidence.candidate_evidence import (  # noqa: F401
     DIRECT_SOURCE_MATCH,
@@ -33,8 +18,6 @@ from ....evidence.candidate_evidence import (  # noqa: F401
 from ....evidence.task_profiles import PGX_MEDICATION_REVIEW  # noqa: F401
 from ....retrieval import semantic as retrieval_semantic  # noqa: F401
 from ...research import intent_research  # noqa: F401
-from ...variant import variant_lookup  # noqa: F401
-from .. import clinpgx, fda_pgx, pgx_requirements, pgx_star, pgxdb, pharmcat  # noqa: F401
 
 from ._common import (  # noqa: F401
     JsonObject,

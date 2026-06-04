@@ -34,7 +34,7 @@ class PGxCapabilityInventoryTests(unittest.TestCase):
 
     def test_capability_inventory_can_check_pharmcat(self) -> None:
         with patch(
-            "genomi.capabilities.pharmacogenomics.review.pharmcat.pharmcat_status",
+            "genomi.capabilities.pharmacogenomics.pharmcat.pharmcat_status",
             return_value={"status": "available", "ok": True},
         ) as status:
             result = capability_inventory(check_pharmcat=True, pharmcat_timeout_seconds=3)

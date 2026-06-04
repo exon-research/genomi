@@ -32,7 +32,7 @@ class PGxMedicationReviewTestBase(unittest.TestCase):
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
         self._fda_patch = patch(
-            "genomi.capabilities.pharmacogenomics.review.fda_pgx.lookup_fda_pgx",
+            "genomi.capabilities.pharmacogenomics.fda_pgx.lookup_fda_pgx",
             return_value={
                 "source": {"source_id": "fda_pgx"},
                 "status": "no_matching_fda_pgx_records",
