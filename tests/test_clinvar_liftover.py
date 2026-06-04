@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from genomi.active_genome_index.active_genome_index import create_active_genome_index
+from genomi.active_genome_index.active_genome_index import ActiveGenomeIndexNeed, create_active_genome_index, open_reader
 from genomi.evidence import (
     import_clinvar_vcf,
     match_clinvar_variants,
@@ -131,8 +131,9 @@ class CrossBuildClinvarMatchTests(unittest.TestCase):
 
         import_clinvar_vcf(clinvar_vcf, db_path, source_version="fixture", genome_build="GRCh38")
         create_active_genome_index(sample_vcf, agi_path)
+        reader = open_reader(agi_path, need=ActiveGenomeIndexNeed.VARIANT, genome_build="GRCh37")
         result = match_clinvar_variants_from_active_genome_index(
-            agi_path,
+            reader,
             db_path,
             output_path,
             genome_build="GRCh37",

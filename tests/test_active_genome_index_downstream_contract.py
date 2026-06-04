@@ -452,7 +452,6 @@ class ActiveGenomeIndexDownstreamContractTests(
         scanned = call_operation(
             "clinvar.scan_candidates",
             {
-                "matches": str(matches_path),
                 "db": str(clinvar_db),
                 "output": str(Path(f"{contract.case_id}.clinvar.candidates.json")),
                 "genome_build": "GRCh37",
@@ -482,6 +481,12 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_alt"], ".")
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_format"], "GT_ARRAY")
             self.assertEqual(candidates_by_pos[200]["variant"]["record_kind"], "array_call")
+            self.assertEqual(candidates_by_pos[200]["variant"]["ref"], ".")
+            self.assertEqual(candidates_by_pos[200]["variant"]["alt"], ".")
+            self.assertEqual(
+                candidates_by_pos[200]["candidate_allele"],
+                {"chrom": "1", "pos": 200, "ref": "T", "alt": "G"},
+            )
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_record_kind"], "array_call")
             self.assertEqual(
                 candidates_by_pos[200]["variant"]["source_record_observed_alleles"],
@@ -552,8 +557,6 @@ class ActiveGenomeIndexDownstreamContractTests(
             )
             self.assertTrue(result["evidence_state"]["has_sample_evidence"])
             self.assertTrue(result["evidence_state"]["has_active_genome_variant_match"])
-            self.assertNotIn("has_vcf_technical_support", result["evidence_state"])
-            self.assertNotIn("has_vcf_derived_sample_signal", result["evidence_state"])
             if contract.is_consumer_array:
                 self.assertEqual(result["answer_support"]["technical_sample_support"]["status"], "observed_genotype_available")
             return result
@@ -593,7 +596,9 @@ class ActiveGenomeIndexDownstreamContractTests(
                         ],
                         "pgx": [
                             {
+                                "gene": "GENE2",
                                 "drug": "contractdrug",
+                                "drugs": ["contractdrug"],
                                 "rsid": "rs900000002",
                                 "sampleMatchCount": pgx_result["sample_evidence"]["sample_match_count"],
                                 "technicalSupport": pgx_result["answer_support"]["technical_sample_support"]["status"],

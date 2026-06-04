@@ -5,10 +5,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 from ...active_genome_index.active_genome_index import (
-    ActiveGenomeIndexNeed,
     ActiveGenomeIndexReader,
-    open_reader,
 )
+from ...active_genome_index.clinvar import stage_clinvar_match_records
+from ...active_genome_index.observations import observed_alleles_from_record, observed_alleles_from_vcf_genotype
 from ...active_genome_index.vcf import parse_sample
 from ...runtime.external import file_metadata, matching_manifest, utc_now
 from ...runtime.handoff import evidence_context
@@ -105,9 +105,7 @@ def match_clinvar_variants(
                 "evidence_context": evidence_context(
                     "static",
                     reason="ClinVar exact matches can be summarized and scanned into deterministic candidate inventory.",
-                    commands=[
-                        "genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'",
-                    ],
+                    commands=["genomi call clinvar.scan_candidates"],
                 ),
             }
 
@@ -131,8 +129,32 @@ def match_clinvar_variants(
                 skipped_non_pass += 1
                 continue
 
+            sample_contexts = []
+            for sample_record in sample_records:
+                sample_fields = parse_sample(sample_record.get("format", ""), sample_record.get("sample", ""))
+                source_record = {
+                    "chrom": record["chrom"],
+                    "pos": int(record["pos"]),
+                    "ref": record["ref"],
+                    "alt": record["alt"],
+                    "format": sample_record.get("format"),
+                    "genotype": sample_fields.get("GT"),
+                    "source_format": "vcf",
+                }
+                observed_alleles = observed_alleles_from_vcf_genotype(
+                    record["ref"],
+                    record["alt"],
+                    sample_fields.get("GT"),
+                )
+                source_record["observed_alleles"] = observed_alleles
+                sample_contexts.append(
+                    (sample_record, sample_fields, source_record, {allele.upper() for allele in observed_alleles})
+                )
             for alt in record["alt"].split(","):
                 if alt in ("", "."):
+                    continue
+                carrying_samples = [context for context in sample_contexts if alt.upper() in context[3]]
+                if not carrying_samples:
                     continue
                 queried_alleles += 1
                 query_chrom = record["chrom"]
@@ -159,17 +181,7 @@ def match_clinvar_variants(
                     continue
 
                 matched_alleles += 1
-                for sample_record in sample_records:
-                    sample_fields = parse_sample(sample_record.get("format", ""), sample_record.get("sample", ""))
-                    source_record = {
-                        "chrom": record["chrom"],
-                        "pos": int(record["pos"]),
-                        "ref": record["ref"],
-                        "alt": record["alt"],
-                        "format": sample_record.get("format"),
-                        "genotype": sample_fields.get("GT"),
-                        "source_format": "vcf",
-                    }
+                for sample_record, sample_fields, source_record, _observed in carrying_samples:
                     is_multiallelic_alt = "," in str(record["alt"] or "")
                     if lifter is not None:
                         match_basis = (
@@ -250,15 +262,13 @@ def match_clinvar_variants(
         "evidence_context": evidence_context(
             "static",
             reason="ClinVar exact matches can be summarized and scanned into deterministic candidate inventory.",
-            commands=[
-                "genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'",
-            ],
+            commands=["genomi call clinvar.scan_candidates"],
         ),
     }
 
 
 def match_clinvar_variants_from_active_genome_index(
-    active_genome_index: ActiveGenomeIndexReader | str | Path,
+    reader: ActiveGenomeIndexReader,
     evidence_db: str | Path,
     output_path: str | Path,
     *,
@@ -270,11 +280,6 @@ def match_clinvar_variants_from_active_genome_index(
     batch_size: int = 25_000,
     force: bool = False,
 ) -> dict[str, Any]:
-    reader = (
-        active_genome_index
-        if isinstance(active_genome_index, ActiveGenomeIndexReader)
-        else open_reader(active_genome_index, need=ActiveGenomeIndexNeed.VARIANT, genome_build=genome_build)
-    )
     agi_path = reader.agi_path
     evidence_db = Path(evidence_db)
     output_path = Path(output_path)
@@ -317,9 +322,7 @@ def match_clinvar_variants_from_active_genome_index(
                 "evidence_context": evidence_context(
                     "static",
                     reason="Active Genome Index ClinVar matches include explicit provenance and can be summarized into deterministic candidate inventory.",
-                    commands=[
-                        "genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"
-                    ],
+                    commands=["genomi call clinvar.scan_candidates"],
                 ),
             }
 
@@ -333,8 +336,12 @@ def match_clinvar_variants_from_active_genome_index(
     created_at = utc_now()
     with connect_evidence(evidence_db) as evidence_connection, output_path.open("w", encoding="utf-8") as handle:
         _ensure_schema(evidence_connection)
-        reader.attach_to(evidence_connection, "sample_active_genome_index")
-        _ensure_active_genome_index_ready_for_clinvar_match(evidence_connection, agi_path)
+        staged = stage_clinvar_match_records(
+            reader,
+            evidence_connection,
+            pass_only=pass_only,
+            max_records=max_records,
+        )
         selection_params = (max_records,) if max_records is not None else ()
         stats_row = evidence_connection.execute(
             f"""
@@ -349,6 +356,12 @@ def match_clinvar_variants_from_active_genome_index(
                                  and upper(genotype) not in ('', '.', '--', '00', 'NN')
                                 then 1
                             when alt is null or alt in ('', '.') then 0
+                            when observed_alleles is not null then (
+                                select count(distinct observed.value)
+                                from json_each(observed_alleles) as observed
+                                where upper(observed.value) <> upper(ref)
+                                  and instr(',' || upper(alt) || ',', ',' || upper(observed.value) || ',') > 0
+                            )
                             else 1 + length(alt) - length(replace(alt, ',', ''))
                         end
                     ),
@@ -377,6 +390,7 @@ def match_clinvar_variants_from_active_genome_index(
             max_records=max_records,
             genome_build=cache_build,
             max_evidence_per_allele=max_evidence_per_allele,
+            source_format=staged.get("source_format"),
             cross_build=cross_build,
             sample_build=genome_build,
         )
@@ -401,7 +415,7 @@ def match_clinvar_variants_from_active_genome_index(
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
         "status": "completed",
-        "input_active_genome_index": str(agi_path),
+        "input_active_genome_index": {"hidden_agi_path": True},
         "output": str(output_path),
         "manifest_path": str(manifest_path),
         "stats": stats,
@@ -409,7 +423,7 @@ def match_clinvar_variants_from_active_genome_index(
         "evidence_context": evidence_context(
             "static",
             reason="Active Genome Index ClinVar matches include explicit provenance and can be summarized into deterministic candidate inventory.",
-            commands=["genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"],
+            commands=["genomi call clinvar.scan_candidates"],
         ),
     }
 
@@ -437,11 +451,11 @@ def _selected_active_genome_index_records_cte_sql(
         """
     sql = """
             with selected_records as (
-                select rowid as record_rowid, chrom, chrom_sort, pos, rsid, ref, alt, qual, filter,
+                select record_rowid, chrom, chrom_sort, pos, rsid, ref, alt, qual, filter,
                        info,
                        sample_index, sample_name, format, genotype, depth, genotype_quality, record_kind,
                        observed_alleles
-                from sample_active_genome_index.records
+                from temp.selected_active_genome_index_records
                 where record_kind in ('variant_call', 'array_call')
         """
     if pass_only:
@@ -565,32 +579,6 @@ def _populate_lifted_selected_active_genome_index_records_table(
     return lifted, dropped
 
 
-def _ensure_active_genome_index_ready_for_clinvar_match(connection: sqlite3.Connection, agi_path: Path) -> None:
-    stats_count = connection.execute("select count(*) from sample_active_genome_index.stats").fetchone()[0]
-    index_names = {
-        str(row["name"])
-        for row in connection.execute(
-            """
-            select name
-            from sample_active_genome_index.sqlite_master
-            where type = 'index' and tbl_name = 'records'
-            """
-        )
-    }
-    required_indexes = {"records_export_idx", "records_variant_idx"}
-    missing_indexes = sorted(required_indexes - index_names)
-    if stats_count == 0 or missing_indexes:
-        details = []
-        if stats_count == 0:
-            details.append("missing stats rows")
-        if missing_indexes:
-            details.append(f"missing query indexes: {', '.join(missing_indexes)}")
-        raise RuntimeError(
-            f"Active Genome Index is incomplete for ClinVar refresh ({agi_path}): "
-            f"{'; '.join(details)}. Rebuild the Active Genome Index from the source genome file once."
-        )
-
-
 def _write_clinvar_active_genome_index_direct_matches(
     connection: sqlite3.Connection,
     handle: Any,
@@ -599,11 +587,11 @@ def _write_clinvar_active_genome_index_direct_matches(
     max_records: int | None,
     genome_build: str,
     max_evidence_per_allele: int,
+    source_format: str | None,
     cross_build: bool = False,
     sample_build: str | None = None,
 ) -> dict[str, int]:
     source_selects: list[str] = []
-    source_format = _selected_active_genome_index_source_format(connection)
     sample_chrom_style = _selected_active_genome_index_chrom_style(
         connection,
         pass_only=pass_only,
@@ -699,22 +687,6 @@ def _clinvar_index_source_tables(connection: sqlite3.Connection) -> list[str]:
     return tables
 
 
-def _selected_active_genome_index_source_format(connection: sqlite3.Connection) -> str | None:
-    try:
-        row = connection.execute(
-            "select value from sample_active_genome_index.metadata where key = 'source_format'"
-        ).fetchone()
-    except sqlite3.Error:
-        return None
-    if row is None:
-        return None
-    try:
-        parsed = json.loads(str(row["value"]))
-    except (TypeError, json.JSONDecodeError):
-        parsed = row["value"]
-    return str(parsed) if parsed else None
-
-
 def _table_has_rows(connection: sqlite3.Connection, table_name: str) -> bool:
     return connection.execute(f"select 1 from {table_name} limit 1").fetchone() is not None
 
@@ -794,7 +766,8 @@ def _clinvar_index_direct_select_sql(
     sample_ref = "r.ref"
     sample_alt = "r.alt"
     match_basis = f"'{MATCH_BASIS_LIFTOVER_EXACT_ALLELE}'" if cross_build else f"'{MATCH_BASIS_EXACT_ALLELE}'"
-    alt_where = "and r.alt not in ('', '.') and instr(r.alt, ',') = 0 and cv.alt = r.alt"
+    observed_alt_where = "and exists (select 1 from json_each(r.observed_alleles) as observed where upper(observed.value) = upper(cv.alt))"
+    alt_where = f"and r.alt not in ('', '.') and instr(r.alt, ',') = 0 and cv.alt = r.alt {observed_alt_where}"
     ref_where = "and cv.ref = r.ref"
     if multiallelic:
         batch_id = "cast(r.record_rowid as text) || ':' || cv.alt"
@@ -804,7 +777,7 @@ def _clinvar_index_direct_select_sql(
             if cross_build
             else f"'{MATCH_BASIS_MULTIALLELIC_ALT}'"
         )
-        alt_where = "and instr(r.alt, ',') > 0 and instr(',' || r.alt || ',', ',' || cv.alt || ',') > 0"
+        alt_where = f"and instr(r.alt, ',') > 0 and instr(',' || r.alt || ',', ',' || cv.alt || ',') > 0 {observed_alt_where}"
     where = f"""
               and cv.chrom = {chrom_expression}
               and cv.pos = r.pos
@@ -836,6 +809,8 @@ def _clinvar_index_direct_select_sql(
                 r.rsid as sample_rsid,
                 {sample_ref} as sample_ref,
                 {sample_alt} as sample_alt,
+                null as inferred_clinvar_ref,
+                null as inferred_clinvar_alt,
                 r.qual as sample_qual,
                 r.filter as sample_filter,
                 r.sample_index as sample_index,
@@ -872,128 +847,4 @@ def _clinvar_index_direct_select_sql(
             where 1 = 1
               {alt_where}
               {where}
-        """
-
-
-def _create_clinvar_query_table(connection: sqlite3.Connection) -> None:
-    connection.executescript(
-        """
-        create temp table if not exists clinvar_query_alleles (
-            batch_id integer not null,
-            lookup_chrom text not null,
-            chrom text not null,
-            pos integer not null,
-            rsid text,
-            ref text not null,
-            alt text not null,
-            qual text,
-            filter text not null,
-            sample_index integer,
-            sample_name text,
-            genotype text,
-            depth integer,
-            genotype_quality integer
-        );
-        create index if not exists clinvar_query_alleles_lookup_idx
-            on clinvar_query_alleles(lookup_chrom, pos, ref, alt);
-        """
-    )
-
-
-def _write_clinvar_index_match_batch(
-    connection: sqlite3.Connection,
-    handle: Any,
-    batch: list[tuple[Any, ...]],
-    *,
-    genome_build: str,
-    max_evidence_per_allele: int,
-) -> dict[str, int]:
-    connection.execute("delete from clinvar_query_alleles")
-    connection.executemany(
-        """
-        insert into clinvar_query_alleles(
-            batch_id, lookup_chrom, chrom, pos, rsid, ref, alt, qual, filter,
-            sample_index, sample_name, genotype, depth, genotype_quality
-        )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        batch,
-    )
-    source_selects = [
-        _clinvar_index_match_select_sql(table_name)
-        for table_name in _clinvar_index_source_tables(connection)
-    ]
-    if not source_selects:
-        return {"matched_alleles": 0, "written_records": 0}
-    joined_sql = "\nunion all\n".join(source_selects)
-    rows = connection.execute(
-        f"""
-        with clinvar_joined as (
-            {joined_sql}
-        ),
-        ranked as (
-            select
-                row_number() over (
-                    partition by batch_id
-                    order by imported_at desc, clinvar_id, allele_id
-                ) as evidence_rank,
-                *
-            from clinvar_joined
-        )
-        select *
-        from ranked
-        where evidence_rank <= ?
-        order by batch_id, evidence_rank
-        """,
-        (*([genome_build] * len(source_selects)), max_evidence_per_allele),
-    )
-    return _write_clinvar_match_rows(handle, rows)
-
-
-def _clinvar_index_match_select_sql(table_name: str) -> str:
-    return f"""
-            select
-                q.batch_id as batch_id,
-                '{MATCH_BASIS_EXACT_ALLELE}' as match_basis,
-                '{MATCH_BASIS_EXACT_ALLELE}' as match_kind,
-                q.chrom as sample_chrom,
-                q.pos as sample_pos,
-                q.rsid as sample_rsid,
-                q.ref as sample_ref,
-                q.alt as sample_alt,
-                q.qual as sample_qual,
-                q.filter as sample_filter,
-                q.sample_index as sample_index,
-                q.sample_name as sample_name,
-                q.genotype as genotype,
-                q.depth as depth,
-                q.genotype_quality as genotype_quality,
-                q.ref as source_record_ref,
-                q.alt as source_record_alt,
-                null as source_record_format,
-                q.genotype as source_record_genotype,
-                null as source_record_info,
-                null as source_format,
-                cv.chrom as chrom,
-                cv.pos as pos,
-                cv.ref as ref,
-                cv.alt as alt,
-                cv.genome_build as genome_build,
-                cv.clinvar_id as clinvar_id,
-                cv.allele_id as allele_id,
-                cv.clinical_significance as clinical_significance,
-                cv.review_status as review_status,
-                cv.conditions as conditions,
-                cv.gene_info as gene_info,
-                cv.hgvs as hgvs,
-                cv.source_path as source_path,
-                cv.source_version as source_version,
-                cv.imported_at as imported_at
-            from clinvar_query_alleles q
-            cross join {table_name} as cv indexed by clinvar_variant_idx
-            where cv.chrom = q.lookup_chrom
-              and cv.pos = q.pos
-              and cv.ref = q.ref
-              and cv.alt = q.alt
-              and cv.genome_build = ?
         """

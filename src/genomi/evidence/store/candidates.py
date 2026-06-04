@@ -126,15 +126,17 @@ def extract_clinvar_candidates(
     for item in _iter_jsonl(matches_path):
         total_match_records += 1
         sample = item.get("sample_variant") or {}
+        candidate_allele = _candidate_allele_from_match(item, sample)
         key = (
-            str(sample.get("chrom")),
-            int(sample.get("pos")),
-            str(sample.get("ref")),
-            str(sample.get("alt")),
+            str(candidate_allele.get("chrom")),
+            int(candidate_allele.get("pos") or 0),
+            str(candidate_allele.get("ref")),
+            str(candidate_allele.get("alt")),
         )
         group = grouped.setdefault(
             key,
             {
+                "candidate_allele": candidate_allele,
                 "sample_variant": sample,
                 "records": [],
             },
@@ -305,6 +307,32 @@ def _candidate_count_by_match_basis(candidates: list[dict[str, Any]], match_base
         if candidate_bases & match_bases:
             count += 1
     return count
+
+
+def _candidate_allele_from_match(item: dict[str, Any], sample: dict[str, Any]) -> dict[str, Any]:
+    provenance = item.get("match_provenance")
+    inferred = provenance.get("inferred_clinvar_allele") if isinstance(provenance, dict) else None
+    if isinstance(inferred, dict):
+        return {
+            "chrom": inferred.get("chrom"),
+            "pos": inferred.get("pos"),
+            "ref": inferred.get("ref"),
+            "alt": inferred.get("alt"),
+        }
+    clinvar = item.get("clinvar")
+    if isinstance(clinvar, dict):
+        return {
+            "chrom": clinvar.get("chrom") or sample.get("chrom"),
+            "pos": clinvar.get("pos") or sample.get("pos"),
+            "ref": clinvar.get("ref") or sample.get("ref"),
+            "alt": clinvar.get("alt") or sample.get("alt"),
+        }
+    return {
+        "chrom": sample.get("chrom"),
+        "pos": sample.get("pos"),
+        "ref": sample.get("ref"),
+        "alt": sample.get("alt"),
+    }
 
 
 def _clinvar_candidate_evidence_view(

@@ -40,16 +40,11 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
 def _clinvar_scan(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
     resolved = _with_context(params, db=True, genome_build=True)
-    matches_path = _optional_path(params, "matches")
-    if matches_path is None or not matches_path.exists():
-        # No prebuilt matches file: materialize one from the Active Genome Index
-        # (pure-SQLite, variant sites only — never an iteration of the raw VCF).
-        materialized = _materialize_clinvar_matches_for_scan(reader, resolved, matches_path)
-        if isinstance(materialized, dict):
-            return materialized
-        matches_path = materialized
+    materialized = _materialize_clinvar_matches_for_scan(reader, resolved)
+    if isinstance(materialized, dict):
+        return materialized
     return static_annotation.scan_static_candidates(
-        matches_path,
+        materialized,
         evidence_db=_optional_path(resolved, "db"),
         output=_optional_path(params, "output"),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
@@ -58,7 +53,7 @@ def _clinvar_scan(params: JsonObject) -> JsonObject:
 
 
 def _materialize_clinvar_matches_for_scan(
-    reader: ActiveGenomeIndexReader, resolved: JsonObject, matches_path: Path | None
+    reader: ActiveGenomeIndexReader, resolved: JsonObject
 ) -> Path | JsonObject:
     agi_path = reader.agi_path
     if not agi_path.exists():
@@ -66,7 +61,7 @@ def _materialize_clinvar_matches_for_scan(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar candidate scanning.",
         )
-    output_path = matches_path or agi_path.with_name("clinvar.matches.jsonl")
+    output_path = agi_path.with_name("clinvar.matches.jsonl")
     materialized = static_annotation.match_static_clinvar_from_active_genome_index(
         reader,
         evidence_db=_path(resolved, "db"),

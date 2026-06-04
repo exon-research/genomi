@@ -56,6 +56,7 @@ def _build_candidate(
     population: str | None,
 ) -> dict[str, Any]:
     sample = dict(group["sample_variant"])
+    candidate_allele = dict(group.get("candidate_allele") or _allele_identity(sample))
     records = group["records"]
     clinvar_records = [item.get("clinvar") or {} for item in records]
     match_provenance = _candidate_match_provenance(records)
@@ -76,7 +77,7 @@ def _build_candidate(
     evidence_groups = _candidate_evidence_groups(clinical_significance)
     population_evidence = _candidate_population_evidence(
         evidence_db_path,
-        sample,
+        candidate_allele,
         genome_build=genome_build,
         population_source=population_source,
         population=population,
@@ -85,10 +86,11 @@ def _build_candidate(
     clinvar_triage_score = _clinvar_triage_score(clinical_significance, review_status)
     genotype_support = _candidate_private_genotype_support(
         evidence_db_path,
-        sample,
+        candidate_allele,
         genome_build=genome_build,
     )
     candidate = {
+        "candidate_allele": candidate_allele,
         "variant": {
             "chrom": sample.get("chrom"),
             "pos": sample.get("pos"),
@@ -194,9 +196,10 @@ def _enrich_candidate_population(
     population_source: str | None,
     population: str | None,
 ) -> None:
+    candidate_allele = _candidate_query_allele(candidate)
     population_evidence = _candidate_population_evidence(
         evidence_db_path,
-        candidate["variant"],
+        candidate_allele,
         genome_build=genome_build,
         population_source=population_source,
         population=population,
@@ -206,7 +209,7 @@ def _enrich_candidate_population(
     candidate["population_evidence"] = population_evidence
     genotype_support = _candidate_private_genotype_support(
         evidence_db_path,
-        candidate["variant"],
+        candidate_allele,
         genome_build=genome_build,
     )
     candidate["genotype_support"] = genotype_support
@@ -247,7 +250,7 @@ def _normalize_candidate_evidence_groups(evidence_groups: list[str] | None) -> l
 
 
 def _candidate_inventory_sort_key(candidate: dict[str, Any]) -> tuple[int, str, int, str, str]:
-    variant = candidate["variant"]
+    variant = _candidate_query_allele(candidate)
     return (
         -int(candidate["clinvar_triage_score"]),
         str(variant.get("chrom")),
@@ -539,7 +542,7 @@ def _candidate_bucket_summary(
 
 
 def _candidate_bucket_example(candidate: dict[str, Any]) -> dict[str, Any]:
-    variant = candidate["variant"]
+    variant = _candidate_query_allele(candidate)
     return {
         "variant": {
             "chrom": variant.get("chrom"),
@@ -556,13 +559,29 @@ def _candidate_bucket_example(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def _candidate_identity(candidate: dict[str, Any]) -> tuple[str, int, str, str]:
-    variant = candidate["variant"]
+    variant = _candidate_query_allele(candidate)
     return (
         str(variant.get("chrom")),
         int(variant.get("pos") or 0),
         str(variant.get("ref")),
         str(variant.get("alt")),
     )
+
+
+def _candidate_query_allele(candidate: dict[str, Any]) -> dict[str, Any]:
+    allele = candidate.get("candidate_allele")
+    if isinstance(allele, dict):
+        return allele
+    return candidate["variant"]
+
+
+def _allele_identity(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "chrom": record.get("chrom"),
+        "pos": record.get("pos"),
+        "ref": record.get("ref"),
+        "alt": record.get("alt"),
+    }
 
 
 def _ordered_bucket_names(buckets: list[str]) -> list[str]:
@@ -640,9 +659,8 @@ def _candidate_private_genotype_support(
     *,
     genome_build: str,
 ) -> dict[str, Any]:
-    fallback = _candidate_sample_genotype_support(sample)
     if evidence_db_path is None:
-        return fallback
+        return _candidate_unclassified_genotype_support("No private evidence DB was available for genotype-support classification.")
     query = query_genotype_support(
         evidence_db_path,
         str(sample.get("chrom")),
@@ -654,19 +672,7 @@ def _candidate_private_genotype_support(
     )
     latest = query.get("latest")
     if not latest:
-        return {
-            "source": "private_db_missing",
-            "support_status": "not_checked",
-            "evidence_class": "genotype_support_unknown",
-            "reason": "No private genotype_support row exists for this allele.",
-            "stage_2_rule": "run active_genome_index.classify_genotype_support before using this allele as a supported personal finding",
-            "accepted_report_evidence_classes": [],
-            "inferred_from_sample_fields": fallback,
-            "stored_support": {
-                "status": "missing",
-                "message": "No private genotype_support row exists for this allele; run active_genome_index.classify_genotype_support before using it as a personal finding.",
-            },
-        }
+        return _candidate_unclassified_genotype_support("No private genotype_support row exists for this allele.")
     status = str(latest.get("support_status") or "unknown")
     observation = latest.get("sample_observation") if isinstance(latest.get("sample_observation"), dict) else {}
     return {
@@ -682,7 +688,6 @@ def _candidate_private_genotype_support(
         "accepted_report_evidence_classes": latest.get("accepted_report_evidence_classes") or [],
         "stored_support": {
             "status": "available",
-            "vcf_path": latest.get("vcf_path"),
             "created_at": latest.get("created_at"),
             "genotype": observation.get("genotype"),
             "zygosity": observation.get("zygosity"),
@@ -694,48 +699,14 @@ def _candidate_private_genotype_support(
     }
 
 
-def _candidate_sample_genotype_support(sample: dict[str, Any]) -> dict[str, Any]:
-    genotype = str(sample.get("genotype") or "")
-    if not genotype or "." in genotype.replace("|", "/").split("/"):
-        status = "no_call"
-        evidence_class = "genotype_support_no_call"
-        reason = "sample genotype is missing or no-called"
-    elif str(sample.get("filter") or "") not in {"", "PASS", "."}:
-        status = "weak"
-        evidence_class = "genotype_support_weak"
-        reason = "sample call has a non-PASS filter"
-    else:
-        depth = _optional_int_value(sample.get("depth"))
-        genotype_quality = _optional_int_value(sample.get("genotype_quality"))
-        if depth is not None and depth < 10:
-            status = "weak"
-            evidence_class = "genotype_support_weak"
-            reason = "sample call depth is below 10"
-        elif genotype_quality is not None and genotype_quality < 20:
-            status = "weak"
-            evidence_class = "genotype_support_weak"
-            reason = "sample call genotype quality is below 20"
-        elif depth is None or genotype_quality is None:
-            status = "unknown"
-            evidence_class = "genotype_support_unknown"
-            reason = "sample call is missing DP or GQ"
-        else:
-            status = "supported"
-            evidence_class = "genotype_support_supported"
-            reason = "sample call is PASS and meets DP/GQ thresholds"
+def _candidate_unclassified_genotype_support(reason: str) -> dict[str, Any]:
     return {
-        "source": "sample_variant_fields",
-        "support_status": status,
-        "evidence_class": evidence_class,
+        "source": "active_genome_index_reader_not_classified",
+        "support_status": "not_checked",
+        "evidence_class": "genotype_support_unknown",
         "reason": reason,
-        "stage_2_rule": (
-            "may be used as sample_observation evidence"
-            if status == "supported"
-            else "use as limited sample context until stronger sample evidence supports the personal finding"
-        ),
-        "accepted_report_evidence_classes": (
-            ["sample_observation", "genotype_support_supported"] if status == "supported" else []
-        ),
+        "accepted_report_evidence_classes": [],
+        "stored_support": {"status": "missing"},
     }
 
 

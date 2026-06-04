@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from genomi.active_genome_index.active_genome_index import ActiveGenomeIndexIncomplete
+from genomi.active_genome_index.active_genome_index import ActiveGenomeIndexIncomplete, ActiveGenomeIndexNeed, open_reader
 from tests._external_layers_helpers import (
     SQLITE_BUSY_TIMEOUT_SECONDS,
     TINY_CLINVAR,
@@ -457,7 +457,8 @@ class EvidenceImportTests(EvidenceImportTestBase):
             agi_path = Path(tmp) / "tiny-active-genome-index.sqlite"
             agi_output = Path(tmp) / "active-genome-index-matches.jsonl"
             create_active_genome_index(chr_vcf, agi_path)
-            agi_result = match_clinvar_variants_from_active_genome_index(agi_path, db, agi_output)
+            reader = open_reader(agi_path, need=ActiveGenomeIndexNeed.VARIANT, genome_build="GRCh38")
+            agi_result = match_clinvar_variants_from_active_genome_index(reader, db, agi_output)
             self.assertEqual(agi_result["stats"]["matched_alleles"], 2)
             self.assertIn('"chrom": "chr1"', agi_output.read_text(encoding="utf-8").splitlines()[0])
             active_payload = json.loads(agi_output.read_text(encoding="utf-8").splitlines()[0])
@@ -480,7 +481,12 @@ class EvidenceImportTests(EvidenceImportTestBase):
                     """
                 )
             with self.assertRaises(ActiveGenomeIndexIncomplete):
-                match_clinvar_variants_from_active_genome_index(incomplete_active_genome_index, db, Path(tmp) / "incomplete.jsonl")
+                incomplete_reader = open_reader(
+                    incomplete_active_genome_index,
+                    need=ActiveGenomeIndexNeed.VARIANT,
+                    genome_build="GRCh38",
+                )
+                match_clinvar_variants_from_active_genome_index(incomplete_reader, db, Path(tmp) / "incomplete.jsonl")
 
             summary = summarize_clinvar_matches(output, Path(tmp) / "summary.json")
             self.assertEqual(summary["total_clinvar_match_records"], 2)
@@ -531,8 +537,8 @@ class EvidenceImportTests(EvidenceImportTestBase):
                         "sample_variant": {
                             "chrom": "1",
                             "pos": 200,
-                            "ref": "T",
-                            "alt": "G",
+                            "ref": ".",
+                            "alt": ".",
                             "genotype": "TG",
                             "filter": "PASS",
                             "source_format": "23andme",
@@ -555,7 +561,10 @@ class EvidenceImportTests(EvidenceImportTestBase):
                             "conditions": "condition",
                             "clinvar_id": "RCV0002",
                         },
-                        "match_provenance": {"match_basis": "consumer_array_allele_inference"},
+                        "match_provenance": {
+                            "match_basis": "consumer_array_allele_inference",
+                            "inferred_clinvar_allele": {"chrom": "1", "pos": 200, "ref": "T", "alt": "G"},
+                        },
                     }
                 )
                 + "\n",
@@ -572,7 +581,10 @@ class EvidenceImportTests(EvidenceImportTestBase):
             "consumer_array_allele_inference",
         )
         variant = annotations["annotations"][0]["variant"]
+        self.assertEqual(annotations["annotations"][0]["candidate_allele"], {"chrom": "1", "pos": 200, "ref": "T", "alt": "G"})
         self.assertEqual(variant["record_kind"], "array_call")
+        self.assertEqual(variant["ref"], ".")
+        self.assertEqual(variant["alt"], ".")
         self.assertEqual(variant["observed_alleles"], ["T", "G"])
         self.assertEqual(variant["source_record_record_kind"], "array_call")
         self.assertEqual(variant["source_record_observed_alleles"], ["T", "G"])
@@ -702,7 +714,8 @@ class EvidenceImportTests(EvidenceImportTestBase):
             import_clinvar_vcf(clinvar, db, source_version="fixture")
             rsid_index = build_clinvar_rsid_index(db)
             create_active_genome_index(vcf, index)
-            annotations = build_clinvar_rsid_annotation_index(index, db, tmp_path / "rsid-annotations.json")
+            reader = open_reader(index, need=ActiveGenomeIndexNeed.VARIANT, genome_build="GRCh38")
+            annotations = build_clinvar_rsid_annotation_index(reader, db, tmp_path / "rsid-annotations.json")
 
         self.assertEqual(rsid_index["rsid_links"], 1)
         self.assertEqual(annotations["summary"]["matched_rsids"], 1)

@@ -123,7 +123,7 @@ def build_static_annotation(
                 "static",
                 reason="This static artifact is useful only when broad materialized source rows are explicitly needed.",
                 commands=[
-                    "genomi call clinvar.match_variants --params '{\"vcf\":\"<vcf>\"}'",
+                    "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
                     "genomi call nutrigenomics.retrieve_domain_markers --params '{\"domain_id\":\"folate_metabolism\"}'",
                 ],
             )
@@ -153,7 +153,7 @@ def build_static_annotation(
             create_active_genome_index(vcf_path, agi_path, include_reference=True, max_records=max_records, parallel_workers=parallel_workers),
             "static",
             reason="The Active Genome Index can now feed deterministic sample QC and PASS variant export.",
-            commands=["genomi call active_genome_index.classify_callset_qc --params '{\"vcf\":\"<vcf>\"}'", "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],
+            commands=["genomi call active_genome_index.classify_callset_qc --params '{\"agi_path\":\"<agi.sqlite>\"}'", "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],
         )
     )
     steps.append(
@@ -169,8 +169,8 @@ def build_static_annotation(
             "static",
             reason="The sample QC handoff tells later research whether observed genotypes, missing alleles, and callability need extra checks.",
             commands=[
-                "genomi call active_genome_index.classify_genotype_support --params '{\"vcf\":\"<vcf>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
-                "genomi call active_genome_index.classify_region_callability --params '{\"vcf\":\"<vcf>\",\"region\":\"<chrom:start-end>\"}'",
+                "genomi call active_genome_index.classify_genotype_support --params '{\"agi_path\":\"<agi.sqlite>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
+                "genomi call active_genome_index.classify_region_callability --params '{\"agi_path\":\"<agi.sqlite>\",\"region\":\"<chrom:start-end>\"}'",
                 "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'",
             ],
         )
@@ -189,7 +189,7 @@ def build_static_annotation(
                     "static",
                     reason="The matching reference FASTA is cached for genotype-support resolution of gVCF reference blocks.",
                     commands=[
-                        "genomi call active_genome_index.classify_genotype_support --params '{\"vcf\":\"<vcf>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\",\"reference_fasta\":\"<reference.fa>\"}'",
+                        "genomi call active_genome_index.classify_genotype_support --params '{\"agi_path\":\"<agi.sqlite>\",\"chrom\":\"<chrom>\",\"pos\":123,\"ref\":\"<ref>\",\"alt\":\"<alt>\",\"reference_fasta\":\"<reference.fa>\"}'",
                         "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'",
                     ],
                 )
@@ -209,9 +209,8 @@ def build_static_annotation(
             workflow_step(
                 "export-variants",
                 export_variants(
-                    vcf_path,
-                    exported_path,
                     agi_path,
+                    exported_path,
                     pass_only=True,
                     primary_contigs_only=primary_contigs_only,
                     chrom_style=chrom_style,
@@ -222,7 +221,7 @@ def build_static_annotation(
                 reason="The exported comparable VCF can be normalized and matched against static databases.",
                 commands=[
                     "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
-                    "genomi call clinvar.match_variants --params '{\"vcf\":\"<exported.vcf>\"}'",
+                    "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
                 ],
             )
         )
@@ -246,7 +245,10 @@ def build_static_annotation(
                 normalized,
                 "static",
                 reason="The normalized VCF is ready for exact static-source matching.",
-                commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<normalized.vcf>\"}'"],
+                commands=[
+                    "genomi call genomi.parse_source --params '{\"source\":\"<normalized.vcf>\"}'",
+                    "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
+                ],
             )
         )
         comparable_vcf = Path(normalized["output"])
@@ -267,7 +269,7 @@ def build_static_annotation(
                     },
                     "static",
                     reason="The installed ClinVar library can now be parsed into reusable static rows for this Active Genome Index.",
-                    commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<vcf>\"}'"],
+                    commands=["genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'"],
                 )
             )
         elif allow_long_running_static:
@@ -321,7 +323,7 @@ def build_static_annotation(
                     ),
                         "static",
                         reason="Imported ClinVar rows need a gene index before exact sample matching.",
-                    commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<vcf>\"}'"],
+                    commands=["genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'"],
                 )
             )
             imported_clinvar_db_path = public_write_db_path
@@ -337,7 +339,7 @@ def build_static_annotation(
                 build_clinvar_gene_index(reusable_clinvar_db_path, force=force),
                 "static",
                 reason="The ClinVar gene index is ready; match sample alleles to exact ClinVar assertions.",
-                commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<comparable.vcf>\"}'"],
+                commands=["genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'"],
             )
         )
         steps.append(
@@ -369,7 +371,7 @@ def build_static_annotation(
                 match_result,
                 "static",
                 reason="Exact ClinVar matches can now be summarized and turned into deterministic candidate inventory.",
-                commands=["genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"],
+                commands=["genomi call clinvar.scan_candidates"],
             )
         )
         steps.append(
@@ -378,7 +380,7 @@ def build_static_annotation(
                 summarize_clinvar_matches(matches, matches.with_suffix(".summary.json"), force=force),
                 "static",
                 reason="The match summary is static context; build the candidate inventory next.",
-                commands=["genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"],
+                commands=["genomi call clinvar.scan_candidates"],
             )
         )
         steps.append(
@@ -509,34 +511,34 @@ def match_static_clinvar(
     agi_path = default_agi_path(vcf)
     if not agi_path.exists():
         return {
-            "schema": "genomi-clinvar-match-v1",
             "status": "requires_active_genome_index",
             "message": "Select or parse an Active Genome Index before ClinVar matching.",
         }
     db_path = Path(evidence_db) if evidence_db is not None else default_evidence_path(vcf)
     output_path = Path(output) if output is not None else run_output_path(vcf, "clinvar.matches.jsonl")
-    return match_static_clinvar_from_active_genome_index(
+    effective_genome_build = resolve_genome_build(vcf, genome_build)
+    active_genome_index_reader = open_reader(
         agi_path,
+        need=ActiveGenomeIndexNeed.VARIANT,
+        genome_build=effective_genome_build,
+    )
+    return match_static_clinvar_from_active_genome_index(
+        active_genome_index_reader,
         evidence_db=db_path,
         output=output_path,
-        genome_build=genome_build,
+        genome_build=effective_genome_build,
         force=force,
     )
 
 
 def match_static_clinvar_from_active_genome_index(
-    active_genome_index: ActiveGenomeIndexReader | str | Path,
+    reader: ActiveGenomeIndexReader,
     *,
     evidence_db: str | Path,
     output: str | Path,
     genome_build: str = "GRCh38",
     force: bool = False,
 ) -> dict[str, Any]:
-    reader = (
-        active_genome_index
-        if isinstance(active_genome_index, ActiveGenomeIndexReader)
-        else open_reader(active_genome_index, need=ActiveGenomeIndexNeed.VARIANT, genome_build=genome_build)
-    )
     agi_path = reader.agi_path
     db_path = Path(evidence_db)
     output_path = Path(output)

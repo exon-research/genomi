@@ -22,6 +22,7 @@ def build_clinvar_match_payload(
     match_kind: str | None = None,
     source_format: str | None = None,
     source_record: dict[str, Any] | None = None,
+    inferred_clinvar_allele: dict[str, Any] | None = None,
     liftover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     basis = match_basis or MATCH_BASIS_UNKNOWN
@@ -59,6 +60,8 @@ def build_clinvar_match_payload(
             for key in ("chrom", "pos", "ref", "alt", "format", "genotype", "record_kind", "observed_alleles")
             if source.get(key) is not None
         }
+    if inferred_clinvar_allele is not None:
+        provenance["inferred_clinvar_allele"] = inferred_clinvar_allele
 
     payload: dict[str, Any] = {
         "match_basis": basis,
@@ -163,6 +166,7 @@ def _write_clinvar_match_rows(
             sample_variant["observed_alleles"] = source_record["observed_alleles"]
         if sample_build is not None:
             sample_variant["genome_build"] = sample_build
+        inferred_clinvar_allele = _inferred_clinvar_allele(row, row_keys)
         liftover = None
         if (
             cache_build is not None
@@ -184,6 +188,7 @@ def _write_clinvar_match_rows(
             match_kind=_row_value(row, row_keys, "match_kind"),
             source_format=source_format,
             source_record=source_record,
+            inferred_clinvar_allele=inferred_clinvar_allele,
             liftover=liftover,
         )
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -230,6 +235,19 @@ def _json_list_or_none(value: Any) -> list[str] | None:
     if not isinstance(parsed, list):
         return None
     return [str(item) for item in parsed]
+
+
+def _inferred_clinvar_allele(row: sqlite3.Row, row_keys: set[str]) -> dict[str, Any] | None:
+    ref = _row_value(row, row_keys, "inferred_clinvar_ref")
+    alt = _row_value(row, row_keys, "inferred_clinvar_alt")
+    if ref is None or alt is None:
+        return None
+    return {
+        "chrom": row["chrom"],
+        "pos": int(row["pos"]),
+        "ref": ref,
+        "alt": alt,
+    }
 
 
 def _evidence_scope_for_match_basis(match_basis: str) -> str:

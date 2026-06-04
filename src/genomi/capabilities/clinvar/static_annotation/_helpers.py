@@ -142,8 +142,8 @@ def init_static_run(
             reason="Prepare the run evidence store; focused tools materialize deterministic library artifacts when those facts are needed.",
             commands=[
                 "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'",
-                "genomi call clinvar.match_variants --params '{\"vcf\":\"<vcf>\"}'",
-                "genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'",
+                "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
+                "genomi call clinvar.scan_candidates",
             ],
         ),
     }

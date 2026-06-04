@@ -29,7 +29,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "vcf": {
+          "agi_path": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
           "db": {
@@ -51,14 +51,14 @@
       "skill": "skills/clinvar/SKILL.md",
       "area": "clinvar",
       "requires": [
-        "active_genome_index_or_source_param",
+        "approved_active_genome_index",
         "clinvar-grch38_or_clinvar-grch37"
       ],
       "produces": [
         "clinvar_matches"
       ],
       "context_optional": [
-        "vcf",
+        "agi_path",
         "db",
         "genome_build"
       ],
@@ -72,18 +72,18 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "focused_tool"
     },
     "clinvar.scan_candidates": {
       "capability": "clinvar",
       "namespace": "clinvar",
-      "description": "Build a deterministic candidate inventory from exact ClinVar matches, materializing those matches from the Active Genome Index when needed.",
+      "description": "Build a deterministic candidate inventory from ClinVar matches materialized from the approved Active Genome Index.",
       "input_schema": {
         "type": "object",
         "properties": {
-          "matches": {
+          "agi_path": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
           "db": {
@@ -105,8 +105,8 @@
       "skill": "skills/clinvar/SKILL.md",
       "area": "clinvar",
       "requires": [
-        "active_genome_index_or_matches_param",
-        "clinvar-grch38_or_clinvar-grch37_when_matches_need_materialization"
+        "approved_active_genome_index",
+        "clinvar-grch38_or_clinvar-grch37"
       ],
       "produces": [
         "candidate_inventory",
@@ -117,7 +117,7 @@
         "top_observed_candidate"
       ],
       "context_optional": [
-        "matches",
+        "agi_path",
         "db",
         "genome_build"
       ],
@@ -131,7 +131,8 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index",
+        "local_private_match_file"
       ],
       "discovery_role": "entry_tool"
     }

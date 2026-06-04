@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-from __future__ import annotations
 import json
 import sqlite3
 from collections import Counter
@@ -8,9 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from ...active_genome_index.active_genome_index import (
-    ActiveGenomeIndexNeed,
     ActiveGenomeIndexReader,
-    open_reader,
 )
 from ...runtime.external import file_metadata, matching_manifest, utc_now
 from ...runtime.handoff import evidence_context
@@ -83,9 +79,7 @@ def summarize_clinvar_matches(
                 "evidence_context": evidence_context(
                     "static",
                     reason="The static match summary can feed deterministic candidate inventory.",
-                    commands=[
-                        "genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"
-                    ],
+                    commands=["genomi call clinvar.scan_candidates"],
                 ),
             }
 
@@ -160,7 +154,7 @@ def summarize_clinvar_matches(
         "evidence_context": evidence_context(
             "static",
             reason="The static match summary can feed deterministic candidate inventory.",
-            commands=["genomi call clinvar.scan_candidates --params '{\"matches\":\"<clinvar.matches.jsonl>\"}'"],
+            commands=["genomi call clinvar.scan_candidates"],
         ),
     }
 
@@ -204,13 +198,14 @@ def build_clinvar_annotation_index(
     for item in _iter_jsonl(matches_path):
         total_match_records += 1
         sample = item.get("sample_variant") or {}
+        candidate_allele = _candidate_allele_from_match(item, sample)
         key = (
-            str(sample.get("chrom")),
-            int(sample.get("pos")),
-            str(sample.get("ref")),
-            str(sample.get("alt")),
+            str(candidate_allele.get("chrom")),
+            int(candidate_allele.get("pos") or 0),
+            str(candidate_allele.get("ref")),
+            str(candidate_allele.get("alt")),
         )
-        group = grouped.setdefault(key, {"sample_variant": sample, "records": []})
+        group = grouped.setdefault(key, {"candidate_allele": candidate_allele, "sample_variant": sample, "records": []})
         group["records"].append(item)
 
     annotations = [_build_clinvar_annotation(group) for group in grouped.values()]
@@ -286,6 +281,7 @@ def build_clinvar_annotation_index(
 
 def _build_clinvar_annotation(group: dict[str, Any]) -> dict[str, Any]:
     sample = dict(group["sample_variant"])
+    candidate_allele = dict(group.get("candidate_allele") or _allele_identity(sample))
     records = group["records"]
     clinvar_records = [item.get("clinvar") or {} for item in records]
     clinical_significance: Counter[str] = Counter(
@@ -304,6 +300,7 @@ def _build_clinvar_annotation(group: dict[str, Any]) -> dict[str, Any]:
     match_basis = Counter(match_basis_from_record(item) for item in records)
     match_kind = Counter(match_kind_from_record(item) for item in records)
     return {
+        "candidate_allele": candidate_allele,
         "variant": {
             "chrom": sample.get("chrom"),
             "pos": sample.get("pos"),
@@ -341,13 +338,38 @@ def _build_clinvar_annotation(group: dict[str, Any]) -> dict[str, Any]:
 
 
 def _clinvar_annotation_sort_key(annotation: dict[str, Any]) -> tuple[str, int, str, str]:
-    variant = annotation["variant"]
+    variant = annotation.get("candidate_allele") or annotation["variant"]
     return (
         str(variant.get("chrom")),
         int(variant.get("pos") or 0),
         str(variant.get("ref")),
         str(variant.get("alt")),
     )
+
+
+def _candidate_allele_from_match(item: dict[str, Any], sample: dict[str, Any]) -> dict[str, Any]:
+    provenance = item.get("match_provenance")
+    inferred = provenance.get("inferred_clinvar_allele") if isinstance(provenance, dict) else None
+    if isinstance(inferred, dict):
+        return _allele_identity(inferred)
+    clinvar = item.get("clinvar")
+    if isinstance(clinvar, dict):
+        return {
+            "chrom": clinvar.get("chrom") or sample.get("chrom"),
+            "pos": clinvar.get("pos") or sample.get("pos"),
+            "ref": clinvar.get("ref") or sample.get("ref"),
+            "alt": clinvar.get("alt") or sample.get("alt"),
+        }
+    return _allele_identity(sample)
+
+
+def _allele_identity(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "chrom": record.get("chrom"),
+        "pos": record.get("pos"),
+        "ref": record.get("ref"),
+        "alt": record.get("alt"),
+    }
 
 
 def _primary_counter_value(counter: Counter[str]) -> str | None:
@@ -357,7 +379,7 @@ def _primary_counter_value(counter: Counter[str]) -> str | None:
 
 
 def build_clinvar_rsid_annotation_index(
-    active_genome_index: ActiveGenomeIndexReader | str | Path,
+    reader: ActiveGenomeIndexReader,
     evidence_db: str | Path,
     output_path: str | Path | None = None,
     *,
@@ -373,11 +395,6 @@ def build_clinvar_rsid_annotation_index(
     from the shared ClinVar source.
     """
 
-    reader = (
-        active_genome_index
-        if isinstance(active_genome_index, ActiveGenomeIndexReader)
-        else open_reader(active_genome_index, need=ActiveGenomeIndexNeed.VARIANT, genome_build=genome_build)
-    )
     agi_path = reader.agi_path
     evidence_db = Path(evidence_db)
     if not agi_path.exists():
