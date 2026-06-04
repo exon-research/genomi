@@ -34,6 +34,7 @@ from ._agi_readiness import (
 )
 from ._agi_schema import connect_existing_readonly, read_header_from_active_genome_index
 from .dosage import dosage_for_variants as _dosage_for_variants
+from .genotype_resolver import resolve_locus_genotype as _resolve_locus_genotype
 
 JsonObject = dict[str, Any]
 
@@ -216,6 +217,30 @@ class ActiveGenomeIndexReader:
                 variants,
                 skip_ambiguous_palindromic=skip_ambiguous_palindromic,
             )
+
+    def resolve_locus_genotype(
+        self,
+        chrom: str,
+        pos: int,
+        ref: str,
+        alt: str,
+        *,
+        reference_fasta: str | Path | None = None,
+        min_depth: int = 10,
+        min_genotype_quality: int = 20,
+    ) -> dict[str, Any]:
+        """Return AGI-owned support semantics for one target allele."""
+        self.ensure_ready()
+        return _resolve_locus_genotype(
+            self.agi_path,
+            chrom,
+            pos,
+            ref,
+            alt,
+            reference_fasta=reference_fasta,
+            min_depth=min_depth,
+            min_genotype_quality=min_genotype_quality,
+        )
 
     @contextlib.contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

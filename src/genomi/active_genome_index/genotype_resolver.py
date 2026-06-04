@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .array_genotypes import called_genotype_tokens, count_array_allele, is_array_genotype_record
-from .active_genome_index import query_region
+from ._agi_query import query_region
 from .record_kinds import RECORD_KIND_NO_CALL, is_reference_block_record
 
 

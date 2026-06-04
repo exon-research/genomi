@@ -149,7 +149,7 @@
       "mutating": false,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "local_private_evidence_files"
       ],
       "discovery_role": "focused_tool"
     },
@@ -196,7 +196,7 @@
       "mutating": false,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "local_private_evidence_files"
       ],
       "discovery_role": "focused_tool"
     }

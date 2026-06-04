@@ -547,13 +547,12 @@ class ActiveGenomeIndexContractFixtureMixin:
         for payload in payloads:
             sample = payload["sample_variant"]
             clinvar = payload["clinvar"]
-            self.assertEqual(sample["ref"], clinvar["ref"])
-            self.assertEqual(sample["alt"], clinvar["alt"])
-            self.assertNotEqual(sample["ref"], "N")
             genotype = str(sample["genotype"] or "")
             if "/" not in genotype and "|" not in genotype:
                 self.assertIn(clinvar["alt"], genotype)
             if expected_format in {"vcf", "gvcf", "bam", "fastq"}:
+                self.assertEqual(sample["ref"], clinvar["ref"])
+                self.assertEqual(sample["alt"], clinvar["alt"])
                 self.assertEqual(payload["match_basis"], "exact_allele")
                 self.assertEqual(sample["source_record_ref"], sample["ref"])
                 self.assertEqual(sample["source_record_alt"], sample["alt"])
@@ -565,10 +564,21 @@ class ActiveGenomeIndexContractFixtureMixin:
                 self.assertEqual(payload["source_format"], expected_format)
                 self.assertEqual(sample["source_format"], expected_format)
                 self.assertEqual(sample["record_kind"], "array_call")
+                self.assertEqual(sample["ref"], ".")
+                self.assertEqual(sample["alt"], ".")
                 self.assertEqual(sample["observed_alleles"], list(genotype))
                 self.assertEqual(sample["source_record_ref"], ".")
                 self.assertEqual(sample["source_record_alt"], ".")
                 self.assertEqual(sample["source_record_format"], "GT_ARRAY")
+                self.assertEqual(
+                    payload["match_provenance"]["inferred_clinvar_allele"],
+                    {
+                        "chrom": clinvar["chrom"],
+                        "pos": clinvar["pos"],
+                        "ref": clinvar["ref"],
+                        "alt": clinvar["alt"],
+                    },
+                )
                 self.assertEqual(payload["match_provenance"]["source_record"]["ref"], ".")
                 self.assertEqual(payload["match_provenance"]["source_record"]["alt"], ".")
                 self.assertEqual(payload["match_provenance"]["source_record"]["genotype"], genotype)

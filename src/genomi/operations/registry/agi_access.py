@@ -3,10 +3,10 @@
 ``open_agi`` composes the two gates that used to be stamped by hand in every
 handler:
 
-- **Authorization** — resolve the target run (explicit ``agi_id`` > a genome
-  source supplied in this chat > the session's active run) and confirm it is
-  approved for this session. A supplied source grants approval, mirroring the
-  old ``_approve_supplied_dna_source``.
+- **Authorization** — resolve the target run (explicit ``agi_path``/``agi_id``
+  > the session's active run) and confirm it is approved for this session.
+  Raw genome sources are handled by ``genomi.parse_source`` before AGI-reading
+  operations are invoked.
 - **Readiness** — hand back an :class:`ActiveGenomeIndexReader` (the data-access door from
   ``active_genome_index.reader``) only after the readiness gate for the
   requested data class has passed. ``variants_ready`` is admitted; the lifecycle
@@ -31,23 +31,11 @@ from pathlib import Path
 from ...active_genome_index.active_genome_index import (
     ActiveGenomeIndexNeed,
     ActiveGenomeIndexReader,
-    default_agi_path,
     open_reader,
 )
 from ...active_genome_index._agi_readiness import reference_pending as _reference_pending
 from ...runtime import context as runtime_context
 from .errors import JsonObject, OperationError
-
-_SOURCE_KEYS = ("source", "vcf")
-
-
-def _supplied_source(params: JsonObject) -> str | None:
-    for key in _SOURCE_KEYS:
-        value = params.get(key)
-        if value not in (None, ""):
-            return str(value)
-    return None
-
 
 def _approval_error(action: str) -> OperationError:
     return OperationError(
@@ -74,6 +62,25 @@ def _index_path_for_run(run: JsonObject, params: JsonObject) -> Path | None:
     return None
 
 
+def _resolved_path(value: object) -> str:
+    return str(Path(str(value)).expanduser().resolve(strict=False))
+
+
+def _registered_run_for_agi_path(agi_path: object) -> JsonObject | None:
+    target = _resolved_path(agi_path)
+    context = runtime_context.load_context()
+    registry = runtime_context.load_registry()
+    for container in (context.get("agis"), registry.get("agis")):
+        if not isinstance(container, dict):
+            continue
+        for run in container.values():
+            if not isinstance(run, dict) or not run.get("agi_path"):
+                continue
+            if _resolved_path(run["agi_path"]) == target:
+                return run
+    return None
+
+
 def open_agi(
     *,
     need: ActiveGenomeIndexNeed,
@@ -92,14 +99,19 @@ def open_agi(
     available — for operations whose AGI use is optional (public-only fallback).
     """
     params = params or {}
-    named = agi_id or params.get("agi_id")
-
-    # A genome source supplied in this chat is approval to read it this session.
-    source = _supplied_source(params)
-    if source is not None and not named:
-        runtime_context.approve_agi_access(
-            source=source, reason="User supplied a genome source path in this session."
+    explicit_path = params.get("agi_path")
+    if explicit_path not in (None, "") and not agi_id and not params.get("agi_id"):
+        run = _registered_run_for_agi_path(explicit_path)
+        if not isinstance(run, dict) or not runtime_context.agi_access_approved(run):
+            if optional:
+                return None
+            raise _approval_error(action)
+        return open_reader(
+            Path(str(explicit_path)),
+            need=need,
+            genome_build=_clean_build(params.get("genome_build")) or _clean_build(run.get("genome_build")),
         )
+    named = agi_id or params.get("agi_id")
 
     if named:
         run = runtime_context.find_agi(str(named))
@@ -118,8 +130,8 @@ def open_agi(
             raise OperationError(
                 "missing_context",
                 (
-                    f"No Active Genome Index is selected for this session. Provide a genome "
-                    f"source path or select one with genomi.parse_source before {action}."
+                    f"No approved Active Genome Index is selected for this session. "
+                    f"Select or approve one with genomi.parse_source or active_genome_index.approve_access before {action}."
                 ),
             )
 
@@ -152,10 +164,13 @@ def require_session_access(action: str) -> None:
 
 
 def _resolved_index_path(params: JsonObject | None, *, agi_id: str | None = None) -> Path | None:
-    """Resolve the AGI index path the same way :func:`open_agi` would, without
-    authorizing or granting — used by read-only callers (the chokepoint). By the
-    time this runs the handler has already authorized, so an unapproved active
-    run cannot reach here."""
+    """Resolve the AGI index path for post-handler reference-tail stamping.
+
+    The dispatch chokepoint calls this after the handler's AGI access gate has
+    already run. It must not grant access, but it also must not require a fresh
+    approval check that hides an already-selected run from the reference-pass
+    observability stamp.
+    """
     params = params or {}
     explicit = params.get("agi_path")
     if explicit not in (None, ""):
@@ -169,9 +184,6 @@ def _resolved_index_path(params: JsonObject | None, *, agi_id: str | None = None
         path = _index_path_for_run(run, params)
         if path is not None:
             return path
-    source = _supplied_source(params)
-    if source is not None:
-        return default_agi_path(source)
     return None
 
 

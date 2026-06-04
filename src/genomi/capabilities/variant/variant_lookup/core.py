@@ -90,7 +90,6 @@ def lookup_variant(
     support_context = _support_context(
         all_targets,
         runs=runs,
-        evidence_dbs=evidence_dbs,
         genome_build=effective_build,
         limit=bounded_limit,
         warnings=warnings,

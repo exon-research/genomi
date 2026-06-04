@@ -22,7 +22,8 @@ import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from .text_io import open_genomic_binary, select_archive_member
+from ..alignment import paired_fastq_r1_name, paired_fastq_r2_name
+from .text_io import archive_member_names, open_genomic_binary, select_archive_member
 
 # How much decompressed payload we decode to classify. Comfortably covers a WGS
 # VCF header (contig + INFO/FORMAT lines) plus the first hundreds of records, so
@@ -94,6 +95,8 @@ def detect_source(source: str | Path) -> SourceDetection:
     for classifier in (_classify_vcf, _classify_fastq, _classify_consumer_array):
         detection = classifier(probe)
         if detection is not None:
+            if detection.source_format == "fastq" and member_name is not None:
+                member_name = _validated_archive_fastq_r1_member(source_path, member_name)
             return replace(detection, member_name=member_name)
 
     if _looks_like_complete_genomics(probe.lines):
@@ -199,9 +202,33 @@ def _classify_fastq(probe: _Probe) -> SourceDetection | None:
         return None
     if not records[2].startswith("+"):
         return None
-    # Paired-end deliverables are the primary case; `parse_fastq_source` resolves
-    # the R2 sibling at parse time, so detection stays cheap and single-file.
+    # Paired-end deliverables are the primary case; bare files resolve the R2
+    # sibling at parse time, while archive members are pair-validated before
+    # detection advertises FASTQ support.
     return SourceDetection(source_format="fastq", source_kind="paired_reads_input")
+
+
+def _validated_archive_fastq_r1_member(source_path: Path, member_name: str) -> str:
+    members = set(archive_member_names(source_path))
+    r2_basename = paired_fastq_r2_name(member_name)
+    if r2_basename is not None:
+        r2_member = str(Path(member_name).with_name(r2_basename))
+        if r2_member in members:
+            return member_name
+        raise ValueError(
+            f"FASTQ archive must contain an R2 member paired with {member_name}; expected {r2_member}."
+        )
+    r1_basename = paired_fastq_r1_name(member_name)
+    if r1_basename is not None:
+        r1_member = str(Path(member_name).with_name(r1_basename))
+        if r1_member in members:
+            return r1_member
+        raise ValueError(
+            f"FASTQ archive must contain an R1 member paired with {member_name}; expected {r1_member}."
+        )
+    raise ValueError(
+        f"Archive FASTQ member must be an R1/R2 read with a recognized pair suffix: {member_name}."
+    )
 
 
 # ---------------------------------------------------------------------------

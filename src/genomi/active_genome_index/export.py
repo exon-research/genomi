@@ -10,7 +10,6 @@ from ..runtime.external import file_metadata, matching_manifest, utc_now, write_
 from ..runtime.handoff import evidence_context
 from .active_genome_index import (
     connect,
-    default_agi_path,
     read_header_from_active_genome_index,
 )
 
@@ -24,9 +23,8 @@ PRIMARY_CONTIGS_GRCH38_WITH_ALIASES = tuple(
 
 
 def export_variants(
-    vcf_path: str | Path,
+    agi_path: str | Path,
     output_path: str | Path,
-    agi_path: str | Path | None = None,
     *,
     pass_only: bool = True,
     primary_contigs_only: bool = False,
@@ -37,9 +35,8 @@ def export_variants(
     progress: Callable[[int], None] | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    vcf_path = Path(vcf_path)
+    agi_path = Path(agi_path)
     output_path = Path(output_path)
-    agi_path = Path(agi_path) if agi_path is not None else default_agi_path(vcf_path)
     if output_path.suffix == ".gz":
         raise ValueError("export writes plain VCF; use .vcf output, then normalize through genomi call genomi.parse_source")
     if chrom_style not in {"input", "no-chr", "chr"}:
@@ -88,7 +85,6 @@ def export_variants(
     manifest_path = f"{output_path}.genomi-manifest.json"
     cache_expected = {
         "step": "export-variants",
-        "input": file_metadata(vcf_path),
         "agi_path": file_metadata(agi_path),
         "filters": filters,
     }
@@ -97,7 +93,6 @@ def export_variants(
         if cached is not None:
             return {
                 "status": "cached",
-                "vcf_path": str(vcf_path),
                 "agi_path": str(agi_path),
                 "output": str(output_path),
                 "manifest_path": manifest_path,
@@ -108,8 +103,8 @@ def export_variants(
                     "static",
                     reason="Exported VCF records can be normalized or matched against static evidence sources.",
                     commands=[
-                        "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
-                        "genomi call clinvar.match_variants --params '{\"vcf\":\"<exported.vcf>\"}'",
+                        "genomi call genomi.parse_source --params '{\"source\":\"<exported.vcf>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
+                        "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
                     ],
                 ),
             }
@@ -120,7 +115,6 @@ def export_variants(
             connection,
             select_sql,
             select_params,
-            vcf_path,
             output_path,
             pass_only=pass_only,
             selected_contigs=selected_contigs,
@@ -132,7 +126,6 @@ def export_variants(
     manifest = {
         "step": "export-variants",
         "created_at_utc": utc_now(),
-        "input": file_metadata(vcf_path),
         "agi_path": file_metadata(agi_path),
         "output": file_metadata(output_path),
         "filters": filters,
@@ -142,7 +135,6 @@ def export_variants(
     write_manifest(manifest_path, manifest)
     return {
         "status": "completed",
-        "vcf_path": str(vcf_path),
         "agi_path": str(agi_path),
         "output": str(output_path),
         "manifest_path": manifest_path,
@@ -153,8 +145,8 @@ def export_variants(
             "static",
             reason="Exported VCF records can be normalized or matched against static evidence sources.",
             commands=[
-                "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
-                "genomi call clinvar.match_variants --params '{\"vcf\":\"<exported.vcf>\"}'",
+                "genomi call genomi.parse_source --params '{\"source\":\"<exported.vcf>\",\"reference_fasta\":\"<GRCh38.fa>\"}'",
+                "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
             ],
         ),
     }
@@ -186,7 +178,6 @@ def _write_variant_vcf(
     connection: sqlite3.Connection,
     sql: str,
     params: list[Any],
-    vcf_path: Path,
     output_path: Path,
     *,
     pass_only: bool,

@@ -47,13 +47,13 @@ _GENOMIC_MEMBER_SUFFIXES = (
     ".gvcf",
     ".var",
     ".mastervar",
-    ".tsv",
-    ".txt",
-    ".csv",
     ".bam",
     ".cram",
     ".fastq",
     ".fq",
+    ".tsv",
+    ".txt",
+    ".csv",
 )
 
 

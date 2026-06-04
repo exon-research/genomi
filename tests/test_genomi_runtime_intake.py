@@ -200,7 +200,8 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     "# We are using reference human assembly build 37 (also known as Annotation Release 104).\n"
                     "# rsid\tchromosome\tposition\tgenotype\n"
                     "rs123\t1\t100\tAG\n"
-                    "rs999\t2\t200\t--\n",
+                    "rs999\t2\t200\t--\n"
+                    "rsDot\t3\t300\t.\n",
                     encoding="utf-8",
                 )
 
@@ -217,7 +218,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(stats["variant_records"], 0)
                 self.assertEqual(stats["array_call_records"], 1)
                 self.assertEqual(stats["reference_records"], 0)
-                self.assertEqual(stats["array_no_call_records"], 1)
+                self.assertEqual(stats["array_no_call_records"], 2)
                 self.assertNotIn(str(raw.resolve(strict=False)), json.dumps(parsed))
                 self.assertNotIn(str(raw), json.dumps(parsed))
 
@@ -225,6 +226,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 with sqlite3.connect(agi_path) as connection:
                     connection.row_factory = sqlite3.Row
                     no_call = connection.execute("select * from records where rsid = 'rs999'").fetchone()
+                    dot_no_call = connection.execute("select * from records where rsid = 'rsDot'").fetchone()
                 self.assertIsNotNone(no_call)
                 self.assertEqual(no_call["filter"], "NO_CALL")
                 self.assertEqual(no_call["format"], "GT_ARRAY")
@@ -232,6 +234,13 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(no_call["record_kind"], "array_no_call")
                 self.assertIsNone(no_call["observed_alleles"])
                 self.assertEqual(no_call["info"], ".")
+                self.assertIsNotNone(dot_no_call)
+                self.assertEqual(dot_no_call["filter"], "NO_CALL")
+                self.assertEqual(dot_no_call["format"], "GT_ARRAY")
+                self.assertEqual(dot_no_call["is_variant"], 0)
+                self.assertEqual(dot_no_call["record_kind"], "array_no_call")
+                self.assertIsNone(dot_no_call["observed_alleles"])
+                self.assertEqual(dot_no_call["info"], ".")
 
                 current = call_operation("genomi.describe_context")
                 self.assertTrue(current["has_active_genome_index"])
@@ -263,8 +272,8 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 self.assertFalse(qc["has_reference_blocks"])
                 self.assertFalse(qc["absence_claims_allowed_by_default"])
                 self.assertEqual(qc["summary"]["reference_records"], 0)
-                self.assertEqual(qc["summary"]["no_call_records"], 1)
-                self.assertEqual(qc["summary"]["array_no_call_records"], 1)
+                self.assertEqual(qc["summary"]["no_call_records"], 2)
+                self.assertEqual(qc["summary"]["array_no_call_records"], 2)
 
                 callability = call_operation(
                     "active_genome_index.classify_region_callability",
@@ -666,7 +675,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
             finally:
                 os.chdir(previous)
 
-    def test_fastq_parse_materializes_paired_reads_from_zip_archive_when_r2_is_selected(self) -> None:
+    def test_fastq_parse_materializes_paired_reads_from_zip_archive_pair(self) -> None:
         from genomi.active_genome_index import source_intake
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -687,7 +696,7 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                 reference.write_text(">chr1\n" + "A" * 200 + "\n", encoding="utf-8")
                 detection = source_intake.detect_source(archive)
                 self.assertEqual(detection.source_format, "fastq")
-                self.assertEqual(detection.member_name, "reads/sample_R2_001.fastq.gz")
+                self.assertEqual(detection.member_name, "reads/sample_R1_001.fastq.gz")
 
                 with mock.patch(
                     "genomi.active_genome_index.source_intake.sequencing.align_fastq_to_bam",

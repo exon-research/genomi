@@ -50,7 +50,7 @@
         "additionalProperties": false
       },
       "skill": "skills/active-genome-index/SKILL.md",
-      "area": "vcf",
+      "area": "active_genome_index",
       "requires": [],
       "produces": [
         "active_genome_index_build_status"
@@ -61,7 +61,7 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "internal_tool"
     },
@@ -72,7 +72,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "vcf": {
+          "agi_path": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
           "db": {
@@ -83,14 +83,14 @@
         "additionalProperties": false
       },
       "skill": "skills/active-genome-index/SKILL.md",
-      "area": "vcf",
+      "area": "active_genome_index",
       "requires": [],
       "produces": [
         "active_genome_index_summary",
         "evidence_db_summary"
       ],
       "context_optional": [
-        "vcf",
+        "agi_path",
         "db"
       ],
       "privacy_scope": "local_private",
@@ -98,7 +98,7 @@
       "mutating": false,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "entry_tool"
     },
@@ -109,9 +109,6 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "vcf": {
-            "$ref": "#/schema_fragments/properties/local_path"
-          },
           "db": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
@@ -133,15 +130,14 @@
         "additionalProperties": false
       },
       "skill": "skills/active-genome-index/SKILL.md",
-      "area": "vcf",
+      "area": "active_genome_index",
       "requires": [
-        "active_genome_index_or_source_param"
+        "approved_active_genome_index"
       ],
       "produces": [
         "sample_qc"
       ],
       "context_optional": [
-        "vcf",
         "db",
         "agi_path",
         "genome_build"
@@ -151,7 +147,7 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "focused_tool"
     },
@@ -162,9 +158,6 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "vcf": {
-            "$ref": "#/schema_fragments/properties/local_path"
-          },
           "db": {
             "$ref": "#/schema_fragments/properties/local_path"
           },
@@ -200,16 +193,15 @@
         ]
       },
       "skill": "skills/variant-evidence/SKILL.md",
-      "area": "vcf",
+      "area": "active_genome_index",
       "requires": [
-        "active_genome_index_or_source_param",
+        "approved_active_genome_index",
         "allele"
       ],
       "produces": [
         "genotype_support"
       ],
       "context_optional": [
-        "vcf",
         "db",
         "agi_path",
         "reference_fasta",
@@ -220,7 +212,7 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "focused_tool"
     },
@@ -231,9 +223,6 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "vcf": {
-            "$ref": "#/schema_fragments/properties/local_path"
-          },
           "region": {
             "type": "string"
           },
@@ -268,16 +257,15 @@
         "additionalProperties": false
       },
       "skill": "skills/variant-evidence/SKILL.md",
-      "area": "vcf",
+      "area": "active_genome_index",
       "requires": [
-        "active_genome_index_or_source_param",
+        "approved_active_genome_index",
         "region"
       ],
       "produces": [
         "callability"
       ],
       "context_optional": [
-        "vcf",
         "db",
         "agi_path",
         "genome_build"
@@ -287,7 +275,7 @@
       "mutating": true,
       "external_io": [],
       "data_access": [
-        "active_genome_index_or_supplied_private_paths"
+        "active_genome_index"
       ],
       "discovery_role": "focused_tool"
     },
@@ -431,15 +419,15 @@
       "area": "context",
       "requires": [
         "user",
-        "active_genome_index_or_source_param"
+        "active_genome_index_context"
       ],
       "produces": [
         "user_registry_metadata",
         "active_genome_index"
       ],
       "context_optional": [
-        "source",
-        "agi_id"
+        "agi_id",
+        "agi_path"
       ],
       "privacy_scope": "metadata_only",
       "operation_scope": "write",

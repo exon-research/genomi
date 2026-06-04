@@ -117,14 +117,15 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
         _reset_schema,
         connect,
     )
-    from .vcf import alt_is_reference_only, parse_record_fields, sample_count_from_parts
+    from .record_kinds import _is_no_call_genotype
+    from .vcf import alt_is_reference_only, parse_record_fields, parse_sample, sample_count_from_parts
 
     store_variants = mode in ("all", "variants")
     store_reference = mode in ("all", "reference")
     count_stats = mode != "reference"
 
     connection = connect(shard_path)
-    total = variant = reference = pass_count = fail_count = 0
+    total = variant = reference = no_call = pass_count = fail_count = 0
     batch: list[tuple[Any, ...]] = []
     coalescer = _ReferenceRunCoalescer()
 
@@ -169,12 +170,18 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
                 if reference_only and not store_reference:
                     if count_stats:
                         filt = parts[6] if len(parts) > 6 else "."
-                        total += sample_count
-                        reference += sample_count
-                        if filt == "PASS":
-                            pass_count += sample_count
-                        elif filt == "FAIL":
-                            fail_count += sample_count
+                        format_field = parts[8] if len(parts) > 8 else ""
+                        for sample_index in range(sample_count):
+                            sample_field = parts[9 + sample_index] if len(parts) > 9 + sample_index else ""
+                            total += 1
+                            if _is_no_call_genotype(parse_sample(format_field, sample_field).get("GT")):
+                                no_call += 1
+                            else:
+                                reference += 1
+                            if filt == "PASS":
+                                pass_count += 1
+                            elif filt == "FAIL":
+                                fail_count += 1
                     continue
                 for sample_index in range(sample_count):
                     if count_stats:
@@ -188,9 +195,12 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
                     )
                     row = _record_row(record)
                     is_variant = bool(row[13])
+                    is_no_call = _is_no_call_genotype(row[16])
                     if count_stats:
                         if is_variant:
                             variant += 1
+                        elif is_no_call:
+                            no_call += 1
                         else:
                             reference += 1
                         if record.filter == "PASS":
@@ -206,8 +216,13 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
                     else:
                         if not store_reference:
                             continue
-                        for flushed in coalescer.add(row):
-                            _emit(flushed)
+                        if is_no_call:
+                            for flushed in coalescer.flush():
+                                _emit(flushed)
+                            _emit(row)
+                        else:
+                            for flushed in coalescer.add(row):
+                                _emit(flushed)
         for flushed in coalescer.flush():
             _emit(flushed)
         if batch:
@@ -219,6 +234,7 @@ def build_shard_from_bgzf_range(args: tuple[Any, ...]) -> dict[str, Any]:
                 total_records=total,
                 variant_records=variant,
                 reference_records=reference,
+                no_call_records=no_call,
                 pass_records=pass_count,
                 fail_records=fail_count,
             ).to_dict(),

@@ -44,7 +44,7 @@ def query_variant(
     agi_path = Path(agi_path)
     sql = """
         select offset, sample_index from records
-        where chrom = ? and pos = ? and ref = ? and alt = ?
+        where chrom = ? and pos = ? and ref = ? and alt = ? and is_variant = 1
     """
     params: list[Any] = [chrom, pos, ref, alt]
     if pass_only:

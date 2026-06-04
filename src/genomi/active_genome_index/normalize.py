@@ -123,7 +123,10 @@ def normalize_vcf(
                 "evidence_context": evidence_context(
                     "static",
                     reason="Normalized alleles are ready for deterministic static-source matching.",
-                    commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<normalized.vcf>\"}'"],
+                    commands=[
+                        "genomi call genomi.parse_source --params '{\"source\":\"<normalized.vcf>\"}'",
+                        "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
+                    ],
                 ),
             }
 
@@ -163,6 +166,9 @@ def normalize_vcf(
         "evidence_context": evidence_context(
             "static",
             reason="Normalized alleles are ready for deterministic static-source matching.",
-            commands=["genomi call clinvar.match_variants --params '{\"vcf\":\"<normalized.vcf>\"}'"],
+            commands=[
+                "genomi call genomi.parse_source --params '{\"source\":\"<normalized.vcf>\"}'",
+                "genomi call clinvar.match_variants --params '{\"agi_path\":\"<agi.sqlite>\"}'",
+            ],
         ),
     }

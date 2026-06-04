@@ -12,7 +12,6 @@ from .queries import (
     _query_clinvar_locus,
     _query_clinvar_region,
     _query_clinvar_rsid,
-    _query_genotype_support,
     _query_population_allele,
     _query_research_topic,
     _query_research_variant,
@@ -151,27 +150,86 @@ def _support_context(
     targets: list[JsonObject],
     *,
     runs: list[tuple[JsonObject, str]],
-    evidence_dbs: list[JsonObject],
     genome_build: str,
     limit: int,
     warnings: list[str],
 ) -> JsonObject:
     genotype_support: list[JsonObject] = []
-    agi_ids = {str(run.get("agi_id") or "") for run, _selection in runs}
-    for database in evidence_dbs:
-        label = database["label"]
-        if label.startswith("agi:") and label.split(":", 1)[1] not in agi_ids:
+    if not runs:
+        return {"genotype_support": []}
+    for run, selection in runs:
+        agi_path = run.get("agi_path")
+        if not agi_path:
             continue
-        path = Path(database["path"])
+        reader = open_reader(
+            Path(str(agi_path)),
+            need=ActiveGenomeIndexNeed.REFERENCE,
+            genome_build=run.get("genome_build") or genome_build,
+        )
         for target in targets:
             if target["target_type"] != "allele":
                 continue
+            resolved_rows: list[JsonObject] = []
             for chrom_value in _chrom_aliases(str(target["chrom"])):
-                genotype_support.extend(
-                    _query_genotype_support(path, label, {**target, "chrom": chrom_value}, genome_build=genome_build, limit=limit, warnings=warnings)
+                try:
+                    support = reader.resolve_locus_genotype(
+                        chrom_value,
+                        int(target["pos"]),
+                        str(target["ref"]),
+                        str(target["alt"]),
+                    )
+                except Exception as exc:
+                    warnings.append(f"Could not resolve genotype support from Active Genome Index {run.get('agi_id')}: {exc}")
+                    continue
+                row = _support_row_from_reader(
+                    support,
+                    run=run,
+                    selection=selection,
+                    target={**target, "chrom": chrom_value},
+                    genome_build=reader.genome_build or genome_build,
                 )
+                resolved_rows.append(row)
+                observation = support.get("sample_observation") if isinstance(support.get("sample_observation"), dict) else {}
+                if observation.get("site_status") != "not_represented" or support.get("support_status") != "unknown":
+                    break
+            genotype_support.extend(resolved_rows[:1] if resolved_rows else [])
     return {
-        "genotype_support": _dedupe_records(genotype_support, ("evidence_store", "chrom", "pos", "ref", "alt", "genome_build", "created_at")),
+        "genotype_support": _dedupe_records(
+            genotype_support[:limit],
+            ("agi_id", "chrom", "pos", "ref", "alt", "genome_build", "support_status"),
+        ),
+    }
+
+
+def _support_row_from_reader(
+    support: JsonObject,
+    *,
+    run: JsonObject,
+    selection: str,
+    target: JsonObject,
+    genome_build: str,
+) -> JsonObject:
+    observation = support.get("sample_observation") if isinstance(support.get("sample_observation"), dict) else {}
+    return {
+        "source": "active_genome_index_reader",
+        "agi_id": run.get("agi_id"),
+        "sample_slug": run.get("sample_slug"),
+        "selection": selection,
+        "chrom": str(target["chrom"]),
+        "pos": int(target["pos"]),
+        "ref": str(target["ref"]),
+        "alt": str(target["alt"]),
+        "genome_build": genome_build,
+        "support_status": support.get("support_status"),
+        "evidence_class": support.get("evidence_class"),
+        "accepted_report_evidence_classes": support.get("accepted_report_evidence_classes") or [],
+        "genotype": observation.get("genotype"),
+        "zygosity": observation.get("zygosity"),
+        "depth": observation.get("depth"),
+        "genotype_quality": observation.get("genotype_quality"),
+        "filter": observation.get("filter"),
+        "sample_observation": observation,
+        "site_observation": support.get("site_observation"),
     }
 
 
@@ -281,9 +339,9 @@ def _build_variant_envelope(
     )
     observations = {
         "target_count": len(targets),
-        "sample_match_count": int((sample_context or {}).get("total_matches") or 0) if isinstance(sample_context, dict) else 0,
-        "public_record_count": int((public_context or {}).get("total_records") or 0) if isinstance(public_context, dict) else 0,
-        "support_record_count": int((support_context or {}).get("total_records") or 0) if isinstance(support_context, dict) else 0,
+        "sample_match_count": len((sample_context or {}).get("matches") or []) if isinstance(sample_context, dict) else 0,
+        "public_record_count": _public_record_count(public_context or {}) if isinstance(public_context, dict) else 0,
+        "support_record_count": len((support_context or {}).get("genotype_support") or []) if isinstance(support_context, dict) else 0,
         "unanswered_count": len(unanswered_components),
     }
     personal_context = _env._personal_context(uses_personal_dna=bool(query_scope.get("include_active_genome_index")))
@@ -313,3 +371,8 @@ def _build_variant_envelope(
         coverage=coverage,
         observations=observations,
     )
+
+
+def _public_record_count(public_context: JsonObject) -> int:
+    keys = ("clinvar_by_rsid", "clinvar_by_allele", "clinvar_by_locus", "population_frequencies", "reviewed_research")
+    return sum(len(public_context.get(key) or []) for key in keys)

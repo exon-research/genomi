@@ -468,6 +468,7 @@ def _populate_records_from_byte_range(
     total = 0
     variant = 0
     reference = 0
+    no_call = 0
     pass_count = 0
     fail_count = 0
     batch: list[tuple[Any, ...]] = []
@@ -513,15 +514,18 @@ def _populate_records_from_byte_range(
                 if count_stats:
                     if is_variant:
                         variant += 1
-                    elif not is_no_call:
+                    elif is_no_call:
+                        no_call += 1
+                    else:
                         reference += 1
                     if record.filter == "PASS":
                         pass_count += 1
                     elif record.filter == "FAIL":
                         fail_count += 1
-                if is_variant and not store_variants:
-                    continue
-                if not is_variant and not store_reference:
+                if is_variant:
+                    if not store_variants:
+                        continue
+                elif not store_reference:
                     continue
                 batch.append(row)
                 if len(batch) >= commit_every:
@@ -535,17 +539,19 @@ def _populate_records_from_byte_range(
         total_records=total,
         variant_records=variant,
         reference_records=reference,
+        no_call_records=no_call,
         pass_records=pass_count,
         fail_records=fail_count,
     )
 
 def _merge_active_genome_index_shards(connection: sqlite3.Connection, shard_results: list[dict[str, Any]]) -> ActiveGenomeIndexStats:
-    total = variant = reference = pass_count = fail_count = 0
+    total = variant = reference = no_call = pass_count = fail_count = 0
     for index, result in enumerate(shard_results):
         stats = result.get("stats") or {}
         total += int(stats.get("total_records") or 0)
         variant += int(stats.get("variant_records") or 0)
         reference += int(stats.get("reference_records") or 0)
+        no_call += int(stats.get("no_call_records") or 0)
         pass_count += int(stats.get("pass_records") or 0)
         fail_count += int(stats.get("fail_records") or 0)
         alias = f"shard_{index}"
@@ -560,6 +566,7 @@ def _merge_active_genome_index_shards(connection: sqlite3.Connection, shard_resu
         total_records=total,
         variant_records=variant,
         reference_records=reference,
+        no_call_records=no_call,
         pass_records=pass_count,
         fail_records=fail_count,
     )
@@ -606,6 +613,7 @@ def _populate_records(
     total = 0
     variant = 0
     reference = 0
+    no_call = 0
     pass_count = 0
     fail_count = 0
     batch: list[tuple[Any, ...]] = []
@@ -625,13 +633,15 @@ def _populate_records(
         is_no_call = _is_no_call_genotype(row[_ROW_GENOTYPE])
         if is_variant:
             variant += 1
-        elif not is_no_call:
+        elif is_no_call:
+            no_call += 1
+        else:
             reference += 1
         if record.filter == "PASS":
             pass_count += 1
         elif record.filter == "FAIL":
             fail_count += 1
-        if not include_reference and not (is_variant or is_no_call):
+        if not include_reference and not is_variant:
             continue
         # Coalesce contiguous reference blocks of the same FILTER + GQ tier
         # into a single stored row. Fine-grained gVCFs emit short (sometimes
@@ -658,6 +668,7 @@ def _populate_records(
         total_records=total,
         variant_records=variant,
         reference_records=reference,
+        no_call_records=no_call,
         pass_records=pass_count,
         fail_records=fail_count,
     )

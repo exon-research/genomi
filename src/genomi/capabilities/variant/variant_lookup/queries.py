@@ -235,18 +235,6 @@ def _query_population_allele(path: Path, label: str, target: JsonObject, *, limi
     )
 
 
-def _query_genotype_support(path: Path, label: str, target: JsonObject, *, genome_build: str, limit: int, warnings: list[str]) -> list[JsonObject]:
-    sql = """
-        select chrom, pos, ref, alt, genome_build, support_status, evidence_class,
-               genotype, zygosity, depth, genotype_quality, filter, created_at
-        from genotype_support
-        where chrom = ? and pos = ? and ref = ? and alt = ? and genome_build = ?
-        order by created_at desc
-        limit ?
-    """
-    return _query_public_rows(path, label, sql, [target["chrom"], target["pos"], target["ref"], target["alt"], genome_build, limit], warnings=warnings)
-
-
 def _query_research_variant(path: Path, label: str, target: JsonObject, *, limit: int, warnings: list[str]) -> list[JsonObject]:
     target_id = f"variant:{target.get('genome_build') or 'GRCh38'}:{target['chrom']}-{target['pos']}-{target['ref']}-{target['alt']}"
     return _query_research_by_target_id(path, label, target_type="variant", target_id=target_id, limit=limit, warnings=warnings)
@@ -310,4 +298,3 @@ def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
         (name,),
     ).fetchone()
     return row is not None
-

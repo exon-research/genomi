@@ -91,14 +91,14 @@ def _operation_scope(name: str) -> str:
 
 def _data_access(privacy_scope: str) -> tuple[str, ...]:
     return {
-        "local_private": ("active_genome_index_or_supplied_private_paths",),
+        "local_private": ("local_private_artifact",),
         "public_target_only": ("selected_public_targets",),
         "public_variant_only": ("selected_public_variant_targets",),
         "public_metadata": ("public_catalog_metadata",),
         "metadata_only": ("local_artifact_metadata", "public_catalog_metadata"),
         "target_scoped": ("selected_public_targets", "active_genome_index_when_selected"),
         "local_reference_panel_private_projection": (
-            "active_genome_index_or_supplied_private_paths",
+            "active_genome_index",
             "installed_public_reference_panel",
         ),
     }.get(privacy_scope, ("operation_parameters",))

@@ -18,6 +18,7 @@ from ...runtime.paths import (
     sample_slug_from_source,
     shared_evidence_db_path,
 )
+from ..array_genotypes import ARRAY_NO_CALLS, SUPPORTED_ARRAY_BASES
 from ..active_genome_index import SCHEMA_VERSION, _chrom_sort
 from ..active_genome_index import connect as connect_active_genome_index
 from .agi_store import (
@@ -334,7 +335,13 @@ def _populate_consumer_array_records(
             chrom_counts[chrom] += 1
             if row["rsid"].lower().startswith("rs"):
                 rsid_count += 1
-            is_called = genotype not in {"", "--", "00", "NN"} and "0" not in genotype and "-" not in genotype
+            normalized_genotype = str(genotype or "").strip().upper()
+            is_called = (
+                normalized_genotype not in ARRAY_NO_CALLS
+                and "0" not in normalized_genotype
+                and "-" not in normalized_genotype
+                and all(base in SUPPORTED_ARRAY_BASES for base in normalized_genotype)
+            )
             if is_called:
                 called += 1
             else:

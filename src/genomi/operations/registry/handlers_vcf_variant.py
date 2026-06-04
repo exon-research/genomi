@@ -6,14 +6,11 @@ from ...capabilities.variant import variant_lookup
 from ...runtime import context as runtime_context
 from .agi_access import open_agi
 from .coerce import (
-    _approve_supplied_dna_source,
     _bool,
     _float,
     _int,
     _optional_int,
     _optional_path,
-    _path,
-    _remember_result,
     _str,
     _with_context,
 )
@@ -37,18 +34,6 @@ def _agi_build_reference_pass(params: JsonObject) -> JsonObject:
             "active_genome_index.build_reference_pass requires agi_path",
         )
     return append_reference_pass(agi_path, parallel_workers=_optional_int(params, "parallel_workers"))
-
-
-def _vcf_init(params: JsonObject) -> JsonObject:
-    _approve_supplied_dna_source(params)
-    vcf = _path(params, "vcf")
-    result = static_annotation.init_static_run(
-        vcf,
-        source_evidence_db=_optional_path(params, "source_evidence_db"),
-        shared_evidence_db=_optional_path(params, "shared_db"),
-        force=_bool(params, "force"),
-    )
-    return _remember_result(vcf, result, status="initialized")
 
 
 def _agi_summary(params: JsonObject) -> JsonObject:

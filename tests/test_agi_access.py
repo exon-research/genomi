@@ -20,19 +20,19 @@ from genomi.active_genome_index.active_genome_index import (
     open_reader,
     query_region,
 )
-from genomi.operations.registry import agi_access
+from genomi.operations.registry import agi_access, defaults_applied_for_call
 from genomi.operations.registry.errors import OperationError
 from genomi.operations.registry.table import call_operation
 from genomi.runtime import context as runtime_context
 
 
-def _write_gvcf(path: Path) -> None:
+def _write_gvcf(path: Path, *, variant_mod: int = 500) -> None:
     with path.open("w", encoding="utf-8") as handle:
         handle.write("##fileformat=VCFv4.2\n")
         handle.write('##INFO=<ID=END,Number=1,Type=Integer,Description="End">\n')
         handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1\n")
         for pos in range(1, 6001):
-            if pos % 500 == 0:
+            if pos % variant_mod == 0:
                 handle.write(f"1\t{pos}\trs{pos}\tA\tG\t.\tPASS\t.\tGT:DP:GQ\t0/1:42:99\n")
             else:
                 handle.write(f"1\t{pos}\t.\tA\t<NON_REF>\t.\tPASS\tEND={pos}\tGT:DP:GQ\t0/0:35:50\n")
@@ -120,14 +120,20 @@ class ReaderParseStateTests(unittest.TestCase):
 class OpenAgiAuthTests(GenomiRuntimeTestCase):
     """open_agi composes session authorization with the reader."""
 
-    def _set_active(self) -> Path:
-        vcf = self.genomi_home / "active.vcf"
+    def _set_active(
+        self,
+        *,
+        genome_build: str = "GRCh38",
+        stem: str = "active",
+        variant_mod: int = 500,
+    ) -> Path:
+        vcf = self.genomi_home / f"{stem}.vcf"
         vcf.parent.mkdir(parents=True, exist_ok=True)
         index = vcf.with_suffix(".sqlite")
-        _write_gvcf(vcf)
+        _write_gvcf(vcf, variant_mod=variant_mod)
         create_active_genome_index(vcf, index)
         runtime_context.set_active_genome_index(
-            vcf, status="parsed", agi_path=index, genome_build="GRCh38"
+            vcf, status="parsed", agi_path=index, genome_build=genome_build
         )
         return index
 
@@ -156,21 +162,65 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
             agi_access.open_agi(need=ActiveGenomeIndexNeed.NONE, action="testing", params={}, optional=True)
         )
 
-    def test_supplied_source_grants_access(self) -> None:
-        # A genome source supplied in this chat is approval to read it: open_agi
-        # resolves the source's default index path and returns a reader without
-        # requiring a prior approval call. (Readiness is gated lazily at connect,
-        # so the index need not exist yet for resolution to succeed.)
+    def test_source_parameter_does_not_resolve_agi(self) -> None:
         vcf = self.genomi_home / "supplied.vcf"
         vcf.parent.mkdir(parents=True, exist_ok=True)
         _write_gvcf(vcf)
+        with self.assertRaises(OperationError) as raised:
+            agi_access.open_agi(
+                need=ActiveGenomeIndexNeed.REFERENCE, action="testing", params={"source": str(vcf)}
+            )
+        self.assertEqual(raised.exception.code, "missing_context")
+
+    def test_unregistered_explicit_agi_path_requires_approval(self) -> None:
+        vcf = self.genomi_home / "supplied.vcf"
+        vcf.parent.mkdir(parents=True, exist_ok=True)
+        index = vcf.with_suffix(".sqlite")
+        _write_gvcf(vcf)
+        create_active_genome_index(vcf, index)
+        with self.assertRaises(OperationError) as raised:
+            agi_access.open_agi(
+                need=ActiveGenomeIndexNeed.VARIANT,
+                action="testing",
+                params={"agi_path": str(index), "genome_build": "GRCh38"},
+            )
+        self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
+
+    def test_unapproved_explicit_agi_path_requires_approval(self) -> None:
+        index = self._set_active()
+        with self.assertRaises(OperationError) as raised:
+            agi_access.open_agi(
+                need=ActiveGenomeIndexNeed.VARIANT,
+                action="testing",
+                params={"agi_path": str(index)},
+            )
+        self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
+
+    def test_registered_explicit_agi_path_returns_approved_reader(self) -> None:
+        index = self._set_active(genome_build="GRCh37")
+        runtime_context.approve_agi_access()
         reader = agi_access.open_agi(
-            need=ActiveGenomeIndexNeed.REFERENCE, action="testing", params={"source": str(vcf)}
+            need=ActiveGenomeIndexNeed.VARIANT,
+            action="testing",
+            params={"agi_path": str(index)},
         )
-        self.assertEqual(
-            reader.agi_path.resolve(),
-            default_agi_path(str(vcf)).resolve(),
-        )
+        self.assertEqual(reader.agi_path.resolve(), index.resolve())
+        self.assertEqual(reader.genome_build, "GRCh37")
+
+    def test_defaults_applied_use_explicit_approved_agi_path_build(self) -> None:
+        grch37_index = self._set_active(genome_build="GRCh37", stem="explicit_grch37")
+        runtime_context.approve_agi_access()
+        self._set_active(genome_build="GRCh38", stem="active_grch38", variant_mod=499)
+
+        defaults = {
+            item["parameter"]: item
+            for item in defaults_applied_for_call(
+                "ancestry.check_sample_overlap",
+                {"agi_path": str(grch37_index)},
+            )
+        }
+
+        self.assertEqual(defaults["genome_build"]["value"], "GRCh37")
 
     def test_reference_pending_for_call_tracks_active_index(self) -> None:
         vcf = self.genomi_home / "tp.vcf"
@@ -181,6 +231,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         runtime_context.set_active_genome_index(
             vcf, status="parsed", agi_path=index, genome_build="GRCh38"
         )
+        runtime_context.approve_agi_access()
         self.assertTrue(agi_access.reference_pending_for_call({}))
         append_reference_pass(index)
         self.assertFalse(agi_access.reference_pending_for_call({}))

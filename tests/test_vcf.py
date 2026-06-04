@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from genomi.active_genome_index.export import export_variants
+from genomi.active_genome_index.record_kinds import RECORD_KIND_NO_CALL
 from genomi.active_genome_index.active_genome_index import (
     ActiveGenomeIndexNeed,
     append_reference_pass,
@@ -370,6 +371,45 @@ class IndexTests(unittest.TestCase):
 
         self.assertEqual(records[0]["info_genes"], ["HFE"])
 
+    def test_partial_no_call_is_not_variant_or_reference_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf_path = Path(tmp) / "partial-no-call.vcf"
+            agi_path = Path(tmp) / "partial-no-call.sqlite"
+            export_path = Path(tmp) / "variants.vcf"
+            vcf_path.write_text(
+                "\n".join(
+                    [
+                        "##fileformat=VCFv4.2",
+                        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+                        "1\t100\trs_partial\tA\tG\t.\tPASS\t.\tGT:DP:GQ\t1/.:18:41",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            summary = create_active_genome_index(vcf_path, agi_path)
+            records = query_region(agi_path, "1", 100, 100, variants_only=False)
+            variant_records = query_variant(agi_path, "1", 100, "A", "G")
+            export_result = export_variants(agi_path, export_path)
+            exported_rows = [
+                row
+                for row in export_path.read_text(encoding="utf-8").splitlines()
+                if not row.startswith("#")
+            ]
+
+        self.assertEqual(summary["stats"]["total_records"], 1)
+        self.assertEqual(summary["stats"]["variant_records"], 0)
+        self.assertEqual(summary["stats"]["reference_records"], 0)
+        self.assertEqual(summary["stats"]["no_call_records"], 1)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["record_kind"], RECORD_KIND_NO_CALL)
+        self.assertEqual(records[0]["is_variant"], 0)
+        self.assertEqual(records[0]["observed_alleles"], [])
+        self.assertEqual(variant_records, [])
+        self.assertEqual(export_result["candidate_records"], 0)
+        self.assertEqual(exported_rows, [])
+
     def test_parallel_index_preserves_query_behavior(self) -> None:
         # The canonical is bgzip with a `.gzi`, so the parse partitions it by
         # bgzip block across worker processes (genomi.active_genome_index.
@@ -516,7 +556,7 @@ class IndexTests(unittest.TestCase):
             self.assertEqual(cov_b["covered_fraction"], cov_full["covered_fraction"])
             self.assertEqual(cov_b["covered_bases"], cov_full["covered_bases"])
             self.assertEqual(cov_b["segments"], cov_full["segments"])
-            self.assertNotIn("reference_pending", cov_b)
+            self.assertFalse("reference_pending" in cov_b)
             self.assertFalse(open_reader(two_index, need=ActiveGenomeIndexNeed.REFERENCE).reference_pending)
             # The completed two-phase index reports the same stats as single-phase.
             self.assertEqual(
@@ -527,6 +567,46 @@ class IndexTests(unittest.TestCase):
             # Idempotent: re-running Phase B on a completed index is a no-op.
             again = append_reference_pass(two_index)
             self.assertEqual(again["status"], "completed")
+
+    def test_two_phase_reference_pass_does_not_duplicate_no_calls(self) -> None:
+        def _write_gvcf(path: Path) -> None:
+            with path.open("w", encoding="utf-8") as handle:
+                handle.write("##fileformat=VCFv4.2\n")
+                handle.write('##INFO=<ID=END,Number=1,Type=Integer,Description="End">\n')
+                handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1\n")
+                for pos in range(1, 6001):
+                    if pos == 101:
+                        handle.write(f"1\t{pos}\t.\tA\t<NON_REF>\t.\tPASS\tEND={pos}\tGT:DP:GQ\t./.:.:.\n")
+                    elif pos % 500 == 0:
+                        handle.write(f"1\t{pos}\trs{pos}\tA\tG\t.\tPASS\t.\tGT:DP:GQ\t0/1:42:99\n")
+                    else:
+                        handle.write(f"1\t{pos}\t.\tA\t<NON_REF>\t.\tPASS\tEND={pos}\tGT:DP:GQ\t0/0:35:50\n")
+
+        def _record_kinds_at(agi_path: Path, pos: int) -> list[str]:
+            with connect_existing(agi_path) as connection:
+                return [
+                    str(row["record_kind"])
+                    for row in connection.execute(
+                        "select record_kind from records where chrom = ? and pos = ? order by rowid",
+                        ("1", pos),
+                    )
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf_path = Path(tmp) / "no-call-two-phase.vcf"
+            agi_path = Path(tmp) / "no-call-two-phase.sqlite"
+            _write_gvcf(vcf_path)
+
+            phase_a = create_active_genome_index(vcf_path, agi_path, parallel_workers=1, defer_reference=True)
+            record_kinds_a = _record_kinds_at(agi_path, 101)
+
+            phase_b = append_reference_pass(agi_path)
+            record_kinds_b = _record_kinds_at(agi_path, 101)
+
+        self.assertEqual(phase_a["status"], "variants_ready")
+        self.assertEqual(phase_b["status"], "completed")
+        self.assertEqual(record_kinds_a, [])
+        self.assertEqual(record_kinds_b, [RECORD_KIND_NO_CALL])
 
     def test_header_reconstructable_from_index_after_source_removed(self) -> None:
         # Parse self-sufficiency: the source VCF header is persisted into the
@@ -644,9 +724,8 @@ class IndexTests(unittest.TestCase):
             create_active_genome_index(FIXTURE, agi_path)
 
             result = export_variants(
-                FIXTURE,
-                output_path,
                 agi_path,
+                output_path,
                 pass_only=True,
                 primary_contigs_only=True,
             )
@@ -660,9 +739,8 @@ class IndexTests(unittest.TestCase):
             self.assertTrue(records[1].startswith("1\t10257\trs111200574"))
 
             cached = export_variants(
-                FIXTURE,
-                output_path,
                 agi_path,
+                output_path,
                 pass_only=True,
                 primary_contigs_only=True,
             )
@@ -693,9 +771,8 @@ class IndexTests(unittest.TestCase):
             create_active_genome_index(vcf_path, agi_path)
 
             result = export_variants(
-                vcf_path,
-                output_path,
                 agi_path,
+                output_path,
                 pass_only=True,
                 primary_contigs_only=True,
                 chrom_style="no-chr",
@@ -727,7 +804,7 @@ class IndexTests(unittest.TestCase):
             )
             create_active_genome_index(vcf_path, agi_path)
 
-            result = export_variants(vcf_path, output_path, agi_path)
+            result = export_variants(agi_path, output_path)
             records = [
                 line for line in output_path.read_text(encoding="utf-8").splitlines() if not line.startswith("#")
             ]
@@ -763,7 +840,7 @@ class IndexTests(unittest.TestCase):
             )
             create_active_genome_index(vcf_path, agi_path)
 
-            export_variants(vcf_path, output_path, agi_path)
+            export_variants(agi_path, output_path)
             lines = output_path.read_text(encoding="utf-8").splitlines()
             header_width = next(len(line.split("\t")) for line in lines if line.startswith("#CHROM"))
             data_rows = [line.split("\t") for line in lines if not line.startswith("#")]

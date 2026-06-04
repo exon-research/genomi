@@ -329,33 +329,6 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                             "2026-01-01T00:00:00Z",
                         ),
                     )
-                    connection.execute(
-                        """
-                        insert into genotype_support(
-                            agi_path, chrom, pos, ref, alt, genome_build, support_status,
-                            evidence_class, genotype, zygosity, depth, genotype_quality,
-                            filter, raw_json, created_at
-                        )
-                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            str(index.resolve(strict=False)),
-                            "1",
-                            100,
-                            "A",
-                            "G",
-                            "GRCh38",
-                            "supported",
-                            "sample_observation",
-                            "0/1",
-                            "heterozygous",
-                            31,
-                            99,
-                            "PASS",
-                            "{}",
-                            "2026-01-01T00:00:00Z",
-                        ),
-                    )
 
                 call_operation(
                     "active_genome_index.assign_user_genome",
@@ -368,8 +341,22 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 self.assertEqual(len(result["public_context"]["population_frequencies"]), 1)
                 self.assertEqual(result["public_context"]["population_frequencies"][0]["allele_frequency"], 0.004)
                 self.assertEqual(len(result["support_context"]["genotype_support"]), 1)
-                self.assertEqual(result["support_context"]["genotype_support"][0]["support_status"], "supported")
-                self.assertNotIn(str(vcf.resolve(strict=False)), json.dumps(result))
+                support = result["support_context"]["genotype_support"][0]
+                self.assertEqual(support["support_status"], "supported")
+                self.assertEqual(support["source"], "active_genome_index_reader")
+                self.assertEqual(support["evidence_class"], "genotype_support_supported")
+                self.assertEqual(support["selection"], "active_genome_index")
+                public_only = call_operation(
+                    "variant.resolve",
+                    {"query": "chr1:100:A:G", "db": str(db), "include_active_genome_index": False},
+                )
+                self.assertEqual(public_only["support_context"]["genotype_support"], [])
+                self.assertEqual(len(public_only["public_context"]["population_frequencies"]), 1)
+                searched = result["sample_context"]["searched_active_genome_indexes"][0]
+                self.assertEqual(support["agi_id"], searched["agi_id"])
+                self.assertEqual(support["sample_slug"], searched["sample_slug"])
+                self.assertEqual(searched["availability"].get("source"), None)
+                self.assertEqual(searched["availability"].get("vcf"), None)
             finally:
                 os.chdir(previous)
 

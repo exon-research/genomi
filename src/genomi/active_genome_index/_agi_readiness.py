@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .record_kinds import _is_no_call_genotype
 from .vcf import iter_records
 from .vcf import read_header
 from collections import Counter
@@ -38,6 +39,23 @@ def active_genome_index_summary(agi_path: str | Path) -> dict[str, Any]:
         "metadata": readiness["metadata"],
         "stats": readiness["stats"],
     }
+
+def stored_schema_version(agi_path: str | Path) -> int | None:
+    try:
+        with connect_existing(agi_path) as connection:
+            row = connection.execute("select value from metadata where key = 'schema_version'").fetchone()
+    except Exception:
+        return None
+    if not row or row[0] is None:
+        return None
+    raw = row[0]
+    try:
+        return int(json.loads(raw))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
 
 def active_genome_index_readiness(agi_path: str | Path) -> dict[str, Any]:
     path = Path(agi_path)
@@ -131,7 +149,9 @@ def preflight(vcf_path: str | Path, *, scan_records: int = 1000) -> dict[str, An
     for record in iter_records(path, limit=scan_records):
         stats["scanned_records"] += 1
         stats["variant_records"] += int(record.is_variant)
-        stats["reference_records"] += int(not record.is_variant)
+        is_no_call = _is_no_call_genotype(record.genotype)
+        stats["no_call_records"] += int(is_no_call)
+        stats["reference_records"] += int(not record.is_variant and not is_no_call)
         stats[f"filter:{record.filter}"] += 1
         genotype = record.genotype
         if genotype:

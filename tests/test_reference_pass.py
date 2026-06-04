@@ -105,7 +105,7 @@ class ReferencePassObservabilityTests(GenomiRuntimeTestCase):
 
             readiness = active_genome_index_readiness(index)
             self.assertTrue(readiness["reference_pending"])
-            self.assertNotIn("reference_pass_failed", readiness)
+            self.assertFalse("reference_pass_failed" in readiness)
             self.assertEqual(readiness["reference_pass"]["status"], "in_progress")
 
     def test_completed_index_drops_reference_pending(self) -> None:
@@ -114,8 +114,8 @@ class ReferencePassObservabilityTests(GenomiRuntimeTestCase):
             append_reference_pass(index)
             readiness = active_genome_index_readiness(index)
             self.assertTrue(readiness["complete"])
-            self.assertNotIn("reference_pending", readiness)
-            self.assertNotIn("reference_pass_failed", readiness)
+            self.assertFalse("reference_pending" in readiness)
+            self.assertFalse("reference_pass_failed" in readiness)
 
 
 class ReferencePassCanonicalLifecycleTests(GenomiRuntimeTestCase):
@@ -154,6 +154,7 @@ class ReferencePassChokepointTests(GenomiRuntimeTestCase):
         runtime_context.set_active_genome_index(
             vcf, status="parsed", agi_path=index, genome_build="GRCh38"
         )
+        runtime_context.approve_agi_access(reason="test approved Active Genome Index access")
         return index
 
     def test_running_pass_stamps_wait(self) -> None:
@@ -163,8 +164,8 @@ class ReferencePassChokepointTests(GenomiRuntimeTestCase):
             "active_genome_index.classify_region_callability", {}, {"ok": True}
         )
         self.assertTrue(result["reference_pending"])
-        self.assertNotIn("reference_pending_failed", result)
-        self.assertNotIn("retry_operation", result)
+        self.assertFalse("reference_pending_failed" in result)
+        self.assertFalse("retry_operation" in result)
 
     def test_dead_pass_stamps_rerun_not_wait(self) -> None:
         index = self._active_variants_ready()
@@ -187,7 +188,7 @@ class ReferencePassChokepointTests(GenomiRuntimeTestCase):
         # variant.resolve is variant-need: its rows are final at variants_ready,
         # so it must never carry a reference_pending stamp.
         result = _stamp_reference_pending_if_due("variant.resolve", {}, {"ok": True})
-        self.assertNotIn("reference_pending", result)
+        self.assertFalse("reference_pending" in result)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ _PLAIN_VCF_TXT = (
     "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
     "1\t100\trs1\tA\tG\t50\tPASS\t.\tGT\t0/1\n"
 )
+_FASTQ_TXT = "@READ1\nACGTACGT\n+\nFFFFFFFF\n"
 
 
 class CompressionContentTests(unittest.TestCase):
@@ -161,6 +162,39 @@ class ArchiveContentTests(unittest.TestCase):
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
             self.assertEqual(detect_source(path).source_format, "23andme")
+
+    def test_fastq_archive_requires_paired_member(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reads.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("reads/sample_R1_001.fastq.gz", gzip.compress(_FASTQ_TXT.encode()))
+
+            with self.assertRaises(ValueError) as raised:
+                detect_source(path)
+            self.assertIn("R2 member", str(raised.exception))
+
+    def test_fastq_archive_selects_r1_member_for_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reads.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("reads/sample_R2_001.fastq.gz", gzip.compress(_FASTQ_TXT.encode()))
+                archive.writestr("reads/sample_R1_001.fastq.gz", gzip.compress(_FASTQ_TXT.encode()))
+
+            detection = detect_source(path)
+            self.assertEqual(detection.source_format, "fastq")
+            self.assertEqual(detection.member_name, "reads/sample_R1_001.fastq.gz")
+
+    def test_fastq_archive_skips_sample_sheet_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "reads-with-sidecar.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("SampleSheet.csv", "Sample_ID,Sample_Name\n1,sidecar\n")
+                archive.writestr("reads/sample_R1_001.fastq.gz", gzip.compress(_FASTQ_TXT.encode()))
+                archive.writestr("reads/sample_R2_001.fastq.gz", gzip.compress(_FASTQ_TXT.encode()))
+
+            detection = detect_source(path)
+            self.assertEqual(detection.source_format, "fastq")
+            self.assertEqual(detection.member_name, "reads/sample_R1_001.fastq.gz")
 
 
 class BinaryFormatTests(unittest.TestCase):
