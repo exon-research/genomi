@@ -6,14 +6,13 @@ from typing import Any
 from ....active_genome_index.active_genome_index import (
     ActiveGenomeIndexNeed,
     ActiveGenomeIndexReader,
-    create_active_genome_index,
     default_agi_path,
     open_reader,
-    preflight,
 )
 from ....active_genome_index.export import export_variants
 from ....active_genome_index.genotype_qc import assess_sample_qc
 from ....active_genome_index.normalize import normalize_vcf
+from ....active_genome_index.source_intake import parse_source as parse_genome_source
 from ....evidence import (
     build_clinvar_annotation_index,
     build_clinvar_gene_index,
@@ -89,7 +88,6 @@ def build_static_annotation(
         shared_evidence_db=shared_evidence_db,
         force=force,
     )
-    effective_genome_build = resolve_genome_build(vcf_path, genome_build)
     db_path = Path(evidence_db) if evidence_db is not None else Path(init["evidence_db"])
     shared_db_path = Path(shared_evidence_db) if shared_evidence_db is not None else Path(init["shared_evidence_db"])
     public_read_db_path = db_path
@@ -139,19 +137,21 @@ def build_static_annotation(
             commands=["genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],
         )
     )
-    steps.append(
-        workflow_step(
-            "preflight",
-            preflight(vcf_path),
-            "static",
-            reason="The genome source is readable; build the Active Genome Index before exporting comparable variants.",
-            commands=["genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],
-        )
+    parse_result = parse_genome_source(
+        vcf_path,
+        evidence_db=db_path,
+        source_evidence_db=source_evidence_db,
+        shared_evidence_db=shared_db_path,
+        genome_build=genome_build,
+        force=force,
+        max_records=max_records,
+        parallel_workers=parallel_workers,
     )
+    effective_genome_build = str(parse_result.get("genome_build") or resolve_genome_build(vcf_path, genome_build))
     steps.append(
         workflow_step(
-            "build-active-genome-index",
-            create_active_genome_index(vcf_path, agi_path, include_reference=True, max_records=max_records, parallel_workers=parallel_workers),
+            "parse-source",
+            parse_result,
             "static",
             reason="The Active Genome Index can now feed deterministic sample QC and PASS variant export.",
             commands=["genomi call active_genome_index.classify_callset_qc --params '{\"agi_path\":\"<agi.sqlite>\"}'", "genomi call genomi.parse_source --params '{\"source\":\"<vcf>\"}'"],

@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,7 +54,7 @@ class StaticRunTests(EvidenceImportTestBase):
             self.assertIn("export-variants", result["long_running_steps_deferred"])
             self.assertEqual(result["shared_sync"]["inserted"]["clinvar_variants"], 3)
             step_names = [step["name"] for step in result["steps"]]
-            self.assertIn("build-active-genome-index", step_names)
+            self.assertIn("parse-source", step_names)
             self.assertIn("match-clinvar", step_names)
             self.assertEqual(result["evidence_context"]["id"], "research")
             self.assertEqual(result["evidence_context"]["skill_contract"]["path"], "SKILL.md")
@@ -63,6 +64,32 @@ class StaticRunTests(EvidenceImportTestBase):
             self.assertTrue((tmp_path / result["outputs"]["clinvar_matches"]).exists())
             self.assertTrue((tmp_path / result["outputs"]["clinvar_annotations"]).exists())
             self.assertTrue((tmp_path / result["shared_evidence_db"]).exists())
+
+    def test_static_run_uses_source_intake_for_archive_backed_vcf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source_archive = tmp_path / "sample-source.zip"
+            with zipfile.ZipFile(source_archive, "w") as archive:
+                archive.writestr("README.txt", "ignored by source intake")
+                archive.writestr("sample.vcf", TINY_VCF.read_text(encoding="utf-8"))
+            previous_cwd = Path.cwd()
+            os.chdir(tmp_path)
+            try:
+                result = build_static_annotation(
+                    source_archive.name,
+                    clinvar_vcf=TINY_CLINVAR,
+                    genome_build="GRCh37",
+                    max_records=10,
+                    sync_shared=False,
+                )
+            finally:
+                os.chdir(previous_cwd)
+
+            step_by_name = {step["name"]: step for step in result["steps"]}
+            self.assertEqual(step_by_name["parse-source"]["result"]["source_format"], "vcf")
+            self.assertEqual(step_by_name["parse-source"]["result"]["source_kind"], "variant_callset")
+            self.assertEqual(result["status"], "completed_with_warnings")
+            self.assertTrue((tmp_path / result["outputs"]["clinvar_matches"]).exists())
 
     def test_static_run_links_shared_static_evidence_without_copying(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -161,7 +161,7 @@ class ClinvarObservedAlleleTests(unittest.TestCase):
         self.assertEqual(result["stats"]["scanned_records"], 1)
         self.assertEqual(sorted(payload), ["clinvar", "match_provenance", "sample_variant"])
         self.assertEqual(payload["match_provenance"]["source_format"], "vcf")
-        self.assertEqual(payload["match_provenance"]["source_record"]["source_format"], "vcf")
+        self.assertEqual(payload["match_provenance"]["agi_record"]["source_format"], "vcf")
 
     def test_active_genome_index_max_records_windows_before_pass_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,7 +253,7 @@ class ClinvarObservedAlleleTests(unittest.TestCase):
         )
         for payload in payloads:
             self.assertEqual(payload["sample_variant"]["observed_alleles"], ["A", "G"])
-            self.assertEqual(payload["match_provenance"]["source_record"]["observed_alleles"], ["A", "G"])
+            self.assertEqual(payload["match_provenance"]["agi_record"]["observed_alleles"], ["A", "G"])
             self.assertEqual(payload["match_provenance"]["evidence_scope"], "consumer_array_inferred_allele")
             self.assertEqual(
                 payload["match_provenance"]["inferred_clinvar_allele"],
