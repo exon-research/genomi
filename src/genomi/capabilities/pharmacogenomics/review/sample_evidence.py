@@ -4,7 +4,16 @@ import re
 
 from ....active_genome_index.observations import observed_alleles_from_record
 from .. import pgx_requirements, pgx_star
-from ._common import JsonObject, _compact_selected_fields, _compact_text, _dedupe, _dedupe_params, _normalize_rsid, _pgxdb_record_source_url
+from ._common import (
+    JsonObject,
+    _compact_selected_fields,
+    _compact_text,
+    _dedupe,
+    _dedupe_params,
+    _normalize_rsid,
+    _pgxdb_gene_drug_source_url,
+    _pgxdb_record_source_url,
+)
 from .record_research import _is_stored_sample_pgx_record, _is_stored_source_pgx_record
 
 _SEQUENCING_SOURCE_FORMATS = {"vcf", "gvcf", "bam", "fastq"}
@@ -469,7 +478,7 @@ def _source_recommendation_summaries(
                         if item
                     )
                 ),
-                "source_url": "https://pgx-db.org/rest-api/gene/drug/",
+                "source_url": _pgxdb_gene_drug_source_url(),
             }
         )
     for record in fda_result.get("rows") or []:

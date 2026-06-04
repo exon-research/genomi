@@ -4,8 +4,11 @@ import re
 from typing import Any
 
 from ....retrieval import semantic as retrieval_semantic
+from ....runtime.libraries import manager as library_manager
 
 JsonObject = dict[str, Any]
+_PGXDB_LIBRARY = library_manager.get("pgxdb")
+_PGXDB_API_URL = (_PGXDB_LIBRARY.source.api_base or "").rstrip("/")
 
 
 def _clean(value: str | None) -> str | None:
@@ -148,8 +151,12 @@ def _first_reference_symbol(value: object) -> str | None:
 def _pgxdb_record_source_url(record: JsonObject) -> str | None:
     atc = record.get("atc_code")
     if atc:
-        return f"https://pgx-db.org/rest-api/atc/pgx/{atc}/"
-    return "https://pgx-db.org/rest-api"
+        return f"{_PGXDB_API_URL}/atc/pgx/{atc}/"
+    return _PGXDB_API_URL
+
+
+def _pgxdb_gene_drug_source_url() -> str:
+    return f"{_PGXDB_API_URL}/gene/drug/"
 
 
 def _clinpgx_source_title(record: JsonObject) -> str:

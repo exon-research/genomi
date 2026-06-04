@@ -9,9 +9,11 @@ from typing import Any
 
 from ...evidence import envelope as _env
 from ...runtime.external import utc_now
-from ...runtime.libraries import registry as library_registry
+from ...runtime.libraries import manager as library_manager
 
-PGXDB_API_URL = library_registry.get("pgxdb").source.api_base or ""
+_PGXDB_LIBRARY = library_manager.get("pgxdb")
+PGXDB_API_URL = _PGXDB_LIBRARY.source.api_base or ""
+PGXDB_SWAGGER_URL = _PGXDB_LIBRARY.source.urls[0]
 PGXDB_TIMEOUT_SECONDS = 20
 PGXDB_MAX_LIMIT = 50
 PGXDB_MAX_RAW_LIST_ITEMS = 10
@@ -287,7 +289,7 @@ def _source_metadata(base_url: str) -> dict[str, Any]:
         "source_id": "pgxdb",
         "title": "PGxDB",
         "api_url": base_url,
-        "swagger_url": "https://pgx-db.org/swagger/",
+        "swagger_url": PGXDB_SWAGGER_URL,
         "accessed_at": utc_now(),
     }
 
@@ -544,7 +546,7 @@ def _record_research_payloads(
                     "url": _record_url(source_url, record),
                     "type": "pharmacogenomic_database",
                     "api_url": source_url,
-                    "swagger_url": "https://pgx-db.org/swagger/",
+                    "swagger_url": PGXDB_SWAGGER_URL,
                     "pmid": record.get("pmid"),
                     "accessed_at": accessed_at,
                 },
@@ -599,7 +601,7 @@ def _gene_drug_record_payloads(
                     "url": f"{source_url.rstrip('/')}/gene/drug/",
                     "type": "pgxdb_gene_drug_context",
                     "api_url": source_url,
-                    "swagger_url": "https://pgx-db.org/swagger/",
+                    "swagger_url": PGXDB_SWAGGER_URL,
                     "accessed_at": accessed_at,
                 },
                 "finding": {
@@ -635,7 +637,7 @@ def _variant_context_record_payloads(
                     "url": _variant_context_url(source_url, record),
                     "type": "pgxdb_variant_context",
                     "api_url": source_url,
-                    "swagger_url": "https://pgx-db.org/swagger/",
+                    "swagger_url": PGXDB_SWAGGER_URL,
                     "accessed_at": accessed_at,
                 },
                 "finding": {

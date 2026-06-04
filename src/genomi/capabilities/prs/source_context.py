@@ -2,22 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...runtime.libraries import registry as library_registry
+from ...runtime.libraries import manager as library_manager
 
 JsonObject = dict[str, Any]
 CAPABILITY_ID = "polygenic-score"
-_PGS_CATALOG = library_registry.get("pgs-catalog")
-_PGS_SCORE_METADATA = library_registry.get("pgs-catalog-score-metadata")
+_PGS_CATALOG = library_manager.get("pgs-catalog")
+_PGS_SCORE_METADATA = library_manager.get("pgs-catalog-score-metadata")
 PGS_CATALOG_REST = str(_PGS_CATALOG.source.api_base or "")
-PGS_CATALOG_DOWNLOADS = _PGS_CATALOG.source.urls[0]
-PGS_CATALOG_ANCESTRY_DOCS = _PGS_CATALOG.source.urls[1]
-PGS_CATALOG_FAQ = _PGS_CATALOG.source.urls[2]
+PGS_CATALOG_HOME = _PGS_CATALOG.source.urls[0]
+PGS_CATALOG_DOWNLOADS = _PGS_CATALOG.source.urls[1]
+PGS_CATALOG_ANCESTRY_DOCS = _PGS_CATALOG.source.urls[2]
+PGS_CATALOG_FAQ = _PGS_CATALOG.source.urls[3]
 PGS_CATALOG_METADATA_CSV = _PGS_SCORE_METADATA.source.urls[0]
 
 
 def source_urls() -> JsonObject:
     return {
-        "pgs_catalog": "https://www.pgscatalog.org/",
+        "pgs_catalog": PGS_CATALOG_HOME,
         "rest_api": PGS_CATALOG_REST,
         "downloads": PGS_CATALOG_DOWNLOADS,
         "score_metadata_csv": PGS_CATALOG_METADATA_CSV,

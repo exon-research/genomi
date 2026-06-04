@@ -51,6 +51,26 @@ class LibraryRegistryTests(unittest.TestCase):
             self.assertTrue(spec.source.api_base, f"{spec.id} must declare an api_base")
             self.assertEqual(spec.required_paths, ())
 
+    def test_pgx_online_source_urls_are_registry_owned(self) -> None:
+        clinpgx = registry.get("clinpgx")
+        self.assertEqual(clinpgx.source.urls[0], "https://api.pharmgkb.org/swagger/")
+        self.assertEqual(clinpgx.source.urls[1], "https://www.clinpgx.org/page/policies")
+
+        pgxdb = registry.get("pgxdb")
+        self.assertEqual(pgxdb.source.urls, ("https://pgx-db.org/swagger/",))
+
+    def test_pgs_catalog_live_source_urls_are_registry_owned(self) -> None:
+        spec = registry.get("pgs-catalog")
+        self.assertEqual(
+            spec.source.urls,
+            (
+                "https://www.pgscatalog.org/",
+                "https://www.pgscatalog.org/downloads/",
+                "https://www.pgscatalog.org/docs/ancestry/",
+                "https://www.pgscatalog.org/docs/faq/",
+            ),
+        )
+
     def test_manual_and_platform_flags(self) -> None:
         msigdb = registry.get("msigdb-hallmark")
         self.assertIs(msigdb.kind, Kind.MANUAL)

@@ -12,6 +12,7 @@ from ._common import (
     _first_reference_name,
     _first_reference_symbol,
     _literature_citations,
+    _pgxdb_gene_drug_source_url,
     _pgxdb_record_source_url,
     _pmid_citations,
     _stable_evidence_source_identity,
@@ -232,7 +233,7 @@ def _pgxdb_evidence_items(result: JsonObject) -> list[JsonObject]:
             }
         )
     for record in result.get("medication_scoped_gene_drug_records") or []:
-        source_url = "https://pgx-db.org/rest-api/gene/drug/"
+        source_url = _pgxdb_gene_drug_source_url()
         items.append(
             {
                 "evidence_role": "medication_source_evidence",

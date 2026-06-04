@@ -12,10 +12,12 @@ from typing import Any
 
 from ...evidence import envelope as _env
 from ...runtime.external import utc_now
-from ...runtime.libraries import registry as library_registry
+from ...runtime.libraries import manager as library_manager
 
-CLINPGX_API_URL = library_registry.get("clinpgx").source.api_base or ""
-CLINPGX_SWAGGER_URL = "https://api.pharmgkb.org/swagger/"
+_CLINPGX_LIBRARY = library_manager.get("clinpgx")
+CLINPGX_API_URL = _CLINPGX_LIBRARY.source.api_base or ""
+CLINPGX_SWAGGER_URL = _CLINPGX_LIBRARY.source.urls[0]
+CLINPGX_DATA_USAGE_POLICY_URL = _CLINPGX_LIBRARY.source.urls[1]
 CLINPGX_TIMEOUT_SECONDS = 20
 CLINPGX_MAX_LIMIT = 25
 CLINPGX_MAX_RAW_LIST_ITEMS = 10
@@ -284,7 +286,7 @@ def _source_metadata(base_url: str) -> dict[str, Any]:
         "title": "ClinPGx API",
         "api_url": base_url,
         "swagger_url": CLINPGX_SWAGGER_URL,
-        "data_usage_policy_url": "https://www.clinpgx.org/page/policies",
+        "data_usage_policy_url": CLINPGX_DATA_USAGE_POLICY_URL,
         "accessed_at": utc_now(),
     }
 

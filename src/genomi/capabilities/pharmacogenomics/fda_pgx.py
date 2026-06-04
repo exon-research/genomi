@@ -12,9 +12,9 @@ from typing import Any
 
 from ...evidence import envelope as _env
 from ...runtime.external import utc_now
-from ...runtime.libraries import registry as library_registry
+from ...runtime.libraries import manager as library_manager
 
-_FDA_PGX_LIBRARY = library_registry.get("fda-pgx")
+_FDA_PGX_LIBRARY = library_manager.get("fda-pgx")
 FDA_BIOMARKERS_URL = _FDA_PGX_LIBRARY.source.api_base or ""
 FDA_ASSOCIATIONS_URL = _FDA_PGX_LIBRARY.source.urls[0]
 FDA_TIMEOUT_SECONDS = 20

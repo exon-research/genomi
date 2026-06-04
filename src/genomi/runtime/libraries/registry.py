@@ -319,6 +319,7 @@ _SPECS: tuple[LibrarySpec, ...] = (
         source=Source(
             api_base="https://www.pgscatalog.org/rest",
             urls=(
+                "https://www.pgscatalog.org/",
                 "https://www.pgscatalog.org/downloads/",
                 "https://www.pgscatalog.org/docs/ancestry/",
                 "https://www.pgscatalog.org/docs/faq/",
@@ -343,7 +344,13 @@ _SPECS: tuple[LibrarySpec, ...] = (
         helps="fetches public guideline, clinical annotation, and label pharmacogenomic records from the ClinPGx REST API",
         kind=Kind.ONLINE,
         size_class="online",
-        source=Source(api_base="https://api.pharmgkb.org/v1"),
+        source=Source(
+            api_base="https://api.pharmgkb.org/v1",
+            urls=(
+                "https://api.pharmgkb.org/swagger/",
+                "https://www.clinpgx.org/page/policies",
+            ),
+        ),
         freshness=Freshness.LIVE,
     ),
     LibrarySpec(
@@ -352,7 +359,10 @@ _SPECS: tuple[LibrarySpec, ...] = (
         helps="fetches gene-drug and variant pharmacogenomic records from the PGxDB REST API",
         kind=Kind.ONLINE,
         size_class="online",
-        source=Source(api_base="https://pgx-db.org/rest-api"),
+        source=Source(
+            api_base="https://pgx-db.org/rest-api",
+            urls=("https://pgx-db.org/swagger/",),
+        ),
         freshness=Freshness.LIVE,
     ),
     LibrarySpec(
