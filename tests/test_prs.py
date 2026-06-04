@@ -9,7 +9,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from genomi.active_genome_index import dosage as agi_dosage
 from genomi.active_genome_index.active_genome_index import create_active_genome_index, default_agi_path
 from genomi.capabilities.prs import harmonize as prs_harmonize
 from genomi.capabilities.prs import pgs_catalog as prs_pgs_catalog
@@ -20,22 +19,10 @@ from genomi.runtime import context as runtime_context
 from genomi.runtime.libraries import manager as library_manager
 from genomi.runtime.liftover import chain_file_path, liftover_preflight
 
-from _prs_contract_helpers import (
-    insert_array_prs_record,
-    insert_prs_record,
-    memory_prs_index,
-    score_variant,
-    tiny_thresholds,
-    vcf_record_observation,
-)
+from _prs_contract_helpers import tiny_thresholds
 
 
 class PolygenicScoreCapabilityTests(unittest.TestCase):
-    _memory_prs_index = staticmethod(memory_prs_index)
-    _insert_prs_record = staticmethod(insert_prs_record)
-    _insert_array_prs_record = staticmethod(insert_array_prs_record)
-    _vcf_record_observation = staticmethod(vcf_record_observation)
-    _score_variant = staticmethod(score_variant)
     _tiny_thresholds = staticmethod(tiny_thresholds)
 
     def setUp(self) -> None:
@@ -839,80 +826,6 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         )
         self.assertEqual(result["evidence_envelope"]["coverage"]["consulted_sources"], ["local_active_genome_index", "local_prs_score_cache"])
         self.assertEqual(result["evidence_envelope"]["observations"]["matched_variant_count"], 1)
-
-    def test_harmonization_does_not_count_third_allele_as_reference_homozygous(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_prs_record(connection, pos=100, ref="A", alt="G", genotype="0/1")
-        variant = self._score_variant(pos=100, effect_allele="C", other_allele="A")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "missing")
-        self.assertEqual(result["reason"], "genotype_allele_outside_score_alleles")
-
-    def test_harmonization_allows_reference_block_zero_dosage(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_prs_record(connection, pos=100, ref="A", alt=".", genotype="0/0")
-        variant = self._score_variant(pos=100, effect_allele="C", other_allele="A")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "matched")
-        self.assertEqual(result["effect_allele_dosage"], 0.0)
-        self.assertEqual(result["match_type"], "reference_homozygous_inferred")
-
-    def test_harmonization_counts_exact_gvcf_reference_block_effect_dosage(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_prs_record(connection, pos=100, ref="A", alt="<NON_REF>", genotype="0/0")
-        variant = self._score_variant(pos=100, effect_allele="A", other_allele="G")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "matched")
-        self.assertEqual(result["effect_allele_dosage"], 2.0)
-        self.assertEqual(result["match_type"], "reference_homozygous_inferred")
-
-    def test_array_harmonization_counts_effect_without_other_allele(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_array_prs_record(connection, pos=100, genotype="AG")
-        variant = self._score_variant(pos=100, effect_allele="G", other_allele="")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "matched")
-        self.assertEqual(result["effect_allele_dosage"], 1.0)
-        self.assertEqual(result["match_type"], "consumer_array_letter_count")
-
-    def test_array_harmonization_counts_zero_without_other_allele(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_array_prs_record(connection, pos=100, genotype="AA")
-        variant = self._score_variant(pos=100, effect_allele="G", other_allele="")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "matched")
-        self.assertEqual(result["effect_allele_dosage"], 0.0)
-        self.assertEqual(result["match_type"], "consumer_array_letter_count")
-
-    def test_array_harmonization_rejects_third_allele_with_complete_score_model(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_array_prs_record(connection, pos=100, genotype="AG")
-        variant = self._score_variant(pos=100, effect_allele="G", other_allele="T")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "missing")
-        self.assertEqual(result["reason"], "genotype_allele_outside_score_alleles")
-
-    def test_array_harmonization_treats_no_call_as_missing_not_filter_exclusion(self) -> None:
-        connection = self._memory_prs_index()
-        self._insert_array_prs_record(connection, pos=100, genotype="--", filter_value="NO_CALL")
-        variant = self._score_variant(pos=100, effect_allele="G", other_allele="A")
-
-        result = agi_dosage.dosage_for_variant(connection, variant)
-
-        self.assertEqual(result["status"], "missing")
-        self.assertEqual(result["reason"], "no_call")
 
     def _write_scoring_file(
         self,
