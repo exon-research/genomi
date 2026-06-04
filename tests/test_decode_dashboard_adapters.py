@@ -186,6 +186,32 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         self.assertEqual(_panel_keys(parsed), {"overview"})
         self.assertTrue({"pgx", "risk"}.issubset(set(result["panels_empty"])))
 
+    def test_gene_less_native_pgx_review_is_empty_for_dashboard_cards(self) -> None:
+        out = self.tmpdir / "dash.html"
+        result = decode_dashboard.render_dashboard(
+            evidence={
+                "overview": {"sampleId": "HG-RSID-PGX", "variantCount": 10},
+                "pgx": {
+                    "schema": "genomi-pgx-medication-review-v1",
+                    "status": "completed",
+                    "query": {"drug": "example-drug"},
+                    "sample_evidence": {
+                        "total_sample_evidence_count": 1,
+                        "user_provided_sample_evidence": [
+                            {"rsid": "rsSynthetic", "observed_alleles": ["A"]}
+                        ],
+                    },
+                    "public_evidence": {"source_evidence_count": 1},
+                },
+            },
+            mode="full",
+            output=out,
+        )
+
+        parsed = _extract_evidence(out.read_text(encoding="utf-8"))
+        self.assertEqual(_panel_keys(parsed), {"overview"})
+        self.assertIn("pgx", result["panels_empty"])
+
     def test_malformed_native_adapter_rows_raise(self) -> None:
         cases = [
             (

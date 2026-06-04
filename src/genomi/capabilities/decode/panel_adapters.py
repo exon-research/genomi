@@ -304,15 +304,26 @@ def _pgx_has_native_content(raw: JsonObject) -> bool:
             or _as_dicts(recommendations.get("records"))
             or _as_dicts(phenotype.get("records"))
         )
+    return _pgx_review_has_mappable_content(raw)
+
+
+def _pgx_review_has_mappable_content(raw: JsonObject) -> bool:
     answer_support = _as_dict(raw.get("answer_support"))
     sample_evidence = _as_dict(raw.get("sample_evidence"))
-    public_evidence = _as_dict(raw.get("public_evidence"))
+    query = _as_dict(raw.get("query"))
+    recommendations = _as_dicts(answer_support.get("source_recommendation_summaries"))
     return bool(
-        _as_dicts(answer_support.get("star_diplotype_summaries"))
-        or _as_dicts(answer_support.get("source_recommendation_summaries"))
-        or _as_dicts(sample_evidence.get("user_provided_sample_evidence"))
-        or _positive_count(public_evidence.get("source_evidence_count"))
-        or _positive_count(sample_evidence.get("total_sample_evidence_count"))
+        _clean(query.get("gene"))
+        or _unique_strings(_as_list(sample_evidence.get("star_gene_targets")))
+        or any(_clean(_pick(item, "gene")) for item in recommendations)
+        or any(
+            _clean(_pick(item, "gene"))
+            for item in _as_dicts(answer_support.get("star_diplotype_summaries"))
+        )
+        or any(
+            _clean(_pick(item, "gene", "known_gene"))
+            for item in _as_dicts(sample_evidence.get("user_provided_sample_evidence"))
+        )
     )
 
 
@@ -433,12 +444,6 @@ def _risk_overlap(sample_qc: JsonObject) -> str | None:
     if isinstance(matched, (int, float)) and isinstance(total, (int, float)) and total:
         return f"{int(matched)}/{int(total)} variants"
     return None
-
-
-def _positive_count(value: Any) -> bool:
-    if isinstance(value, (int, float)):
-        return value > 0
-    return False
 
 
 def _first_diplotype_with_result(items: list[JsonObject]) -> JsonObject | None:
