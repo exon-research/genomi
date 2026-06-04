@@ -26,6 +26,8 @@ MAX_LIST_ITEMS = 8
 def present_result(operation: str, result: JsonObject) -> JsonObject:
     if operation == "genomi.parse_source":
         return _present_active_genome_index_parse(result)
+    if operation == "decode.render_dashboard":
+        return _present_decode_dashboard(result)
     if operation == "pharmacogenomics.review_medication":
         return _present_pgx_medication_review(result)
     if operation == "phenotype.plan_risk_investigation":
@@ -61,6 +63,27 @@ def _present_active_genome_index_parse(result: JsonObject) -> JsonObject:
         "warnings": result.get("warnings") or [],
         "digitization_contract": result.get("digitization_contract"),
     }
+    return _drop_none(payload)
+
+
+def _present_decode_dashboard(result: JsonObject) -> JsonObject:
+    envelope = _compact_envelope(result.get("evidence_envelope"))
+    payload: JsonObject = {}
+    headline = envelope.get("headline") if isinstance(envelope, dict) else None
+    if headline:
+        payload["headline"] = headline
+    if envelope:
+        payload["evidence_envelope"] = envelope
+    serve = result.get("serve") if isinstance(result.get("serve"), dict) else {}
+    payload.update({
+        "status": result.get("status"),
+        "mode": result.get("mode"),
+        "dashboard_path": result.get("dashboard_path"),
+        "panels_rendered": result.get("panels_rendered"),
+        "panels_empty": result.get("panels_empty"),
+        "serve": _select(serve, ("directory", "filename", "port", "url", "command", "note")),
+        "defaults_applied": result.get("defaults_applied"),
+    })
     return _drop_none(payload)
 
 

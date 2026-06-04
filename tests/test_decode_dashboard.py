@@ -19,6 +19,7 @@ from genomi.operations import (
     OperationError,
     call_operation,
 )
+from genomi.interfaces.presentation import present_result
 from genomi.runtime import context as runtime_context
 
 
@@ -816,6 +817,35 @@ class DashboardCatalogTests(unittest.TestCase):
         self.assertIn("decode.render_dashboard", decode_cap["entry_operations"])
         schema_props = TOOL_CATALOG["operations"]["decode.render_dashboard"]["input_schema"]["properties"]
         self.assertIn("clear_panels", schema_props)
+
+
+class DashboardPresentationTests(unittest.TestCase):
+    def test_presented_dashboard_result_preserves_artifact_serving_fields(self) -> None:
+        raw = {
+            "status": "completed",
+            "mode": "full",
+            "dashboard_path": "/tmp/genomi-dashboards/sample/dashboard.html",
+            "panels_rendered": ["overview"],
+            "panels_empty": [],
+            "serve": {
+                "directory": "/tmp/genomi-dashboards/sample",
+                "filename": "dashboard.html",
+                "port": 8765,
+                "url": "http://127.0.0.1:8765/dashboard.html",
+                "command": (
+                    "python3 -m http.server 8765 --bind 127.0.0.1 "
+                    "--directory /tmp/genomi-dashboards/sample"
+                ),
+            },
+        }
+
+        presented = present_result("decode.render_dashboard", raw)
+
+        self.assertEqual(presented["dashboard_path"], raw["dashboard_path"])
+        self.assertEqual(presented["serve"]["directory"], raw["serve"]["directory"])
+        self.assertEqual(presented["serve"]["command"], raw["serve"]["command"])
+        self.assertEqual(presented["panels_rendered"], ["overview"])
+        self.assertEqual(presented["panels_empty"], [])
 
 
 if __name__ == "__main__":
