@@ -5,9 +5,8 @@ from pathlib import Path
 from ..active_genome_index import SCHEMA_VERSION
 from .agi_store import SOURCE_PARSE_SCHEMA, JsonObject
 from .arrays import (
-    parse_23andme_source,
-    parse_ancestrydna_source,
     parse_consumer_array_source,
+    SUPPORTED_CONSUMER_ARRAY_FORMATS,
 )
 from .detection import detect_source
 from .sequencing import parse_bam_source, parse_fastq_source
@@ -61,29 +60,7 @@ def parse_source(
             max_records=max_records,
             parallel_workers=parallel_workers,
         )
-    if detection.source_format == "23andme":
-        return parse_23andme_source(
-            source_path,
-            detection=detection,
-            evidence_db=evidence_db,
-            source_evidence_db=source_evidence_db,
-            shared_evidence_db=shared_evidence_db,
-            genome_build=genome_build,
-            force=force,
-            max_records=max_records,
-        )
-    if detection.source_format == "ancestrydna":
-        return parse_ancestrydna_source(
-            source_path,
-            detection=detection,
-            evidence_db=evidence_db,
-            source_evidence_db=source_evidence_db,
-            shared_evidence_db=shared_evidence_db,
-            genome_build=genome_build,
-            force=force,
-            max_records=max_records,
-        )
-    if detection.source_format in {"myheritage", "ftdna", "livingdna"}:
+    if detection.source_format in SUPPORTED_CONSUMER_ARRAY_FORMATS:
         return parse_consumer_array_source(
             source_path,
             detection=detection,

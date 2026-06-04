@@ -60,9 +60,11 @@ def _present_active_genome_index_parse(result: JsonObject) -> JsonObject:
         "active_genome_index": active,
         "steps": steps,
         "warnings": result.get("warnings") or [],
-        "semantics": result.get("semantics") or [],
+        "source_observation_contract": result.get("source_observation_contract"),
         "digitization_contract": result.get("digitization_contract"),
     }
+    if result.get("semantics"):
+        payload["semantics"] = result.get("semantics")
     return _drop_none(payload)
 
 

@@ -676,9 +676,9 @@ class GenomiRuntimeIntakeTests(GenomiRuntimeTestCase):
                     }
 
                 with (
-                    mock.patch("genomi.active_genome_index.source_intake.infer_genome_build_from_bam", return_value="GRCh38"),
+                    mock.patch("genomi.active_genome_index.source_intake.sequencing.infer_genome_build_from_bam", return_value="GRCh38"),
                     mock.patch(
-                        "genomi.active_genome_index.source_intake.materialize_bam_variant_vcf",
+                        "genomi.active_genome_index.source_intake.sequencing.materialize_bam_variant_vcf",
                         side_effect=fake_materialize_bam_variant_vcf,
                     ),
                 ):

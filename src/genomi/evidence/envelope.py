@@ -643,15 +643,6 @@ def render_guidance(envelope_payload: dict[str, Any]) -> list[str]:
         codes.append("negative_inference_disallowed:do_not_state_clinical_negative")
     return codes
 
-
-# --- backward-compat helper ------------------------------------------------
-
-def attach_envelope(payload: dict[str, Any], envelope_payload: dict[str, Any]) -> dict[str, Any]:
-    """Attach `evidence_envelope` to a tool result."""
-    payload["evidence_envelope"] = envelope_payload
-    return payload
-
-
 def _as_count(value: Any) -> int:
     """Coerce a result/observation value to a non-negative evidence count.
 

@@ -16,6 +16,8 @@ from ...runtime.libraries import manager as library_manager
 from ..alignment import (
     align_fastq_to_bam,
     detect_paired_fastq,
+    infer_genome_build_from_bam,
+    materialize_bam_variant_vcf,
     normalize_alignment_genome_build,
 )
 from .agi_store import SOURCE_PARSE_SCHEMA, JsonObject, _init_source_evidence_db
@@ -37,10 +39,6 @@ def parse_bam_source(
     max_records: int | None = None,
     parallel_workers: int | None = None,
 ) -> JsonObject:
-    # Resolve the BAM helpers through the package namespace so test patches on
-    # ``genomi.active_genome_index.source_intake.<name>`` apply at the call site.
-    from . import infer_genome_build_from_bam, materialize_bam_variant_vcf
-
     source_path = Path(source)
     detection = detection or SourceDetection(source_format="bam", source_kind="alignment_reads")
     inferred_build = infer_genome_build_from_bam(source_path)

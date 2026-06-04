@@ -340,23 +340,3 @@ def _looks_like_complete_genomics(lines: list[str]) -> bool:
         if text.startswith(">") and "varType" in text and "chromosome" in text:
             return True
     return False
-
-
-# ---------------------------------------------------------------------------
-# Backwards-compatible helpers used by the array parsers and re-exported names.
-# ---------------------------------------------------------------------------
-
-
-def _require_array_format(source_path: Path, source_format: str) -> SourceDetection:
-    detection = detect_source(source_path)
-    if detection.source_format != source_format:
-        raise ValueError(f"not a recognized {source_format} raw genotype export: {source_path}")
-    return detection
-
-
-def _detect_23andme(source_path: Path) -> SourceDetection:
-    return _require_array_format(source_path, "23andme")
-
-
-def _detect_ancestrydna(source_path: Path) -> SourceDetection:
-    return _require_array_format(source_path, "ancestrydna")

@@ -228,12 +228,6 @@ def _open_text_source(source_path: Path, *, member_name: str | None = None) -> I
             # binary context manager already owns.
             text.detach()
 
-
-def _first_zip_text_member(source_path: Path) -> str | None:
-    """Backwards-compatible alias: name of the genomic member in an archive."""
-    return select_archive_member(source_path)
-
-
 def _effective_array_build(requested: str, declared: str | None) -> str:
     normalized = (requested or "auto").strip()
     if normalized.lower() == "auto":
