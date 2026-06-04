@@ -191,8 +191,8 @@ class ActiveGenomeIndexContractFixtureMixin:
         return self._write_zip_members(
             path,
             [
-                ("reads/60820188475559_SA_L001_R1_001.fastq.gz", gzip.compress(record)),
-                ("reads/60820188475559_SA_L001_R2_001.fastq.gz", gzip.compress(record)),
+                ("reads/PGP_PUBLIC_SA_L001_R1_001.fastq.gz", gzip.compress(record)),
+                ("reads/PGP_PUBLIC_SA_L001_R2_001.fastq.gz", gzip.compress(record)),
             ],
         )
 
@@ -202,8 +202,8 @@ class ActiveGenomeIndexContractFixtureMixin:
         return self._write_tar_members(
             path,
             [
-                ("reads/60820188475559_SA_L001_R1_001.fastq.gz", gzip.compress(record)),
-                ("reads/60820188475559_SA_L001_R2_001.fastq.gz", gzip.compress(record)),
+                ("reads/PGP_PUBLIC_SA_L001_R1_001.fastq.gz", gzip.compress(record)),
+                ("reads/PGP_PUBLIC_SA_L001_R2_001.fastq.gz", gzip.compress(record)),
             ],
         )
 
@@ -396,7 +396,7 @@ class ActiveGenomeIndexContractFixtureMixin:
         return path
 
     def _write_vcf_gzip_source(self, stem: Path) -> Path:
-        path = stem.with_name("NG1N4ZH3KB.mm2.sortdup.bqsr.hc.vcf.gz")
+        path = stem.with_name("PGP_PUBLIC.mm2.sortdup.bqsr.hc.vcf.gz")
         with gzip.open(path, "wb") as handle:
             handle.write(self._contract_vcf_text().encode("utf-8"))
         return path
@@ -415,7 +415,7 @@ class ActiveGenomeIndexContractFixtureMixin:
         path = stem.with_suffix(".zip")
         return self._write_zip_member(
             path,
-            "68484e35b07b48cd9eed01d1a0110ff0.vcf",
+            "pgp_public/PGP_PUBLIC.vcf",
             self._contract_vcf_text().encode("utf-8"),
         )
 
@@ -464,26 +464,26 @@ class ActiveGenomeIndexContractFixtureMixin:
         return path
 
     def _write_gvcf_gzip_source(self, stem: Path) -> Path:
-        path = stem.with_name("60820188475559_SA_L001_R1_001.fastq.gz.10009.g.vcf.gz")
+        path = stem.with_name("PGP_PUBLIC.hg38.g.vcf.gz")
         with gzip.open(path, "wb") as handle:
             handle.write(self._contract_gvcf_text().encode("utf-8"))
         return path
 
     def _write_gvcf_bzip2_source(self, stem: Path) -> Path:
-        path = stem.with_name("huA2692E-veritas-gVCF-4.2.vcf.bz2")
+        path = stem.with_name("PGP_PUBLIC-veritas-gVCF-4.2.vcf.bz2")
         path.write_bytes(bz2.compress(self._contract_gvcf_text().encode("utf-8")))
         return path
 
     def _write_gvcf_xz_source(self, stem: Path) -> Path:
-        path = stem.with_name("huA2692E-veritas-gVCF-4.2.vcf.xz")
+        path = stem.with_name("PGP_PUBLIC-veritas-gVCF-4.2.vcf.xz")
         path.write_bytes(lzma.compress(self._contract_gvcf_text().encode("utf-8")))
         return path
 
     def _write_gvcf_zip_source(self, stem: Path) -> Path:
-        path = stem.with_name("huA2692E-veritas-gVCF-4.2.zip")
+        path = stem.with_name("PGP_PUBLIC-veritas-gVCF-4.2.zip")
         return self._write_zip_member(
             path,
-            "huA2692E-veritas-gVCF-4.2.vcf",
+            "PGP_PUBLIC-veritas-gVCF-4.2.vcf",
             self._contract_gvcf_text().encode("utf-8"),
         )
 
@@ -491,7 +491,7 @@ class ActiveGenomeIndexContractFixtureMixin:
         path = stem.with_name("pgp-supported-gvcf-wrapper.tar.gz")
         return self._write_tar_member(
             path,
-            "gvcf/huA2692E-veritas-gVCF-4.2.vcf",
+            "gvcf/PGP_PUBLIC-veritas-gVCF-4.2.vcf",
             self._contract_gvcf_text().encode("utf-8"),
         )
 
@@ -527,23 +527,23 @@ class ActiveGenomeIndexContractFixtureMixin:
         return "\n".join(rows) + "\n"
 
     def _write_23andme_text_source(self, stem: Path) -> Path:
-        path = stem.with_name("genome_Lorena_Sandoval_v5_Full_20260429131650.txt")
+        path = stem.with_name("genome_PGP_PUBLIC_v5_Full_20260429131650.txt")
         path.write_text(self._23andme_text(), encoding="utf-8")
         return path
 
     def _write_23andme_zip_source(self, stem: Path) -> Path:
-        path = stem.with_name("genome_Marika_Forsythe_v4_Full_20240826181111.zip")
+        path = stem.with_name("genome_PGP_PUBLIC_v4_Full_20240826181111.zip")
         return self._write_zip_member(
             path,
-            "genome_Marika_Forsythe_v4_Full_20240828221950.txt",
+            "genome_PGP_PUBLIC_v4_Full_20240828221950.txt",
             self._23andme_text().encode("utf-8"),
         )
 
     def _write_23andme_tar_source(self, stem: Path) -> Path:
-        path = stem.with_name("genome_Lorena_Sandoval_v5_Full_20260429131650.tar.gz")
+        path = stem.with_name("genome_PGP_PUBLIC_v5_Full_20260429131650.tar.gz")
         return self._write_tar_member(
             path,
-            "23andMe/genome_Lorena_Sandoval_v5_Full_20260429131650.txt",
+            "23andMe/genome_PGP_PUBLIC_v5_Full_20260429131650.txt",
             self._23andme_text().encode("utf-8"),
         )
 
@@ -604,7 +604,7 @@ class ActiveGenomeIndexContractFixtureMixin:
         return path
 
     def _write_myheritage_zip_source(self, stem: Path) -> Path:
-        path = stem.with_name("Dave_raw_dna_data.zip")
+        path = stem.with_name("PGP_PUBLIC_raw_dna_data.zip")
         return self._write_zip_member(
             path,
             "MyHeritage_raw_dna_data.csv",
@@ -612,7 +612,7 @@ class ActiveGenomeIndexContractFixtureMixin:
         )
 
     def _write_myheritage_tar_source(self, stem: Path) -> Path:
-        path = stem.with_name("Dave_raw_dna_data.tar.gz")
+        path = stem.with_name("PGP_PUBLIC_raw_dna_data.tar.gz")
         return self._write_tar_member(
             path,
             "MyHeritage_raw_dna_data.csv",
@@ -620,29 +620,29 @@ class ActiveGenomeIndexContractFixtureMixin:
         )
 
     def _write_ftdna_csv_source(self, stem: Path) -> Path:
-        path = stem.with_name("AM34047_Autosomal_o37_Results_20200820.csv")
+        path = stem.with_name("PGP_PUBLIC_Autosomal_o37_Results_20200820.csv")
         path.write_text(self._consumer_csv(include_banner=False), encoding="utf-8")
         return path
 
     def _write_ftdna_gzip_source(self, stem: Path) -> Path:
-        path = stem.with_name("AM34047_Autosomal_o37_Results_20200820.csv.gz")
+        path = stem.with_name("PGP_PUBLIC_Autosomal_o37_Results_20200820.csv.gz")
         with gzip.open(path, "wb") as handle:
             handle.write(self._consumer_csv(include_banner=False).encode("utf-8"))
         return path
 
     def _write_ftdna_zip_source(self, stem: Path) -> Path:
-        path = stem.with_name("AM34047_Autosomal_o37_Results_20200820.zip")
+        path = stem.with_name("PGP_PUBLIC_Autosomal_o37_Results_20200820.zip")
         return self._write_zip_member(
             path,
-            "Family_Finder/AM34047_Autosomal_o37_Results_20200820.csv",
+            "Family_Finder/PGP_PUBLIC_Autosomal_o37_Results_20200820.csv",
             self._consumer_csv(include_banner=False).encode("utf-8"),
         )
 
     def _write_ftdna_tar_source(self, stem: Path) -> Path:
-        path = stem.with_name("AM34047_Autosomal_o37_Results_20200820.tar.gz")
+        path = stem.with_name("PGP_PUBLIC_Autosomal_o37_Results_20200820.tar.gz")
         return self._write_tar_member(
             path,
-            "Family_Finder/AM34047_Autosomal_o37_Results_20200820.csv",
+            "Family_Finder/PGP_PUBLIC_Autosomal_o37_Results_20200820.csv",
             self._consumer_csv(include_banner=False).encode("utf-8"),
         )
 
@@ -665,23 +665,23 @@ class ActiveGenomeIndexContractFixtureMixin:
         return "\n".join(rows) + "\n"
 
     def _write_livingdna_text_source(self, stem: Path) -> Path:
-        path = stem.with_name("living-dna-LD0251144A-autosomal.txt")
+        path = stem.with_name("living-dna-PGP_PUBLIC-autosomal.txt")
         path.write_text(self._livingdna_text(), encoding="utf-8")
         return path
 
     def _write_livingdna_zip_source(self, stem: Path) -> Path:
-        path = stem.with_name("living-dna-LD0251144A-autosomal.zip")
+        path = stem.with_name("living-dna-PGP_PUBLIC-autosomal.zip")
         return self._write_zip_member(
             path,
-            "living-dna-LD0251144A-autosomal.txt",
+            "living-dna-PGP_PUBLIC-autosomal.txt",
             self._livingdna_text().encode("utf-8"),
         )
 
     def _write_livingdna_tar_source(self, stem: Path) -> Path:
-        path = stem.with_name("living-dna-LD0251144A-autosomal.tar.gz")
+        path = stem.with_name("living-dna-PGP_PUBLIC-autosomal.tar.gz")
         return self._write_tar_member(
             path,
-            "living-dna-LD0251144A-autosomal.txt",
+            "living-dna-PGP_PUBLIC-autosomal.txt",
             self._livingdna_text().encode("utf-8"),
         )
 

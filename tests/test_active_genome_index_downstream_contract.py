@@ -322,7 +322,7 @@ class ActiveGenomeIndexDownstreamContractTests(
                     writer=self._write_fastq_sources,
                     parse_overrides={"reference_fasta": str(reference)},
                 ),
-                Path("60820188475559_SA_L001_R1_001.fastq.gz"),
+                Path("PGP_PUBLIC_SA_L001_R1_001.fastq.gz"),
                 True,
             ),
             (
