@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest import mock
 
 from genomi.active_genome_index.active_genome_index import (
@@ -115,7 +116,7 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         ):
             result = call_operation("genomi.install", {})
         self.assertEqual(result["reparse"]["stale"], 1)
-        self.assertEqual(result["reparse"]["launched"][0]["source"], str(vcf))
+        self.assertEqual(Path(result["reparse"]["launched"][0]["source"]).resolve(), vcf.resolve())
         # Runtime pull was attempted (unmanaged here — not a git checkout).
         self.assertEqual(result["runtime_update"]["status"], "unmanaged")
 
@@ -136,8 +137,11 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         reparse = result["reparse"]
         self.assertEqual(reparse["stale"], 1)
         self.assertEqual(len(reparse["launched"]), 1)
-        self.assertEqual(reparse["launched"][0]["source"], str(vcf))
-        self.assertEqual(launched, [("genomi.parse_source", {"source": str(vcf), "force": True})])
+        self.assertEqual(Path(reparse["launched"][0]["source"]).resolve(), vcf.resolve())
+        self.assertEqual(len(launched), 1)
+        self.assertEqual(launched[0][0], "genomi.parse_source")
+        self.assertEqual(Path(launched[0][1]["source"]).resolve(), vcf.resolve())
+        self.assertEqual(launched[0][1]["force"], True)
 
     def test_reparse_skips_genome_whose_source_is_gone(self) -> None:
         vcf, _index = _register_stale_genome(self.genomi_home)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import os
 import tempfile
 from pathlib import Path
@@ -16,6 +18,106 @@ from _active_genome_index_contract_fixtures import (
     ActiveGenomeIndexContractFixtureMixin,
 )
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
+
+
+CONSUMER_ARRAY_FORMATS = {"23andme", "ancestrydna", "myheritage", "ftdna", "livingdna"}
+
+
+@dataclass(frozen=True)
+class SourceContractCase:
+    case_id: str
+    expected_format: str
+    writer: Callable[[Path], Path]
+    parse_overrides: dict[str, object] | None = None
+
+    @property
+    def is_consumer_array(self) -> bool:
+        return self.expected_format in CONSUMER_ARRAY_FORMATS
+
+    @property
+    def expected_record_stats(self) -> dict[str, int]:
+        if self.is_consumer_array:
+            return {
+                "total_records": len(LOCUS_MODEL),
+                "variant_records": len(LOCUS_MODEL),
+                "reference_records": 0,
+                "pass_records": len(LOCUS_MODEL),
+                "fail_records": 0,
+            }
+        if self.expected_format == "gvcf":
+            return {
+                "total_records": len(LOCUS_MODEL) + 1,
+                "variant_records": 2,
+                "reference_records": 3,
+                "pass_records": len(LOCUS_MODEL) + 1,
+                "fail_records": 0,
+            }
+        return {
+            "total_records": len(LOCUS_MODEL),
+            "variant_records": 2,
+            "reference_records": 2,
+            "pass_records": len(LOCUS_MODEL),
+            "fail_records": 0,
+        }
+
+    @property
+    def expected_callability_for_called_site(self) -> str:
+        if self.is_consumer_array:
+            return "unknown_no_reference_blocks"
+        return "unknown_missing_depth"
+
+    @property
+    def expected_callability_for_unrepresented_site(self) -> str:
+        if self.is_consumer_array:
+            return "unknown_no_reference_blocks"
+        return "not_callable"
+
+    @property
+    def expected_clinvar_scanned_records(self) -> int:
+        if self.is_consumer_array:
+            return len(LOCUS_MODEL)
+        return EXPECTED_CLINVAR_MATCHED_ALLELES
+
+    @property
+    def expected_source_kind(self) -> str:
+        return {
+            "bam": "alignment_reads",
+            "fastq": "paired_reads_input",
+        }.get(
+            self.expected_format,
+            "consumer_genotype_array" if self.is_consumer_array else "variant_callset",
+        )
+
+
+@dataclass(frozen=True)
+class LocusContract:
+    rsid: str
+    chrom: str
+    pos: int
+    ref: str
+    alt: str
+    expected_alt_observed: bool
+    expected_alt_count: int | None
+    expected_zygosity: str
+
+
+LOCUS_CONTRACTS = (
+    LocusContract("rsagi1", "1", 100, "A", "C", True, 2, "homozygous_alternate"),
+    LocusContract("rsagi2", "1", 200, "T", "G", True, 1, "heterozygous"),
+    LocusContract("rsagi3", "1", 300, "A", "G", False, 0, "reference_or_other_alternate"),
+    LocusContract("rsagi4", "1", 400, "C", "T", False, 0, "reference_or_other_alternate"),
+)
+
+UNREPRESENTED_LOCUS = LocusContract(
+    rsid="rsagi_missing",
+    chrom="1",
+    pos=500,
+    ref="A",
+    alt="G",
+    expected_alt_observed=False,
+    expected_alt_count=None,
+    expected_zygosity="unknown",
+)
 
 
 class ActiveGenomeIndexDownstreamContractTests(
@@ -51,13 +153,12 @@ class ActiveGenomeIndexDownstreamContractTests(
                 clinvar_vcf = self._write_clinvar_fixture(Path("contract.clinvar.vcf"))
                 import_clinvar_vcf(clinvar_vcf, clinvar_db, source_version="contract-fixture", genome_build="GRCh37")
 
-                for case_id, expected_format, writer in self._source_cases():
-                    with self.subTest(source=case_id):
-                        source = writer(Path(case_id))
-                        self._assert_source_feeds_coordinate_consumers(
+                for contract in self._source_contract_cases():
+                    with self.subTest(source=contract.case_id):
+                        source = contract.writer(Path(contract.case_id))
+                        self._assert_source_contract(
                             source,
-                            expected_format=expected_format,
-                            case_id=case_id,
+                            contract=contract,
                             imported_score=imported_score,
                             clinvar_db=clinvar_db,
                         )
@@ -66,13 +167,16 @@ class ActiveGenomeIndexDownstreamContractTests(
                 with self.subTest(source="bam"):
                     bam = self._write_bam_source(Path("Nebula_Genomics_BAM_format.bam"))
                     with self._mock_derived_vcf_materialization():
-                        self._assert_source_feeds_coordinate_consumers(
+                        self._assert_source_contract(
                             bam,
-                            expected_format="bam",
-                            case_id="bam",
+                            contract=SourceContractCase(
+                                case_id="bam",
+                                expected_format="bam",
+                                writer=self._write_bam_source,
+                                parse_overrides={"reference_fasta": str(reference)},
+                            ),
                             imported_score=imported_score,
                             clinvar_db=clinvar_db,
-                            parse_overrides={"reference_fasta": str(reference)},
                         )
 
                 with self.subTest(source="fastq"):
@@ -81,53 +185,185 @@ class ActiveGenomeIndexDownstreamContractTests(
                         "genomi.active_genome_index.source_intake.sequencing.align_fastq_to_bam",
                         side_effect=self._fake_align_fastq_to_bam,
                     ):
-                        self._assert_source_feeds_coordinate_consumers(
+                        self._assert_source_contract(
                             fastq,
-                            expected_format="fastq",
-                            case_id="fastq",
+                            contract=SourceContractCase(
+                                case_id="fastq",
+                                expected_format="fastq",
+                                writer=self._write_fastq_sources,
+                                parse_overrides={"reference_fasta": str(reference)},
+                            ),
                             imported_score=imported_score,
                             clinvar_db=clinvar_db,
-                            parse_overrides={"reference_fasta": str(reference)},
                         )
             finally:
                 os.chdir(previous)
 
-    def _assert_source_feeds_coordinate_consumers(
+    def test_called_consumer_array_genotypes_are_coordinate_matchable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                source = self._write_23andme_text_source(Path("array"))
+                contract = SourceContractCase("23andme_coordinate_contract", "23andme", self._write_23andme_text_source)
+                parsed = self._parse_contract_source(source, contract=contract)
+                self._assert_parse_ready(parsed, contract)
+                self._assert_variant_locus_contracts(contract)
+                self._assert_genotype_support_contracts(contract)
+            finally:
+                os.chdir(previous)
+
+    def test_consumer_array_no_call_rows_do_not_create_reference_block_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                contract = SourceContractCase("23andme_no_call", "23andme", self._write_23andme_no_call_source)
+                source = contract.writer(Path("no_call"))
+                parsed = self._parse_contract_source(source, contract=contract)
+                self._assert_parse_ready(parsed, contract)
+
+                summary = call_operation("active_genome_index.summarize")
+                stats = summary["active_genome_index"]["stats"]
+                self.assertEqual(stats["total_records"], 1)
+                self.assertEqual(stats["variant_records"], 0)
+                self.assertEqual(stats["reference_records"], 0)
+                self.assertEqual(stats["pass_records"], 0)
+                self.assertEqual(stats["fail_records"], 1)
+
+                callset_qc = call_operation(
+                    "active_genome_index.classify_callset_qc",
+                    {"genome_build": "GRCh37", "scan_records": 100},
+                )
+                self.assertEqual(callset_qc["input_type"], "array_or_genotyping_callset")
+                self.assertFalse(callset_qc["has_reference_blocks"])
+                self.assertEqual(callset_qc["summary"]["filter_counts"], {"NO_CALL": 1})
+
+                variant = call_operation("variant.resolve", {"rsid": "rsnocall", "genome_build": "GRCh37"})
+                self.assertEqual(variant["sample_context"]["count"], 0, variant)
+
+                support = self._genotype_support(chrom="1", pos=700, ref="A", alt="G")
+                self.assertEqual(support["support_status"], "no_call")
+                observation = support["sample_observation"]
+                self.assertEqual(observation["record_type"], "consumer_array")
+                self.assertFalse(observation["reference_call_supported"])
+                self.assertIsNone(observation["alt_allele_count"])
+
+                callability = call_operation(
+                    "active_genome_index.classify_region_callability",
+                    {
+                        "region": "1:700-700",
+                        "genome_build": "GRCh37",
+                        "min_covered_fraction": 0.1,
+                    },
+                )
+                self.assertEqual(callability["callability_status"], "unknown_no_reference_blocks")
+                self.assertFalse(callability["can_support_negative_or_reference_claim"])
+            finally:
+                os.chdir(previous)
+
+    def _write_23andme_no_call_source(self, stem: Path) -> Path:
+        path = stem.with_name("genome_no_call.txt")
+        path.write_text(
+            "# file_id: no-call-contract\n"
+            "# This data file is generated by 23andMe.\n"
+            "# rsid\tchromosome\tposition\tgenotype\n"
+            "rsnocall\t1\t700\t--\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def _source_contract_cases(self) -> list[SourceContractCase]:
+        return [
+            SourceContractCase(case_id=case_id, expected_format=expected_format, writer=writer)
+            for case_id, expected_format, writer in self._source_cases()
+        ]
+
+    def _assert_source_contract(
         self,
         source: Path,
         *,
-        expected_format: str,
-        case_id: str,
+        contract: SourceContractCase,
         imported_score: dict[str, object],
         clinvar_db: Path,
-        parse_overrides: dict[str, object] | None = None,
     ) -> None:
-        parse_params = {"source": str(source), "genome_build": "GRCh37", "force": True}
-        parse_params.update(parse_overrides or {})
-        parsed = call_operation("genomi.parse_source", parse_params)
+        parsed = self._parse_contract_source(source, contract=contract)
+        self._assert_parse_ready(parsed, contract)
+        self._assert_record_contract(contract)
+        self._assert_variant_locus_contracts(contract)
+        self._assert_callability_contract(contract)
+        self._assert_prs_contract(imported_score)
+        self._assert_ancestry_contract()
+        matches_path = self._assert_clinvar_contract(contract, clinvar_db)
+        self._assert_clinvar_scan_contract(matches_path, contract, clinvar_db)
+        self._assert_genotype_support_contracts(contract)
 
+    def _parse_contract_source(self, source: Path, *, contract: SourceContractCase) -> dict[str, object]:
+        parse_params = {"source": str(source), "genome_build": "GRCh37", "force": True}
+        parse_params.update(contract.parse_overrides or {})
+        return call_operation("genomi.parse_source", parse_params)
+
+    def _assert_parse_ready(self, parsed: dict[str, object], contract: SourceContractCase) -> None:
         self.assertEqual(parsed["status"], "completed")
-        self.assertEqual(parsed["source_format"], expected_format)
+        self.assertEqual(parsed["source_format"], contract.expected_format)
         readiness = active_genome_index_readiness(parsed["outputs"]["active_genome_index_path"])
         self.assertTrue(readiness["complete"], readiness)
         self.assertEqual(readiness["missing_objects"], [])
 
-        variant = call_operation("variant.resolve", {"rsid": "rsagi2", "genome_build": "GRCh37"})
-        self.assertEqual(variant["sample_context"]["count"], 1, variant)
-        self.assertEqual(variant["sample_context"]["matches"][0]["genotype"], self._expected_genotype_for_source(expected_format, 1))
-
+    def _assert_record_contract(self, contract: SourceContractCase) -> None:
         summary = call_operation("active_genome_index.summarize")
         self.assertTrue(summary["active_genome_index"]["active_genome_index_readiness"]["complete"], summary)
-        self.assertGreaterEqual(summary["active_genome_index"]["stats"]["total_records"], len(LOCUS_MODEL))
+        stats = summary["active_genome_index"]["stats"]
+        for key, expected in contract.expected_record_stats.items():
+            self.assertEqual(stats[key], expected, f"{contract.case_id}:{key}")
 
         callset_qc = call_operation(
             "active_genome_index.classify_callset_qc",
             {"genome_build": "GRCh37", "scan_records": 100},
         )
         self.assertEqual(callset_qc["status"], "completed", callset_qc)
-        self.assertGreaterEqual(callset_qc["summary"]["total_records"], len(LOCUS_MODEL))
+        for key, expected in contract.expected_record_stats.items():
+            self.assertEqual(callset_qc["summary"][key], expected, f"{contract.case_id}:qc:{key}")
+        self.assertEqual(callset_qc["summary"]["no_call_records"], 0)
+        self.assertEqual(callset_qc["absence_claims_allowed_by_default"], False)
+        self.assertEqual(callset_qc["has_reference_blocks"], contract.expected_record_stats["reference_records"] > 0)
+        self.assertEqual(callset_qc["has_depth"], False)
+        self.assertEqual(callset_qc["has_genotype_quality"], False)
 
-        callability = call_operation(
+    def _assert_variant_locus_contracts(self, contract: SourceContractCase) -> None:
+        for index, locus in enumerate(LOCUS_MODEL):
+            with self.subTest(source=contract.case_id, contract="variant.resolve", rsid=locus["rsid"]):
+                variant = call_operation("variant.resolve", {"rsid": str(locus["rsid"]), "genome_build": "GRCh37"})
+                self.assertEqual(variant["sample_context"]["count"], 1, variant)
+                match = variant["sample_context"]["matches"][0]
+                self.assertEqual(match["genotype"], self._expected_genotype_for_source(contract.expected_format, index))
+                self.assertEqual(match["source_format"], contract.expected_format)
+                self.assertEqual(match["source_kind"], contract.expected_source_kind)
+                if contract.is_consumer_array:
+                    self.assertEqual(match["observation_semantics"]["kind"], "consumer_genotype_array_call")
+                    self.assertEqual(match["ref"], "N")
+                    self.assertEqual(match["alt"], locus["bases"])
+                else:
+                    self.assertEqual(match["ref"], locus["ref"])
+                    self.assertEqual(match["alt"], locus["alt"])
+                    self.assertEqual(match["is_variant"], 1 if index < 2 else 0)
+
+        missing_rsid = call_operation("variant.resolve", {"rsid": UNREPRESENTED_LOCUS.rsid, "genome_build": "GRCh37"})
+        self.assertEqual(missing_rsid["sample_context"]["count"], 0, missing_rsid)
+        missing_allele = call_operation(
+            "variant.resolve",
+            {
+                "query": (
+                    f"chr{UNREPRESENTED_LOCUS.chrom}:{UNREPRESENTED_LOCUS.pos}:"
+                    f"{UNREPRESENTED_LOCUS.ref}:{UNREPRESENTED_LOCUS.alt}"
+                ),
+                "genome_build": "GRCh37",
+            },
+        )
+        self.assertEqual(missing_allele["sample_context"]["count"], 0, missing_allele)
+
+    def _assert_callability_contract(self, contract: SourceContractCase) -> None:
+        called_site = call_operation(
             "active_genome_index.classify_region_callability",
             {
                 "region": "1:100-100",
@@ -135,19 +371,26 @@ class ActiveGenomeIndexDownstreamContractTests(
                 "min_covered_fraction": 0.1,
             },
         )
-        self.assertEqual(callability["status"], "completed", callability)
-        self.assertIn(
-            callability["callability_status"],
+        self.assertEqual(called_site["status"], "completed", called_site)
+        self.assertEqual(called_site["callability_status"], contract.expected_callability_for_called_site)
+        self.assertEqual(called_site["covered_bases"], 0)
+        self.assertFalse(called_site["can_support_negative_or_reference_claim"])
+        self.assertEqual(len(called_site["matched_records"]), 1)
+
+        unrepresented_site = call_operation(
+            "active_genome_index.classify_region_callability",
             {
-                "callable",
-                "not_callable",
-                "unknown",
-                "unknown_missing_depth",
-                "unknown_no_coverage",
-                "unknown_no_reference_blocks",
+                "region": f"{UNREPRESENTED_LOCUS.chrom}:{UNREPRESENTED_LOCUS.pos}-{UNREPRESENTED_LOCUS.pos}",
+                "genome_build": "GRCh37",
+                "min_covered_fraction": 0.1,
             },
         )
+        self.assertEqual(unrepresented_site["status"], "completed", unrepresented_site)
+        self.assertEqual(unrepresented_site["callability_status"], contract.expected_callability_for_unrepresented_site)
+        self.assertEqual(unrepresented_site["matched_records"], [])
+        self.assertFalse(unrepresented_site["can_support_negative_or_reference_claim"])
 
+    def _assert_prs_contract(self, imported_score: dict[str, object]) -> None:
         with self._tiny_prs_thresholds():
             overlap_result = call_operation(
                 "prs.check_score_overlap",
@@ -170,12 +413,15 @@ class ActiveGenomeIndexDownstreamContractTests(
         self.assertEqual(prs_result["sample_qc"]["missing_variant_count"], 0)
         self.assertAlmostEqual(prs_result["score_result"]["raw_weighted_score"], EXPECTED_RAW_SCORE)
 
+    def _assert_ancestry_contract(self) -> None:
         ancestry_result = call_operation("ancestry.check_sample_overlap", {"genome_build": "GRCh37"})
         self.assertEqual(ancestry_result["status"], "completed", ancestry_result)
+        self.assertEqual(ancestry_result["sample_qc"]["panel_marker_count"], len(LOCUS_MODEL))
         self.assertEqual(ancestry_result["sample_qc"]["usable_marker_count"], len(LOCUS_MODEL))
         self.assertEqual(ancestry_result["sample_qc"]["missing_marker_count"], 0)
 
-        matches_path = Path(f"{case_id}.clinvar.matches.jsonl")
+    def _assert_clinvar_contract(self, contract: SourceContractCase, clinvar_db: Path) -> Path:
+        matches_path = Path(f"{contract.case_id}.clinvar.matches.jsonl")
         clinvar_result = call_operation(
             "clinvar.match_variants",
             {
@@ -186,16 +432,25 @@ class ActiveGenomeIndexDownstreamContractTests(
             },
         )
         self.assertEqual(clinvar_result["status"], "completed", clinvar_result)
+        self.assertEqual(clinvar_result["stats"]["scanned_records"], contract.expected_clinvar_scanned_records)
+        self.assertEqual(clinvar_result["stats"]["queried_alleles"], contract.expected_clinvar_scanned_records)
         self.assertEqual(clinvar_result["stats"]["matched_alleles"], EXPECTED_CLINVAR_MATCHED_ALLELES)
         self.assertEqual(clinvar_result["stats"]["written_records"], EXPECTED_CLINVAR_MATCHED_ALLELES)
-        self._assert_clinvar_payloads_are_real_alleles(matches_path, expected_format=expected_format)
+        self._assert_clinvar_payloads_are_real_alleles(matches_path, expected_format=contract.expected_format)
+        return matches_path
 
+    def _assert_clinvar_scan_contract(
+        self,
+        matches_path: Path,
+        contract: SourceContractCase,
+        clinvar_db: Path,
+    ) -> None:
         scanned = call_operation(
             "clinvar.scan_candidates",
             {
                 "matches": str(matches_path),
                 "db": str(clinvar_db),
-                "output": str(Path(f"{case_id}.clinvar.candidates.json")),
+                "output": str(Path(f"{contract.case_id}.clinvar.candidates.json")),
                 "genome_build": "GRCh37",
                 "force": True,
             },
@@ -204,7 +459,7 @@ class ActiveGenomeIndexDownstreamContractTests(
         candidates_by_pos = {int(candidate["variant"]["pos"]): candidate for candidate in scanned["candidate_inventory"]}
         self.assertIn(200, candidates_by_pos)
         self.assertIn("heterozygous_p_lp_context_needed", candidates_by_pos[200]["buckets"])
-        if expected_format in {"vcf", "gvcf", "bam", "fastq"}:
+        if contract.expected_format in {"vcf", "gvcf", "bam", "fastq"}:
             self.assertEqual(candidates_by_pos[200]["match_provenance"]["primary_match_basis"], "exact_allele")
         else:
             self.assertEqual(
@@ -214,16 +469,42 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_ref"], "N")
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_format"], "GT_ARRAY")
 
-        observed_support = self._genotype_support(chrom="1", pos=100, ref="A", alt="C")
-        self.assertEqual(observed_support["sample_observation"]["target_alt_observed"], True)
-        self.assertEqual(observed_support["sample_observation"]["alt_allele_count"], 2)
+    def _assert_genotype_support_contracts(self, contract: SourceContractCase) -> None:
+        for index, locus in enumerate(LOCUS_CONTRACTS):
+            with self.subTest(source=contract.case_id, contract="genotype_support", rsid=locus.rsid):
+                support = self._genotype_support(chrom=locus.chrom, pos=locus.pos, ref=locus.ref, alt=locus.alt)
+                observation = support["sample_observation"]
+                self.assertEqual(observation["target_alt_observed"], locus.expected_alt_observed)
+                self.assertEqual(observation["alt_allele_count"], locus.expected_alt_count)
+                self.assertEqual(observation["zygosity"], locus.expected_zygosity)
+                if index < 2:
+                    self.assertEqual(support["support_status"], "unknown")
+                    self.assertEqual(observation["observed"], True)
+                else:
+                    self.assertEqual(support["support_status"], "not_observed")
+                    self.assertEqual(observation["observed"], False)
+                if contract.is_consumer_array:
+                    self.assertEqual(observation["record_type"], "consumer_array")
+                    self.assertEqual(observation["matched_by"], "consumer_array_letter_genotype")
+                    self.assertFalse(observation["reference_call_supported"])
+                elif index < 2:
+                    self.assertEqual(observation["record_type"], "variant_call")
+                    self.assertEqual(observation["matched_by"], "exact_variant")
+                    self.assertFalse(observation["reference_call_supported"])
+                else:
+                    self.assertEqual(observation["record_type"], "reference_block")
+                    self.assertEqual(observation["matched_by"], "reference_block")
+                    self.assertTrue(observation["reference_call_supported"])
 
-        heterozygous_support = self._genotype_support(chrom="1", pos=200, ref="T", alt="G")
-        self.assertEqual(heterozygous_support["sample_observation"]["target_alt_observed"], True)
-        self.assertEqual(heterozygous_support["sample_observation"]["alt_allele_count"], 1)
-        self.assertEqual(heterozygous_support["sample_observation"]["zygosity"], "heterozygous")
-
-        absent_support = self._genotype_support(chrom="1", pos=300, ref="A", alt="G")
-        self.assertEqual(absent_support["support_status"], "not_observed")
-        self.assertEqual(absent_support["sample_observation"]["target_alt_observed"], False)
-        self.assertEqual(absent_support["sample_observation"]["alt_allele_count"], 0)
+        support = self._genotype_support(
+            chrom=UNREPRESENTED_LOCUS.chrom,
+            pos=UNREPRESENTED_LOCUS.pos,
+            ref=UNREPRESENTED_LOCUS.ref,
+            alt=UNREPRESENTED_LOCUS.alt,
+        )
+        observation = support["sample_observation"]
+        self.assertEqual(support["support_status"], "unknown")
+        self.assertEqual(observation["site_status"], "not_represented")
+        self.assertEqual(observation["target_alt_observed"], False)
+        self.assertIsNone(observation["alt_allele_count"])
+        self.assertFalse(observation["reference_call_supported"])

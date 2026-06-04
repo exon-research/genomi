@@ -25,8 +25,10 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from genomi.operations import OPERATIONS, OperationError, call_operation
+from genomi.runtime import context as runtime_context
 
 # A grab-bag of common path-like parameters. Operations that take any of
 # these will see a path that does not exist on disk — their contract is that
@@ -48,6 +50,15 @@ PATH_BAG = {
     "fasta": "/tmp/genomi-contract-missing.fa",
 }
 
+# Public-source operations should exercise error-envelope conversion without
+# spending the contract suite's runtime budget on live internet timeouts.
+EXTERNAL_URL_BAG = {
+    "clinpgx_api_url": "http://127.0.0.1:9",
+    "pgxdb_api_url": "http://127.0.0.1:9",
+    "fda_biomarkers_url": "http://127.0.0.1:9/fda-biomarkers",
+    "fda_associations_url": "http://127.0.0.1:9/fda-associations",
+}
+
 # A grab-bag of common required scalars so operations that need them get past
 # their input validation and exercise the path-handling code.
 SCALAR_BAG = {
@@ -67,7 +78,7 @@ SCALAR_BAG = {
     "entity_name": "BRCA1",
 }
 
-BAD_INPUT_BAG = {**PATH_BAG, **SCALAR_BAG}
+BAD_INPUT_BAG = {**PATH_BAG, **EXTERNAL_URL_BAG, **SCALAR_BAG}
 
 
 class OperationErrorContractTests(unittest.TestCase):
@@ -89,6 +100,18 @@ class OperationErrorContractTests(unittest.TestCase):
             self._saved_env[key] = os.environ.get(key)
             os.environ[key] = value
         self.addCleanup(self._restore_env)
+        self._git_repo = mock.patch(
+            "genomi.operations.registry.handlers_admin._runtime_git_repo",
+            return_value=None,
+        )
+        self._git_repo.start()
+        self.addCleanup(self._git_repo.stop)
+        self._install_libraries = mock.patch(
+            "genomi.operations.registry.handlers_admin._install_libraries_step",
+            return_value={"status": "completed", "stub": True},
+        )
+        self._install_libraries.start()
+        self.addCleanup(self._install_libraries.stop)
 
     def _restore_env(self) -> None:
         for key, value in self._saved_env.items():
@@ -99,6 +122,8 @@ class OperationErrorContractTests(unittest.TestCase):
 
     def _check_contract(self, op_name: str, params: dict) -> None:
         """Run one call and assert nothing escapes other than OperationError."""
+        runtime_context.clear_active_genome_index(forget_active_genome_indexes=True)
+        runtime_context.clear_default_user()
         try:
             result = call_operation(op_name, params)
         except OperationError:

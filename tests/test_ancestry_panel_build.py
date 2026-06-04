@@ -7,12 +7,12 @@ import unittest
 from pathlib import Path
 
 from genomi.capabilities.ancestry import panel_build, source_context
-from genomi.runtime.liftover import chain_file_path
+from genomi.runtime.liftover import liftover_preflight
 from genomi.runtime.paths import ancestry_reference_panel_dir
 
 
-def _chain_files_available() -> bool:
-    return chain_file_path("GRCh38", "GRCh37").is_file()
+def _liftover_available() -> bool:
+    return liftover_preflight("GRCh38", "GRCh37").get("status") == "available"
 
 
 # Three SNPs with curated GRCh38 coordinates that lift cleanly to GRCh37
@@ -72,8 +72,8 @@ def _write_synthetic_panel(panel_dir: Path) -> None:
 
 
 @unittest.skipUnless(
-    _chain_files_available(),
-    "liftover-chains library not installed; run scripts/install_for_agents.py --libraries liftover-chains",
+    _liftover_available(),
+    "liftover setup unavailable; install liftover-chains and pyliftover",
 )
 class PanelBuildTests(unittest.TestCase):
     def setUp(self) -> None:

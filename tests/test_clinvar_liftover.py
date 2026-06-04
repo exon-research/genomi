@@ -11,11 +11,11 @@ from genomi.evidence import (
     match_clinvar_variants,
     match_clinvar_variants_from_active_genome_index,
 )
-from genomi.runtime.liftover import chain_file_path
+from genomi.runtime.liftover import liftover_preflight
 
 
-def _chain_files_available() -> bool:
-    return chain_file_path("GRCh37", "GRCh38").is_file()
+def _liftover_available() -> bool:
+    return liftover_preflight("GRCh37", "GRCh38").get("status") == "available"
 
 
 # APOE rs429358 lifts cleanly between builds (UCSC chain verified):
@@ -25,8 +25,8 @@ _APOE_GRCH37_POS = 45411941
 
 
 @unittest.skipUnless(
-    _chain_files_available(),
-    "liftover-chains library not installed; run scripts/install_for_agents.py --libraries liftover-chains",
+    _liftover_available(),
+    "liftover setup unavailable; install liftover-chains and pyliftover",
 )
 class CrossBuildClinvarMatchTests(unittest.TestCase):
     def setUp(self) -> None:
