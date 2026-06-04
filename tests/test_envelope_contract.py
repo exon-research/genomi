@@ -23,8 +23,10 @@ from typing import Any
 from genomi import operations as ops
 from genomi.evidence import envelope as env
 
+from _genomi_runtime_helpers import GenomiRuntimeTestCase
 
-class DispatchEnvelopeContractTests(unittest.TestCase):
+
+class DispatchEnvelopeContractTests(GenomiRuntimeTestCase):
     def _call_with_stub(self, name: str, stub_result: dict[str, Any]) -> dict[str, Any]:
         """Replace the registered handler with a stub, dispatch, restore."""
         operation = ops.get_operation(name)

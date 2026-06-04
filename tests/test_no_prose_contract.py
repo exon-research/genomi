@@ -14,6 +14,8 @@ from typing import Any
 from genomi import operations as ops
 from genomi.evidence import envelope as env
 
+from _genomi_runtime_helpers import GenomiRuntimeTestCase
+
 FORBIDDEN_TOP_LEVEL_KEYS = {
     "agent_guidance",
     "interpretation_boundary",
@@ -63,7 +65,7 @@ def _stub_dispatch(name: str, stub_result: dict[str, Any]) -> dict[str, Any]:
         ops._OPERATION_BY_NAME[name] = operation
 
 
-class NoProseContractTests(unittest.TestCase):
+class NoProseContractTests(GenomiRuntimeTestCase):
     def test_dispatched_results_have_no_removed_top_level_prose(self) -> None:
         # For every evidence-producing op, the dispatched result must not
         # carry removed prose/anti-prompt fields at the top level.
