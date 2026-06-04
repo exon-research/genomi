@@ -37,13 +37,15 @@
                 "items": {"type": "object"}
               },
               "pgx": {
-                "type": "array",
-                "description": "Pharmacogenomics records: gene, diplotype, phenotype, impact (normal|reduced|increased|poor), drugs[].",
-                "items": {"type": "object"}
+                "oneOf": [
+                  {"type": "array", "items": {"type": "object"}},
+                  {"type": "object"}
+                ],
+                "description": "Pharmacogenomics evidence. Accepts native pharmacogenomics.run_pharmcat or pharmacogenomics.review_medication results, or dashboard rows with gene, diplotype, phenotype, impact, drugs[]."
               },
               "risk": {
                 "type": "array",
-                "description": "Polygenic risk scores: trait, score, percentile, ancestryAdjusted, overlap, sources.",
+                "description": "Polygenic risk score evidence. Pass native prs.calculate_score result objects; the renderer adapts trait, score, percentile, ancestryAdjusted, overlap, sources.",
                 "items": {"type": "object"}
               },
               "ancestry": {

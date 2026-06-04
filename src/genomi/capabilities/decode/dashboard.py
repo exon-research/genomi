@@ -24,6 +24,12 @@ from pathlib import Path
 from typing import Any
 
 from ...active_genome_index.array_genotypes import called_genotype_tokens
+from .panel_adapters import (
+    PanelNormalizationError,
+    is_native_empty_panel,
+    normalize_pgx_panel,
+    normalize_risk_panel,
+)
 
 JsonObject = dict[str, Any]
 
@@ -458,8 +464,8 @@ _PANEL_NORMALIZERS: dict[str, Any] = {
     "journal": _normalize_journal,
     "variants": _normalize_variants,
     "variants_all": _normalize_variants,
-    "pgx": _passthrough,
-    "risk": _passthrough,
+    "pgx": normalize_pgx_panel,
+    "risk": normalize_risk_panel,
     "nutrigenomics": _normalize_nutrigenomics,
 }
 
@@ -508,10 +514,12 @@ _PANEL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "pgx": {
         "kind": "list",
+        "required": ("gene",),
         "row_fields": ("gene", "diplotype", "phenotype", "impact", "drugs"),
     },
     "risk": {
         "kind": "list",
+        "required": ("trait",),
         "row_fields": ("trait", "score", "percentile", "overlap", "sources"),
     },
     "nutrigenomics": {
@@ -537,7 +545,11 @@ def _explicitly_empty_panels(evidence: JsonObject | None) -> set[str]:
     """
     if not isinstance(evidence, dict):
         return set()
-    return {key for key in PANEL_KEYS if key in evidence and _is_empty(evidence[key])}
+    return {
+        key
+        for key in PANEL_KEYS
+        if key in evidence and (_is_empty(evidence[key]) or is_native_empty_panel(key, evidence[key]))
+    }
 
 
 def _normalize_clear_panels(clear_panels: Any) -> set[str]:
@@ -620,6 +632,13 @@ def _validate_panel(panel: str, normalized: Any) -> None:
                     f"Panel '{panel}' row {i} has no recognized dashboard field. "
                     f"Recognized row fields: {', '.join(row_fields)}.",
                 )
+            missing = [f for f in tuple(schema.get("required") or ()) if row.get(f) in (None, "", [])]
+            if missing:
+                raise DashboardRenderError(
+                    "panel_schema_mismatch",
+                    f"Panel '{panel}' row {i} is missing required field(s) after normalization: "
+                    f"{', '.join(missing)}. Recognized keys: {sorted(row)}.",
+                )
 
 
 def _safe_evidence(
@@ -647,7 +666,10 @@ def _safe_evidence(
         if key not in evidence or _is_empty(evidence[key]):
             continue
         normalizer = _PANEL_NORMALIZERS.get(key, _passthrough)
-        normalized = normalizer(evidence[key])
+        try:
+            normalized = normalizer(evidence[key])
+        except PanelNormalizationError as exc:
+            raise DashboardRenderError("panel_schema_mismatch", str(exc)) from exc
         if _is_empty(normalized):
             if key == "journal":
                 continue

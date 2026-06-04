@@ -101,53 +101,16 @@ The renderer normalizes common upstream-op shapes automatically:
   `gene.symbol`, `variant.rsid`, `established_effect.claim` (→ `recommendation`),
   `evidence_tier`, and domain label (→ `marker`) from the nested catalog records.
 - `ancestry` — pass `ancestry.estimate_population_context` output directly.
-
-For `pgx` and `risk`, shape the upstream response manually into the panel
-schema before passing (see sections below).
+- `pgx` — pass `pharmacogenomics.run_pharmcat` output directly. The renderer
+  accepts native PharmCAT artifact summaries and medication-review results, then
+  adapts calls, phenotypes, diplotypes, and recommendations into PGx cards.
+- `risk` — pass the list of native `prs.calculate_score` results directly as
+  `evidence.risk`. The renderer adapts `polygenic_score`, `sample_qc`, and
+  `score_result` into risk-score cards.
 
 For the all-variants explorer panel, pass a file path via `variants_all_source`
 instead of the evidence dict — the renderer reads and normalizes the JSONL
 file server-side.
-
-### Shaping pgx and risk
-
-`pharmacogenomics.run_pharmcat` returns a list of per-gene reports under
-`reports` (each with `gene`, `diplotypes`, phenotype info, related
-drugs). Shape each entry into the dashboard's `pgx` schema:
-
-```json
-[
-  {
-    "gene": "CYP2C19",
-    "diplotype": "*1/*2",
-    "phenotype": "Intermediate Metabolizer",
-    "impact": "reduced",
-    "drugs": [
-      {"name": "clopidogrel", "recommendation": "Consider alternative"},
-      {"name": "voriconazole", "recommendation": "Increase dose"}
-    ]
-  }
-]
-```
-
-`impact` maps phenotype severity to one of `normal | reduced | increased
-| poor` (used for card color). The dashboard renders one card per gene.
-
-For `risk`, after `prs.list_imported_scores` returns installed score IDs,
-call `prs.calculate_score` for each. Shape into:
-
-```json
-[
-  {
-    "trait": "Type 2 Diabetes",
-    "score": -0.42,
-    "percentile": 38,
-    "ancestryAdjusted": false,
-    "overlap": "412/418 variants",
-    "sources": ["PGS000001"]
-  }
-]
-```
 
 If no PRS scores are installed in the user's library, leave the panel
 out of the evidence dict — it falls through to the EmptyPanel
@@ -171,13 +134,12 @@ them next").
 A panel you supply with real content must satisfy the panel schema after
 normalization. Object panels require their key fields (overview:
 `sampleId` + `variantCount`; ancestry: `dominantAncestry` + `neighbors`);
-list panels (`variants`, `pgx`, `risk`, `nutrigenomics`) require row objects
-with at least one recognized dashboard field. If a supplied panel's content
-maps to none of those fields, the renderer raises `panel_schema_mismatch`
-naming the panel and the missing field — it does not render a blank stat. This
-means a field that didn't map (wrong key, wrong nesting) fails loudly at render
-time instead of showing the user a misleading empty value. When you hit it, fix
-the field mapping and re-render rather than dropping the panel.
+list panels require row objects with at least one recognized dashboard field.
+PGx rows also require `gene`; risk rows also require `trait`. If supplied
+content maps to none of those fields, the renderer raises
+`panel_schema_mismatch` naming the panel and missing field — it does not render
+a blank stat. When you hit it, fix the evidence mapping and re-render rather
+than dropping the panel.
 
 ## Refresh vs. reuse
 
