@@ -81,9 +81,9 @@ def _present_pgx_medication_review(result: JsonObject) -> JsonObject:
         "status": result.get("status"),
         "query": result.get("query"),
         "defaults_applied": result.get("defaults_applied"),
-        "evidence_state": result.get("evidence_state"),
-        "interpretation_readiness": result.get("interpretation_readiness"),
-        "pgx_evidence_scope": result.get("pgx_evidence_scope"),
+        "evidence_state": _compact_generic_value(result.get("evidence_state")),
+        "interpretation_readiness": _compact_generic_value(result.get("interpretation_readiness")),
+        "pgx_evidence_scope": _compact_generic_value(result.get("pgx_evidence_scope")),
         "target_inventory": _select(
             target_inventory,
             (
