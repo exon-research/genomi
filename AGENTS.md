@@ -144,7 +144,12 @@ Edit this section only with explicit owner approval.
    row read through `ActiveGenomeIndexReader` or through a narrow
    active-genome-index-owned helper exposed by that reader. If a capability
    needs a new AGI record contract, add a typed reader method instead of
-   re-parsing AGI records in the capability.
+   re-parsing AGI records in the capability. Name Active Genome Index variables,
+   parameters, fields, and helpers with `agi_*`. Public operation namespaces
+   such as `active_genome_index.*` are the exception and may keep their explicit
+   namespace. Reserve `source_*` for the original genome source file during
+   parse/intake only; downstream readers, handlers, and capabilities should not
+   carry source-file aliases for AGI state.
 
 24. Do not preserve broken backward compatibility.
    When an old contract is wrong, replace it with the correct contract and
@@ -164,7 +169,21 @@ Edit this section only with explicit owner approval.
    Remove redundant provenance, duplicated labels, and parallel ways to express
    the same state.
 
-27. Broad changes require independent functionality review.
+27. Keep files below 1000 lines.
+   No tracked text file should exceed 1000 lines. If a change would push a file
+   past that limit, refactor into focused modules before adding the new
+   behavior. Existing over-limit files should be split when touched for
+   substantive work in that area; generated bundles need to be split at the
+   generation step rather than edited by hand.
+
+28. Tests must assert behavior, not refactor artifacts.
+   Do not write `assertNotIn`/negative-string tests or before/after snapshots
+   whose only purpose is proving a refactor renamed or removed something.
+   Tests should exercise the durable contract and positive behavior: parsed AGI
+   record kinds, reader-owned access, provenance fields, capability outputs,
+   error states, and CI-visible user workflows.
+
+29. Broad changes require independent functionality review.
    For AGI or capability-wide changes, spawn independent review/test agents in
    separate worktrees when feasible. Give each agent one functionality scope
    (for example AGI, PRS, ancestry, ClinVar, pharmacogenomics, decode, or
@@ -173,14 +192,14 @@ Edit this section only with explicit owner approval.
    public fixtures for reproducible CI coverage; inspect private genome files
    only when the current session explicitly approves that exact path.
 
-28. CI must exercise supported source formats and downstream capabilities.
+30. CI must exercise supported source formats and downstream capabilities.
    Public sample-derived fixtures, including PGP-HMS-derived minimal fakes,
    should cover every supported input form and the downstream capabilities that
    consume parsed AGI records. A parser fixture that only proves ingestion is
    not enough when PRS, ancestry, ClinVar, pharmacogenomics, variant lookup, or
    decode depend on the resulting record behavior.
 
-29. Data-source libraries live in `genomi.runtime.libraries`.
+31. Data-source libraries live in `genomi.runtime.libraries`.
    Shared public/reference assets, live APIs, derived panels, and per-key caches
    are `LibrarySpec` entries in `src/genomi/runtime/libraries/registry.py` and
    are materialized through `src/genomi/runtime/libraries/manager.py`.

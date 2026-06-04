@@ -31,6 +31,10 @@ def _extract_evidence(html: str) -> dict:
     return json.loads(match.group(1).replace("<\\/", "</"))
 
 
+def _panel_keys(payload: dict) -> set[str]:
+    return {key for key in payload if key in decode_dashboard.PANEL_KEYS}
+
+
 NAV_LABELS = (
     "Overview",
     "Variants",
@@ -71,18 +75,15 @@ class RenderDashboardTests(unittest.TestCase):
         html = out.read_text(encoding="utf-8")
         # Self-contained: inline logo data URL
         self.assertIn("data:image/png;base64,", html)
-        # Renders offline: React/ReactDOM/app JS are inlined, no CDN script src,
-        # no in-browser Babel, and no placeholders left unresolved.
-        self.assertNotIn("unpkg.com", html)
-        self.assertNotIn('type="text/babel"', html)
-        for placeholder in (
-            "__GENOMI_VENDOR_SCRIPTS__",
-            "__GENOMI_APP_JS__",
-            "__GENOMI_LOGO_DATA_URL__",
-            "__GENOMI_EVIDENCE__",
-        ):
-            self.assertNotIn(placeholder, html)
-        self.assertEqual(re.findall(r'<script[^>]+src="https?://', html), [])
+        # Renders offline: React/ReactDOM/app JS are inlined and the template
+        # placeholders have all been resolved.
+        unresolved = re.findall(
+            r"__(?:GENOMI_VENDOR_SCRIPTS|GENOMI_APP_JS|GENOMI_LOGO_DATA_URL|GENOMI_EVIDENCE)__",
+            html,
+        )
+        self.assertEqual(unresolved, [])
+        self.assertEqual(re.findall(r'<script[^>]+src="(https?://[^"]+)"', html), [])
+        self.assertEqual(re.findall(r'<script[^>]+type="([^"]+)"', html), [])
         self.assertIn("ReactDOM", html)  # vendored runtime is inlined
         # Evidence blob present and contains keys
         parsed = _extract_evidence(html)
@@ -169,10 +170,9 @@ class RenderDashboardTests(unittest.TestCase):
 
         parsed = _extract_evidence(out.read_text(encoding="utf-8"))
         self.assertEqual(parsed["overview"]["sampleId"], "HG-CLEAR")
-        for panel in ("variants", "pgx", "risk"):
-            self.assertNotIn(panel, parsed)
-            self.assertIn(panel, result["panels_empty"])
-            self.assertNotIn(panel, result["panels_rendered"])
+        self.assertEqual(_panel_keys(parsed), {"overview"})
+        self.assertTrue({"variants", "pgx", "risk"}.issubset(set(result["panels_empty"])))
+        self.assertEqual(result["panels_rendered"], ["overview"])
 
     def test_render_update_clear_panels_preserves_omitted_panels(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -195,9 +195,9 @@ class RenderDashboardTests(unittest.TestCase):
 
         parsed = _extract_evidence(out.read_text(encoding="utf-8"))
         self.assertEqual(parsed["variants"][0]["rsid"], "rs1")
-        self.assertNotIn("risk", parsed)
-        self.assertIn("risk", result["panels_empty"])
-        self.assertIn("variants", result["panels_rendered"])
+        self.assertEqual(_panel_keys(parsed), {"overview", "variants"})
+        self.assertTrue({"risk"}.issubset(set(result["panels_empty"])))
+        self.assertEqual(set(result["panels_rendered"]), {"overview", "variants"})
 
     def test_render_update_empty_variants_all_not_refilled_from_source(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -226,8 +226,8 @@ class RenderDashboardTests(unittest.TestCase):
         )
 
         parsed = _extract_evidence(out.read_text(encoding="utf-8"))
-        self.assertNotIn("variants_all", parsed)
-        self.assertIn("variants_all", result["panels_empty"])
+        self.assertEqual(_panel_keys(parsed), {"overview"})
+        self.assertTrue({"variants_all"}.issubset(set(result["panels_empty"])))
 
     def test_normalizes_snake_case_overview(self) -> None:
         """Raw active_genome_index.summarize-style keys map to dashboard schema."""
@@ -251,7 +251,10 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertEqual(ov["parsedAt"], "2026-05-25T21:20:00Z")
         self.assertEqual(ov["variantCount"], 5_148_321)
         self.assertIn("overview", result["panels_rendered"])
-        self.assertNotIn("overview", result["panels_empty"])
+        self.assertEqual(
+            set(result["panels_empty"]),
+            set(decode_dashboard.PANEL_KEYS) - {"overview"},
+        )
 
     def test_normalizes_ancestry_nearest_reference_groups(self) -> None:
         """ancestry.estimate_population_context keys map to neighbors[]."""
@@ -483,7 +486,7 @@ class RegistryGatingTests(unittest.TestCase):
                         "vcf": str(vcf),
                         "evidence_db": str(evidence_db),
                         "work_dir": str(wd_path),
-                        "outputs": {"active_genome_index_path": str(index)},
+                        "outputs": {"agi_path": str(index)},
                     },
                 )
                 call_operation(
@@ -514,30 +517,51 @@ class DashboardOfflineAssetTests(unittest.TestCase):
         Path(decode_dashboard.__file__).resolve().parent / "templates"
     )
 
+    def _compiled_chunks(self) -> list[Path]:
+        vendor = self._TEMPLATES / "vendor"
+        chunks: list[tuple[int, Path]] = []
+        for path in vendor.glob("dashboard.compiled.*.js"):
+            match = re.fullmatch(r"dashboard\.compiled\.(\d+)\.js", path.name)
+            if match:
+                chunks.append((int(match.group(1)), path))
+        return [path for _, path in sorted(chunks)]
+
     def test_vendored_runtime_assets_present(self) -> None:
         vendor = self._TEMPLATES / "vendor"
-        for name in ("react.production.min.js", "react-dom.production.min.js", "dashboard.compiled.js"):
+        for name in ("react.production.min.js", "react-dom.production.min.js"):
             self.assertTrue((vendor / name).is_file(), f"missing vendored asset {name}")
+        chunks = self._compiled_chunks()
+        self.assertGreaterEqual(len(chunks), 1)
+        self.assertEqual([path.name for path in chunks], [f"dashboard.compiled.{i:03d}.js" for i in range(1, len(chunks) + 1)])
+        for path in chunks:
+            self.assertLessEqual(len(path.read_text(encoding="utf-8").splitlines()), 1000)
 
-    def test_template_has_no_cdn_or_runtime_babel(self) -> None:
+    def test_template_uses_inline_runtime_placeholders(self) -> None:
         shell = (self._TEMPLATES / "shell.html").read_text(encoding="utf-8")
-        self.assertNotIn("unpkg.com", shell)
-        self.assertNotIn('type="text/babel"', shell)
+        scripts = re.findall(r"<script(?:\s+[^>]*)?>(.*?)</script>", shell, flags=re.DOTALL)
+        self.assertEqual(
+            [script.strip() for script in scripts],
+            [
+                "window.__GENOMI_DASHBOARD__ = __GENOMI_EVIDENCE__;",
+                "__GENOMI_APP_JS__",
+            ],
+        )
+        self.assertEqual(shell.count("__GENOMI_VENDOR_SCRIPTS__"), 1)
 
     def test_compiled_js_matches_jsx_source(self) -> None:
-        # Drift guard: dashboard.compiled.js stamps the sha256 of the dashboard.jsx
+        # Drift guard: compiled chunks stamp the sha256 of the dashboard.jsx
         # it was built from. If someone edits the JSX without re-running
         # scripts/build_dashboard.py, this fails — no JS toolchain needed here.
         import hashlib
 
         jsx = (self._TEMPLATES / "dashboard.jsx").read_bytes()
-        compiled = (self._TEMPLATES / "vendor" / "dashboard.compiled.js").read_text(encoding="utf-8")
+        compiled = "\n".join(path.read_text(encoding="utf-8") for path in self._compiled_chunks())
         match = re.search(r"source-sha256:\s*([0-9a-f]{64})", compiled)
         self.assertIsNotNone(match, "compiled JS is missing its source-sha256 header")
         self.assertEqual(
             match.group(1),
             hashlib.sha256(jsx).hexdigest(),
-            "dashboard.compiled.js is stale — re-run scripts/build_dashboard.py after editing dashboard.jsx.",
+            "dashboard compiled chunks are stale — re-run scripts/build_dashboard.py after editing dashboard.jsx.",
         )
 
 

@@ -5,7 +5,7 @@ inline logo data URL, the vendored React/ReactDOM runtime, the precompiled app
 JS, and the JSON evidence blob, then write a single HTML file. The page renders
 fully offline — no CDN and no in-browser Babel; the dashboard UI is authored in
 ``templates/dashboard.jsx`` and precompiled to ``templates/vendor/
-dashboard.compiled.js`` by ``scripts/build_dashboard.py``. (The only external
+dashboard.compiled.*.js`` by ``scripts/build_dashboard.py``. (The only external
 reference left is an optional Google Fonts stylesheet, which falls back to
 system fonts offline and carries no genome data.) Components read evidence from
 ``window.__GENOMI_DASHBOARD__`` and fall back to the "Not gathered yet"
@@ -47,7 +47,7 @@ _LOGO_PATH = _PACKAGE_ROOT / "assets" / "genomi-logo-transparent.png"
 # script requests. React must load before ReactDOM, ReactDOM before the app.
 _REACT_PATH = _VENDOR_DIR / "react.production.min.js"
 _REACT_DOM_PATH = _VENDOR_DIR / "react-dom.production.min.js"
-_APP_JS_PATH = _VENDOR_DIR / "dashboard.compiled.js"
+_APP_JS_CHUNK_RE = re.compile(r"dashboard\.compiled\.(?P<index>\d+)\.js$")
 
 _EVIDENCE_RE = re.compile(
     r"window\.__GENOMI_DASHBOARD__\s*=\s*(?P<json>\{.*?\})\s*;",
@@ -631,6 +631,30 @@ def _read_vendor_asset(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _read_app_js() -> str:
+    chunks: list[tuple[int, Path]] = []
+    for path in _VENDOR_DIR.glob("dashboard.compiled.*.js"):
+        match = _APP_JS_CHUNK_RE.fullmatch(path.name)
+        if match:
+            chunks.append((int(match.group("index")), path))
+    chunks.sort()
+    if not chunks:
+        raise DashboardRenderError(
+            "vendor_asset_missing",
+            f"Vendored dashboard app chunks are missing under {_VENDOR_DIR}. "
+            f"Run scripts/build_dashboard.py to (re)generate the compiled app.",
+        )
+    expected = list(range(1, len(chunks) + 1))
+    observed = [index for index, _ in chunks]
+    if observed != expected:
+        raise DashboardRenderError(
+            "vendor_asset_missing",
+            f"Vendored dashboard app chunks are not contiguous under {_VENDOR_DIR}: "
+            f"observed {observed}, expected {expected}. Run scripts/build_dashboard.py.",
+        )
+    return "\n".join(_read_vendor_asset(path) for _, path in chunks)
+
+
 def _render_html(evidence: JsonObject) -> str:
     template = _read_template()
     logo = _read_logo_data_url()
@@ -639,7 +663,7 @@ def _render_html(evidence: JsonObject) -> str:
     # the artifact renders fully offline — no CDN, no in-browser transpile.
     react = _read_vendor_asset(_REACT_PATH)
     react_dom = _read_vendor_asset(_REACT_DOM_PATH)
-    app_js = _read_vendor_asset(_APP_JS_PATH)
+    app_js = _read_app_js()
     vendor_scripts = f"<script>{react}</script>\n  <script>{react_dom}</script>"
     # Inline the scripts first, then substitute logo/evidence across the whole
     # document — the logo placeholder lives in the app JS, so it must already be
