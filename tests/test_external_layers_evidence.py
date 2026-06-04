@@ -922,7 +922,21 @@ class EvidenceImportTests(EvidenceImportTestBase):
         self.assertEqual(static_contract()["id"], "static")
         self.assertEqual(research_contract()["id"], "research")
         self.assertIn("local parsing, database import, and deterministic evidence checks", static_contract()["purpose"])
-        self.assertNotIn("panel", " ".join(static_contract()["primary_outputs"]).lower())
+        self.assertEqual(
+            static_contract()["primary_outputs"],
+            [
+                "run project layout",
+                "Active Genome Index",
+                "source-format metadata",
+                "sequencing-derived sample QC and genotype/callability support rows",
+                "consumer-array rsID/locus observations when supplied",
+                "library-scoped ClinVar exact-match JSONL when ClinVar matching is requested",
+                "target-scoped candidate inventory when requested",
+                "canonical shared evidence DB for reusable static rows",
+                "per-run user evidence DB for sample-specific context",
+                "SQLite evidence rows for lazily materialized public sources",
+            ],
+        )
         self.assertFalse({"panel_json", "panel_markdown"} & set(default_static_outputs(TINY_VCF)))
         self.assertIn("shared/private", research_contract()["purpose"])
 

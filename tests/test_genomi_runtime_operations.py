@@ -48,6 +48,8 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             "ancestry.estimate_population_context",
             "pharmacogenomics.preflight_pharmcat",
             "decode.render_dashboard",
+            "prs.check_score_overlap",
+            "prs.calculate_score",
         }
 
         actual_reference = {
@@ -63,16 +65,23 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             for name, tool in by_name.items()
             if tool["annotations"].get("agiNeed") == "variant"
         }
-        self.assertEqual(actual_variant, {"prs.check_score_overlap", "prs.calculate_score"})
+        self.assertEqual(actual_variant, set())
 
-    def test_prs_variant_operations_do_not_get_reference_pending_stamp(self) -> None:
+    def test_prs_reference_operations_get_reference_pending_stamp(self) -> None:
         with mock.patch(
             "genomi.operations.registry.agi_access.reference_state_for_call",
             return_value={"note": "reference tail pending"},
         ):
             result = _stamp_reference_pending_if_due("prs.calculate_score", {}, {"status": "completed"})
 
-        self.assertEqual(result, {"status": "completed"})
+        self.assertEqual(
+            result,
+            {
+                "status": "completed",
+                "reference_pending": True,
+                "reference_pending_note": "reference tail pending",
+            },
+        )
 
     def test_public_only_risk_investigation_uses_shared_evidence_by_default(self) -> None:
         result = call_operation(
