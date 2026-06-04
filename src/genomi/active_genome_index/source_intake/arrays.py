@@ -22,7 +22,6 @@ from ..array_genotypes import ARRAY_NO_CALLS, SUPPORTED_ARRAY_BASES
 from ..active_genome_index import SCHEMA_VERSION, _chrom_sort
 from ..active_genome_index import connect as connect_active_genome_index
 from .agi_store import (
-    SOURCE_PARSE_SCHEMA,
     JsonObject,
     _array_record_row,
     _cached_array_active_genome_index_if_usable,
@@ -239,7 +238,6 @@ def parse_consumer_array_source(
         }
     ]
     return {
-        "schema": SOURCE_PARSE_SCHEMA,
         "workflow_area": "active-genome-index",
         "status": "completed",
         "source": str(source_path),

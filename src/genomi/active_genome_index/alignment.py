@@ -20,8 +20,6 @@ from ..runtime.external import (
 from ..runtime.paths import bwa_mem2_binary_path, minimap2_binary_path
 
 JsonObject = dict[str, Any]
-BAM_VARIANT_CALL_SCHEMA = "genomi-bam-variant-call-v1"
-FASTQ_ALIGN_SCHEMA = "genomi-fastq-alignment-v1"
 
 # Short-read aligners (bwa-mem2) outperform splice-aware aligners on Illumina-
 # style reads up to roughly this length; above this we switch to minimap2 which
@@ -169,7 +167,6 @@ def align_fastq_to_bam(
     if missing:
         return {
             "status": "requires_library_install",
-            "schema": FASTQ_ALIGN_SCHEMA,
             "missing_libraries": [
                 {
                     "binary": name,
@@ -186,7 +183,6 @@ def align_fastq_to_bam(
         }
 
     expected = {
-        "schema": FASTQ_ALIGN_SCHEMA,
         "aligner": chosen,
         "median_read_length": median_read_length,
         "r1": file_metadata(r1_path),
@@ -198,7 +194,6 @@ def align_fastq_to_bam(
     if cached is not None and not force:
         return {
             "status": "cached",
-            "schema": FASTQ_ALIGN_SCHEMA,
             "aligner": chosen,
             "output": str(output_path),
             "manifest_path": str(manifest_path),
@@ -265,7 +260,6 @@ def align_fastq_to_bam(
     write_manifest(manifest_path, payload)
     return {
         "status": "completed",
-        "schema": FASTQ_ALIGN_SCHEMA,
         "aligner": chosen,
         "median_read_length": median_read_length,
         "output": str(output_path),
@@ -336,7 +330,6 @@ def materialize_bam_variant_vcf(
     manifest_path = output_path.with_suffix(output_path.suffix + ".genomi-manifest.json")
     commands = build_bam_variant_call_commands(bam_path, reference_path, output_path)
     expected = {
-        "schema": BAM_VARIANT_CALL_SCHEMA,
         "dependency": "bam_derived_variant_vcf",
         "source_format": "bam",
         "bam": file_metadata(bam_path),
@@ -348,7 +341,6 @@ def materialize_bam_variant_vcf(
     if cached is not None and not force:
         return {
             "status": "cached",
-            "schema": BAM_VARIANT_CALL_SCHEMA,
             "dependency": "bam_derived_variant_vcf",
             "source_format": "bam",
             "output": str(output_path),
@@ -362,7 +354,6 @@ def materialize_bam_variant_vcf(
     if missing:
         return {
             "status": "requires_library_install",
-            "schema": BAM_VARIANT_CALL_SCHEMA,
             "dependency": "bam_derived_variant_vcf",
             "source_format": "bam",
             "missing_libraries": [
@@ -411,7 +402,6 @@ def materialize_bam_variant_vcf(
     write_manifest(manifest_path, payload)
     return {
         "status": "completed",
-        "schema": BAM_VARIANT_CALL_SCHEMA,
         "dependency": "bam_derived_variant_vcf",
         "source_format": "bam",
         "output": str(output_path),

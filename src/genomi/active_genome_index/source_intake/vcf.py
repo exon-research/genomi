@@ -24,7 +24,7 @@ from ..active_genome_index import (
 )
 from .._agi_schema import _upsert_metadata
 from ..canonical import build_canonical_bgzip
-from .agi_store import SOURCE_PARSE_SCHEMA, JsonObject, _init_source_evidence_db
+from .agi_store import JsonObject, _init_source_evidence_db
 from .detection import SourceDetection
 from .text_io import open_genomic_binary
 
@@ -121,7 +121,6 @@ def _parse_vcf_active_genome_index(
         outputs["reference_pass_job_id"] = reference_job.get("job_id")
         outputs["reference_pass_job_path"] = reference_job.get("job_path")
     return {
-        "schema": SOURCE_PARSE_SCHEMA,
         "workflow_area": "active-genome-index",
         "status": "completed",
         "source": str(source_path),

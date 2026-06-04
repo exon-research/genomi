@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..active_genome_index import SCHEMA_VERSION
-from .agi_store import SOURCE_PARSE_SCHEMA, JsonObject
+from .agi_store import JsonObject
 from .arrays import (
     parse_consumer_array_source,
     SUPPORTED_CONSUMER_ARRAY_FORMATS,
@@ -40,7 +39,6 @@ def parse_source(
             max_records=max_records,
             parallel_workers=parallel_workers,
         )
-        result["schema"] = SOURCE_PARSE_SCHEMA
         result["source_format"] = detection.source_format
         result["source_kind"] = detection.source_kind
         result["source"] = str(source_path)

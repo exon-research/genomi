@@ -23,7 +23,7 @@ from ..alignment import (
     paired_fastq_r1_name,
     paired_fastq_r2_name,
 )
-from .agi_store import SOURCE_PARSE_SCHEMA, JsonObject, _init_source_evidence_db
+from .agi_store import JsonObject, _init_source_evidence_db
 from .detection import SourceDetection
 from .text_io import archive_member_names, open_archive_member_raw, open_genomic_binary
 from .vcf import _parse_vcf_active_genome_index
@@ -125,7 +125,6 @@ def parse_bam_source(
     )
     if materialized.get("status") == "requires_library_install":
         return {
-            "schema": SOURCE_PARSE_SCHEMA,
             "workflow_area": "active-genome-index",
             "status": "requires_library_install",
             "source": str(source_path),
@@ -169,7 +168,6 @@ def parse_bam_source(
     outputs["bam_variant_call_manifest"] = materialized.get("manifest_path")
 
     return {
-        "schema": SOURCE_PARSE_SCHEMA,
         "workflow_area": "active-genome-index",
         "status": "completed",
         "source": str(source_path),
@@ -388,7 +386,6 @@ def parse_fastq_source(
     )
     if alignment_result.get("status") == "requires_library_install":
         return {
-            "schema": SOURCE_PARSE_SCHEMA,
             "workflow_area": "active-genome-index",
             "status": "requires_library_install",
             "source": str(source_path),
@@ -442,7 +439,6 @@ def parse_fastq_source(
     outputs["fastq_alignment_manifest"] = alignment_result.get("manifest_path")
 
     return {
-        "schema": SOURCE_PARSE_SCHEMA,
         "workflow_area": "active-genome-index",
         "status": "completed",
         "source": str(source_path),

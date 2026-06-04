@@ -30,7 +30,6 @@ from ..record_kinds import (
 from .detection import SourceDetection
 
 JsonObject = dict[str, Any]
-SOURCE_PARSE_SCHEMA = "genomi-source-parse-v1"
 
 
 def _array_record_row(
