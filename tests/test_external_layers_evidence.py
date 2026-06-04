@@ -549,6 +549,7 @@ class EvidenceImportTests(EvidenceImportTestBase):
                             "source_record_format": "GT_ARRAY",
                             "source_record_record_kind": "array_call",
                             "source_record_observed_alleles": ["T", "G"],
+                            "source_record_info": ".",
                         },
                         "clinvar": {
                             "chrom": "1",
@@ -588,6 +589,7 @@ class EvidenceImportTests(EvidenceImportTestBase):
         self.assertEqual(variant["observed_alleles"], ["T", "G"])
         self.assertEqual(variant["source_record_record_kind"], "array_call")
         self.assertEqual(variant["source_record_observed_alleles"], ["T", "G"])
+        self.assertEqual(variant["source_record_info"], ".")
 
     def test_clinvar_match_report_marks_multiallelic_source_alt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -342,6 +342,7 @@ def match_clinvar_variants_from_active_genome_index(
             pass_only=pass_only,
             max_records=max_records,
         )
+        skipped_non_pass = int(staged.get("skipped_non_pass") or 0)
         selection_params = (max_records,) if max_records is not None else ()
         stats_row = evidence_connection.execute(
             f"""

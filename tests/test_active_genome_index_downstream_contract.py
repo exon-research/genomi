@@ -519,6 +519,7 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_ref"], ".")
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_alt"], ".")
             self.assertEqual(candidates_by_pos[200]["variant"]["source_record_format"], "GT_ARRAY")
+            self.assertEqual(candidates_by_pos[200]["variant"]["source_record_info"], ".")
             self.assertEqual(candidates_by_pos[200]["variant"]["record_kind"], "array_call")
             self.assertEqual(candidates_by_pos[200]["variant"]["ref"], ".")
             self.assertEqual(candidates_by_pos[200]["variant"]["alt"], ".")

@@ -63,6 +63,38 @@ class ClinvarObservedAlleleTests(unittest.TestCase):
                     self.assertEqual(result["stats"]["written_records"], len(expected_alts))
                     self.assertEqual(self._sample_alts(output), expected_alts)
 
+    def test_active_genome_index_matching_reports_non_pass_rows_and_source_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "evidence.sqlite"
+            clinvar_vcf = self._write_clinvar_vcf(Path(tmp) / "clinvar.vcf")
+            import_clinvar_vcf(clinvar_vcf, db, source_version="fixture")
+            sample_vcf = Path(tmp) / "sample-non-pass.vcf"
+            sample_vcf.write_text(
+                "\n".join(
+                    [
+                        "##fileformat=VCFv4.2",
+                        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+                        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+                        "1\t100\trsFiltered\tA\tC\t.\tLowQual\t.\tGT\t0/1",
+                        "1\t100\trsPassing\tA\tC\t.\tPASS\t.\tGT\t0/1",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            agi_path = Path(tmp) / "sample-non-pass.sqlite"
+            output = Path(tmp) / "agi-non-pass.jsonl"
+            create_active_genome_index(sample_vcf, agi_path, include_reference=False, reuse_existing=False)
+
+            reader = open_reader(agi_path, need=ActiveGenomeIndexNeed.VARIANT, genome_build="GRCh38")
+            result = match_clinvar_variants_from_active_genome_index(reader, db, output)
+            payload = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertEqual(result["stats"]["skipped_non_pass_records"], 1)
+        self.assertEqual(result["stats"]["scanned_records"], 1)
+        self.assertEqual(payload["source_format"], "vcf")
+        self.assertEqual(payload["match_provenance"]["source_record"]["source_format"], "vcf")
+
     def _write_clinvar_vcf(self, path: Path) -> Path:
         path.write_text(
             "\n".join(

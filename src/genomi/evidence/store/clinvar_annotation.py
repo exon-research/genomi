@@ -318,6 +318,7 @@ def _build_clinvar_annotation(group: dict[str, Any]) -> dict[str, Any]:
             "source_record_format": sample.get("source_record_format") or sample.get("format"),
             "source_record_record_kind": sample.get("source_record_record_kind"),
             "source_record_observed_alleles": sample.get("source_record_observed_alleles"),
+            "source_record_info": sample.get("source_record_info"),
         },
         "genes": genes,
         "evidence_groups": _candidate_evidence_groups(clinical_significance),

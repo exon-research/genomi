@@ -130,7 +130,14 @@ def create_active_genome_index(
         connection = connect(agi_path)
         try:
             _reset_schema(connection)
-            _insert_metadata(connection, vcf_path, header, include_reference, max_records=max_records)
+            _insert_metadata(
+                connection,
+                vcf_path,
+                header,
+                include_reference,
+                max_records=max_records,
+                source_format="gvcf" if include_reference else "vcf",
+            )
             stats = _populate_records(
                 connection,
                 vcf_path,
@@ -260,7 +267,14 @@ def _create_active_genome_index_parallel(
     shard_paths: list[Path] = []
     try:
         _reset_schema(connection)
-        _insert_metadata(connection, vcf_path, header, include_reference, max_records=max_records)
+        _insert_metadata(
+            connection,
+            vcf_path,
+            header,
+            include_reference,
+            max_records=max_records,
+            source_format="gvcf" if include_reference else "vcf",
+        )
         ranges, shard_worker = _shard_ranges_and_worker(vcf_path, workers)
         shard_paths = [_shard_path(agi_path, shard_index) for shard_index in range(len(ranges))]
         for shard_path in shard_paths:

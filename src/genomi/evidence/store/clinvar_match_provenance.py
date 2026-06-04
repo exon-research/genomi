@@ -38,6 +38,7 @@ def build_clinvar_match_payload(
     _copy_source_record_field(sample, source, "genotype")
     _copy_source_record_field(sample, source, "record_kind")
     _copy_source_record_field(sample, source, "observed_alleles")
+    _copy_source_record_field(sample, source, "info")
     if source.get("format") is not None:
         sample["format"] = source["format"]
 
@@ -57,11 +58,24 @@ def build_clinvar_match_payload(
     if source:
         provenance["source_record"] = {
             key: source.get(key)
-            for key in ("chrom", "pos", "ref", "alt", "format", "genotype", "record_kind", "observed_alleles")
+            for key in (
+                "chrom",
+                "pos",
+                "ref",
+                "alt",
+                "format",
+                "genotype",
+                "record_kind",
+                "observed_alleles",
+                "info",
+                "source_format",
+            )
             if source.get(key) is not None
         }
     if inferred_clinvar_allele is not None:
         provenance["inferred_clinvar_allele"] = inferred_clinvar_allele
+    if liftover is not None:
+        provenance["liftover"] = liftover
 
     payload: dict[str, Any] = {
         "match_basis": basis,
@@ -144,6 +158,7 @@ def _write_clinvar_match_rows(
             "genotype": _row_value(row, row_keys, "source_record_genotype") or row["genotype"],
             "record_kind": _row_value(row, row_keys, "source_record_kind"),
             "observed_alleles": _json_list_or_none(_row_value(row, row_keys, "source_record_observed_alleles")),
+            "info": _row_value(row, row_keys, "source_record_info"),
             "source_format": source_format,
         }
         sample_variant: dict[str, Any] = {

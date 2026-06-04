@@ -64,15 +64,19 @@ def stage_clinvar_match_records(
             from {alias}.records
             where record_kind in ('variant_call', 'array_call')
         """
-        params: tuple[Any, ...] = ()
+        connection.execute(sql)
+        skipped_non_pass = 0
         if pass_only:
-            sql += " and filter in ('PASS', '.')"
-        if max_records is not None:
-            sql += " order by chrom_sort, pos, sample_index limit ?"
-            params = (max_records,)
-        connection.execute(sql, params)
+            row = connection.execute(
+                """
+                select count(*) as skipped_non_pass
+                from temp.selected_active_genome_index_records
+                where filter not in ('PASS', '.')
+                """
+            ).fetchone()
+            skipped_non_pass = int(row["skipped_non_pass"] or 0)
         connection.commit()
-        return {"source_format": _source_format(connection, alias)}
+        return {"source_format": _source_format(connection, alias), "skipped_non_pass": skipped_non_pass}
     finally:
         if connection.in_transaction:
             connection.rollback()

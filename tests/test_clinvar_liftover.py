@@ -86,6 +86,10 @@ class CrossBuildClinvarMatchTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         payload = json.loads(lines[0])
         # Sample coordinates stay on the sample's GRCh37 build for audit.
+        self.assertEqual(payload["match_basis"], "liftover_exact_allele")
+        self.assertEqual(payload["match_provenance"]["match_basis"], "liftover_exact_allele")
+        self.assertEqual(payload["match_provenance"]["evidence_scope"], "liftover_sample_allele")
+        self.assertEqual(payload["match_provenance"]["liftover"], payload["liftover"])
         self.assertEqual(payload["sample_variant"]["pos"], _APOE_GRCH37_POS)
         self.assertEqual(payload["sample_variant"]["genome_build"], "GRCh37")
         # Liftover block records how the query reached the GRCh38 cache row.
@@ -146,6 +150,10 @@ class CrossBuildClinvarMatchTests(unittest.TestCase):
         lines = output_path.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 1)
         payload = json.loads(lines[0])
+        self.assertEqual(payload["match_basis"], "liftover_exact_allele")
+        self.assertEqual(payload["match_provenance"]["match_basis"], "liftover_exact_allele")
+        self.assertEqual(payload["match_provenance"]["evidence_scope"], "liftover_sample_allele")
+        self.assertEqual(payload["match_provenance"]["liftover"], payload["liftover"])
         self.assertEqual(payload["sample_variant"]["pos"], _APOE_GRCH37_POS)
         self.assertEqual(payload["sample_variant"]["genome_build"], "GRCh37")
         self.assertEqual(payload["liftover"]["source_build"], "GRCh37")
