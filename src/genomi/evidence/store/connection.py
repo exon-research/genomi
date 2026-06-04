@@ -19,6 +19,72 @@ from .constants import (
 )
 
 
+_PRIVATE_SAMPLE_CONTEXT_TABLES = {
+    "sample_qc": {
+        "columns": (
+            ("sample_id", "text not null"),
+            ("agi_path", "text not null"),
+            ("genome_build", "text not null"),
+            ("input_type", "text not null"),
+            ("has_reference_blocks", "integer not null"),
+            ("has_depth", "integer not null"),
+            ("has_genotype_quality", "integer not null"),
+            ("absence_claims_allowed", "integer not null"),
+            ("summary_json", "text not null"),
+            ("evidence_boundaries_json", "text not null"),
+            ("created_at", "text not null"),
+        ),
+        "primary_key": ("agi_path", "genome_build"),
+        "indexes": (),
+    },
+    "genotype_support": {
+        "columns": (
+            ("agi_path", "text not null"),
+            ("chrom", "text not null"),
+            ("pos", "integer not null"),
+            ("ref", "text not null"),
+            ("alt", "text not null"),
+            ("genome_build", "text not null"),
+            ("support_status", "text not null"),
+            ("evidence_class", "text not null"),
+            ("genotype", "text"),
+            ("zygosity", "text"),
+            ("depth", "integer"),
+            ("genotype_quality", "integer"),
+            ("filter", "text"),
+            ("raw_json", "text not null"),
+            ("created_at", "text not null"),
+        ),
+        "primary_key": ("agi_path", "chrom", "pos", "ref", "alt", "genome_build"),
+        "indexes": (
+            "create index if not exists genotype_support_variant_idx "
+            "on genotype_support(chrom, pos, ref, alt, genome_build)",
+        ),
+    },
+    "region_callability": {
+        "columns": (
+            ("agi_path", "text not null"),
+            ("region", "text not null"),
+            ("chrom", "text not null"),
+            ("start", "integer not null"),
+            ("end", "integer not null"),
+            ("genome_build", "text not null"),
+            ("callability_status", "text not null"),
+            ("covered_fraction", "real not null"),
+            ("can_support_negative_claim", "integer not null"),
+            ("evidence_class", "text not null"),
+            ("raw_json", "text not null"),
+            ("created_at", "text not null"),
+        ),
+        "primary_key": ("agi_path", "region", "genome_build"),
+        "indexes": (
+            "create index if not exists region_callability_region_idx "
+            "on region_callability(chrom, start, end, genome_build)",
+        ),
+    },
+}
+
+
 
 def connect_evidence(path: str | Path, *, attach_shared: bool = True) -> sqlite3.Connection:
     # WAL lets concurrent readers (e.g. classify_region_callability while
@@ -208,6 +274,7 @@ def _private_sample_context_identity(connection: sqlite3.Connection) -> dict[str
 
 def _ensure_schema(connection: sqlite3.Connection) -> None:
     _drop_linked_shared_views(connection)
+    _drop_noncurrent_private_sample_context_tables(connection)
     connection.executescript(
         """
         create table if not exists metadata (
@@ -310,65 +377,39 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
           on research_findings(target_type, target_id, genome_build);
         create index if not exists research_findings_url_idx
           on research_findings(source_url);
-
-        create table if not exists sample_qc (
-            sample_id text not null,
-            agi_path text not null,
-            genome_build text not null,
-            input_type text not null,
-            has_reference_blocks integer not null,
-            has_depth integer not null,
-            has_genotype_quality integer not null,
-            absence_claims_allowed integer not null,
-            summary_json text not null,
-            evidence_boundaries_json text not null,
-            created_at text not null,
-            primary key (agi_path, genome_build)
-        );
-
-        create table if not exists genotype_support (
-            agi_path text not null,
-            chrom text not null,
-            pos integer not null,
-            ref text not null,
-            alt text not null,
-            genome_build text not null,
-            support_status text not null,
-            evidence_class text not null,
-            genotype text,
-            zygosity text,
-            depth integer,
-            genotype_quality integer,
-            filter text,
-            raw_json text not null,
-            created_at text not null,
-            primary key (agi_path, chrom, pos, ref, alt, genome_build)
-        );
-        create index if not exists genotype_support_variant_idx
-          on genotype_support(chrom, pos, ref, alt, genome_build);
-
-        create table if not exists region_callability (
-            agi_path text not null,
-            region text not null,
-            chrom text not null,
-            start integer not null,
-            end integer not null,
-            genome_build text not null,
-            callability_status text not null,
-            covered_fraction real not null,
-            can_support_negative_claim integer not null,
-            evidence_class text not null,
-            raw_json text not null,
-            created_at text not null,
-            primary key (agi_path, region, genome_build)
-        );
-        create index if not exists region_callability_region_idx
-          on region_callability(chrom, start, end, genome_build);
         """
     )
+    _ensure_private_sample_context_tables(connection)
     _ensure_research_finding_columns(connection)
     connection.execute("delete from main.metadata where key = 'schema_version'")
     _install_linked_shared_views(connection)
+
+
+def _drop_noncurrent_private_sample_context_tables(connection: sqlite3.Connection) -> None:
+    for table in _PRIVATE_SAMPLE_CONTEXT_TABLES:
+        existing = tuple(row["name"] for row in connection.execute(f"pragma table_info({table})"))
+        if existing and existing != _private_sample_context_column_names(table):
+            connection.execute(f"drop table {table}")
+
+
+def _ensure_private_sample_context_tables(connection: sqlite3.Connection) -> None:
+    for table, spec in _PRIVATE_SAMPLE_CONTEXT_TABLES.items():
+        connection.execute(_private_sample_context_create_sql(table, spec))
+        for index_sql in spec["indexes"]:
+            connection.execute(str(index_sql))
+
+
+def _private_sample_context_column_names(table: str) -> tuple[str, ...]:
+    spec = _PRIVATE_SAMPLE_CONTEXT_TABLES[table]
+    return tuple(str(column[0]) for column in spec["columns"])
+
+
+def _private_sample_context_create_sql(table: str, spec: dict[str, Any]) -> str:
+    lines = [f"{name} {definition}" for name, definition in spec["columns"]]
+    primary_key = ", ".join(str(column) for column in spec["primary_key"])
+    lines.append(f"primary key ({primary_key})")
+    body = ",\n            ".join(lines)
+    return f"create table if not exists {table} (\n            {body}\n        )"
 
 
 def _ensure_research_finding_columns(connection: sqlite3.Connection) -> None:

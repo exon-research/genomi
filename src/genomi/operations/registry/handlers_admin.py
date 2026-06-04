@@ -254,6 +254,7 @@ def _genomi_install(params: JsonObject) -> JsonObject:
     # background job (fresh subprocess at the new schema), so install returns
     # immediately with job ids to poll rather than blocking on full rebuilds.
     reparse_result = _reparse_stale_genomes()
+    registry_result = runtime_context.reconcile_current_agi_registry()
 
     return {
         "status": "partial" if install_result.get("status") == "partial" else "completed",
@@ -264,6 +265,7 @@ def _genomi_install(params: JsonObject) -> JsonObject:
         "install": install_result,
         "reindex": reindex_result,
         "reparse": reparse_result,
+        "registry": registry_result,
         "active_response_profile": active_profile,
         "library_inventory": library_inventory(),
     }
