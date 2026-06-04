@@ -56,7 +56,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
         self.addCleanup(self._env.stop)
 
     def _select_approved_agi(self, vcf: Path, *, genome_build: str = "GRCh38") -> None:
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -194,7 +194,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
 
     def test_private_tools_require_approval_for_existing_active_context(self) -> None:
         vcf = Path(self._home_tmp.name) / "sample.vcf"
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=vcf.with_suffix(".sqlite"),
@@ -379,7 +379,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             imported = call_operation("prs.import_scoring_file", {"pgs_id": "PGS900001", "genome_build": "GRCh38"})
 
         vcf = self._write_indexed_vcf("sample_grch38_for_fallback_score.vcf")
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -610,7 +610,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             {"pgs_id": "PGS900001", "scoring_file": str(scoring_file), "genome_build": "GRCh38"},
         )
         vcf = self._write_indexed_vcf("sample_grch37.vcf")
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -633,7 +633,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             {"pgs_id": "PGS900001", "scoring_file": str(scoring_file), "genome_build": "GRCh38"},
         )
         vcf = self._write_indexed_vcf("sample_grch37_missing_pyliftover.vcf")
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -703,7 +703,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             encoding="utf-8",
         )
         create_active_genome_index(vcf, parallel_workers=1, reuse_existing=False)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -734,7 +734,7 @@ class PolygenicScoreCapabilityTests(unittest.TestCase):
             {"pgs_id": "PGS900001", "scoring_file": str(scoring_file), "genome_build": "GRCh38"},
         )
         vcf = self._write_indexed_vcf("sample_grch37_liftover_drops.vcf")
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),

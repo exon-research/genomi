@@ -438,7 +438,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 for path in (matches, evidence_db):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text("", encoding="utf-8")
-                runtime_context.set_active_genome_index(
+                runtime_context.set_active_agi_from_source(
                     vcf,
                     status="parsed",
                     operation_result={

@@ -363,7 +363,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n",
                 encoding="utf-8",
             )
-            runtime_context.set_active_genome_index(
+            runtime_context.set_active_agi_from_source(
                 source,
                 status="parsed",
                 agi_path=source.with_suffix(".sqlite"),
@@ -385,19 +385,20 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             self.assertEqual(allowed["search_results"][-1]["source"], "active_genome_index_metadata")
             self.assertEqual(allowed["search_results"][-1]["hits"][0]["metadata"]["genome_build"], "GRCh38")
 
-    def test_context_normalization_migrates_legacy_agi_metadata(self) -> None:
+    def test_context_normalization_preserves_canonical_agi_metadata(self) -> None:
         runtime_context.save_context(
             {
-                "active_agi_id": "legacy-agi",
+                "active_agi_id": "canonical-agi",
                 "agis": {
-                    "legacy-agi": {
-                        "agi_id": "legacy-agi",
-                        "sample_slug": "legacy-agi",
+                    "canonical-agi": {
+                        "agi_id": "canonical-agi",
+                        "sample_slug": "canonical-agi",
                         "status": "parsed",
-                        "source": "/tmp/legacy-source.vcf",
-                        "source_format": "vcf",
-                        "source_kind": "variant_callset",
-                        "agi_path": "/tmp/legacy-active-genome-index.sqlite",
+                        "agi_intake_source_path": "/tmp/canonical-source.vcf",
+                        "agi_source_format": "vcf",
+                        "agi_source_kind": "variant_callset",
+                        "agi_source_member": "canonical-source.vcf",
+                        "agi_path": "/tmp/canonical-active-genome-index.sqlite",
                     }
                 },
             }
@@ -406,9 +407,10 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
         current = call_operation("genomi.describe_context")
         active = current["active_genome_index"]
 
-        self.assertEqual(active["agi_id"], "legacy-agi")
+        self.assertEqual(active["agi_id"], "canonical-agi")
         self.assertEqual(active["agi_source_format"], "vcf")
         self.assertEqual(active["agi_source_kind"], "variant_callset")
+        self.assertEqual(active["agi_source_member"], "canonical-source.vcf")
         self.assertEqual(active["intake_source"]["role"], "ingestion_source_for_digitization")
         self.assertFalse(active["intake_source"]["available_for_rebuild"])
 

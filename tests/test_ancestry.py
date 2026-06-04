@@ -200,7 +200,7 @@ class AncestryCapabilityTests(unittest.TestCase):
 
     def test_private_tools_require_approval_for_existing_active_context(self) -> None:
         vcf = Path(self._home_tmp.name) / "sample.vcf"
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=vcf.with_suffix(".sqlite"),
@@ -332,7 +332,7 @@ class AncestryCapabilityTests(unittest.TestCase):
         # silently using the wrong panel.
         markers = self._install_synthetic_panel(marker_count=8)
         vcf = self._write_indexed_vcf("sample_grch37.vcf", markers, usable_count=8)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -362,7 +362,7 @@ class AncestryCapabilityTests(unittest.TestCase):
         # pointing at the GRCh37 panel id.
         markers = self._install_synthetic_panel(marker_count=8, genome_build="GRCh37")
         vcf = self._write_indexed_vcf("sample_grch37.vcf", markers, usable_count=8)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -385,7 +385,7 @@ class AncestryCapabilityTests(unittest.TestCase):
     def test_ancestry_build_aliases_use_matching_panel_policy(self) -> None:
         markers = self._install_synthetic_panel(marker_count=8, genome_build="GRCh37")
         vcf = self._write_indexed_vcf("sample_b37_alias.vcf", markers, usable_count=8)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -403,7 +403,7 @@ class AncestryCapabilityTests(unittest.TestCase):
     def test_explicit_build_conflict_with_agi_build_is_rejected(self) -> None:
         markers = self._install_synthetic_panel(marker_count=1)
         vcf = self._write_indexed_vcf("sample_build_conflict.vcf", markers, usable_count=1)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -528,7 +528,7 @@ class AncestryCapabilityTests(unittest.TestCase):
             )
         vcf.write_text("\n".join(lines) + "\n", encoding="utf-8")
         create_active_genome_index(vcf, parallel_workers=1, reuse_existing=False)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),
@@ -553,7 +553,7 @@ class AncestryCapabilityTests(unittest.TestCase):
             encoding="utf-8",
         )
         create_active_genome_index(vcf, parallel_workers=1, reuse_existing=False)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf,
             status="parsed",
             agi_path=default_agi_path(vcf),

@@ -133,7 +133,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         index = vcf.with_suffix(".sqlite")
         _write_gvcf(vcf, variant_mod=variant_mod)
         create_active_genome_index(vcf, index)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf, status="parsed", agi_path=index, genome_build=genome_build
         )
         return index
@@ -229,7 +229,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         index = vcf.with_suffix(".sqlite")
         _write_gvcf(vcf)
         create_active_genome_index(vcf, index, parallel_workers=4, defer_reference=True)
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf, status="parsed", agi_path=index, genome_build="GRCh38"
         )
         runtime_context.approve_agi_access()
@@ -253,7 +253,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
                 (json.dumps("in_progress"),),
             )
             connection.commit()
-        runtime_context.set_active_genome_index(
+        runtime_context.set_active_agi_from_source(
             vcf, status="parsed", agi_path=index, genome_build="GRCh38"
         )
         runtime_context.approve_agi_access()

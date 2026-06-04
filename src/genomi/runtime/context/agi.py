@@ -145,42 +145,6 @@ def active_accessible_agi_record(context: JsonObject | None = None, root: str | 
     return None
 
 
-def set_active_genome_index(
-    agi_intake_source_path: str | Path,
-    *,
-    operation_result: JsonObject | None = None,
-    status: str = "available",
-    user_nickname: str | None = None,
-    set_default_user: bool = False,
-    db: str | Path | None = None,
-    agi_path: str | Path | None = None,
-    matches: str | Path | None = None,
-    shared_db: str | Path | None = None,
-    reference_fasta: str | Path | None = None,
-    genotype_reference_fasta: str | Path | None = None,
-    genome_build: str | None = None,
-    grant_access: bool = False,
-    root: str | Path | None = None,
-) -> JsonObject:
-    return set_active_agi_from_source(
-        agi_intake_source_path,
-        agi_source_format="vcf",
-        operation_result=operation_result,
-        status=status,
-        user_nickname=user_nickname,
-        set_default_user=set_default_user,
-        db=db,
-        agi_path=agi_path,
-        matches=matches,
-        shared_db=shared_db,
-        reference_fasta=reference_fasta,
-        genotype_reference_fasta=genotype_reference_fasta,
-        genome_build=genome_build,
-        grant_access=grant_access,
-        root=root,
-    )
-
-
 def set_active_agi_from_source(
     agi_intake_source_path: str | Path,
     *,
@@ -482,15 +446,11 @@ def describe_agi_record(run: JsonObject | None) -> JsonObject | None:
         payload["active_genome_index_readiness"] = active_genome_index_state
     if digitized:
         source_path = payload.pop("agi_intake_source_path", None)
-        comparable_variant_export = payload.pop("agi_comparable_variant_export", None)
         payload["availability"] = {
             key: value
             for key, value in availability.items()
-            if key not in {"agi_intake_source_path", "agi_comparable_variant_export"}
+            if key != "agi_intake_source_path"
         }
-        if comparable_variant_export:
-            payload["comparable_variant_export"] = comparable_variant_export
-            payload["availability"]["comparable_variant_export"] = Path(comparable_variant_export).exists()
         payload["intake_source"] = {
             "role": "ingestion_source_for_digitization",
             "hidden_after_digitization": True,

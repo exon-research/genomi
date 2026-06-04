@@ -128,25 +128,27 @@ def _normalize_agi_record(record: JsonObject, agi_id_hint: str | None = None) ->
     normalized = dict(record)
     agi_id = normalized.get("agi_id") or agi_id_hint or normalized.get("sample_slug")
     normalized["agi_id"] = str(agi_id) if agi_id not in (None, "") else ""
-    _move_legacy_agi_key(normalized, "source", "agi_intake_source_path")
-    _move_legacy_agi_key(normalized, "source_format", "agi_source_format")
-    _move_legacy_agi_key(normalized, "source_kind", "agi_source_kind")
-    _move_legacy_agi_key(normalized, "source_member", "agi_source_member")
-    _move_legacy_agi_key(normalized, "comparable_vcf", "agi_comparable_variant_export")
+    for key in _removed_agi_record_keys():
+        normalized.pop(key, None)
     normalized.pop("run" + "_id", None)
     normalized.pop("nickname", None)
     normalized.pop("default", None)
     normalized.pop("default_set_at", None)
-    normalized.pop("source" + "_label", None)
-    normalized.pop("vcf", None)
-    normalized.pop("vcf_path", None)
     return normalized
 
 
-def _move_legacy_agi_key(record: JsonObject, old_key: str, new_key: str) -> None:
-    if new_key not in record and old_key in record:
-        record[new_key] = record[old_key]
-    record.pop(old_key, None)
+def _removed_agi_record_keys() -> tuple[str, ...]:
+    return (
+        "source",
+        "source_format",
+        "source_kind",
+        "source_member",
+        "comparable_vcf",
+        "comparable_variant_export",
+        "source" + "_label",
+        "vcf",
+        "vcf_path",
+    )
 
 
 def _normalize_nickname(value: object | None) -> str | None:

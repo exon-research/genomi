@@ -661,7 +661,7 @@ class RegistryGatingTests(unittest.TestCase):
                 evidence_db = wd_path / "evidence.sqlite"
                 create_active_genome_index(vcf, index)
                 init_evidence_db(evidence_db)
-                runtime_context.set_active_genome_index(
+                runtime_context.set_active_agi_from_source(
                     vcf,
                     status="parsed",
                     operation_result={
@@ -719,7 +719,7 @@ class RegistryGatingTests(unittest.TestCase):
                         (json.dumps("in_progress"),),
                     )
                     connection.commit()
-                runtime_context.set_active_genome_index(
+                runtime_context.set_active_agi_from_source(
                     vcf,
                     status="parsed",
                     operation_result={

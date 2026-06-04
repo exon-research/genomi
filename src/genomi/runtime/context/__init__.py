@@ -30,7 +30,6 @@ from .normalize import (
     _find_user_id_for_agi,
     _grant_agi_access,
     _mark_default_user,
-    _move_legacy_agi_key,
     _normalize_agi_record,
     _normalize_context,
     _normalize_nickname,
@@ -82,7 +81,6 @@ from .agi import (
     revoke_agi_access,
     save_agi_to_registry,
     set_active_agi_id,
-    set_active_genome_index,
     set_active_agi_from_source,
 )
 from .users import (
@@ -136,7 +134,6 @@ __all__ = [
     "save_registry",
     "select_user",
     "set_active_agi_id",
-    "set_active_genome_index",
     "set_active_agi_from_source",
     "set_default_user",
     "set_response_profile_id",
