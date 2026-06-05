@@ -130,11 +130,11 @@ class VcfRecord:
 
     @property
     def depth(self) -> int | None:
-        return _optional_int(parse_sample(self.format, self.sample).get("DP"))
+        return sample_metrics(self.format, self.sample)[1]
 
     @property
     def genotype_quality(self) -> int | None:
-        return _optional_int(parse_sample(self.format, self.sample).get("GQ"))
+        return sample_metrics(self.format, self.sample)[2]
 
     @property
     def alts(self) -> list[str]:
@@ -151,6 +151,7 @@ class VcfRecord:
 
     def to_dict(self, include_raw_fields: bool = True) -> dict[str, Any]:
         sample_values = parse_sample(self.format, self.sample)
+        genotype, depth, genotype_quality = sample_metrics(self.format, self.sample)
         payload: dict[str, Any] = {
             "chrom": self.chrom,
             "pos": self.pos,
@@ -164,9 +165,9 @@ class VcfRecord:
             "is_variant": self.is_variant,
             "sample_name": self.sample_name,
             "sample_index": self.sample_index,
-            "genotype": sample_values.get("GT"),
-            "depth": _optional_int(sample_values.get("DP")),
-            "genotype_quality": _optional_int(sample_values.get("GQ")),
+            "genotype": genotype,
+            "depth": depth,
+            "genotype_quality": genotype_quality,
             "sample": sample_values,
             "info_genes": self.info_genes,
             "variant_key": self.variant_key(),
@@ -297,6 +298,34 @@ def parse_sample(format_field: str, sample_field: str) -> dict[str, str]:
     keys = format_field.split(":")
     values = sample_field.split(":")
     return {key: values[i] if i < len(values) else "" for i, key in enumerate(keys)}
+
+
+def sample_metrics(format_field: str, sample_field: str) -> tuple[str | None, int | None, int | None]:
+    if not format_field or not sample_field:
+        return None, None, None
+    genotype = depth = genotype_quality = None
+    allele_depths = phred_likelihoods = None
+    keys = format_field.split(":")
+    values = sample_field.split(":")
+    for index, key in enumerate(keys):
+        if index >= len(values):
+            break
+        value = values[index]
+        if key == "GT":
+            genotype = value
+        elif key == "DP":
+            depth = _optional_int(value)
+        elif key == "GQ":
+            genotype_quality = _optional_int(value)
+        elif key == "AD":
+            allele_depths = value
+        elif key == "PL":
+            phred_likelihoods = value
+    if depth is None:
+        depth = _depth_from_allele_depths(allele_depths)
+    if genotype_quality is None:
+        genotype_quality = _genotype_quality_from_likelihoods(genotype, phred_likelihoods)
+    return genotype, depth, genotype_quality
 
 
 def read_header(path: str | Path) -> VcfHeader:
@@ -627,6 +656,58 @@ def _optional_int(value: str | None) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _depth_from_allele_depths(value: str | None) -> int | None:
+    if value in (None, "", "."):
+        return None
+    total = 0
+    observed = False
+    for token in str(value).split(","):
+        depth = _optional_int(token)
+        if depth is None:
+            continue
+        total += depth
+        observed = True
+    return total if observed else None
+
+
+def _genotype_quality_from_likelihoods(genotype: str | None, value: str | None) -> int | None:
+    called_index = _genotype_likelihood_index(genotype)
+    if called_index is None or value in (None, "", "."):
+        return None
+    likelihoods: list[int] = []
+    for token in str(value).split(","):
+        likelihood = _optional_int(token)
+        if likelihood is None:
+            return None
+        likelihoods.append(likelihood)
+    if called_index >= len(likelihoods) or len(likelihoods) < 2:
+        return None
+    called = likelihoods[called_index]
+    next_best = min(
+        likelihood
+        for index, likelihood in enumerate(likelihoods)
+        if index != called_index
+    )
+    return max(0, next_best - called)
+
+
+def _genotype_likelihood_index(genotype: str | None) -> int | None:
+    if not genotype:
+        return None
+    alleles: list[int] = []
+    for token in genotype.replace("|", "/").split("/"):
+        value = _optional_int(token)
+        if value is None:
+            return None
+        alleles.append(value)
+    if len(alleles) == 1:
+        return alleles[0]
+    if len(alleles) == 2:
+        first, second = sorted(alleles)
+        return second * (second + 1) // 2 + first
+    return None
 
 
 def _is_symbolic_non_ref_alt(value: str) -> bool:

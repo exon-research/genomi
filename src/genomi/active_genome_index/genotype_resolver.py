@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .array_genotypes import called_genotype_tokens, count_array_allele, is_array_genotype_record
 from ._agi_query import query_region
+from ._agi_schema import connect_existing_readonly
 from .record_kinds import RECORD_KIND_NO_CALL, is_reference_block_record
 
 
@@ -209,6 +211,7 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
 def _records_covering_locus(agi_path: Path, chrom: str, pos: int) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     seen_offsets: set[tuple[int, int]] = set()
+    agi_source_format = _agi_source_format(agi_path)
     for query_chrom in _chrom_candidates(chrom):
         for record in query_region(
             agi_path,
@@ -226,8 +229,23 @@ def _records_covering_locus(agi_path: Path, chrom: str, pos: int) -> list[dict[s
                 if key in seen_offsets:
                     continue
                 seen_offsets.add(key)
+            if agi_source_format:
+                record = {**record, "agi_source_format": agi_source_format}
             records.append(record)
     return records
+
+
+def _agi_source_format(agi_path: Path) -> str | None:
+    with connect_existing_readonly(agi_path) as connection:
+        row = connection.execute("select value from metadata where key = 'source_format'").fetchone()
+    if row is None:
+        return None
+    raw = row["value"]
+    try:
+        decoded = json.loads(str(raw))
+    except json.JSONDecodeError:
+        decoded = raw
+    return str(decoded) if decoded not in (None, "") else None
 
 
 def _chrom_candidates(chrom: str) -> list[str]:
@@ -624,6 +642,7 @@ def _support_payload(
         "filter": record.get("filter") if record else None,
         "depth": record.get("depth") if record else None,
         "genotype_quality": record.get("genotype_quality") if record else None,
+        "agi_source_format": record.get("agi_source_format") if record else None,
         **site_observation,
         "limitation": limitation,
     }
@@ -679,6 +698,7 @@ def _compact_record(record: dict[str, Any]) -> dict[str, Any]:
         "alts": record.get("alts"),
         "filter": record.get("filter"),
         "record_kind": record.get("record_kind"),
+        "agi_source_format": record.get("agi_source_format"),
         "genotype": record.get("genotype"),
         "depth": record.get("depth"),
         "genotype_quality": record.get("genotype_quality"),

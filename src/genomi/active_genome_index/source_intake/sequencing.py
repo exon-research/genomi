@@ -42,9 +42,11 @@ def parse_bam_source(
     force: bool = False,
     max_records: int | None = None,
     parallel_workers: int | None = None,
+    agi_source_format: str | None = None,
 ) -> JsonObject:
     source_path = Path(source)
     detection = detection or SourceDetection(source_format="bam", source_kind="alignment_reads")
+    effective_agi_source_format = agi_source_format or "bam"
     project_dir = run_project_dir_for_source(source_path, source_format="bam")
     work_dir = run_work_dir_for_source(source_path, source_format="bam")
     evidence_dir = run_evidence_dir_for_source(source_path, source_format="bam")
@@ -155,6 +157,7 @@ def parse_bam_source(
         force=force,
         max_records=max_records,
         parallel_workers=parallel_workers,
+        agi_source_format=effective_agi_source_format,
     )
     steps.append(
         {
@@ -425,6 +428,7 @@ def parse_fastq_source(
         force=force,
         max_records=max_records,
         parallel_workers=parallel_workers,
+        agi_source_format="fastq",
     )
     steps.append(
         {

@@ -13,6 +13,8 @@ from genomi.operations import call_operation
 
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
 
+SYNTHETIC_ALT_READ_COUNT = 12
+
 
 def _has_tools(*names: str) -> bool:
     return all(shutil.which(name) for name in names)
@@ -48,7 +50,7 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
     def _write_bam(self, path: Path, *, start: int, read: str) -> None:
         header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "1", "LN": 1000}]}
         with pysam.AlignmentFile(str(path), "wb", header=header) as handle:
-            for index in range(4):
+            for index in range(SYNTHETIC_ALT_READ_COUNT):
                 segment = pysam.AlignedSegment()
                 segment.query_name = f"alt{index}"
                 segment.query_sequence = read
@@ -65,7 +67,7 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
         r2 = root / "PGP_PUBLIC_SA_L001_R2_001.fastq.gz"
         records = "".join(
             f"@alt{index}\n{read}\n+\n{'I' * len(read)}\n"
-            for index in range(4)
+            for index in range(SYNTHETIC_ALT_READ_COUNT)
         ).encode("utf-8")
         with gzip.open(r1, "wb") as handle:
             handle.write(records)

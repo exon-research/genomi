@@ -37,6 +37,7 @@ from genomi.active_genome_index.vcf import (
     parse_sample,
     read_header,
     read_header_lines,
+    sample_metrics,
 )
 
 FIXTURE = Path(__file__).parent / "data" / "tiny.gvcf.vcf"
@@ -153,6 +154,8 @@ class VcfParsingTests(unittest.TestCase):
     def test_field_parsers(self) -> None:
         self.assertEqual(parse_info("END=10249;FLAG"), {"END": "10249", "FLAG": True})
         self.assertEqual(parse_sample("GT:DP:GQ", "0/1:50:124"), {"GT": "0/1", "DP": "50", "GQ": "124"})
+        self.assertEqual(sample_metrics("GT:PL:AD", "1/1:122,42,0:0,12"), ("1/1", 12, 42))
+        self.assertEqual(sample_metrics("GT:PL:AD", "0/1:122,0,84:5,7"), ("0/1", 12, 84))
         self.assertEqual(parse_region("1:10,001-10,249"), ("1", 10001, 10249))
         self.assertEqual(extract_info_genes("ANN=G|missense_variant|MODERATE|HFE|ENSG1"), ["HFE"])
         self.assertEqual(extract_info_genes("SNPEFF_GENE_NAME=BRCA1;SNPEFF_IMPACT=HIGH"), ["BRCA1"])

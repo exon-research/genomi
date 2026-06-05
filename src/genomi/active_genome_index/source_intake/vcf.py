@@ -40,7 +40,9 @@ def _parse_vcf_active_genome_index(
     force: bool,
     max_records: int | None,
     parallel_workers: int | None,
+    agi_source_format: str | None = None,
 ) -> JsonObject:
+    effective_agi_source_format = agi_source_format or detection.source_format
     effective_build = resolve_genome_build(source_path, genome_build)
     project_dir = run_project_dir_for_source(source_path, source_format=detection.source_format)
     work_dir = run_work_dir_for_source(source_path, source_format=detection.source_format)
@@ -99,7 +101,7 @@ def _parse_vcf_active_genome_index(
             parallel_workers=parallel_workers,
             reuse_existing=not force,
             defer_reference=two_phase,
-            source_format=detection.source_format,
+            source_format=effective_agi_source_format,
             provider=detection.provider,
         )
         # The canonical the index adopted as its source of record

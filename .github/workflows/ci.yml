@@ -22,10 +22,11 @@ jobs:
       - name: Install genomics CLI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends samtools bcftools minimap2
+          sudo apt-get install -y --no-install-recommends samtools bcftools minimap2 tabix
           command -v samtools
           command -v bcftools
           command -v minimap2
+          command -v bgzip
 
       - name: Install dependencies
         run: |

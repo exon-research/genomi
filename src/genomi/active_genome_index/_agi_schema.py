@@ -13,7 +13,7 @@ from .vcf import SIMPLE_GENE_KEYS
 from .vcf import VcfHeader
 from .vcf import VcfRecord
 from .vcf import _is_symbolic_non_ref_alt
-from .vcf import _optional_int
+from .vcf import sample_metrics as _vcf_sample_metrics
 from .observations import observed_alleles_from_vcf_genotype
 from .record_kinds import (
     RECORD_KIND_NO_CALL,
@@ -491,24 +491,7 @@ def _record_row(record: VcfRecord) -> tuple[Any, ...]:
 
 
 def _sample_metrics(format_field: str, sample_field: str) -> tuple[str | None, int | None, int | None]:
-    if not format_field or not sample_field:
-        return None, None, None
-    keys = format_field.split(":")
-    values = sample_field.split(":")
-    genotype = depth = genotype_quality = None
-    for index, key in enumerate(keys):
-        if index >= len(values):
-            break
-        value = values[index]
-        if key == "GT":
-            genotype = value
-        elif key == "DP":
-            depth = _optional_int(value)
-        elif key == "GQ":
-            genotype_quality = _optional_int(value)
-        if genotype is not None and depth is not None and genotype_quality is not None:
-            break
-    return genotype, depth, genotype_quality
+    return _vcf_sample_metrics(format_field, sample_field)
 
 def _info_end_and_genes(info: str, pos: int, ref: str) -> tuple[int, list[str]]:
     fallback_end = pos + max(len(ref), 1) - 1
