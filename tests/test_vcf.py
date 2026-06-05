@@ -156,6 +156,7 @@ class VcfParsingTests(unittest.TestCase):
         self.assertEqual(parse_sample("GT:DP:GQ", "0/1:50:124"), {"GT": "0/1", "DP": "50", "GQ": "124"})
         self.assertEqual(sample_metrics("GT:PL:AD", "1/1:122,42,0:0,12"), ("1/1", 12, 42))
         self.assertEqual(sample_metrics("GT:PL:AD", "0/1:122,0,84:5,7"), ("0/1", 12, 84))
+        self.assertEqual(sample_metrics("GT:PL", "1/1:200,36,0", "DP=12;MQ=60"), ("1/1", 12, 36))
         self.assertEqual(parse_region("1:10,001-10,249"), ("1", 10001, 10249))
         self.assertEqual(extract_info_genes("ANN=G|missense_variant|MODERATE|HFE|ENSG1"), ["HFE"])
         self.assertEqual(extract_info_genes("SNPEFF_GENE_NAME=BRCA1;SNPEFF_IMPACT=HIGH"), ["BRCA1"])

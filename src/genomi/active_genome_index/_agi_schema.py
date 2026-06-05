@@ -448,7 +448,7 @@ def _min_optional(current: Any, candidate: Any) -> Any:
         return current
 
 def _record_row(record: VcfRecord) -> tuple[Any, ...]:
-    genotype, depth, genotype_quality = _sample_metrics(record.format, record.sample)
+    genotype, depth, genotype_quality = _sample_metrics(record.format, record.sample, record.info)
     end, info_genes = _info_end_and_genes(record.info, record.pos, record.ref)
     alts = [] if record.alt in ("", ".") else record.alt.split(",")
     no_call = _is_no_call_genotype(genotype)
@@ -490,8 +490,12 @@ def _record_row(record: VcfRecord) -> tuple[Any, ...]:
     )
 
 
-def _sample_metrics(format_field: str, sample_field: str) -> tuple[str | None, int | None, int | None]:
-    return _vcf_sample_metrics(format_field, sample_field)
+def _sample_metrics(
+    format_field: str,
+    sample_field: str,
+    info_field: str | dict[str, str | bool] | None = None,
+) -> tuple[str | None, int | None, int | None]:
+    return _vcf_sample_metrics(format_field, sample_field, info_field)
 
 def _info_end_and_genes(info: str, pos: int, ref: str) -> tuple[int, list[str]]:
     fallback_end = pos + max(len(ref), 1) - 1

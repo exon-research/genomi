@@ -130,11 +130,11 @@ class VcfRecord:
 
     @property
     def depth(self) -> int | None:
-        return sample_metrics(self.format, self.sample)[1]
+        return sample_metrics(self.format, self.sample, self.info)[1]
 
     @property
     def genotype_quality(self) -> int | None:
-        return sample_metrics(self.format, self.sample)[2]
+        return sample_metrics(self.format, self.sample, self.info)[2]
 
     @property
     def alts(self) -> list[str]:
@@ -151,7 +151,7 @@ class VcfRecord:
 
     def to_dict(self, include_raw_fields: bool = True) -> dict[str, Any]:
         sample_values = parse_sample(self.format, self.sample)
-        genotype, depth, genotype_quality = sample_metrics(self.format, self.sample)
+        genotype, depth, genotype_quality = sample_metrics(self.format, self.sample, self.info)
         payload: dict[str, Any] = {
             "chrom": self.chrom,
             "pos": self.pos,
@@ -300,7 +300,11 @@ def parse_sample(format_field: str, sample_field: str) -> dict[str, str]:
     return {key: values[i] if i < len(values) else "" for i, key in enumerate(keys)}
 
 
-def sample_metrics(format_field: str, sample_field: str) -> tuple[str | None, int | None, int | None]:
+def sample_metrics(
+    format_field: str,
+    sample_field: str,
+    info_field: str | dict[str, str | bool] | None = None,
+) -> tuple[str | None, int | None, int | None]:
     if not format_field or not sample_field:
         return None, None, None
     genotype = depth = genotype_quality = None
@@ -323,6 +327,8 @@ def sample_metrics(format_field: str, sample_field: str) -> tuple[str | None, in
             phred_likelihoods = value
     if depth is None:
         depth = _depth_from_allele_depths(allele_depths)
+    if depth is None:
+        depth = _depth_from_info(info_field)
     if genotype_quality is None:
         genotype_quality = _genotype_quality_from_likelihoods(genotype, phred_likelihoods)
     return genotype, depth, genotype_quality
@@ -670,6 +676,21 @@ def _depth_from_allele_depths(value: str | None) -> int | None:
         total += depth
         observed = True
     return total if observed else None
+
+
+def _depth_from_info(value: str | dict[str, str | bool] | None) -> int | None:
+    if value in (None, "", "."):
+        return None
+    info = parse_info(value) if isinstance(value, str) else value
+    if not isinstance(info, dict):
+        return None
+    depth = _optional_int(str(info.get("DP") or ""))
+    if depth is not None:
+        return depth
+    dp4 = info.get("DP4")
+    if not isinstance(dp4, str):
+        return None
+    return _depth_from_allele_depths(dp4)
 
 
 def _genotype_quality_from_likelihoods(genotype: str | None, value: str | None) -> int | None:
