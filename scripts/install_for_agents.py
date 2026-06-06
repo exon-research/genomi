@@ -117,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     if selected:
         print(f"  Libraries:   {', '.join(selected)}")
     print("  Next:        reload the host MCP server and use the Genomi host skill")
+    print("  Decode:      /genomi decode (Codex: $genomi-decode)")
     return 0
 
 

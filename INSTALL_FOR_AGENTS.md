@@ -235,6 +235,13 @@ python3 -m pip --version || uv --version
 git --version
 ```
 
+Genomi's VCF/gVCF parse path requires `bgzip`. On Linux, install the `tabix`
+package; it provides both `bgzip` and `tabix`.
+
+```bash
+command -v bgzip || echo "missing bgzip; on Linux install the tabix package"
+```
+
 ### Step 5: Source checkout
 
 Skip this step when `$GENOMI_HOME/genomi` already holds the project — you're
@@ -544,7 +551,8 @@ MCP server connected in the host?
 
 A few pointers so they can actually use Genomi:
 
-1. **`/genomi decode`** — the one-shot whole-genome dashboard. Composes
+1. **`/genomi decode`** — the one-shot whole-genome dashboard. Codex is the
+   exception: use **`$genomi-decode`** there. Composes
    every capability into a single HTML report.
 2. **Ask anything in natural language.** The host agent routes through
    Genomi's skills and tools; no jargon required.
@@ -587,7 +595,9 @@ keeps session context + tool-use audit in one place.
 
 Try the full one-shot rundown — type:  /genomi decode
 
-`/genomi decode` is the whole-genome dashboard kicker. It sweeps every
+In Codex, use:  $genomi-decode
+
+The decode skill is the whole-genome dashboard kicker. It sweeps every
 relevant Genomi capability in one shot — variants, ClinVar interpretation,
 pharmacogenomics, ancestry, phenotype risk, rare-disease and cancer
 signals, nutrigenomics, GWAS associations, PRS — then composes a single

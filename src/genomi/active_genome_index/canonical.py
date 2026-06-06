@@ -107,7 +107,8 @@ def build_canonical_bgzip(
     bgzip_exe = shutil.which("bgzip")
     if bgzip_exe is None:
         raise RuntimeError(
-            "bgzip CLI not found on PATH; install htslib to build the Active Genome Index canonical bgzip VCF."
+            "bgzip CLI not found on PATH; install htslib to build the Active Genome Index canonical bgzip VCF. "
+            "On Linux, the tabix package commonly provides bgzip."
         )
 
     # Stage to a temp path and rename so a crashed parse never leaves a

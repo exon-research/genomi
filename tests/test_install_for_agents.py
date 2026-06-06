@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,8 +120,16 @@ class InstallForAgentsTests(unittest.TestCase):
                 "controlled by the active host",
                 "list installed skills",
                 "Do not assume /genomi works in every host.",
+                "/genomi decode (Codex: $genomi-decode)",
             ]:
                 self.assertIn(expected, text)
+
+    def test_install_guide_names_bgzip_linux_package_and_codex_decode_skill(self) -> None:
+        guide = (Path(__file__).resolve().parents[1] / "INSTALL_FOR_AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Genomi's VCF/gVCF parse path requires `bgzip`", guide)
+        self.assertIn("On Linux, install the `tabix`", guide)
+        self.assertIn("`/genomi decode`", guide)
+        self.assertIn("Codex is the\n   exception: use **`$genomi-decode`**", guide)
 
     def test_installer_creates_stable_genomi_command_shim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,8 +142,30 @@ class InstallForAgentsTests(unittest.TestCase):
             self.assertTrue(shim.is_file())
             self.assertTrue(os.access(shim, os.X_OK))
             text = shim.read_text(encoding="utf-8")
-            self.assertIn(f"export GENOMI_HOME={resolved_home}", text)
+            self.assertIn(f"GENOMI_HOME={resolved_home}", text)
+            self.assertIn("export GENOMI_HOME", text)
             self.assertIn("-m genomi", text)
+
+    def test_genomi_command_shim_preserves_explicit_genomi_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "genomi-home"
+            override = Path(tmp) / "override-home"
+            with mock.patch.dict(os.environ, {"GENOMI_HOME": str(home)}):
+                shim = install_for_agents.install_genomi_command_shim()
+
+            env = os.environ.copy()
+            env["GENOMI_HOME"] = str(override)
+            result = subprocess.run(
+                [str(shim), "call", "genomi.describe_context", "--params", "{}"],
+                env={**env, "GENOMI_CLI": "1"},
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["active_genome_index"], None)
+            self.assertEqual(payload["users"], [])
 
     def test_main_verifies_through_stable_genomi_command_shim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
