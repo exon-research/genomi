@@ -23,6 +23,11 @@ _23ANDME_TXT = (
     "# rsid\tchromosome\tposition\tgenotype\n"
     "rs3131972\t1\t752721\tGG\n"
 )
+_GENOME_TXT = (
+    "# raw genotype export\n"
+    "# rsid\tchromosome\tposition\tgenotype\n"
+    "rs3131972\t1\t752721\tGG\n"
+)
 _GVCF_TXT = (
     "##fileformat=VCFv4.2\n"
     '##ALT=<ID=NON_REF,Description="Represents any possible alternative allele">\n'
@@ -162,6 +167,24 @@ class ArchiveContentTests(unittest.TestCase):
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
             self.assertEqual(detect_source(path).source_format, "23andme")
+
+    def test_genome_tar_gz_member_beats_text_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.genome.tar.gz"
+            with tarfile.open(path, "w:gz") as archive:
+                sidecar = b"sample export metadata\n" * 200
+                sidecar_info = tarfile.TarInfo("README.txt")
+                sidecar_info.size = len(sidecar)
+                archive.addfile(sidecar_info, io.BytesIO(sidecar))
+
+                data = _GENOME_TXT.encode()
+                genome_info = tarfile.TarInfo("sample.genome")
+                genome_info.size = len(data)
+                archive.addfile(genome_info, io.BytesIO(data))
+
+            detection = detect_source(path)
+            self.assertEqual(detection.source_format, "genome")
+            self.assertEqual(detection.member_name, "sample.genome")
 
     def test_fastq_archive_requires_paired_member(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

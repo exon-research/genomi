@@ -51,6 +51,7 @@ _GENOMIC_MEMBER_SUFFIXES = (
     ".cram",
     ".fastq",
     ".fq",
+    ".genome",
     ".tsv",
     ".txt",
     ".csv",

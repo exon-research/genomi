@@ -114,6 +114,7 @@ class ActiveGenomeIndexContractFixtureMixin:
             ("23andme_xz", "23andme", self._write_23andme_xz_source),
             ("23andme_zip", "23andme", self._write_23andme_zip_source),
             ("23andme_tar", "23andme", self._write_23andme_tar_source),
+            ("genome_tar_gz", "genome", self._write_genome_tar_source),
             ("ancestrydna_txt", "ancestrydna", self._write_ancestry_text_source),
             ("ancestrydna_gz", "ancestrydna", self._write_ancestry_gzip_source),
             ("ancestrydna_bz2", "ancestrydna", self._write_ancestry_bzip2_source),
@@ -588,6 +589,25 @@ class ActiveGenomeIndexContractFixtureMixin:
             "23andMe/genome_PGP_PUBLIC_v5_Full_20260429131650.txt",
             self._23andme_text().encode("utf-8"),
         )
+
+    def _write_genome_tar_source(self, stem: Path) -> Path:
+        path = stem.with_name("sample.genome.tar.gz")
+        return self._write_tar_members(
+            path,
+            [
+                ("README.txt", b"sample export metadata\n" * 200),
+                ("sample.genome", self._genome_text().encode("utf-8")),
+            ],
+        )
+
+    def _genome_text(self) -> str:
+        rows = [
+            "# file_id: synthetic-genome-contract-fixture",
+            "# raw genotype export",
+            "# rsid\tchromosome\tposition\tgenotype",
+        ]
+        rows.extend(f"{locus['rsid']}\t{locus['chrom']}\t{locus['pos']}\t{locus['bases']}" for locus in LOCUS_MODEL)
+        return "\n".join(rows) + "\n"
 
     def _23andme_text(self) -> str:
         rows = [

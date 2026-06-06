@@ -22,7 +22,7 @@ SOURCE_CONTENT_HASH_PREFIX = "source-sha256"
 HASH_CHUNK_SIZE = 8 * 1024 * 1024
 
 _VCF_EXTENSIONS = (".vcf.gz", ".g.vcf.gz", ".gvcf.gz", ".vcf")
-_SOURCE_EXTENSIONS = (*_VCF_EXTENSIONS, ".bam", ".txt", ".zip", ".csv", ".tsv")
+_SOURCE_EXTENSIONS = (*_VCF_EXTENSIONS, ".bam", ".genome", ".txt", ".zip", ".csv", ".tsv")
 _PIPELINE_SUFFIXES = {
     "filtered",
     "hard-filtered",

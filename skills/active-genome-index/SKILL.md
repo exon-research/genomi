@@ -2,9 +2,10 @@
 name: active-genome-index
 description: |
   Register, parse, and digitize private genome source files into a local Active Genome Index and
-  supporting evidence stores. Use when the session explicitly supplies a VCF/gVCF, BAM, 23andMe raw
-  genotype export, AncestryDNA raw genotype export, MyHeritage raw genotype export, FamilyTreeDNA
-  Family Finder export, Living DNA autosomal export, supported source zip, or known Active Genome Index.
+  supporting evidence stores. Use when the session explicitly supplies a VCF/gVCF, BAM, .genome
+  source archive, 23andMe raw genotype export, AncestryDNA raw genotype export, MyHeritage raw
+  genotype export, FamilyTreeDNA Family Finder export, Living DNA autosomal export, supported source zip/tar,
+  or known Active Genome Index.
 tools:
   - genomi.describe_context
   - active_genome_index.approve_access
@@ -57,11 +58,12 @@ Contract:
 - VCF/gVCF: variant callsets with VCF records, genotype fields, optional depth/quality, and possible region callability.
 - BAM: aligned sequencing reads. Genomi derives a local VCF from the reads with a matching reference FASTA, then builds an Active Genome Index for the derived callset for normal sample-specific tools.
 - FASTQ (paired-end): raw reads from sequencing services such as Nebula, Dante Labs, and Sequencing.com. Genomi auto-detects the R2 sibling, picks minimap2 (long reads) or bwa-mem2 (short reads) by the median sniffed read length, sorts the aligned BAM with samtools, then hands the BAM off to the standard BAM → derived-VCF path. Requires the `wgs-alignment` install purpose (or aligner binaries on PATH); a missing aligner returns `requires_library_install` instead of failing.
-- 23andMe raw genotype text or zip: consumer SNP-array calls with `rsid`, chromosome, position, and plus-strand genotype on GRCh37.
-- AncestryDNA raw genotype text or zip: consumer SNP-array calls with `rsid`, chromosome, position, `allele1`, and `allele2` on GRCh37/build 37.1.
-- MyHeritage raw genotype CSV or zip: comma-delimited `RSID,CHROMOSOME,POSITION,RESULT` exports prefixed with a `# MyHeritage DNA raw data` banner, GRCh37.
-- FamilyTreeDNA Family Finder autosomal CSV or `.csv.gz`: same `RSID,CHROMOSOME,POSITION,RESULT` columns as MyHeritage but with no banner, build encoded in the filename (`_o37_`), GRCh37.
-- Living DNA autosomal text: tab-separated `rsid/chromosome/position/genotype` rows with a `# Living DNA customer genotype data` banner on GRCh37.
+- 23andMe raw genotype text or zip/tar archive: consumer SNP-array calls with `rsid`, chromosome, position, and plus-strand genotype on GRCh37.
+- `.genome` source archive such as `sample.genome.tar.gz`.
+- AncestryDNA raw genotype text or zip/tar archive: consumer SNP-array calls with `rsid`, chromosome, position, `allele1`, and `allele2` on GRCh37/build 37.1.
+- MyHeritage raw genotype CSV or zip/tar archive: comma-delimited `RSID,CHROMOSOME,POSITION,RESULT` exports prefixed with a `# MyHeritage DNA raw data` banner, GRCh37.
+- FamilyTreeDNA Family Finder autosomal CSV or compressed/zip/tar archive: same `RSID,CHROMOSOME,POSITION,RESULT` columns as MyHeritage but with no banner, build encoded in the filename (`_o37_`), GRCh37.
+- Living DNA autosomal text or zip/tar archive: tab-separated `rsid/chromosome/position/genotype` rows with a `# Living DNA customer genotype data` banner on GRCh37.
 
 VCF deliverables from named consumer sequencing services (Nebula Genomics, Dante Labs, Sequencing.com) are accepted through the generic VCF path; the source provider is detected from header signatures and surfaced as `provider` on the parse result.
 

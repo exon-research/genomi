@@ -191,13 +191,14 @@ DNA 文件在哪儿，Genomi 就在哪儿读。磁盘上任何一份 VCF 或 gVC
 
 主流的消费级 DTC 厂商也原生支持。账户里导出来什么样，原样递给 Genomi，它自己会认：
 
-- **23andMe**、**AncestryDNA**、**MyHeritage**、**FamilyTreeDNA**（Family Finder）、**Living DNA**——原始基因型文本、zip、`.csv.gz` 都行。
+- **23andMe**、**AncestryDNA**、**MyHeritage**、**FamilyTreeDNA**（Family Finder）、**Living DNA**——厂商导出的原始基因型文本/CSV、gzip/bzip2/xz 压缩文件、zip/tar 归档都行。
+- **`.genome` 源归档**——包括 `sample.genome.tar.gz`。
 - **Nebula Genomics**、**Dante Labs**、**Sequencing.com**——它们交付的 VCF 会被认出来，并打上来源厂商的标签。
 - **Nebula / Dante / Sequencing.com 的 FASTQ**——双端原始 reads 在本地比对（长读 minimap2，短读 bwa-mem2），排序之后走同一条 BAM → 衍生 VCF 的通路。`wgs-alignment` 这个 install purpose 会把两个比对器一起拉下来。
 
 ### 还没自己的 DNA 文件？拿公开数据先试
 
-手头还没基因组、但想看看 Genomi 能干嘛，去 [Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)。那儿放着真实参与者的真实消费级 DNA 交付件，上面列的每家厂商都覆盖。随便挑一位，把 Genomi 指过去，开始问。不送自己去测序的前提下，这是最干净的一种试水方式。
+手头还没基因组、但想看看 Genomi 能干嘛，去 [Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)。那儿放着真实参与者的真实消费级 DNA 交付件，覆盖常见消费级阵列、VCF、gVCF、BAM、配对 FASTQ 形态。随便挑一位，把 Genomi 指过去，开始问。不送自己去测序的前提下，这是最干净的一种试水方式。
 
 基因组数据是可选的。没有的话，Genomi 也能答纯公共的遗传学问题。
 
@@ -396,7 +397,7 @@ Genomi 在实现上直接受益于
 [Personal Genome Project — Harvard Medical School](https://my.pgp-hms.org/public_genetic_data)
 公开遗传数据目录。
 
-Genomi 之所以能原生支持那么多厂商，也多亏了这份 PGP-HMS 数据集。每个检测器、每个奇怪的列、每段头部 banner、每份消费级阵列和厂商标签 VCF 的测试 fixture，都拿真实参与者的导出文件对过。MyHeritage、FamilyTreeDNA、Living DNA、Nebula、Dante、Sequencing.com 的原生支持能做出来，是因为 PGP-HMS 用一份宽松的再利用许可，把真实样本免费公开了——这是开放消费基因组学领域里默默的一笔贡献，Genomi 直接受益。
+Genomi 之所以能原生支持那么多厂商，也多亏了这份 PGP-HMS 数据集。每个检测器、每个奇怪的列、每段头部 banner、每份消费级阵列和厂商标签 VCF 的测试 fixture，都拿真实参与者的导出文件对过。MyHeritage、FamilyTreeDNA、Nebula、Dante、Sequencing.com 等原生支持能做出来，是因为 PGP-HMS 用一份宽松的再利用许可，把真实样本免费公开了——这是开放消费基因组学领域里默默的一笔贡献，Genomi 直接受益。Living DNA 和 `.genome` 仍然受支持，但当前核对过的 PGP-HMS 公开目录没有这些示例。
 
 也感谢 [GBrain](https://github.com/garrytan/gbrain)，Garry Tan 的
 OpenClaw/Hermes agent-brain 项目。Genomi 从它那里得到的启发很直接：

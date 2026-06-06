@@ -240,6 +240,7 @@ deliverable straight from your account export and it figures out the rest:
 - **23andMe**, **AncestryDNA**, **MyHeritage**, **FamilyTreeDNA** (Family
   Finder), and **Living DNA** — raw genotype text/CSV as exported by the
   provider, including gzip/bzip2/xz-compressed files and zip/tar archives.
+- **`.genome` source archives** — including `sample.genome.tar.gz`.
 - **Nebula Genomics**, **Dante Labs**, and **Sequencing.com** — their VCF
   deliverables are recognized and tagged with the originating provider.
 - **Nebula / Dante / Sequencing.com FASTQ** — paired-end raw reads are
@@ -541,9 +542,9 @@ header banners, archive wrappers, and provider-tagged VCF paths are
 sanity-checked against real PGP participant exports when the public catalog
 contains that format. Native 23andMe, AncestryDNA, MyHeritage,
 FamilyTreeDNA, Nebula, Dante, Sequencing.com, VCF, gVCF, BAM, and FASTQ
-coverage benefits directly from those examples; Living DNA remains a
-supported format, but the checked PGP-HMS public inventory did not include
-a Living DNA example.
+coverage benefits directly from those examples; Living DNA and `.genome`
+remain supported formats, but the checked PGP-HMS public inventory did not
+include examples for those shapes.
 
 Thanks also to [GBrain](https://github.com/garrytan/gbrain), Garry Tan's
 OpenClaw/Hermes agent-brain project, for inspiration around making agent

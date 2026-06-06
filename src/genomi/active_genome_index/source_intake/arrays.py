@@ -166,6 +166,9 @@ _CONSUMER_ARRAY_SPECS: dict[str, _ConsumerArraySpec] = {
     "23andme": _ConsumerArraySpec(
         row_iterator=_iter_23andme_rows,
     ),
+    "genome": _ConsumerArraySpec(
+        row_iterator=_iter_23andme_rows,
+    ),
     "ancestrydna": _ConsumerArraySpec(
         row_iterator=_iter_ancestrydna_rows,
     ),

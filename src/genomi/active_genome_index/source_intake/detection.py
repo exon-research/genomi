@@ -264,6 +264,10 @@ _ARRAY_SIGNATURES: tuple[_ArraySignature, ...] = (
         vendor_tokens=("living dna",), header_in_comments=True, accept_rs_data_row=True,
     ),
     _ArraySignature(
+        "genome", "genome", "\t", ("rsid", "chromosome", "position", "genotype"),
+        header_in_comments=True,
+    ),
+    _ArraySignature(
         "myheritage", "myheritage", ",", ("RSID", "CHROMOSOME", "POSITION", "RESULT"),
         vendor_tokens=("myheritage",),
     ),

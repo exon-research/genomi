@@ -133,12 +133,12 @@ class PGPHMSPublicFormatManifestTests(ActiveGenomeIndexContractFixtureMixin, uni
             for source_format, spec in supported.items()
             if not spec["public_pgp_hms_examples_observed"]
         }
-        self.assertEqual(formats_without_public_pgp_examples, {"livingdna"})
+        self.assertEqual(formats_without_public_pgp_examples, {"genome", "livingdna"})
         for source_format, spec in supported.items():
             evidence = spec["pgp_public_evidence"]
             if source_format in formats_without_public_pgp_examples:
                 self.assertEqual(len(evidence), 1)
-                self.assertIn("No Living DNA examples were present", evidence[0])
+                self.assertTrue(evidence[0], source_format)
             else:
                 self.assertTrue(evidence, source_format)
 

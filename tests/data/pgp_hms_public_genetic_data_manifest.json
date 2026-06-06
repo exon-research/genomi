@@ -37,6 +37,15 @@
       "23andme_tar"
     ]
     },
+    "genome": {
+      "public_pgp_hms_examples_observed": false,
+      "pgp_public_evidence": [
+        "Synthetic matrix fixture for .genome source archive; no public PGP-HMS example is asserted by this manifest."
+      ],
+      "contract_fixture_cases": [
+        "genome_tar_gz"
+      ]
+    },
     "ancestrydna": {
       "public_pgp_hms_examples_observed": true,
       "pgp_public_evidence": [
@@ -218,6 +227,24 @@
       "anonymized_fixture_names": [
         "genome_PGP_PUBLIC_v5_Full_20260429131650.txt",
         "genome_PGP_PUBLIC_v4_Full_20240826181111.zip"
+      ],
+      "content_rows_committed": false
+    },
+    "genome": {
+      "sample_access_kind": "no_public_example_observed",
+      "observed_wrappers": [
+        "gzip-compressed tar archive with .genome member"
+      ],
+      "observed_filename_patterns": [
+        "sample.genome.tar.gz"
+      ],
+      "observed_headers_or_columns": [
+        "# rsid chromosome position genotype",
+        "rsid chromosome position genotype"
+      ],
+      "anonymized_fixture_names": [
+        "sample.genome.tar.gz",
+        "sample.genome"
       ],
       "content_rows_committed": false
     },

@@ -469,6 +469,7 @@ uploaded off-machine**:
   VCF/gVCF).
 - **BAM** of aligned reads, either as a file or as a zip/tar archive member
   (Genomi derives a local VCF).
+- **`.genome` source archive**, including `sample.genome.tar.gz`.
 - **Direct-to-consumer raw DNA exports**, used as-is from the provider account:
   - 23andMe — raw genotype `.txt`, compressed file, or zip/tar archive
   - AncestryDNA — raw genotype `.txt`, compressed file, or zip/tar archive
@@ -506,8 +507,8 @@ public catalog: <https://my.pgp-hms.org/public_genetic_data>. PGP-HMS
 participants have published real, freely-licensed consumer-DNA
 deliverables covering most listed source shapes, including public examples
 for 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA, VCF/gVCF, BAM, and
-paired FASTQ. The checked public inventory did not include a Living DNA
-example even though Genomi supports Living DNA autosomal text exports.
+paired FASTQ. The checked public inventory did not include Living DNA or
+`.genome` examples even though Genomi supports those source shapes.
 Download a matching participant export and pass the path as
 `--genome-source <path>` exactly like a personal file.
 

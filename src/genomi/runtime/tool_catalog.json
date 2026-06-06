@@ -172,7 +172,7 @@
     "genomi.parse_source": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Detect, parse, and digitize a genome source such as VCF/gVCF, BAM, 23andMe, or AncestryDNA raw genotype text/zip. After parsing, read skills/active-genome-index/SKILL.md before using the invoke-only active_genome_index.* interpretation/selection tools; the result's next_actions repeats this.",
+      "description": "Detect, parse, and digitize a genome source such as VCF/gVCF, BAM, paired FASTQ, supported consumer exports, or a .genome source archive. After parsing, read skills/active-genome-index/SKILL.md before using the invoke-only active_genome_index.* interpretation/selection tools; the result's next_actions repeats this.",
       "input_schema": {
         "type": "object",
         "properties": {
