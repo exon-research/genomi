@@ -11,6 +11,7 @@ _EMPTY_NATIVE_STATUSES = {
     "out_of_scope_for_input",
     "skipped_missing_library",
     "skipped_tool_unavailable",
+    "insufficient_overlap",
     "domain_id_required",
     "unknown_domain",
     "domain_out_of_scope_by_construction",

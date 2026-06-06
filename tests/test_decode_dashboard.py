@@ -432,6 +432,35 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertEqual(anc["neighbors"][0], {"population": "EUR", "similarity": 0.39})
         self.assertIn("ancestry", result["panels_rendered"])
 
+    def test_ancestry_insufficient_overlap_renders_as_empty_panel(self) -> None:
+        out = self.tmpdir / "dash.html"
+        result = decode_dashboard.render_dashboard(
+            evidence={
+                "ancestry": {
+                    "status": "insufficient_overlap",
+                    "nearest_reference_groups": [],
+                    "next_actions": [
+                        {
+                            "action": "do_not_interpret",
+                            "reason": "Projection covers only 6% of the loaded panel.",
+                        }
+                    ],
+                    "sample_qc": {
+                        "marker_overlap_quality": "insufficient",
+                        "overlap_fraction": 0.06,
+                    },
+                    "reference_panel": {"panel_id": "1000g-30x-grch37"},
+                },
+            },
+            mode="full",
+            output=out,
+        )
+
+        parsed = _extract_evidence(out.read_text(encoding="utf-8"))
+        self.assertNotIn("ancestry", parsed)
+        self.assertNotIn("ancestry", result["panels_rendered"])
+        self.assertIn("ancestry", result["panels_empty"])
+
     def test_supplied_overview_unmappable_raises(self) -> None:
         """A content-bearing panel that maps to no schema field fails loudly."""
         out = self.tmpdir / "dash.html"
