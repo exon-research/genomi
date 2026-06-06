@@ -44,6 +44,55 @@ WRITE_OPERATIONS = {
 }
 
 
+EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "variant.resolve",
+        "phenotype.plan_risk_investigation",
+        "pharmacogenomics.review_medication",
+        "clinvar.scan_candidates",
+        "phenotype.compare_disease_evidence",
+        "phenotype.compare_gene_hpo_evidence",
+        "phenotype.compare_drug_target_evidence",
+        "functional_genomics.compare_gene_perturbation",
+        "gwas.compare_variant_associations",
+        "gwas.compare_gene_associations",
+        "phenotype.retrieve_disease_drug_targets",
+        "phenotype.retrieve_gene_disease_associations",
+        "phenotype.retrieve_trait_gene_records",
+        "functional_genomics.retrieve_perturbation_records",
+        "functional_genomics.query_geo",
+        "functional_genomics.import_perturbation_table",
+        "pathway.retrieve_members",
+        "cell_type.retrieve_markers",
+        "region.retrieve_features",
+        "gnomad.fetch_population_frequency",
+        "phenotype.normalize_terms",
+        "pharmacogenomics.fetch_pgxdb",
+        "pharmacogenomics.fetch_clinpgx",
+        "pharmacogenomics.fetch_fda_labels",
+        "pharmacogenomics.preflight_pharmcat",
+        "pharmacogenomics.run_pharmcat",
+        "pharmacogenomics.describe_gene_requirements",
+        "pharmacogenomics.import_pharmcat_artifacts",
+        "pharmacogenomics.validate_outside_call_tsv",
+        "pharmacogenomics.prepare_outside_call_tsv",
+        "research.build_target_packet",
+        "variant.gather_allele_context",
+        "variant.gather_gene_context",
+        "research.query",
+        "research.search",
+        "research.record",
+        "ancestry.check_sample_overlap",
+        "ancestry.project_pca",
+        "ancestry.estimate_population_context",
+        "prs.check_score_overlap",
+        "prs.calculate_score",
+        "decode.build_dashboard_evidence",
+        "decode.render_dashboard",
+    }
+)
+
+
 TOP_LEVEL_FUNCTION_SCHEMA_KEYWORDS = ("oneOf", "anyOf", "allOf", "enum", "not")
 
 

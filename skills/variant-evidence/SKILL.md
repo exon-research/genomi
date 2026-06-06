@@ -10,7 +10,7 @@ tools:
   - active_genome_index.classify_region_callability
   - variant.gather_allele_context
   - variant.gather_gene_context
-mutating: false
+mutating: true
 ---
 
 # Variant And Gene Evidence

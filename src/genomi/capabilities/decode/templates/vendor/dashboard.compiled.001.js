@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: e7aa6dcd75eb4688a29e01d1de287abddd7156a45936737e8f6d38df0925d6c9
+// source-sha256: 93cb9d96aadb2e80a7693ae384b920855c4dce9dae08e937bfcdbfb2b42a29d7
 // All evidence comes from the decode pipeline via window.__GENOMI_DASHBOARD__.
 // Anything below this line is presentation/layout only — no genome data is
 // prefilled in the template.
@@ -294,7 +294,7 @@ function OverviewView({
       color: '#10b981',
       borderColor: '#10b98130'
     }
-  }, src.status || 'ok')), /*#__PURE__*/React.createElement("div", {
+  }, src.coverageState || 'data_returned')), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',

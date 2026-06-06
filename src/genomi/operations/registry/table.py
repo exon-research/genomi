@@ -18,6 +18,7 @@ from .catalog_meta import (
     BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST,
     CAPABILITY_METADATA,
     CAPABILITY_ORDER,
+    EVIDENCE_PRODUCING_OPERATIONS,
     NAMESPACE_ORDER,
     _operation_namespace,
 )
@@ -386,63 +387,6 @@ def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
     result = _with_defaults_applied(name, safe_params, result)
     result = _stamp_reference_pending_if_due(name, safe_params, result)
     return _ensure_envelope(name, result)
-
-
-# Operations that should always carry an evidence_envelope. Handlers that
-# already emit one are passed through unchanged; otherwise a default envelope
-# is derived from the result via envelope.derive_default_envelope.
-EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
-    {
-        # variant / risk / pgx (already emit explicit envelopes)
-        "variant.resolve",
-        "phenotype.plan_risk_investigation",
-        "pharmacogenomics.review_medication",
-        "clinvar.scan_candidates",
-        # comparator/source tools (auto-injected via apply_evidence_view)
-        "phenotype.compare_disease_evidence",
-        "phenotype.compare_gene_hpo_evidence",
-        "phenotype.compare_drug_target_evidence",
-        "functional_genomics.compare_gene_perturbation",
-        "gwas.compare_variant_associations",
-        "gwas.compare_gene_associations",
-        # retrieval / record ops (default envelope from result indicators)
-        "phenotype.retrieve_disease_drug_targets",
-        "phenotype.retrieve_gene_disease_associations",
-        "phenotype.retrieve_trait_gene_records",
-        "functional_genomics.retrieve_perturbation_records",
-        "functional_genomics.query_geo",
-        "functional_genomics.import_perturbation_table",
-        "pathway.retrieve_members",
-        "cell_type.retrieve_markers",
-        "region.retrieve_features",
-        "gnomad.fetch_population_frequency",
-        "phenotype.normalize_terms",
-        # PGx fetch / artifact ops
-        "pharmacogenomics.fetch_pgxdb",
-        "pharmacogenomics.fetch_clinpgx",
-        "pharmacogenomics.fetch_fda_labels",
-        "pharmacogenomics.preflight_pharmcat",
-        "pharmacogenomics.run_pharmcat",
-        "pharmacogenomics.describe_gene_requirements",
-        "pharmacogenomics.import_pharmcat_artifacts",
-        "pharmacogenomics.validate_outside_call_tsv",
-        "pharmacogenomics.prepare_outside_call_tsv",
-        # evidence build / research ops
-        "research.build_target_packet",
-        "variant.gather_allele_context",
-        "variant.gather_gene_context",
-        "research.query",
-        "research.search",
-        "research.record",
-        "ancestry.check_sample_overlap",
-        "ancestry.project_pca",
-        "ancestry.estimate_population_context",
-        "prs.check_score_overlap",
-        "prs.calculate_score",
-        "decode.build_dashboard_evidence",
-        "decode.render_dashboard",
-    }
-)
 
 
 def _ensure_envelope(name: str, result: object) -> object:

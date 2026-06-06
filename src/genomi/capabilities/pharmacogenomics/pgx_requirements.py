@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import html
 import json
-import re
-import urllib.error
 from importlib import resources as importlib_resources
 from typing import Any
 
-from ...runtime import http_text
 from .pharmcat._common import PHARMCAT_FAQ_URL, PHARMCAT_GENES_DRUGS_URL
 
 JsonObject = dict[str, Any]
 PGX_GENE_REQUIREMENTS_RESOURCE = ("data", "gene_requirements.json")
-PHARMCAT_NAMED_MATCHER_SECTION = "genes-pharmcat-will-attempt-to-match"
-PHARMCAT_OUTSIDE_CALLER_SECTION = "genes-handled-by-outside-callers"
 _GENE_REQUIREMENTS_CACHE: dict[str, Any] | None = None
 
 
@@ -41,19 +35,12 @@ SPECIAL_GENE_REQUIREMENTS: dict[str, JsonObject] = dict(gene_requirements_catalo
 def pharmacogene_requirements(
     *,
     gene: str | None = None,
-    refresh_sources: bool = False,
-    pharmcat_genes_drugs_url: str | None = None,
-    fetch_text: Any | None = None,
 ) -> JsonObject:
     selected_gene = _normalize_gene(gene)
     records = [_record_for_gene(selected_gene)] if selected_gene else [_record_for_gene(item) for item in sorted(_all_genes())]
     payload: JsonObject = {
         "status": "completed",
-        "query": {
-            "gene": selected_gene,
-            "refresh_sources": bool(refresh_sources),
-            "pharmcat_genes_drugs_url": _clean_url(pharmcat_genes_drugs_url) or PHARMCAT_GENES_DRUGS_URL,
-        },
+        "query": {"gene": selected_gene},
         "records": records,
         "summary": {
             "record_count": len(records),
@@ -62,14 +49,6 @@ def pharmacogene_requirements(
         },
         "source_documents": _source_documents(),
     }
-    if refresh_sources:
-        snapshot = _pharmcat_gene_source_snapshot(
-            _clean_url(pharmcat_genes_drugs_url) or PHARMCAT_GENES_DRUGS_URL,
-            fetch_text=fetch_text,
-        )
-        payload["source_snapshot"] = snapshot
-        if snapshot.get("status") == "completed":
-            payload["catalog_comparison"] = _catalog_source_comparison(snapshot)
     return payload
 
 
@@ -139,73 +118,3 @@ def _normalize_gene(value: str | None) -> str | None:
         return None
     cleaned = " ".join(str(value).strip().split())
     return cleaned.upper() if cleaned else None
-
-
-def _clean_url(value: str | None) -> str:
-    return " ".join(str(value or "").strip().split())
-
-
-def _pharmcat_gene_source_snapshot(url: str, *, fetch_text: Any | None = None) -> JsonObject:
-    try:
-        text = (
-            fetch_text(url)
-            if fetch_text is not None
-            else http_text.fetch_text(
-                url,
-                timeout=30,
-                accept="text/html, text/plain",
-                user_agent="Mozilla/5.0 (compatible; Genomi/0.1)",
-            )
-        )
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        return {
-            "status": "source_unavailable",
-            "source_url": url,
-            "error": str(exc),
-        }
-    named_genes = _extract_pharmcat_section_genes(text, PHARMCAT_NAMED_MATCHER_SECTION)
-    outside_genes = _extract_pharmcat_section_genes(text, PHARMCAT_OUTSIDE_CALLER_SECTION)
-    return {
-        "status": "completed",
-        "source_url": url,
-        "source": "PharmCAT Genes & Drugs",
-        "named_allele_matcher_genes": named_genes,
-        "outside_call_genes": outside_genes,
-        "summary": {
-            "named_allele_matcher_gene_count": len(named_genes),
-            "outside_call_gene_count": len(outside_genes),
-        },
-    }
-
-
-def _extract_pharmcat_section_genes(text: str, section_id: str) -> list[str]:
-    start_match = re.search(rf'<h3\s+id="{re.escape(section_id)}"', text, flags=re.IGNORECASE)
-    if not start_match:
-        return []
-    next_heading = re.search(r"<h3\s+id=", text[start_match.end() :], flags=re.IGNORECASE)
-    end = start_match.end() + next_heading.start() if next_heading else len(text)
-    section = text[start_match.end() : end]
-    genes: list[str] = []
-    seen: set[str] = set()
-    for match in re.finditer(r'<a\s+href="/Phenotypes-List#[^"]+">([^<]+)</a>', section, flags=re.IGNORECASE):
-        gene = _normalize_gene(html.unescape(match.group(1)))
-        if gene and gene not in seen:
-            seen.add(gene)
-            genes.append(gene)
-    return genes
-
-
-def _catalog_source_comparison(snapshot: JsonObject) -> JsonObject:
-    named_source = set(snapshot.get("named_allele_matcher_genes") or [])
-    outside_source = set(snapshot.get("outside_call_genes") or [])
-    return {
-        "source_url": snapshot.get("source_url"),
-        "named_allele_matcher": {
-            "source_not_in_packaged": sorted(named_source - NAMED_ALLELE_MATCHER_GENES),
-            "packaged_not_in_source": sorted(NAMED_ALLELE_MATCHER_GENES - named_source),
-        },
-        "outside_call": {
-            "source_not_in_packaged": sorted(outside_source - set(OUTSIDE_CALL_GENES)),
-            "packaged_not_in_source": sorted(set(OUTSIDE_CALL_GENES) - outside_source),
-        },
-    }

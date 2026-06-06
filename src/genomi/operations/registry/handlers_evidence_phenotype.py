@@ -39,7 +39,7 @@ def _population_fetch(params: JsonObject) -> JsonObject:
         dataset=_str(resolved, "dataset", "gnomad_r4"),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
         api_url=_str(resolved, "api_url", library_manager.api_base("gnomad")),
-        force=_bool(resolved, "force"),
+        force=False,
     )
 
 
@@ -149,7 +149,7 @@ def _cell_type_retrieve_canonical_markers(params: JsonObject) -> JsonObject:
         marker_table=_optional_path(params, "marker_table"),
         limit=_int(params, "limit", 100),
         hpa_api_base=_str(params, "hpa_api_base", library_manager.api_base("hpa")),
-        hpa_download_base=_str(params, "hpa_download_base", library_manager.source_url("hpa")),
+        hpa_download_base=library_manager.source_url("hpa"),
         semantic_context=params.get("semantic_context"),
     )
 

@@ -6,7 +6,7 @@ description: |
   population stratification, gnomAD numbers, or rarity of a specific allele.
 tools:
   - genomi.invoke
-mutating: false
+mutating: true
 ---
 
 # Population Frequency (gnomAD)
@@ -46,8 +46,8 @@ schema and returns the underlying tool's response with an added
 
 - Variant-anchored only — query one allele at a time.
 - Public population data only — does not read the user's Active Genome Index.
-- Cached after first fetch — subsequent queries for the same variant hit the
-  local evidence store unless `force: true` is passed.
+- Cached after first fetch — subsequent queries for the same variant reuse the
+  local evidence store.
 
 ## Cross-Capability Synthesis
 

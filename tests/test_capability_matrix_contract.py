@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from genomi.active_genome_index.source_intake import SUPPORTED_SOURCE_FORMATS
+from genomi.capabilities.decode import dashboard as decode_dashboard
 from genomi.operations import TOOL_CATALOG, call_operation
 
 from tests.support.active_genome_index.source_fixture_inventory import (
@@ -37,6 +38,8 @@ from tests.support.matrix.capability_contract import (
 )
 from tests.support.matrix.result_states import (
     DECODE_COVERAGE_STATE_CELLS,
+    DECODE_DATA_RETURNED_CASES,
+    DECODE_DATA_RETURNED_CELLS,
     DECODE_NATIVE_STATUS_CELLS,
     DECODE_PGX_STATUS_CELLS,
     DECODE_PRS_STATUS_CELLS,
@@ -145,6 +148,14 @@ class CapabilityMatrixContractTests(unittest.TestCase):
         )
         self.assertEqual(DECODE_RESULT_STATE_OPERATION, "decode.render_dashboard")
         self.assertIn(DECODE_RESULT_STATE_OPERATION, TOOL_CATALOG["operations"])
+        self.assertEqual(
+            DECODE_DATA_RETURNED_CELLS,
+            {
+                (DECODE_RESULT_STATE_OPERATION, panel, mode)
+                for panel in decode_dashboard.PANEL_KEYS
+                for mode in ("full", "update")
+            },
+        )
 
     def test_executable_source_support_operations_are_source_support_operations(self) -> None:
         self.assertLessEqual(SOURCE_FORMAT_SUPPORT_EXECUTABLE_OPERATIONS, set(SOURCE_FORMAT_SUPPORT_OPERATION_RATIONALES))
@@ -200,6 +211,17 @@ class CapabilityMatrixContractTests(unittest.TestCase):
                     seen_cells.add(case.cell)
 
         self.assertEqual(seen_cells, DECODE_RESULT_STATE_CELLS)
+
+    def test_decode_data_returned_cases_render_their_declared_panels(self) -> None:
+        seen_cells: set[tuple[str, str, str]] = set()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for case in DECODE_DATA_RETURNED_CASES:
+                with self.subTest(cell=case.cell):
+                    case.run(root)
+                    seen_cells.add(case.cell)
+
+        self.assertEqual(seen_cells, DECODE_DATA_RETURNED_CELLS)
 
     def test_public_deterministic_cases_are_current_catalog_operations(self) -> None:
         operations = set(TOOL_CATALOG["operations"])

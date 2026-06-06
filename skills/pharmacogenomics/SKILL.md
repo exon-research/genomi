@@ -67,8 +67,7 @@ or pharmacogene sample evidence.
   medication review needs a source-specific follow-up.
 - `pharmacogenomics.describe_gene_requirements`: gene-specific sample evidence
   requirements for named allele matching, outside calls, HLA, MT-RNR1, G6PD,
-  and SV/CNV-sensitive genes. Use `refresh_sources=true` only when you need a
-  live comparison against the official PharmCAT Genes & Drugs page.
+  and SV/CNV-sensitive genes.
 - `pharmacogenomics.check_pharmcat`: check local PharmCAT availability.
 - `pharmacogenomics.preflight_pharmcat`: inspect whether the selected Active
   Genome Index can provide a suitable PharmCAT input before running it.
@@ -121,7 +120,7 @@ Return pharmacogene-specific sample evidence requirements for PharmCAT named all
 
 **Why necessary**: Complex pharmacogenes require special evidence handling that a simple rsID lookup cannot provide.
 
-**Result semantics**: Returns packaged source-backed pharmacogene sample-evidence requirements, candidate tools, and source references for the selected gene. When refresh_sources is true, it also fetches the official PharmCAT Genes & Drugs page and reports catalog/source differences.
+**Result semantics**: Returns packaged source-backed pharmacogene sample-evidence requirements, candidate tools, and source references for the selected gene.
 
 ### pharmacogenomics.fetch_clinpgx
 

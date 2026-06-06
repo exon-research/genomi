@@ -176,6 +176,20 @@ class DecodeDashboardEvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(seen[1], ("clinvar.scan_candidates", {"force": True, "agi_id": "agi-target"}))
         self.assertEqual(seen[2], ("journal.search_entries", {"limit": 1}))
 
+    def test_decode_builder_does_not_forward_panel_refresh_knobs(self) -> None:
+        calls: list[tuple[str, dict]] = []
+
+        def run(operation: str, params: dict | None = None) -> dict:
+            calls.append((operation, dict(params or {})))
+            return {"status": "completed", "candidate_inventory": []}
+
+        evidence_builder.build_dashboard_evidence(
+            params={"panels": ["variants"], "force": True},
+            run_operation=run,
+        )
+
+        self.assertEqual(calls, [("clinvar.scan_candidates", {})])
+
     def test_catalog_exposes_builder(self) -> None:
         names = {op.name for op in OPERATIONS}
         self.assertIn("decode.build_dashboard_evidence", names)

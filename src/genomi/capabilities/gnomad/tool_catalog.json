@@ -36,9 +36,6 @@
           "api_url": {
             "type": "string",
             "default": "https://gnomad.broadinstitute.org/api"
-          },
-          "force": {
-            "$ref": "#/schema_fragments/properties/force"
           }
         },
         "required": [

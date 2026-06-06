@@ -65,7 +65,6 @@ class DashboardCatalogTests(unittest.TestCase):
         self.assertEqual(
             set(schema_props),
             {
-                "force",
                 "include_pgx",
                 "journal_limit",
                 "nutrigenomics_domain_ids",

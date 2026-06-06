@@ -99,7 +99,7 @@ def _first_present(*values: Any) -> Any:
 
 
 def _normalize_source_coverage_item(item: Any) -> JsonObject | None:
-    """Normalize a single sourceCoverage entry to ``name``/``status``/``percent``.
+    """Normalize a single sourceCoverage entry to ``name``/``coverageState``/``percent``.
 
     ``sourceCoverage`` is a dashboard-owned shape; native capability results
     should be adapted before reaching this field.
@@ -109,13 +109,12 @@ def _normalize_source_coverage_item(item: Any) -> JsonObject | None:
     name = item.get("name")
     if name in (None, "", []):
         return None
-    status = item.get("status")
+    coverage_state = _first_present(item.get("coverageState"), item.get("coverage_state"))
     percent = item.get("percent")
     out: JsonObject = {}
     if name is not None:
         out["name"] = name
-    if status is not None:
-        out["status"] = status
+    out["coverageState"] = coverage_state or "data_returned"
     if percent is not None:
         out["percent"] = percent
     return out or None

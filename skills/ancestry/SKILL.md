@@ -13,7 +13,7 @@ tools:
   - ancestry.estimate_population_context
   - active_genome_index.approve_access
   - genomi.parse_source
-mutating: false
+mutating: true
 ---
 
 # Ancestry Reference-Panel Context

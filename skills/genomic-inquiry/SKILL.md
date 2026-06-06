@@ -101,8 +101,8 @@ Surface the original intake file path for rebuild or validation work.
 - GWAS phenotype plus candidate rsIDs: load the GWAS Catalog skill, call
   `gwas.compare_variant_associations`, then select additional operations from the returned
   evidence. Variant lookup, ClinVar, Mendelian, sample, same-gene, or pathway
-  context is follow-up context only; it cannot override the population-trait
-  GWAS Catalog rsID ranking.
+  context is follow-up context to report beside the population-trait GWAS
+  Catalog rsID ranking.
 - Functional-genomics perturbation context plus candidate genes: load the
   functional genomics skill, call
   `functional_genomics.compare_gene_perturbation` for the normal native-retrieve,

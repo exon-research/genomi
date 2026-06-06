@@ -210,6 +210,15 @@ class DispatchEnvelopeContractTests(GenomiRuntimeTestCase):
         for name in ops.EVIDENCE_PRODUCING_OPERATIONS:
             self.assertIn(name, known, f"EVIDENCE_PRODUCING_OPERATIONS references unknown op {name!r}")
 
+    def test_evidence_operation_metadata_advertises_envelope(self) -> None:
+        for tool in ops.all_operations():
+            produces = tool["annotations"].get("produces") or []
+            with self.subTest(op=tool["name"]):
+                if tool["name"] in ops.EVIDENCE_PRODUCING_OPERATIONS:
+                    self.assertIn("evidence_envelope", produces)
+                else:
+                    self.assertNotIn("evidence_envelope", produces)
+
 
 if __name__ == "__main__":
     unittest.main()

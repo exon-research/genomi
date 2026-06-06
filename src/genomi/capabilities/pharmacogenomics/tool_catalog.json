@@ -41,14 +41,6 @@
           "gene": {
             "type": "string"
           },
-          "refresh_sources": {
-            "type": "boolean",
-            "default": false
-          },
-          "pharmcat_genes_drugs_url": {
-            "type": "string",
-            "default": "https://pharmcat.clinpgx.org/Genes-Drugs/"
-          },
           "semantic_context": {
             "$ref": "#/schema_fragments/properties/semantic_context"
           }
@@ -62,16 +54,13 @@
       "produces": [
         "pharmacogene_requirement_catalog",
         "pgx_sample_evidence_requirements",
-        "source_document_references",
-        "optional_live_source_snapshot"
+        "source_document_references"
       ],
       "context_optional": [],
       "privacy_scope": "metadata_only",
       "operation_scope": "read",
       "mutating": false,
-      "external_io": [
-        "pharmcat_documentation_web_when_refresh_sources_true"
-      ],
+      "external_io": [],
       "data_access": [
         "local_artifact_metadata",
         "public_catalog_metadata"

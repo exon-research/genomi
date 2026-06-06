@@ -530,7 +530,7 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertIn("Ancestry", html)
         self.assertIn("Journal", html)
 
-    def test_source_coverage_uses_canonical_name_key(self) -> None:
+    def test_source_coverage_uses_canonical_name_and_state_keys(self) -> None:
         out = self.tmpdir / "dash.html"
         decode_dashboard.render_dashboard(
             evidence={
@@ -540,8 +540,8 @@ class RenderDashboardTests(unittest.TestCase):
                     "variantCount": 100,
                     "parsedAt": "2026-05-25T00:00:00Z",
                     "sourceCoverage": [
-                        {"name": "ClinVar", "status": "ok", "percent": 100},
-                        {"name": "PharmCAT", "status": "ok"},
+                        {"name": "ClinVar", "coverageState": "data_returned", "percent": 100},
+                        {"name": "PharmCAT"},
                     ],
                 },
             },
@@ -554,7 +554,9 @@ class RenderDashboardTests(unittest.TestCase):
         parsed = _extract_evidence(html)
         sources = parsed["overview"]["sourceCoverage"]
         self.assertEqual(sources[0]["name"], "ClinVar")
+        self.assertEqual(sources[0]["coverageState"], "data_returned")
         self.assertEqual(sources[1]["name"], "PharmCAT")
+        self.assertEqual(sources[1]["coverageState"], "data_returned")
         self.assertEqual(sources[0]["percent"], 100)
 
     def test_ancestry_pca_empty_shows_placeholder(self) -> None:

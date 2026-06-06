@@ -66,11 +66,6 @@
             "default": 8,
             "minimum": 1,
             "description": "Maximum journal entries to gather for the journal panel."
-          },
-          "force": {
-            "type": "boolean",
-            "default": false,
-            "description": "Forwarded to ClinVar candidate scanning to refresh cached materialization."
           }
         },
         "required": [],
@@ -155,11 +150,6 @@
             "default": 8,
             "minimum": 1,
             "description": "Maximum journal entries to gather for the journal panel."
-          },
-          "force": {
-            "type": "boolean",
-            "default": false,
-            "description": "Forwarded to ClinVar candidate scanning to refresh cached materialization."
           },
           "output": {
             "$ref": "#/schema_fragments/properties/local_path",

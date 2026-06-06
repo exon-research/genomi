@@ -10,7 +10,7 @@ tools:
   - research.record
   - research.query
   - research.search
-mutating: false
+mutating: true
 ---
 
 # Drug Targets
@@ -27,8 +27,9 @@ class, or mechanism.
 - ChEMBL, DrugBank, and PharmaProjects-style records can support direct target
   claims when the source supports both the gene and the drug, class, mechanism,
   or indication context.
-- Open Targets association context is useful for review, but do not treat a high
-  association score as direct drug-target evidence.
+- Open Targets association context is useful for review; direct drug-target
+  evidence comes from source records that support the drug, class, or mechanism
+  relationship.
 - Open Targets disease drug and clinical candidate records can retrieve
   disease-scoped clinical drug-target genes when the drug target comes from a
   mechanism-of-action row.

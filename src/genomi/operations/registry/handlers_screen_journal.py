@@ -26,7 +26,6 @@ _DECODE_AGI_PANEL_OPERATIONS = {
     "prs.calculate_score",
 }
 _DECODE_BUILD_PARAM_KEYS = {
-    "force",
     "include_pgx",
     "journal_limit",
     "nutrigenomics_domain_ids",

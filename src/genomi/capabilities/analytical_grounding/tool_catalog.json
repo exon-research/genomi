@@ -156,10 +156,6 @@
             "type": "string",
             "default": "https://www.proteinatlas.org/api"
           },
-          "hpa_download_base": {
-            "type": "string",
-            "default": "https://www.proteinatlas.org/download/tsv"
-          },
           "limit": {
             "$ref": "#/schema_fragments/properties/limit_100"
           },

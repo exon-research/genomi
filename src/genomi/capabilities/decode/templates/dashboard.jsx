@@ -144,7 +144,7 @@
                     <div key={i} className="source-item">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ color: '#e5e5e5', fontSize: 13, fontWeight: 600 }}>{src.name || 'unknown source'}</span>
-                        <span className="badge" style={{ background: '#10b98118', color: '#10b981', borderColor: '#10b98130' }}>{src.status || 'ok'}</span>
+                        <span className="badge" style={{ background: '#10b98118', color: '#10b981', borderColor: '#10b98130' }}>{src.coverageState || 'data_returned'}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: '#555', fontSize: 11 }}>
                         <span>{src.percent != null ? `${src.percent}%` : ''}</span>

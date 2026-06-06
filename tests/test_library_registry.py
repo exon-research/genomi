@@ -231,11 +231,10 @@ class LibraryRegistryTests(unittest.TestCase):
         self.assertEqual(PHARMCAT_VCF_REQUIREMENTS_URL, spec.source.urls[7])
         self.assertEqual({doc["url"] for doc in PHARMCAT_DOCS}, {spec.source.urls[0], spec.source.urls[6], spec.source.urls[7]})
 
-    def test_pharmcat_schema_default_matches_registry_url(self) -> None:
-        spec = registry.get("pharmcat")
+    def test_pharmcat_gene_requirements_schema_uses_packaged_catalog(self) -> None:
         catalog = load_tool_catalog()
         properties = catalog["operations"]["pharmacogenomics.describe_gene_requirements"]["input_schema"]["properties"]
-        self.assertEqual(properties["pharmcat_genes_drugs_url"]["default"], spec.source.urls[1])
+        self.assertEqual(set(properties), {"gene", "semantic_context"})
 
     def test_pgs_catalog_live_source_urls_are_registry_owned(self) -> None:
         spec = registry.get("pgs-catalog")

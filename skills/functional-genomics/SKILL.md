@@ -10,7 +10,7 @@ tools:
   - functional_genomics.compare_gene_perturbation
   - research.list_sources
   - research.record
-mutating: false
+mutating: true
 ---
 
 # Functional Genomics Perturbation Evidence
@@ -26,10 +26,10 @@ tables, reviewed stored research, or explicitly supplied source records. Generic
 gene biology can explain a result, but it should not outrank direct
 perturbation-source evidence.
 
-Direct support must be source-verified. Do not turn broad literature snippets
-or agent-authored assumptions into direct perturbation evidence. If the source does
-not verify the requested cell line, perturbation, assay/readout, and candidate
-gene relationship, treat it as adjacent or plausibility-only evidence.
+Direct support is source-verified perturbation evidence. Source records carry
+verified fields or support spans for the requested cell line, perturbation,
+assay/readout, and candidate gene relationship; broader biology remains
+adjacent or plausibility-only evidence.
 
 Native coverage currently includes BioGRID ORCS when a BioGRID ORCS access key
 is available, DepMap CRISPR gene-effect release tables when a CSV URL or path
@@ -37,8 +37,8 @@ is configured, and bounded NCBI GEO metadata/table discovery. GEO's advantage is
 source discovery for public or published perturbation datasets: SeriesMatrix
 files, supplementary tables, and accession-indexed study records that curated
 screen APIs may not expose for the requested cell line, perturbation, assay, or
-readout. If native sources cannot be queried, the response must make that
-coverage state visible; do not treat a missing native source as a weak ranking.
+readout. If native sources cannot be queried, the response makes that coverage
+state visible rather than weak ranking evidence.
 
 ## Tool Flow
 

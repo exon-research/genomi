@@ -62,10 +62,7 @@ def build_dashboard_evidence(
 
     clinvar_result: JsonObject | None = None
     if {"variants", "variants_all"} & set(panels):
-        clinvar_params: JsonObject = {}
-        if safe_params.get("force"):
-            clinvar_params["force"] = True
-        clinvar_result = run("clinvar.scan_candidates", clinvar_params)
+        clinvar_result = run("clinvar.scan_candidates", {})
         if "variants" in panels:
             _store_panel(evidence, panel_states, "variants", "clinvar.scan_candidates", clinvar_result)
         if "variants_all" in panels:

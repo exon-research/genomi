@@ -12,7 +12,7 @@ tools:
   - nutrigenomics.retrieve_variant_records
   - gnomad.fetch_population_frequency
   - gwas.compare_variant_associations
-mutating: false
+mutating: true
 ---
 
 # Nutrigenomics

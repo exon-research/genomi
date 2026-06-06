@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 2/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: e7aa6dcd75eb4688a29e01d1de287abddd7156a45936737e8f6d38df0925d6c9
+// source-sha256: 93cb9d96aadb2e80a7693ae384b920855c4dce9dae08e937bfcdbfb2b42a29d7
       style: {
         background: sc.bg,
         color: sc.fg,

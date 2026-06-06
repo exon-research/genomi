@@ -5,6 +5,7 @@ from typing import Any
 
 from .catalog_meta import (
     CAPABILITY_ENTRY_OPERATION_NAMES,
+    EVIDENCE_PRODUCING_OPERATIONS,
     TOOL_CATALOG_OPERATIONS,
     _catalog_input_schema,
     _catalog_tuple,
@@ -69,8 +70,10 @@ class Operation:
         mutating = self.mutating if self.mutating is not None else bool(catalog.get("mutating", operation_scope != "read"))
         external_io = self.external_io or _catalog_tuple(catalog, "external_io")
         data_access = self.data_access or _catalog_tuple(catalog, "data_access") or _data_access(privacy_scope)
+        produces = _operation_produces(self.name, self.produces or _catalog_tuple(catalog, "produces"))
         title = _display_title(self.name)
         parameter_defaults = _operation_parameter_defaults(self)
+        source_record_input = _source_record_input_contract(input_schema)
         dependency_contract = _operation_dependency_contract(
             optional_libraries=tuple(str(item) for item in catalog.get("optional_libraries") or []),
             external_io=tuple(external_io),
@@ -86,9 +89,10 @@ class Operation:
                 "skill": skill,
                 "area": _operation_namespace(self.name),
                 "requires": list(self.requires or _catalog_tuple(catalog, "requires")),
-                "produces": list(self.produces or _catalog_tuple(catalog, "produces")),
+                "produces": produces,
                 "contextOptional": list(self.context_optional or _catalog_tuple(catalog, "context_optional")),
                 "parameterDefaults": parameter_defaults,
+                **({"sourceRecordInput": source_record_input} if source_record_input else {}),
                 **({"dependencyContract": dependency_contract} if dependency_contract else {}),
                 "privacyScope": privacy_scope,
                 "operationScope": operation_scope,
@@ -102,6 +106,38 @@ class Operation:
                 "discoveryRole": _tool_role(self),
             },
         }
+
+
+def _operation_produces(name: str, declared: tuple[Any, ...]) -> list[Any]:
+    produces = list(declared)
+    if name in EVIDENCE_PRODUCING_OPERATIONS and "evidence_envelope" not in produces:
+        produces.append("evidence_envelope")
+    return produces
+
+
+def _source_record_input_contract(schema: JsonObject) -> JsonObject | None:
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or "source_records" not in properties:
+        return None
+    source_records = properties.get("source_records")
+    if not isinstance(source_records, dict):
+        return None
+    items = source_records.get("items")
+    if not isinstance(items, dict):
+        return None
+    any_of = items.get("anyOf")
+    required_keys = []
+    if isinstance(any_of, list):
+        for option in any_of:
+            if not isinstance(option, dict):
+                continue
+            required = option.get("required")
+            if isinstance(required, list) and len(required) == 1:
+                required_keys.append(str(required[0]))
+    return {
+        "role": "verified_source_record_import",
+        "requiredRecordEvidence": sorted(set(required_keys)),
+    }
 
 
 def _operation_parameter_defaults(operation: Operation) -> list[JsonObject]:

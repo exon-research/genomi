@@ -67,7 +67,7 @@ Compare candidate rsIDs by population-trait GWAS Catalog association evidence.
 
 **Example prompts**: Compare these rsIDs for LDL cholesterol GWAS evidence.
 
-**Result semantics**: Returns public GWAS association evidence rows ranked by source trait match and p-value. ClinVar, Mendelian, sample genotype, pathway, and same-gene context cannot override this ranking for population-trait lead-variant tasks. Personal interpretation uses separate sample genotype evidence tools only after the source-ranked rsID decision.
+**Result semantics**: Returns public GWAS association evidence rows ranked by source trait match and p-value. For population-trait lead-variant tasks, GWAS Catalog evidence rows are the ranking source. Personal interpretation uses separate sample genotype evidence tools only after the source-ranked rsID decision.
 
 ## Boundary
 
@@ -77,9 +77,9 @@ context, ancestry/source limitations, and careful claim wording.
 
 For phenotype-plus-rsID questions, call `gwas.compare_variant_associations`
 directly. If personal context exists, choose follow-up rsIDs from the returned
-association evidence before checking sample support. ClinVar, Mendelian,
-sample genotype, same-gene, or pathway context from follow-up lookups cannot
-override the GWAS Catalog ranking for population-trait lead-variant tasks.
+association evidence before checking sample support. Keep ClinVar, Mendelian,
+sample genotype, same-gene, or pathway context as follow-up context beside the
+GWAS Catalog population-trait ranking.
 
 For phenotype-plus-gene-list questions, call
 `gwas.compare_gene_associations` only when GWAS Catalog
@@ -108,6 +108,7 @@ population-trait lead-variant result.
 - Prefer direct GWAS Catalog records over inferring a winner from prose.
 - Treat `variant.resolve` as context-only follow-up after the GWAS
   source ranking is chosen.
-- Do not treat GWAS Catalog `mapped_genes` as causal-gene evidence.
+- Interpret GWAS Catalog `mapped_genes` as source gene-field association
+  context, not causal-gene evidence.
 - If the selected candidate is not direct-source supported, say the result is
   lower-support adjacent GWAS evidence.

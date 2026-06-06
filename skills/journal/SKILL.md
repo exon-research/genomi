@@ -102,9 +102,9 @@ Summarize journal state into observations, decisions, contradictions, unresolved
 
 - Link evidence for traceability, but treat linked Genomi outputs and public
   sources as the authority.
-- Do not pass journal entries as `source_records` for candidate ranking.
-- Use reviewed research records, not free-form journal notes, when a downstream
-  tool needs source records.
+- When a downstream tool needs `source_records`, provide reviewed research or
+  tool-returned source records that satisfy that tool's verified source-record
+  input contract.
 - Use `journal.append_entry` with `entry_id` for corrections; do not silently
   overwrite entries.
 - Omit private evidence links from memory exports unless the user explicitly

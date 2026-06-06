@@ -34,6 +34,39 @@ def _collect_ops_by_skill() -> dict[str, set[str]]:
     return by_skill
 
 
+def _collect_operation_mutability() -> dict[str, bool]:
+    operations: dict[str, bool] = {}
+    for catalog_path in sorted(REPO_ROOT.glob("src/genomi/**/tool_catalog.json")):
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        for op_name, op in (catalog.get("operations") or {}).items():
+            operations[op_name] = bool((op or {}).get("mutating"))
+    return operations
+
+
+def _skill_frontmatter(skill_path: Path) -> dict[str, object]:
+    lines = skill_path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    metadata: dict[str, object] = {}
+    tools: list[str] = []
+    in_tools = False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("tools:"):
+            in_tools = True
+            continue
+        if in_tools and line.startswith("  - "):
+            tools.append(line[4:].strip())
+            continue
+        if line and not line.startswith(" ") and ":" in line:
+            in_tools = False
+            key, value = line.split(":", 1)
+            metadata[key.strip()] = value.strip()
+    metadata["tools"] = tools
+    return metadata
+
+
 def _skill_subsection_op_names(skill_path: Path) -> set[str]:
     """Return all `### <op_name>` subsection headings in a skill markdown file."""
     headings: set[str] = set()
@@ -88,6 +121,32 @@ class SkillToolSectionParityTests(unittest.TestCase):
                         f"`### {heading}` — no tool_catalog.json declares it"
                     )
         self.assertEqual(problems, [], msg="\n  ".join(["orphan op subsections:", *problems]))
+
+    def test_skill_frontmatter_mutating_matches_exposed_operations(self) -> None:
+        by_skill = _collect_ops_by_skill()
+        operation_mutating = _collect_operation_mutability()
+        problems: list[str] = []
+        for skill_path in sorted(REPO_ROOT.glob("skills/**/SKILL.md")):
+            frontmatter = _skill_frontmatter(skill_path)
+            if "mutating" not in frontmatter:
+                continue
+            exposed_ops = set(by_skill.get(skill_path.relative_to(REPO_ROOT).as_posix(), set()))
+            exposed_ops.update(
+                tool
+                for tool in frontmatter.get("tools", [])
+                if isinstance(tool, str) and tool in operation_mutating
+            )
+            if not exposed_ops:
+                continue
+            expected = any(operation_mutating[op] for op in exposed_ops)
+            actual = str(frontmatter["mutating"]).lower() == "true"
+            if actual != expected:
+                problems.append(
+                    f"{skill_path.relative_to(REPO_ROOT)} has mutating={actual} "
+                    f"but exposed operations require mutating={expected}: "
+                    + ", ".join(sorted(exposed_ops))
+                )
+        self.assertEqual(problems, [], msg="\n  ".join(["skill mutating drift:", *problems]))
 
 
 if __name__ == "__main__":

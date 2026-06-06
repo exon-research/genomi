@@ -49,11 +49,7 @@ def _pgx_lookup(params: JsonObject) -> JsonObject:
 def _pgx_gene_requirements(params: JsonObject) -> JsonObject:
     semantic = retrieval_semantic.parse_semantic_context(params.get("semantic_context"))
     gene = params.get("gene") or _first_semantic_entity_text(semantic, "gene")
-    return pgx_requirements.pharmacogene_requirements(
-        gene=gene,
-        refresh_sources=_bool(params, "refresh_sources", False),
-        pharmcat_genes_drugs_url=params.get("pharmcat_genes_drugs_url"),
-    )
+    return pgx_requirements.pharmacogene_requirements(gene=gene)
 
 
 def _clinpgx_lookup(params: JsonObject) -> JsonObject:
