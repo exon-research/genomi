@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import sqlite3
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +12,7 @@ from genomi.capabilities.prs import scoring_files as prs_scoring_files
 from genomi.operations import call_operation
 from genomi.runtime import context as runtime_context
 from genomi.runtime.libraries import manager as library_manager
+from genomi.runtime.sqlite_support import connect_sqlite
 
 from tests.support.capabilities.prs_contract import PolygenicScoreTestBase
 
@@ -326,7 +326,7 @@ class PolygenicScoreImportCacheTests(PolygenicScoreTestBase):
         with self.assertRaises(KeyError):
             prs_scoring_files.write_variants_db(db_path, [{"chrom": "1"}])
 
-        with sqlite3.connect(db_path) as connection:
+        with connect_sqlite(db_path, row_factory=False) as connection:
             rows = connection.execute("select rsid, effect_weight from score_variants").fetchall()
         self.assertEqual(rows, [("rs1", 0.5)])
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from genomi.evidence import (
     record_research_findings,
     summarize_clinvar_matches,
 )
+from genomi.runtime.sqlite_support import connect_sqlite
 from tests.support.capabilities.external_layers import (
     TINY_CLINVAR,
     TINY_POPULATION,
@@ -75,7 +75,7 @@ class ExternalClinvarContextTests(EvidenceImportTestBase):
             self.assertEqual(active_payload["sample_variant"]["agi_record_ref"], active_payload["sample_variant"]["ref"])
 
             incomplete_active_genome_index = Path(tmp) / "incomplete-active-genome-index.sqlite"
-            with sqlite3.connect(incomplete_active_genome_index) as connection:
+            with connect_sqlite(incomplete_active_genome_index) as connection:
                 connection.executescript(
                     """
                     create table stats (key text primary key, value text not null);

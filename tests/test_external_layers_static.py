@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import tempfile
 import zipfile
 from pathlib import Path
@@ -20,6 +19,7 @@ from genomi.evidence import (
 )
 from genomi.evidence.investigation import prepare_investigation_packet
 from genomi.runtime.static_dependencies import infer_genome_build_from_vcf, resolve_genome_build
+from genomi.runtime.sqlite_support import connect_sqlite
 from tests.support.capabilities.external_layers import (
     TINY_CLINVAR,
     TINY_POPULATION,
@@ -111,10 +111,10 @@ class StaticRunTests(EvidenceImportTestBase):
                 os.chdir(previous_cwd)
 
             evidence_db = tmp_path / result["evidence_db"]
-            with sqlite3.connect(evidence_db) as connection:
+            with connect_sqlite(evidence_db) as connection:
                 local_clinvar_rows = connection.execute("select count(*) from clinvar_variants").fetchone()[0]
                 local_population_rows = connection.execute("select count(*) from population_frequencies").fetchone()[0]
-            with sqlite3.connect(shared_db) as connection:
+            with connect_sqlite(shared_db) as connection:
                 shared_population_rows = connection.execute("select count(*) from population_frequencies").fetchone()[0]
             self.assertEqual(local_clinvar_rows, 0)
             self.assertGreater(local_population_rows, 0)

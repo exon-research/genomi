@@ -12,6 +12,7 @@ from genomi.active_genome_index.active_genome_index import create_active_genome_
 from genomi.capabilities.prs import scorer as prs_scorer
 from genomi.runtime import context as runtime_context
 from genomi.runtime.liftover import chain_file_path, liftover_preflight
+from genomi.runtime.sqlite_support import connect_sqlite
 
 
 class PolygenicScoreTestBase(unittest.TestCase):
@@ -157,7 +158,7 @@ class PolygenicScoreTestBase(unittest.TestCase):
 
 
 def memory_prs_index() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
+    connection = connect_sqlite(":memory:", row_factory=False)
     connection.row_factory = sqlite3.Row
     connection.executescript(
         """

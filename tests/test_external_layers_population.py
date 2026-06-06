@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +15,7 @@ from genomi.evidence import (
     query_population_frequency,
 )
 from genomi.operations import call_operation
+from genomi.runtime.sqlite_support import connect_sqlite
 from tests.support.capabilities.external_layers import (
     EvidenceImportTestBase,
 )
@@ -81,7 +81,7 @@ class PopulationFrequencyTests(EvidenceImportTestBase):
             run_db = tmp_path / "run.sqlite"
             shared_db = tmp_path / "shared.sqlite"
             init_evidence_db(run_db)
-            with sqlite3.connect(run_db) as connection:
+            with connect_sqlite(run_db) as connection:
                 for key in ("source_evidence_db", "shared_evidence_db"):
                     connection.execute(
                         """
@@ -107,9 +107,9 @@ class PopulationFrequencyTests(EvidenceImportTestBase):
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["summary"]["record_count"], 2)
             self.assertEqual(result["shared_sync"]["status"], "direct_shared_write")
-            with sqlite3.connect(run_db) as connection:
+            with connect_sqlite(run_db) as connection:
                 local_rows = connection.execute("select count(*) from population_frequencies").fetchone()[0]
-            with sqlite3.connect(shared_db) as connection:
+            with connect_sqlite(shared_db) as connection:
                 shared_rows = connection.execute("select count(*) from population_frequencies").fetchone()[0]
             self.assertEqual(local_rows, 0)
             self.assertEqual(shared_rows, 2)

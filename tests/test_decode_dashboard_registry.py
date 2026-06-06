@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +15,7 @@ from genomi.operations import (
     call_operation,
 )
 from genomi.runtime import context as runtime_context
+from genomi.runtime.sqlite_support import connect_sqlite
 
 _DECODE_BUILDER_PATCH = (
     "genomi.operations.registry.handlers_screen_journal."
@@ -152,7 +152,7 @@ class RegistryGatingTests(unittest.TestCase):
                 evidence_db = wd_path / "evidence.sqlite"
                 create_active_genome_index(vcf, index)
                 init_evidence_db(evidence_db)
-                with sqlite3.connect(index) as connection:
+                with connect_sqlite(index) as connection:
                     connection.execute(
                         "update metadata set value = ? where key = 'active_genome_index_complete'",
                         (json.dumps(False),),

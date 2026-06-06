@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import threading
 import time
@@ -20,6 +19,7 @@ from genomi.evidence import (
     init_evidence_db,
     query_clinvar,
 )
+from genomi.runtime.sqlite_support import connect_sqlite
 from tests.support.capabilities.external_layers import (
     TINY_CLINVAR,
     EvidenceImportTestBase,
@@ -77,7 +77,7 @@ class ExternalEvidenceStoreTests(EvidenceImportTestBase):
     def test_schema_ensure_creates_tables_and_prunes_obsolete_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "evidence.sqlite"
-            with sqlite3.connect(db) as connection:
+            with connect_sqlite(db) as connection:
                 connection.execute("create table metadata (key text primary key, value text not null)")
                 connection.execute("insert into metadata(key, value) values('schema_version', ?)", (json.dumps(2),))
 
@@ -90,7 +90,7 @@ class ExternalEvidenceStoreTests(EvidenceImportTestBase):
     def test_schema_ensure_migrates_existing_research_target_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "evidence.sqlite"
-            with sqlite3.connect(db) as connection:
+            with connect_sqlite(db) as connection:
                 connection.execute("create table metadata (key text primary key, value text not null)")
                 connection.execute(
                     """
@@ -123,7 +123,7 @@ class ExternalEvidenceStoreTests(EvidenceImportTestBase):
             summary = evidence_summary(db)
 
             self.assertEqual(summary["tables"]["research_findings"], 0)
-            with sqlite3.connect(db) as connection:
+            with connect_sqlite(db) as connection:
                 columns = {row[1] for row in connection.execute("pragma table_info(research_findings)")}
             self.assertIn("drug", columns)
             self.assertIn("condition", columns)

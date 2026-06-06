@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from genomi.evidence import init_evidence_db
 from genomi.operations import call_operation
 from genomi.operations.registry.errors import OperationError
 from genomi.runtime import context as runtime_context
+from genomi.runtime.sqlite_support import connect_sqlite
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
 
@@ -19,7 +19,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
     def test_variant_lookup_reads_shared_clinvar_by_rsid(self) -> None:
         shared_db = self.genomi_home / "shared-evidence.sqlite"
         init_evidence_db(shared_db)
-        with sqlite3.connect(shared_db) as connection:
+        with connect_sqlite(shared_db) as connection:
             rowid = connection.execute(
                 """
                 insert into clinvar_variants(
@@ -81,7 +81,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 create_active_genome_index(vcf, index, reuse_existing=False)
                 db = Path("evidence.sqlite")
                 init_evidence_db(db)
-                with sqlite3.connect(db) as connection:
+                with connect_sqlite(db) as connection:
                     rowid = connection.execute(
                         """
                         insert into clinvar_variants(
@@ -300,7 +300,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 )
                 index = Path("active-genome-index.sqlite")
                 create_active_genome_index(vcf, index, reuse_existing=False)
-                with sqlite3.connect(index) as connection:
+                with connect_sqlite(index) as connection:
                     connection.execute(
                         "update metadata set value = ? where key = 'active_genome_index_complete'",
                         (json.dumps(False),),
@@ -337,7 +337,7 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
                 create_active_genome_index(vcf, index, reuse_existing=False)
                 db = Path("evidence.sqlite")
                 init_evidence_db(db)
-                with sqlite3.connect(db) as connection:
+                with connect_sqlite(db) as connection:
                     connection.execute(
                         """
                         insert into population_frequencies(

@@ -6,6 +6,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
+from ..runtime.sqlite_support import connect_sqlite
+
 JsonObject = dict[str, Any]
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -180,7 +182,7 @@ def _fts5_streams(
 
     columns = ", ".join(_quote_identifier(field) for field in fields)
     try:
-        connection = sqlite3.connect(":memory:")
+        connection = connect_sqlite(":memory:", row_factory=False)
         try:
             connection.execute(f"CREATE VIRTUAL TABLE docs USING fts5({columns}, tokenize='unicode61 remove_diacritics 2')")
             placeholders = ", ".join("?" for _ in fields)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import unittest
 from unittest import mock
@@ -26,6 +25,7 @@ from genomi.evidence.store.clinvar_match_provenance import (
     match_basis_from_record,
 )
 from genomi.evidence.store import clinvar_import as clinvar_import_module
+from genomi.runtime.sqlite_support import connect_sqlite
 
 
 class ClinvarObservedAlleleTests(unittest.TestCase):
@@ -109,8 +109,7 @@ class ClinvarObservedAlleleTests(unittest.TestCase):
             create_active_genome_index(sample_vcf, agi_path, reuse_existing=False)
             reader = open_reader(agi_path, need=ActiveGenomeIndexNeed.VARIANT, genome_build="GRCh38")
 
-            with sqlite3.connect(":memory:") as connection:
-                connection.row_factory = sqlite3.Row
+            with connect_sqlite(":memory:") as connection:
                 reader.stage_clinvar_match_records(connection)
                 rows = connection.execute(
                     """

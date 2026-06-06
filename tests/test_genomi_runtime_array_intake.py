@@ -3,7 +3,6 @@ from __future__ import annotations
 import gzip
 import json
 import os
-import sqlite3
 import tempfile
 import zipfile
 from pathlib import Path
@@ -11,6 +10,7 @@ from pathlib import Path
 from genomi.operations import call_operation
 from genomi.operations.registry.errors import OperationError
 from genomi.active_genome_index.active_genome_index import SCHEMA_VERSION, active_genome_index_readiness
+from genomi.runtime.sqlite_support import connect_sqlite
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
 
@@ -103,8 +103,7 @@ class GenomiRuntimeArrayIntakeTests(GenomiRuntimeTestCase):
                 self.assertEqual(_hidden_path_leaks(parsed, raw), [])
 
                 agi_path = Path(parsed["outputs"]["agi_path"])
-                with sqlite3.connect(agi_path) as connection:
-                    connection.row_factory = sqlite3.Row
+                with connect_sqlite(agi_path) as connection:
                     no_call = connection.execute("select * from records where rsid = 'rs999'").fetchone()
                     dot_no_call = connection.execute("select * from records where rsid = 'rsDot'").fetchone()
                 self.assertIsNotNone(no_call)
@@ -183,7 +182,7 @@ class GenomiRuntimeArrayIntakeTests(GenomiRuntimeTestCase):
                 self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 agi_path = Path(parsed["outputs"]["agi_path"])
-                with sqlite3.connect(agi_path) as connection:
+                with connect_sqlite(agi_path) as connection:
                     connection.execute("drop table source_header_lines")
                     connection.execute("delete from metadata where key in ('active_genome_index_build_status', 'active_genome_index_complete')")
                     connection.commit()
@@ -216,7 +215,7 @@ class GenomiRuntimeArrayIntakeTests(GenomiRuntimeTestCase):
                 self.approve_access()
                 parsed = call_operation("genomi.parse_source", {"source": str(raw)})
                 agi_path = Path(parsed["outputs"]["agi_path"])
-                with sqlite3.connect(agi_path) as connection:
+                with connect_sqlite(agi_path) as connection:
                     connection.execute(
                         "update metadata set value = ? where key = 'schema_version'",
                         (json.dumps(SCHEMA_VERSION + 1),),

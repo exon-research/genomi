@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +23,7 @@ from genomi.operations.registry import agi_access, defaults_applied_for_call
 from genomi.operations.registry.errors import OperationError
 from genomi.operations.registry.table import call_operation
 from genomi.runtime import context as runtime_context
+from genomi.runtime.sqlite_support import connect_sqlite
 
 
 def _write_gvcf(path: Path, *, variant_mod: int = 500) -> None:
@@ -83,7 +83,7 @@ class ReaderParseStateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             create_active_genome_index(vcf, index)
-            with sqlite3.connect(index) as connection:
+            with connect_sqlite(index) as connection:
                 connection.execute(
                     "update metadata set value = ? where key = 'active_genome_index_complete'",
                     (json.dumps(False),),
@@ -103,7 +103,7 @@ class ReaderParseStateTests(unittest.TestCase):
             index = Path(tmp) / "sample.sqlite"
             _write_gvcf(vcf)
             create_active_genome_index(vcf, index, parallel_workers=4, defer_reference=True)
-            with sqlite3.connect(index) as connection:
+            with connect_sqlite(index) as connection:
                 connection.execute(
                     "update metadata set value = ? where key = 'schema_version'",
                     (json.dumps(1),),
@@ -242,7 +242,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         index = vcf.with_suffix(".sqlite")
         _write_gvcf(vcf)
         create_active_genome_index(vcf, index)
-        with sqlite3.connect(index) as connection:
+        with connect_sqlite(index) as connection:
             connection.execute(
                 "update metadata set value = ? where key = 'active_genome_index_complete'",
                 (json.dumps(False),),
@@ -272,7 +272,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
 
     def test_variant_lookup_rejects_too_new_selected_index(self) -> None:
         index = self._set_active(stem="too_new_schema")
-        with sqlite3.connect(index) as connection:
+        with connect_sqlite(index) as connection:
             connection.execute(
                 "update metadata set value = ? where key = 'schema_version'",
                 (json.dumps(SCHEMA_VERSION + 1),),

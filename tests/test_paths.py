@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +31,7 @@ from genomi.runtime.paths import (
     shared_evidence_db_path,
     vcf_content_hash,
 )
+from genomi.runtime.sqlite_support import connect_sqlite
 
 DATA_DIR = Path(__file__).parent / "data"
 TINY_CLINVAR = DATA_DIR / "tiny.clinvar.vcf"
@@ -184,7 +184,7 @@ class GenomiDataPathTests(unittest.TestCase):
             self.assertEqual(result["agi_intake_source_path"], vcf.name)
             with mock.patch.dict(os.environ, {"GENOMI_HOME": str(tmp_path / ".genomi-data")}):
                 init_static_run(vcf.name, source_evidence_db=None, force=False)
-            with sqlite3.connect(target_db) as connection:
+            with connect_sqlite(target_db) as connection:
                 local_clinvar_rows = connection.execute("select count(*) from clinvar_variants").fetchone()[0]
                 local_population_rows = connection.execute("select count(*) from population_frequencies").fetchone()[0]
                 local_research_rows = connection.execute("select count(*) from research_findings").fetchone()[0]

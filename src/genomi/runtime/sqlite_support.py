@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from pathlib import Path
 from urllib.parse import quote
@@ -13,6 +14,10 @@ class ClosingConnection(sqlite3.Connection):
         suppress = super().__exit__(exc_type, exc_value, traceback)
         self.close()
         return bool(suppress)
+
+    def __del__(self) -> None:
+        with contextlib.suppress(sqlite3.Error):
+            self.close()
 
 
 def connect_sqlite(

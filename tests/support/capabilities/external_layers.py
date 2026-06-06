@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +10,7 @@ from unittest.mock import patch
 from genomi.evidence import (
     init_evidence_db,
 )
+from genomi.runtime.sqlite_support import connect_sqlite
 
 DATA_DIR = Path(__file__).parents[2] / "data"
 TINY_VCF = DATA_DIR / "tiny.gvcf.vcf"
@@ -61,7 +61,7 @@ def _insert_genotype_support(
             "evidence_boundaries": ["test boundary"],
         },
     }
-    with sqlite3.connect(db) as connection:
+    with connect_sqlite(db) as connection:
         connection.execute(
             """
             insert or replace into genotype_support (

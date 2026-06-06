@@ -3,7 +3,6 @@ from __future__ import annotations
 import gzip
 import json
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,6 +27,7 @@ from genomi.active_genome_index.active_genome_index import (
     query_variant,
     read_header_from_active_genome_index,
 )
+from genomi.runtime.sqlite_support import connect_sqlite
 from genomi.active_genome_index.vcf import (
     extract_info_genes,
     iter_records,
@@ -268,7 +268,7 @@ class IndexTests(unittest.TestCase):
             agi_path = Path(tmp) / "tiny.sqlite"
 
             create_active_genome_index(FIXTURE, agi_path)
-            with sqlite3.connect(agi_path) as connection:
+            with connect_sqlite(agi_path) as connection:
                 connection.execute(
                     "update metadata set value = ? where key = 'active_genome_index_complete'",
                     (json.dumps(False),),
@@ -292,7 +292,7 @@ class IndexTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             agi_path = Path(tmp) / "tiny.sqlite"
             create_active_genome_index(FIXTURE, agi_path)
-            with sqlite3.connect(agi_path) as connection:
+            with connect_sqlite(agi_path) as connection:
                 connection.execute(
                     "update metadata set value = ? where key = 'active_genome_index_complete'",
                     (json.dumps(False),),
@@ -710,7 +710,7 @@ class IndexTests(unittest.TestCase):
             agi_path = Path(tmp) / "tiny.sqlite"
             create_active_genome_index(FIXTURE, agi_path)
 
-            with sqlite3.connect(agi_path) as connection:
+            with connect_sqlite(agi_path) as connection:
                 index_names = {
                     row[0]
                     for row in connection.execute(

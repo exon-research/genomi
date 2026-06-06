@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +39,7 @@ class EvidenceDbCurrentContractTests(unittest.TestCase):
             db = Path(tmp) / "evidence.sqlite"
             init_evidence_db(db)
 
-            writer = sqlite3.connect(db, timeout=1)
+            writer = connect_sqlite(db, timeout_seconds=1)
             try:
                 writer.execute("pragma journal_mode = wal")
                 writer.execute("begin immediate")
@@ -59,7 +58,7 @@ class EvidenceDbCurrentContractTests(unittest.TestCase):
 
 
 def _write_noncurrent_private_tables(db: Path) -> None:
-    with sqlite3.connect(db) as connection:
+    with connect_sqlite(db) as connection:
         connection.executescript(
             """
             create table sample_qc (
