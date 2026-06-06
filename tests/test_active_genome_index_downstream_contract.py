@@ -13,6 +13,7 @@ from genomi.active_genome_index.active_genome_index import active_genome_index_r
 from genomi.active_genome_index.source_intake.arrays import SUPPORTED_CONSUMER_ARRAY_FORMATS
 from genomi.evidence import build_clinvar_rsid_index, import_clinvar_vcf
 from genomi.operations import call_operation
+from genomi.operations.registry import handlers_screen_journal
 
 from _active_genome_index_contract_fixtures import (
     EXPECTED_CLINVAR_MATCHED_ALLELES,
@@ -20,6 +21,7 @@ from _active_genome_index_contract_fixtures import (
     LOCUS_MODEL,
     ActiveGenomeIndexContractFixtureMixin,
 )
+from _capability_matrix_contract import SOURCE_FORMAT_MATRIX_OPERATIONS
 from _genomi_runtime_helpers import GenomiRuntimeTestCase
 
 
@@ -32,28 +34,6 @@ def _extract_dashboard_evidence(html: str) -> dict[str, object]:
     parsed, _end = json.JSONDecoder().raw_decode(html[json_start:].replace("<\\/", "</"))
     assert isinstance(parsed, dict), "__GENOMI_DASHBOARD__ is not an object"
     return parsed
-
-
-def _nested_dict(value: object, *path: str) -> dict[str, object]:
-    current = value
-    for key in path:
-        if not isinstance(current, dict):
-            return {}
-        current = current.get(key)
-    return current if isinstance(current, dict) else {}
-
-
-def _expected_dashboard_genome_build(overview: object) -> str | None:
-    if isinstance(overview, dict) and overview.get("genome_build") not in (None, "", []):
-        return str(overview["genome_build"])
-    active = _nested_dict(overview, "active_genome_index")
-    metadata = _nested_dict(active, "metadata")
-    header = _nested_dict(metadata, "header")
-    return (
-        str(metadata["genome_build"])
-        if metadata.get("genome_build") not in (None, "", [])
-        else str(header["reference"]) if header.get("reference") not in (None, "", []) else None
-    )
 
 
 @dataclass(frozen=True)
@@ -196,12 +176,14 @@ class ActiveGenomeIndexDownstreamContractTests(
                 for contract in self._source_contract_cases():
                     with self.subTest(source=contract.case_id):
                         source = contract.writer(Path(contract.case_id))
-                        self._assert_source_contract(
-                            source,
-                            contract=contract,
-                            imported_score=imported_score,
-                            clinvar_db=clinvar_db,
-                        )
+                        with self._tracked_operation_calls() as seen_operations:
+                            self._assert_source_contract(
+                                source,
+                                contract=contract,
+                                imported_score=imported_score,
+                                clinvar_db=clinvar_db,
+                            )
+                        self._assert_source_matrix_operations_seen(contract, seen_operations)
 
                 self._assert_sequencing_source_contracts(
                     imported_score=imported_score,
@@ -308,8 +290,8 @@ class ActiveGenomeIndexDownstreamContractTests(
         matches_path = self._assert_clinvar_contract(contract, clinvar_db)
         self._assert_clinvar_scan_contract(matches_path, contract, clinvar_db)
         self._assert_genotype_support_contracts(contract)
-        pgx_result = self._assert_pgx_contract(contract, clinvar_db)
-        self._assert_decode_dashboard_contract(contract, pgx_result, matches_path)
+        self._assert_pgx_contract(contract, clinvar_db)
+        self._assert_decode_dashboard_contract(contract, clinvar_db)
 
     def _assert_sequencing_source_contracts(
         self,
@@ -402,12 +384,36 @@ class ActiveGenomeIndexDownstreamContractTests(
                                 side_effect=self._fake_align_fastq_to_bam,
                             )
                         )
+                    seen_operations = stack.enter_context(self._tracked_operation_calls())
                     self._assert_source_contract(
                         source,
                         contract=contract,
                         imported_score=imported_score,
                         clinvar_db=clinvar_db,
                     )
+                    self._assert_source_matrix_operations_seen(contract, seen_operations)
+
+    def _assert_source_matrix_operations_seen(self, contract: SourceContractCase, seen_operations: set[str]) -> None:
+        missing = SOURCE_FORMAT_MATRIX_OPERATIONS - seen_operations
+        self.assertFalse(
+            missing,
+            f"{contract.case_id} did not run source-format matrix operations: {sorted(missing)}",
+        )
+
+    @contextmanager
+    def _tracked_operation_calls(self):
+        seen_operations: set[str] = set()
+        original_call_operation = call_operation
+
+        def tracked_call_operation(operation: str, *args: object, **kwargs: object) -> dict[str, object]:
+            seen_operations.add(operation)
+            return original_call_operation(operation, *args, **kwargs)
+
+        with (
+            mock.patch(f"{__name__}.call_operation", side_effect=tracked_call_operation),
+            mock.patch("_active_genome_index_contract_fixtures.call_operation", side_effect=tracked_call_operation),
+        ):
+            yield seen_operations
 
     def _parse_contract_source(self, source: Path, *, contract: SourceContractCase) -> dict[str, object]:
         parse_params = {"source": str(source), "genome_build": "GRCh37", "force": True}
@@ -532,6 +538,21 @@ class ActiveGenomeIndexDownstreamContractTests(
         self.assertEqual(ancestry_result["sample_qc"]["panel_marker_count"], len(LOCUS_MODEL))
         self.assertEqual(ancestry_result["sample_qc"]["usable_marker_count"], len(LOCUS_MODEL))
         self.assertEqual(ancestry_result["sample_qc"]["missing_marker_count"], 0)
+        estimated = call_operation(
+            "ancestry.estimate_population_context",
+            {"genome_build": "GRCh37", "nearest_reference_count": 3},
+        )
+        self.assertEqual(estimated["status"], "completed", estimated)
+        self.assertEqual(estimated["sample_qc"]["usable_marker_count"], len(LOCUS_MODEL))
+        self.assertTrue(estimated["nearest_reference_groups"])
+
+        projected = call_operation(
+            "ancestry.project_pca",
+            {"genome_build": "GRCh37", "nearest_reference_count": 3},
+        )
+        self.assertEqual(projected["status"], "completed", projected)
+        self.assertEqual(projected["sample_qc"]["usable_marker_count"], len(LOCUS_MODEL))
+        self.assertTrue(projected["nearest_reference_groups"])
 
     def _assert_clinvar_contract(self, contract: SourceContractCase, clinvar_db: Path) -> Path:
         matches_path = Path(f"{contract.case_id}.clinvar.matches.jsonl")
@@ -674,57 +695,62 @@ class ActiveGenomeIndexDownstreamContractTests(
     def _assert_decode_dashboard_contract(
         self,
         contract: SourceContractCase,
-        pgx_result: dict[str, object],
-        matches_path: Path,
+        clinvar_db: Path,
     ) -> None:
         with self.subTest(source=contract.case_id, contract="decode.render_dashboard"):
             call_operation(
                 "active_genome_index.approve_access",
                 {"approved_by_user": True, "reason": "contract dashboard render"},
             )
-            overview_build = call_operation("decode.build_dashboard_evidence", {"panels": ["overview"]})
-            self.assertEqual(overview_build["status"], "completed", overview_build)
-            overview = overview_build["render_params"]["evidence"]["overview"]
             out = Path(f"{contract.case_id}.dashboard.html")
-            result = call_operation(
-                "decode.render_dashboard",
-                {
-                    "evidence": {
-                        "overview": overview,
-                        "variants": [
-                            {
-                                "rsid": "rs900000002",
-                                "gene": "GENE2",
-                                "chrom": "1",
-                                "pos": 200,
-                                "ref": "T",
-                                "alt": "G",
-                                "zygosity": "heterozygous",
-                            }
-                        ],
-                        "pgx": [
-                            {
-                                "gene": "GENE2",
-                                "drug": "contractdrug",
-                                "drugs": ["contractdrug"],
-                                "rsid": "rs900000002",
-                                "sampleMatchCount": pgx_result["sample_evidence"]["sample_match_count"],
-                                "technicalSupport": pgx_result["answer_support"]["technical_sample_support"]["status"],
-                            }
-                        ],
+            real_panel_runner = handlers_screen_journal._run_decode_panel_operation
+
+            def run_contract_panel(name: str, params: dict[str, object] | None = None) -> dict[str, object]:
+                safe_params = dict(params or {})
+                if name == "clinvar.scan_candidates":
+                    safe_params.update(
+                        {
+                            "db": str(clinvar_db),
+                            "output": str(Path(f"{contract.case_id}.decode.clinvar.candidates.json")),
+                            "genome_build": "GRCh37",
+                            "force": True,
+                        }
+                    )
+                return real_panel_runner(name, safe_params)
+
+            with mock.patch.object(
+                handlers_screen_journal,
+                "_run_decode_panel_operation",
+                side_effect=run_contract_panel,
+            ):
+                result = call_operation(
+                    "decode.render_dashboard",
+                    {
+                        "panels": ["overview", "variants", "variants_all", "pgx", "risk", "ancestry", "nutrigenomics"],
+                        "risk_score_ids": ["PGSAGI001"],
+                        "nutrigenomics_domain_ids": ["folate_metabolism"],
+                        "output": str(out),
                     },
-                    "variants_all_source": str(matches_path),
-                    "mode": "full",
-                    "output": str(out),
-                },
-            )
+                )
             self.assertEqual(result["status"], "completed", result)
             self.assertTrue(out.is_file())
             self.assertIn("overview", result["panels_rendered"])
             self.assertIn("variants", result["panels_rendered"])
             self.assertIn("variants_all", result["panels_rendered"])
-            self.assertIn("pgx", result["panels_rendered"])
-            dashboard_overview = _extract_dashboard_evidence(out.read_text(encoding="utf-8"))["overview"]
+            self.assertIn("risk", result["panels_rendered"])
+            self.assertIn("ancestry", result["panels_rendered"])
+            self.assertIn("nutrigenomics", result["panels_rendered"])
+            self.assertIn("pgx", result["evidence_build"]["panels_blocked"])
+            self.assertIn("pgx", result["evidence_build"]["panels_empty"])
+            pgx_states = [
+                state
+                for state in result["evidence_build"]["panel_states"]
+                if state.get("panel") == "pgx"
+            ]
+            self.assertEqual(len(pgx_states), 1, result)
+            self.assertEqual(pgx_states[0]["status"], "requires_library_install")
+            dashboard = _extract_dashboard_evidence(out.read_text(encoding="utf-8"))
+            dashboard_overview = dashboard["overview"]
             expected_count = (
                 contract.expected_record_stats["pass_records"]
                 if contract.is_consumer_array
@@ -735,12 +761,14 @@ class ActiveGenomeIndexDownstreamContractTests(
                 dashboard_overview["variantCountLabel"],
                 "Markers Indexed" if contract.is_consumer_array else "Variants Indexed",
             )
-            expected_build = _expected_dashboard_genome_build(overview)
-            if expected_build is None:
-                self.assertNotIn("genomeBuild", dashboard_overview)
-            else:
-                self.assertEqual(dashboard_overview["genomeBuild"], expected_build)
+            self.assertEqual(dashboard_overview["genomeBuild"], "GRCh37")
             self.assertEqual(dashboard_overview["genomeSource"], contract.expected_format)
+            self.assertEqual(dashboard["variants"][0]["rsid"], "rs900000001")
+            self.assertEqual(dashboard["variants_all"][0]["rsid"], "rs900000001")
+            self.assertEqual(dashboard["risk"][0]["sources"], ["PGSAGI001"])
+            self.assertTrue(dashboard["ancestry"]["neighbors"])
+            self.assertEqual(dashboard["nutrigenomics"][0]["rsid"], "rs1801133")
+            self.assertEqual(dashboard["nutrigenomics"][0]["gene"], "MTHFR")
 
     @contextmanager
     def _mock_contract_pgx_sources(self):
