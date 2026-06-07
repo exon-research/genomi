@@ -58,6 +58,10 @@ def _genomi_remove_agi(params: JsonObject) -> JsonObject:
         )
     agi_id = _optional_str(params, "agi_id")
     agi_ids = _list_str(params, "agi_ids")
+    user_id = _optional_str(params, "user_id")
+    user_ids = _list_str(params, "user_ids")
+    nickname = _optional_str(params, "nickname")
+    nicknames = _list_str(params, "nicknames")
     source = _optional_path(params, "source")
     sources_value = params.get("sources")
     if sources_value is None:
@@ -66,18 +70,22 @@ def _genomi_remove_agi(params: JsonObject) -> JsonObject:
         sources = list(sources_value)
     else:
         raise OperationError("invalid_params", "sources must be a string array.")
-    if not agi_id and not agi_ids and source is None and not sources:
-        raise OperationError("invalid_params", "Provide agi_id, agi_ids, source, or sources.")
+    if not agi_id and not agi_ids and not user_id and not user_ids and not nickname and not nicknames and source is None and not sources:
+        raise OperationError("invalid_params", "Provide agi_id, agi_ids, user_id, user_ids, nickname, nicknames, source, or sources.")
     try:
         return runtime_context.remove_active_genome_index(
             agi_id=agi_id,
             agi_ids=agi_ids,
             source=source,
             sources=sources,
+            user_id=user_id,
+            user_ids=user_ids,
+            nickname=nickname,
+            nicknames=nicknames,
             remove_artifacts=_bool(params, "remove_artifacts", True),
         )
     except KeyError as exc:
-        raise OperationError("missing_context", f"Known Active Genome Index not found for removal target: {exc}") from exc
+        raise OperationError("missing_context", f"Known Active Genome Index or user not found for removal target: {exc}") from exc
 
 
 def _genomi_list_agis(_: JsonObject) -> JsonObject:

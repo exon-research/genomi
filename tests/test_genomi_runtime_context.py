@@ -336,6 +336,53 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             finally:
                 os.chdir(previous)
 
+    def test_remove_user_profile_keeps_linked_active_genome_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                vcf = Path("sample.vcf")
+                vcf.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNA12878\n",
+                    encoding="utf-8",
+                )
+                parsed = call_operation(
+                    "genomi.parse_source",
+                    {"source": str(vcf), "user_nickname": "Alex", "set_default_user": True},
+                )
+                agi_id = parsed["active_genome_index"]["agi_id"]
+                project_dir = self.genomi_home / agi_id
+                self.assertTrue(project_dir.exists())
+
+                removed = call_operation(
+                    "active_genome_index.remove",
+                    {"nickname": "Alex", "confirmed_by_user": True},
+                )
+
+                self.assertEqual(removed["removed_count"], 1)
+                self.assertEqual(removed["removed_agi_count"], 0)
+                self.assertEqual(removed["removed_user_count"], 1)
+                self.assertEqual(removed["removed"], [])
+                removed_user = removed["removed_users"][0]
+                self.assertEqual(removed_user["nickname"], "Alex")
+                self.assertEqual(removed_user["agi_ids"], [agi_id])
+                self.assertTrue(removed_user["cleared_default"])
+                self.assertTrue(removed_user["removed_from_session"])
+                self.assertTrue(project_dir.exists())
+
+                listed = call_operation("active_genome_index.list")
+                self.assertEqual(listed["users"], [])
+                inventory_agi = next(agi for agi in listed["active_genome_indexes"] if agi["agi_id"] == agi_id)
+                self.assertEqual(inventory_agi["users"], [])
+                current = call_operation("genomi.describe_context")
+                self.assertEqual(current["active_agi_id"], agi_id)
+                self.assertIsNone(current["active_user_id"])
+                self.assertEqual(current["active_genome_index_registry"]["known_agi_count"], 1)
+                self.assertEqual(current["active_genome_index_registry"]["known_user_count"], 0)
+            finally:
+                os.chdir(previous)
+
     def test_remove_active_genome_index_requires_explicit_confirmation(self) -> None:
         with self.assertRaises(OperationError) as raised:
             call_operation("active_genome_index.remove", {"agi_id": "missing"})

@@ -368,7 +368,7 @@
     "active_genome_index.remove": {
       "capability": "active-genome-index",
       "namespace": "active_genome_index",
-      "description": "Remove confirmed Active Genome Index records and Genomi-owned local artifacts.",
+      "description": "Remove confirmed Active Genome Index records, user profiles, and Genomi-owned local artifacts.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -379,6 +379,24 @@
             "type": "string"
           },
           "agi_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "nicknames": {
             "type": "array",
             "items": {
               "type": "string"
@@ -405,14 +423,19 @@
       "skill": "skills/active-genome-index/SKILL.md",
       "area": "context",
       "requires": [
-        "confirmed_active_genome_index_targets"
+        "confirmed_active_genome_index_or_user_targets"
       ],
       "produces": [
-        "active_genome_index_removal"
+        "active_genome_index_removal",
+        "user_profile_removal"
       ],
       "context_optional": [
         "agi_id",
         "agi_ids",
+        "user_id",
+        "user_ids",
+        "nickname",
+        "nicknames",
         "source",
         "sources"
       ],

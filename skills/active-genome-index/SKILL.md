@@ -133,13 +133,17 @@ List users and Active Genome Index records.
 
 ### active_genome_index.remove
 
-Remove confirmed Active Genome Index records and Genomi-owned artifacts.
+Remove confirmed Active Genome Index records, user/profile records, and
+Genomi-owned AGI artifacts.
 
-**Use when**: The user has confirmed the exact AGI record(s) to remove.
+**Use when**: The user has confirmed the exact AGI and/or user/profile record(s)
+to remove.
 
-**Not for**: User/profile management. Use the user tools for user/profile metadata.
-
-**Result semantics**: Removes the targeted AGI registry/session record, session access grant, user/profile AGI links, and Genomi-owned run artifacts. The original intake source and shared evidence database are not deleted.
+**Result semantics**: AGI targets remove the targeted AGI registry/session
+record, session access grant, user/profile AGI links, and Genomi-owned run
+artifacts. User targets remove user/profile metadata and default/session user
+selection; linked AGIs remain unless the same confirmed call also targets those
+AGIs. The original intake source and shared evidence database are not deleted.
 
 ### genomi.parse_source
 

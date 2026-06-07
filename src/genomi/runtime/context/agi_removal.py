@@ -5,9 +5,10 @@ from pathlib import Path
 
 from ..paths import genomi_data_root
 from .agi_inference import infer_agi_record
+from .agi_records import describe_user
 from .agi_registry import find_agi_by_intake_source
 from .agi_summary import describe_context
-from .normalize import AGI_ACCESS_KEY, JsonObject, _now
+from .normalize import AGI_ACCESS_KEY, JsonObject, _find_user, _now
 from .storage import load_context, load_registry, save_context, save_registry
 
 
@@ -17,6 +18,10 @@ def remove_active_genome_index(
     agi_ids: list[str] | None = None,
     source: str | Path | None = None,
     sources: list[str | Path] | None = None,
+    user_id: str | None = None,
+    user_ids: list[str] | None = None,
+    nickname: str | None = None,
+    nicknames: list[str] | None = None,
     remove_artifacts: bool = True,
     root: str | Path | None = None,
 ) -> JsonObject:
@@ -31,8 +36,15 @@ def remove_active_genome_index(
         sources=sources,
         root=root,
     )
-    if not targets:
-        raise KeyError("active_genome_index")
+    user_targets = _resolve_user_removal_targets(
+        registry,
+        user_id=user_id,
+        user_ids=user_ids,
+        nickname=nickname,
+        nicknames=nicknames,
+    )
+    if not targets and not user_targets:
+        raise KeyError("active_genome_index_or_user")
 
     cleanup_results: list[tuple[str, JsonObject, JsonObject]] = []
     for target_agi_id, run in targets:
@@ -46,9 +58,12 @@ def remove_active_genome_index(
     if failures:
         return {
             "status": "partial_failure",
-            "target_count": len(targets),
+            "target_count": len(targets) + len(user_targets),
             "removed_count": 0,
+            "removed_agi_count": 0,
+            "removed_user_count": 0,
             "removed": [],
+            "removed_users": [],
             "artifact_failures": failures,
             "context": describe_context(root),
         }
@@ -71,12 +86,17 @@ def remove_active_genome_index(
             }
         )
 
+    removed_users = _remove_users(registry, context, user_targets)
+
     save_registry(registry, root)
     save_context(context, root)
     return {
         "status": "completed",
-        "removed_count": len(removed),
+        "removed_count": len(removed) + len(removed_users),
+        "removed_agi_count": len(removed),
+        "removed_user_count": len(removed_users),
         "removed": removed,
+        "removed_users": removed_users,
         "artifacts_removed": remove_artifacts,
         "context": describe_context(root),
     }
@@ -117,6 +137,37 @@ def _resolve_removal_targets(
     return targets
 
 
+def _resolve_user_removal_targets(
+    registry: JsonObject,
+    *,
+    user_id: str | None,
+    user_ids: list[str] | None,
+    nickname: str | None,
+    nicknames: list[str] | None,
+) -> list[JsonObject]:
+    requested = [
+        str(item)
+        for item in (
+            ([user_id] if user_id else [])
+            + list(user_ids or [])
+            + ([nickname] if nickname else [])
+            + list(nicknames or [])
+        )
+        if str(item or "").strip()
+    ]
+    targets: list[JsonObject] = []
+    seen: set[str] = set()
+    for target in requested:
+        user = _find_user(registry, target)
+        if not isinstance(user, dict):
+            raise KeyError(target)
+        resolved_id = str(user.get("user_id") or "")
+        if resolved_id and resolved_id not in seen:
+            seen.add(resolved_id)
+            targets.append(dict(user))
+    return targets
+
+
 def _resolve_removal_target(
     registry: JsonObject,
     context: JsonObject,
@@ -151,6 +202,36 @@ def _remove_agi_from_users(registry: JsonObject, agi_id: str) -> None:
         if str(user.get("active_agi_id") or "") == agi_id:
             user["active_agi_id"] = user["agi_ids"][0] if user["agi_ids"] else None
         user["updated_at"] = _now()
+
+
+def _remove_users(registry: JsonObject, context: JsonObject, users: list[JsonObject]) -> list[JsonObject]:
+    removed: list[JsonObject] = []
+    for target in users:
+        target_user_id = str(target.get("user_id") or "")
+        if not target_user_id:
+            continue
+        described = describe_user(target, registry=registry, include_genomes=False) or {}
+        removed_from_registry = bool(registry.get("users", {}).pop(target_user_id, None))
+        cleared_default = False
+        if str(registry.get("default_user_id") or "") == target_user_id:
+            registry["default_user_id"] = None
+            cleared_default = True
+        removed_from_session = False
+        if str(context.get("active_user_id") or "") == target_user_id:
+            context["active_user_id"] = None
+            removed_from_session = True
+        removed.append(
+            {
+                "user_id": target_user_id,
+                "nickname": described.get("nickname") or target.get("nickname"),
+                "active_agi_id": described.get("active_agi_id"),
+                "agi_ids": list(described.get("agi_ids") or []),
+                "removed_from_registry": removed_from_registry,
+                "removed_from_session": removed_from_session,
+                "cleared_default": cleared_default,
+            }
+        )
+    return removed
 
 
 def _planned_agi_artifacts(run: JsonObject, *, root: str | Path | None) -> JsonObject:
