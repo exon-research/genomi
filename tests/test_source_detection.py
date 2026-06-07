@@ -187,6 +187,20 @@ class ArchiveContentTests(unittest.TestCase):
             self.assertEqual(detection.member_name, "sample.genome")
             self.assertEqual(detection.reference_build, "GRCh38")
 
+    def test_genome_tar_gz_root_bundle_is_detected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.genome.tar.gz"
+            with tarfile.open(path, "w:gz") as archive:
+                _add_genome_bundle_member(archive, "./manifest.json", b'{"schema_version":"1.0.0","genome_build":"GRCh38"}')
+                _add_genome_bundle_member(archive, "./schema.json", b'{"version":"1.0.0"}')
+                _add_genome_bundle_member(archive, "./variants.parquet/chrom=chr1/data_0.parquet", b"parquet")
+
+            detection = detect_source(path)
+
+            self.assertEqual(detection.source_format, "genome")
+            self.assertIsNone(detection.member_name)
+            self.assertEqual(detection.reference_build, "GRCh38")
+
     def test_direct_genome_bundle_directory_is_detected_for_any_basename(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "arbitrary-export-name.genome"

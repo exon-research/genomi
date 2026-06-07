@@ -134,22 +134,32 @@ def _detect_genome_bundle(source_path: Path) -> SourceDetection | None:
     members = archive_member_names(source_path)
     if not members:
         return None
+    normalized_members = {_normalized_archive_member_name(name): name for name in members}
+    root_manifest = normalized_members.get("manifest.json")
+    if (
+        root_manifest is not None
+        and "schema.json" in normalized_members
+        and any(name.startswith("variants.parquet/") and name.endswith(".parquet") for name in normalized_members)
+    ):
+        manifest_text = _read_archive_text(source_path, root_manifest)
+        return SourceDetection(
+            source_format="genome",
+            source_kind="genome_bundle",
+            reference_build=_genome_bundle_build_from_text(manifest_text),
+            provider="genome.computer",
+        )
     prefixes = {
         name[: -len("/manifest.json")]
-        for name in members
+        for name in normalized_members
         if name.endswith("/manifest.json") and name.rsplit("/", 1)[-2].endswith(".genome")
     }
     for prefix in sorted(prefixes):
-        if f"{prefix}/schema.json" not in members:
+        if f"{prefix}/schema.json" not in normalized_members:
             continue
-        if not any(name.startswith(f"{prefix}/variants.parquet/") and name.endswith(".parquet") for name in members):
+        if not any(name.startswith(f"{prefix}/variants.parquet/") and name.endswith(".parquet") for name in normalized_members):
             continue
-        manifest_text = ""
-        try:
-            with open_genomic_binary(source_path, member_name=f"{prefix}/manifest.json") as handle:
-                manifest_text = handle.read(_PROBE_BYTES).decode("utf-8", "replace")
-        except OSError:
-            manifest_text = ""
+        manifest_member = normalized_members.get(f"{prefix}/manifest.json", f"{prefix}/manifest.json")
+        manifest_text = _read_archive_text(source_path, manifest_member)
         return SourceDetection(
             source_format="genome",
             source_kind="genome_bundle",
@@ -158,6 +168,18 @@ def _detect_genome_bundle(source_path: Path) -> SourceDetection | None:
             provider="genome.computer",
         )
     return None
+
+
+def _normalized_archive_member_name(name: str) -> str:
+    return name.replace("\\", "/").lstrip("./")
+
+
+def _read_archive_text(source_path: Path, member_name: str) -> str:
+    try:
+        with open_genomic_binary(source_path, member_name=member_name) as handle:
+            return handle.read(_PROBE_BYTES).decode("utf-8", "replace")
+    except OSError:
+        return ""
 
 
 def _genome_bundle_build_from_text(text: str) -> str | None:

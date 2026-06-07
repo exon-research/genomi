@@ -555,13 +555,22 @@ class ActiveGenomeIndexContractFixtureMixin:
         shutil.rmtree(bundle_dir)
         return path
 
+    def _write_genome_root_tar_source(self, stem: Path) -> Path:
+        path = stem.with_name("sample-root.genome.tar.gz")
+        bundle_dir = self._write_genome_bundle_dir(stem.with_name("sample-root.genome"))
+        with tarfile.open(path, "w:gz") as archive:
+            for child in bundle_dir.iterdir():
+                archive.add(child, arcname=child.name)
+        shutil.rmtree(bundle_dir)
+        return path
+
     def _write_genome_bundle_source(self, stem: Path) -> Path:
         return self._write_genome_bundle_dir(stem.with_name("contract.genome"))
 
     def _write_genome_bundle_dir(self, path: Path) -> Path:
         if path.exists():
             shutil.rmtree(path)
-        variants_dir = path / "variants.parquet" / "chrom=1"
+        variants_dir = path / "variants.parquet" / "chrom=chr1"
         variants_dir.mkdir(parents=True)
         manifest = {
             "schema_version": "1.0.0",
@@ -608,7 +617,7 @@ class ActiveGenomeIndexContractFixtureMixin:
                     )
                     """,
                     [
-                        f"{locus['chrom']}:{locus['pos']}:{locus['ref']}:{locus['alt']}",
+                        f"chr{locus['chrom']}:{locus['pos']}:{locus['ref']}:{locus['alt']}",
                         int(locus["pos"]),
                         str(locus["ref"]),
                         str(locus["alt"]),

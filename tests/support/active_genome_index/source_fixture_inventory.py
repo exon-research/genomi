@@ -31,6 +31,7 @@ SOURCE_FIXTURE_INVENTORY = (
     SourceFixtureSpec("23andme_tar", "23andme", "_write_23andme_tar_source"),
     SourceFixtureSpec("genome", "genome", "_write_genome_bundle_source"),
     SourceFixtureSpec("genome_tar_gz", "genome", "_write_genome_tar_source"),
+    SourceFixtureSpec("genome_root_tar_gz", "genome", "_write_genome_root_tar_source"),
     SourceFixtureSpec("ancestrydna_txt", "ancestrydna", "_write_ancestry_text_source"),
     SourceFixtureSpec("ancestrydna_gz", "ancestrydna", "_write_ancestry_gzip_source"),
     SourceFixtureSpec("ancestrydna_bz2", "ancestrydna", "_write_ancestry_bzip2_source"),

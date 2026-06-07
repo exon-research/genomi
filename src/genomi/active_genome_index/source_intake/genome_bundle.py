@@ -189,9 +189,15 @@ def _populate_genome_bundle_records(
     variants_dir = bundle_dir / "variants.parquet"
     if not variants_dir.exists():
         raise ValueError(f".genome bundle is missing variants.parquet: {bundle_dir}")
-    parquet_glob = str(variants_dir / "**" / "*.parquet")
+    parquet_files = sorted(
+        str(path)
+        for path in variants_dir.rglob("*.parquet")
+        if not path.name.startswith(".") and not any(part.startswith("__MACOSX") for part in path.parts)
+    )
+    if not parquet_files:
+        raise ValueError(f".genome bundle has no readable variants parquet files: {variants_dir}")
     limit_clause = "" if max_records is None else " limit ?"
-    params: list[Any] = [parquet_glob]
+    params: list[Any] = [parquet_files]
     if max_records is not None:
         params.append(max_records)
     query = f"""
@@ -345,6 +351,8 @@ def _materialize_genome_bundle(source_path: Path, *, detection: SourceDetection,
     bundle_dir = target_root / str(detection.member_name or "")
     if not bundle_dir.is_dir():
         bundle_dir = _single_bundle_dir(target_root) or bundle_dir
+    if not bundle_dir.is_dir() and _is_bundle_dir(target_root):
+        bundle_dir = target_root
     if not bundle_dir.is_dir():
         raise ValueError(f"extracted .genome bundle directory was not found in {source_path}")
     return bundle_dir
@@ -355,10 +363,17 @@ def _single_bundle_dir(root: Path) -> Path | None:
     return bundles[0] if len(bundles) == 1 else None
 
 
+def _is_bundle_dir(path: Path) -> bool:
+    return (path / "manifest.json").is_file() and (path / "schema.json").is_file() and (path / "variants.parquet").is_dir()
+
+
 def _safe_extract_tar(archive: tarfile.TarFile, target_root: Path) -> None:
+    resolved_root = target_root.resolve()
     for member in archive.getmembers():
+        if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+            raise ValueError(f"unsafe tar member type in .genome bundle: {member.name}")
         target = (target_root / member.name).resolve()
-        if not str(target).startswith(str(target_root.resolve()) + "/"):
+        if target != resolved_root and not str(target).startswith(str(resolved_root) + "/"):
             raise ValueError(f"unsafe tar member path in .genome bundle: {member.name}")
     archive.extractall(target_root)
 

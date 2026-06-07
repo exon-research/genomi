@@ -43,11 +43,13 @@ def query_variant(
     pass_only: bool = False,
 ) -> list[dict[str, Any]]:
     agi_path = Path(agi_path)
+    chrom_values = _chrom_query_values(chrom)
+    chrom_placeholders = ", ".join("?" for _ in chrom_values)
     sql = """
         select offset, sample_index from records
-        where chrom = ? and pos = ? and ref = ? and alt = ? and is_variant = 1
-    """
-    params: list[Any] = [chrom, pos, ref, alt]
+        where chrom in ({chrom_placeholders}) and pos = ? and ref = ? and alt = ? and is_variant = 1
+    """.format(chrom_placeholders=chrom_placeholders)
+    params: list[Any] = [*chrom_values, pos, ref, alt]
     if pass_only:
         sql += f" and {passing_filter_sql()}"
     sql += " order by chrom_sort, pos limit ?"
@@ -66,20 +68,22 @@ def query_region(
 ) -> list[dict[str, Any]]:
     agi_path = Path(agi_path)
     ensure_active_genome_index_complete(agi_path)
+    chrom_values = _chrom_query_values(chrom)
     if start == end:
         return _query_point_region(
             agi_path,
-            chrom,
+            chrom_values,
             start,
             variants_only=variants_only,
             pass_only=pass_only,
             limit=limit,
         )
+    chrom_placeholders = ", ".join("?" for _ in chrom_values)
     sql = """
         select offset, sample_index from records
-        where chrom = ? and pos <= ? and end >= ?
-    """
-    params: list[Any] = [chrom, end, start]
+        where chrom in ({chrom_placeholders}) and pos <= ? and end >= ?
+    """.format(chrom_placeholders=chrom_placeholders)
+    params: list[Any] = [*chrom_values, end, start]
     if variants_only:
         sql += " and is_variant = 1"
     if pass_only:
@@ -139,7 +143,7 @@ def _query_offsets(
 
 def _query_point_region(
     agi_path: Path,
-    chrom: str,
+    chrom_values: list[str],
     pos: int,
     *,
     variants_only: bool,
@@ -149,12 +153,13 @@ def _query_point_region(
     if limit <= 0:
         return []
 
+    chrom_placeholders = ", ".join("?" for _ in chrom_values)
     exact_sql = """
         select offset, sample_index, chrom_sort, pos, end
         from records
-        where chrom = ? and pos = ?
-    """
-    exact_params: list[Any] = [chrom, pos]
+        where chrom in ({chrom_placeholders}) and pos = ?
+    """.format(chrom_placeholders=chrom_placeholders)
+    exact_params: list[Any] = [*chrom_values, pos]
     if variants_only:
         exact_sql += " and is_variant = 1"
     if pass_only:
@@ -170,7 +175,7 @@ def _query_point_region(
             offset_rows.extend(
                 _point_spanning_offset_rows(
                     connection,
-                    chrom,
+                    chrom_values,
                     pos,
                     variants_only=variants_only,
                     pass_only=pass_only,
@@ -187,7 +192,7 @@ def _query_point_region(
 
 def _point_spanning_offset_rows(
     connection: sqlite3.Connection,
-    chrom: str,
+    chrom_values: list[str],
     pos: int,
     *,
     variants_only: bool,
@@ -196,7 +201,7 @@ def _point_spanning_offset_rows(
 ) -> list[tuple[int, int, int, int, int]]:
     rows = _point_spanning_offset_rows_from_spans(
         connection,
-        chrom,
+        chrom_values,
         pos,
         variants_only=variants_only,
         pass_only=pass_only,
@@ -206,7 +211,7 @@ def _point_spanning_offset_rows(
         return rows
     return _point_spanning_offset_rows_from_records(
         connection,
-        chrom,
+        chrom_values,
         pos,
         variants_only=variants_only,
         pass_only=pass_only,
@@ -215,20 +220,21 @@ def _point_spanning_offset_rows(
 
 def _point_spanning_offset_rows_from_spans(
     connection: sqlite3.Connection,
-    chrom: str,
+    chrom_values: list[str],
     pos: int,
     *,
     variants_only: bool,
     pass_only: bool,
     limit: int,
 ) -> list[tuple[int, int, int, int, int]] | None:
+    chrom_placeholders = ", ".join("?" for _ in chrom_values)
     sql = """
         select r.offset, r.sample_index, r.chrom_sort, r.pos, r.end
         from spans s
         join records r on r.offset = s.offset and r.sample_index = s.sample_index
-        where s.chrom = ? and s.pos < ? and s.end >= ?
-    """
-    params: list[Any] = [chrom, pos, pos]
+        where s.chrom in ({chrom_placeholders}) and s.pos < ? and s.end >= ?
+    """.format(chrom_placeholders=chrom_placeholders)
+    params: list[Any] = [*chrom_values, pos, pos]
     if variants_only:
         sql += " and r.is_variant = 1"
     if pass_only:
@@ -244,19 +250,20 @@ def _point_spanning_offset_rows_from_spans(
 
 def _point_spanning_offset_rows_from_records(
     connection: sqlite3.Connection,
-    chrom: str,
+    chrom_values: list[str],
     pos: int,
     *,
     variants_only: bool,
     pass_only: bool,
     limit: int,
 ) -> list[tuple[int, int, int, int, int]]:
+    chrom_placeholders = ", ".join("?" for _ in chrom_values)
     covering_sql = """
         select offset, sample_index, chrom_sort, pos, end
         from records
-        where chrom = ? and pos < ?
-    """
-    covering_params: list[Any] = [chrom, pos]
+        where chrom in ({chrom_placeholders}) and pos < ?
+    """.format(chrom_placeholders=chrom_placeholders)
+    covering_params: list[Any] = [*chrom_values, pos]
     if variants_only:
         covering_sql += " and is_variant = 1"
     if pass_only:
@@ -292,6 +299,20 @@ def _execute_offset_query(
         if "sample_index" not in str(exc):
             raise
         return list(connection.execute(sql.replace(", sample_index", ""), tuple(params)))
+
+
+def _chrom_query_values(chrom: str) -> list[str]:
+    value = str(chrom)
+    aliases = [value]
+    if value.startswith("chr"):
+        bare = value[3:]
+        aliases.append("MT" if bare == "M" else bare)
+    else:
+        aliases.append("chrM" if value == "MT" else f"chr{value}")
+    if value == "M":
+        aliases.extend(["MT", "chrM"])
+    return list(dict.fromkeys(aliases))
+
 
 def _dedupe_offset_rows(offset_rows: list[tuple[int, int, int, int, int]]) -> list[tuple[int, int, int, int, int]]:
     seen: set[tuple[int, int]] = set()
