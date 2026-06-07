@@ -638,6 +638,7 @@ def _prepare_pharmcat_input(
             variants_only=False,
             primary_contigs_only=True,
             chrom_style="chr",
+            sanitize_metadata=True,
         )
     except (OSError, ValueError, sqlite_error_cls()) as exc:
         return {

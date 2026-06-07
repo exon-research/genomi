@@ -35,6 +35,7 @@ def export_variants(
     max_records: int | None = None,
     progress_every: int | None = None,
     progress: Callable[[int], None] | None = None,
+    sanitize_metadata: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
     agi_path = Path(agi_path)
@@ -83,6 +84,7 @@ def export_variants(
         "contigs": selected_contigs,
         "chrom_style": chrom_style,
         "max_records": max_records,
+        "sanitize_metadata": sanitize_metadata,
     }
     manifest_path = f"{output_path}.genomi-manifest.json"
     cache_expected = {
@@ -121,6 +123,7 @@ def export_variants(
             pass_only=pass_only,
             selected_contigs=selected_contigs,
             chrom_style=chrom_style,
+            sanitize_metadata=sanitize_metadata,
             progress_every=progress_every,
             progress=progress,
         )
@@ -185,6 +188,7 @@ def _write_variant_vcf(
     pass_only: bool,
     selected_contigs: list[str] | None,
     chrom_style: str,
+    sanitize_metadata: bool,
     progress_every: int | None,
     progress: Callable[[int], None] | None,
 ) -> int:
@@ -198,7 +202,14 @@ def _write_variant_vcf(
     # then FORMAT at index 8 and one column per declared sample from index 9 on.
     sample_count = max(0, len(header.columns) - 9)
     with output_path.open("w", encoding="utf-8") as output:
-        _write_header(header, output, pass_only=pass_only, selected_contigs=selected_contigs, chrom_style=chrom_style)
+        _write_header(
+            header,
+            output,
+            pass_only=pass_only,
+            selected_contigs=selected_contigs,
+            chrom_style=chrom_style,
+            sanitize_metadata=sanitize_metadata,
+        )
         current_offset: object = object()
         group: list[sqlite3.Row] = []
 
@@ -266,12 +277,15 @@ def _write_header(
     pass_only: bool,
     selected_contigs: list[str] | None,
     chrom_style: str,
+    sanitize_metadata: bool = False,
 ) -> None:
     # Emit the header reconstructed from the structured index
     # (source_header_lines), never the canonical/source.
     header_lines = [*list(header.meta), "\t".join(header.columns)]
     emitted_contigs: set[str] = set()
     for line in header_lines:
+        if sanitize_metadata and line.startswith("##"):
+            line = _sanitize_metadata_line(line)
         if line.startswith("##contig=<ID="):
             line = _transform_contig_header_line(line, chrom_style)
             contig = _contig_id_from_header_line(line)
@@ -285,6 +299,20 @@ def _write_header(
             output.write(f"##genomiExportContigs={json.dumps(selected_contigs)}\n")
             output.write(f"##genomiExportChromStyle={json.dumps(chrom_style)}\n")
         output.write(line + "\n")
+
+
+def _sanitize_metadata_line(line: str) -> str:
+    # PharmCAT's bundled pgkb vcf-parser feeds each metadata value into
+    # String.replaceAll as the *replacement* string, where Java treats every
+    # backslash as an escape introducer. Any backslash in a ## line — including
+    # the VCF-spec-valid \" / \\ escapes that bcftools writes into FILTER/INFO
+    # Descriptions — therefore throws "character to be escaped is missing" and
+    # aborts the whole parse. Bare quotes parse cleanly, and a properly escaped
+    # \\ still crashes the parser, so dropping backslashes (not spec-unescaping)
+    # is the transform that makes the header readable by the strict parser.
+    if "\\" not in line:
+        return line
+    return line.replace("\\", "")
 
 
 def _transform_record_line(line: str, chrom_style: str) -> str:

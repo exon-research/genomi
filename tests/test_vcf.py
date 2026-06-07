@@ -876,6 +876,53 @@ class IndexTests(unittest.TestCase):
             self.assertTrue(records[0].startswith("1\t10250\trs199706086"))
             self.assertTrue(records[1].startswith("MT\t150\t."))
 
+    def test_export_variants_sanitize_metadata_strips_header_backslashes(self) -> None:
+        # bcftools writes VCF-spec-valid \" / \\ escapes into FILTER/INFO
+        # Descriptions. PharmCAT's strict metadata parser rejects any backslash,
+        # so the PharmCAT-bound export must drop them while leaving the bare
+        # value (and every record) intact.
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf_path = Path(tmp) / "escaped.vcf"
+            agi_path = Path(tmp) / "escaped.sqlite"
+            default_out = Path(tmp) / "default.vcf"
+            sanitized_out = Path(tmp) / "sanitized.vcf"
+            filter_line = (
+                '##FILTER=<ID=LowDP,Description="Set if true: '
+                '(CHROM=\\"X\\" && FORMAT/DP<6)">'
+            )
+            vcf_path.write_text(
+                "\n".join(
+                    [
+                        "##fileformat=VCFv4.2",
+                        "##contig=<ID=1,length=248956422>",
+                        filter_line,
+                        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+                        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1",
+                        "1\t10250\trs199706086\tA\tC\t123.38\tPASS\t.\tGT\t0/1",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            create_active_genome_index(vcf_path, agi_path)
+
+            # Default export stays spec-faithful: the backslash escapes survive.
+            export_variants(agi_path, default_out, pass_only=True)
+            self.assertIn('CHROM=\\"X\\"', default_out.read_text(encoding="utf-8"))
+
+            export_variants(
+                agi_path,
+                sanitized_out,
+                pass_only=True,
+                sanitize_metadata=True,
+            )
+            text = sanitized_out.read_text(encoding="utf-8")
+            self.assertNotIn("\\", text)
+            self.assertIn('CHROM="X"', text)
+            # The record itself is untouched by metadata sanitization.
+            records = [line for line in text.splitlines() if not line.startswith("#")]
+            self.assertEqual(records, ["1\t10250\trs199706086\tA\tC\t123.38\tPASS\t.\tGT\t0/1"])
+
     def test_export_variants_deduplicates_multi_sample_index_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             vcf_path = Path(tmp) / "multi.vcf"
