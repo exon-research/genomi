@@ -152,7 +152,7 @@ follows the source bootstrap in `INSTALL_FOR_AGENTS.md`.
 digitizes a genome source (VCF/gVCF, BAM, paired-end FASTQ, or a
 consumer-array raw genotype export from 23andMe, AncestryDNA, MyHeritage,
 FamilyTreeDNA, or Living DNA; bare text/CSV, gzip/bzip2/xz-compressed, or
-inside a zip/tar archive; or a `.genome` source archive such as
+inside a zip/tar archive; or a `.genome/1.0` bundle such as
 `sample.genome.tar.gz`) into a queryable Active Genome Index.
 
 - **Use when**: the user supplied a genome source in this chat and downstream

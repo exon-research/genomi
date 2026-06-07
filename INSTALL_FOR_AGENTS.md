@@ -469,7 +469,7 @@ uploaded off-machine**:
   VCF/gVCF).
 - **BAM** of aligned reads, either as a file or as a zip/tar archive member
   (Genomi derives a local VCF).
-- **`.genome` source archive**, including `sample.genome.tar.gz`.
+- **`.genome/1.0` bundle**, including `sample.genome.tar.gz`.
 - **Direct-to-consumer raw DNA exports**, used as-is from the provider account:
   - 23andMe — raw genotype `.txt`, compressed file, or zip/tar archive
   - AncestryDNA — raw genotype `.txt`, compressed file, or zip/tar archive
