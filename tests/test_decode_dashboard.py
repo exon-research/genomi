@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from genomi.capabilities.decode import dashboard as decode_dashboard
 
@@ -88,6 +90,7 @@ class RenderDashboardTests(unittest.TestCase):
             self.assertIn(label, html)
         # Serve hint surfaces a localhost URL + http.server command the agent can run
         serve = result["serve"]
+        self.assertEqual(serve["status"], "ready_to_start")
         self.assertEqual(serve["filename"], "dash.html")
         self.assertEqual(serve["directory"], str(out.parent.resolve()))
         self.assertIn("127.0.0.1", serve["url"])
@@ -95,6 +98,41 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertIn("python3 -m http.server", serve["command"])
         self.assertIn("--bind 127.0.0.1", serve["command"])
         self.assertIn(f"--directory {shlex.quote(str(out.parent.resolve()))}", serve["command"])
+
+    def test_render_serve_metadata_avoids_busy_default_port(self) -> None:
+        out = self.tmpdir / "dash.html"
+
+        def available(port: int) -> bool:
+            return port != 8765
+
+        with mock.patch.object(decode_dashboard.local_server, "_port_available", side_effect=available):
+            result = decode_dashboard.render_dashboard(
+                evidence={"overview": {"sampleId": "HG-PORT", "variantCount": 1}},
+                mode="full",
+                output=out,
+            )
+        self.assertNotEqual(result["serve"]["port"], 8765)
+        self.assertIn(f":{result['serve']['port']}/dash.html", result["serve"]["url"])
+
+    def test_render_can_autostart_local_dashboard_server(self) -> None:
+        out = self.tmpdir / "dash.html"
+        process = mock.Mock(pid=12345)
+        with (
+            mock.patch.dict(os.environ, {"GENOMI_DASHBOARD_AUTOSERVE": "1"}),
+            mock.patch.object(decode_dashboard.local_server.subprocess, "Popen", return_value=process) as popen,
+            mock.patch.object(decode_dashboard.local_server, "_verify_url", return_value=200),
+        ):
+            result = decode_dashboard.render_dashboard(
+                evidence={"overview": {"sampleId": "HG-SERVE", "variantCount": 1}},
+                mode="full",
+                output=out,
+                start_server=True,
+            )
+
+        self.assertEqual(result["serve"]["status"], "started")
+        self.assertEqual(result["serve"]["pid"], 12345)
+        self.assertEqual(result["serve"]["http_status"], 200)
+        popen.assert_called_once()
 
     def test_render_full_unavailable_panel_states(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -126,6 +164,37 @@ class RenderDashboardTests(unittest.TestCase):
             "variants", "variants_all", "pgx", "risk", "ancestry", "nutrigenomics",
         })
         self.assertEqual(result["panels_rendered"], ["overview"])
+
+    def test_render_running_panel_state(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={"overview": {"sampleId": "HG-RUNNING", "variantCount": 1}},
+            mode="full",
+            output=out,
+            panel_states=[
+                {
+                    "panel": "pgx",
+                    "status": "in_progress",
+                    "source_operation": "pharmacogenomics.run_pharmcat",
+                    "job_id": "pharmacogenomics-run-pharmcat-1",
+                    "check": {
+                        "operation": "genomi.check_background_job",
+                        "params": {"job_id": "pharmacogenomics-run-pharmcat-1"},
+                    },
+                }
+            ],
+            panels_requested=["overview", "pgx"],
+        )
+        html = out.read_text(encoding="utf-8")
+        parsed = _extract_evidence(html)
+        pgx_unavailable = next(item for item in parsed["__dashboard"]["unavailablePanels"] if item["panel"] == "pgx")
+        self.assertEqual(pgx_unavailable["state"], "running")
+        self.assertEqual(pgx_unavailable["job_id"], "pharmacogenomics-run-pharmcat-1")
+        self.assertEqual(
+            pgx_unavailable["check"],
+            {"operation": "genomi.check_background_job", "params": {"job_id": "pharmacogenomics-run-pharmcat-1"}},
+        )
+        self.assertIn("still running in background job", html)
 
     def test_render_update_merges_panels(self) -> None:
         out = self.tmpdir / "dash.html"

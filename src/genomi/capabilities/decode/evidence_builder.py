@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ...evidence import envelope as evidence_envelope
+from ...runtime import background_jobs
 from .dashboard import PANEL_KEYS
 from .panel_adapters import is_native_empty_panel, native_panel_rows
 
@@ -30,6 +31,8 @@ _BLOCKED_STATUSES = {
     "blocked_missing_library",
     "materialization_incomplete",
 }
+_RUNNING_STATUSES = {"in_progress"}
+_FAILED_STATUSES = {"failed"}
 
 
 def build_dashboard_evidence(
@@ -50,6 +53,9 @@ def build_dashboard_evidence(
     render_params: JsonObject = {"evidence": evidence}
     panel_states: list[JsonObject] = []
     consulted_operations: list[str] = []
+    pgx_job = _start_pgx_background_job(active_genome_index_context) if "pgx" in panels else None
+    if pgx_job is not None:
+        consulted_operations.append("pharmacogenomics.run_pharmcat")
 
     def run(operation: str, op_params: JsonObject | None = None) -> JsonObject:
         consulted_operations.append(operation)
@@ -81,8 +87,15 @@ def build_dashboard_evidence(
                 _store_panel(evidence, panel_states, "variants_all", "clinvar.scan_candidates", clinvar_result)
 
     if "pgx" in panels:
-        result = run("pharmacogenomics.run_pharmcat", {})
-        _store_panel(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", result)
+        if pgx_job is None:
+            result = run("pharmacogenomics.run_pharmcat", {})
+            _store_panel(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", result)
+        else:
+            result, job_state = _collect_background_panel_job(pgx_job)
+            if result is not None:
+                _store_panel(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", result)
+            else:
+                panel_states.append(_background_panel_state("pgx", "pharmacogenomics.run_pharmcat", job_state))
 
     if "risk" in panels:
         risk_results = _build_risk_panel(
@@ -120,12 +133,24 @@ def build_dashboard_evidence(
         for state in panel_states
         if str(state.get("status") or "") in _BLOCKED_STATUSES
     ]
+    panels_running = [
+        state["panel"]
+        for state in panel_states
+        if str(state.get("status") or "") in _RUNNING_STATUSES
+    ]
+    panels_failed = [
+        state["panel"]
+        for state in panel_states
+        if str(state.get("status") or "") in _FAILED_STATUSES
+    ]
     result = {
         "status": "completed",
         "panels_requested": list(panels),
         "panels_ready": panels_with_evidence,
         "panels_empty": panels_empty,
         "panels_blocked": panels_blocked,
+        "panels_running": panels_running,
+        "panels_failed": panels_failed,
         "panel_states": panel_states,
         "render_params": render_params,
     }
@@ -134,9 +159,72 @@ def build_dashboard_evidence(
         panels_ready=panels_with_evidence,
         panels_empty=panels_empty,
         panels_blocked=panels_blocked,
+        panels_running=panels_running,
+        panels_failed=panels_failed,
         consulted_operations=consulted_operations,
     )
     return result
+
+
+def _start_pgx_background_job(active: JsonObject | None) -> JsonObject | None:
+    params = _background_active_genome_index_params(active)
+    if params is None or not background_jobs.background_enabled():
+        return None
+    digest = background_jobs.operation_params_digest("pharmacogenomics.run_pharmcat", params)
+    completed = background_jobs.find_latest_job(
+        "pharmacogenomics.run_pharmcat",
+        digest,
+        statuses={"completed"},
+    )
+    if isinstance(completed, dict) and isinstance(completed.get("result"), dict):
+        return completed
+    try:
+        return background_jobs.start_operation_job("pharmacogenomics.run_pharmcat", params)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "operation": "pharmacogenomics.run_pharmcat",
+            "error": {"code": "background_job_start_failed", "message": str(exc)},
+        }
+
+
+def _background_active_genome_index_params(active: JsonObject | None) -> JsonObject | None:
+    if not isinstance(active, dict):
+        return None
+    agi_id = active.get("agi_id")
+    if agi_id not in (None, ""):
+        return {"agi_id": str(agi_id)}
+    agi_path = active.get("agi_path")
+    if agi_path not in (None, ""):
+        return {"agi_path": str(agi_path)}
+    return None
+
+
+def _collect_background_panel_job(job: JsonObject) -> tuple[JsonObject | None, JsonObject]:
+    job_id = str(job.get("job_id") or "")
+    current = background_jobs.wait_for_job(job_id, timeout_seconds=0.0) if job_id else job
+    public_state = background_jobs.public_job_status(current, timeout_seconds=0.0)
+    if current.get("status") == "completed" and isinstance(current.get("result"), dict):
+        return current["result"], public_state
+    return None, public_state
+
+
+def _background_panel_state(panel: str, operation: str, job_state: JsonObject) -> JsonObject:
+    state = _panel_state(panel, operation, str(job_state.get("status") or "in_progress"))
+    for key in (
+        "job_id",
+        "check",
+        "message",
+        "created_at",
+        "started_at",
+        "heartbeat_at",
+        "seconds_since_heartbeat",
+        "error",
+    ):
+        value = job_state.get(key)
+        if value not in (None, "", []):
+            state[key] = value
+    return state
 
 
 def _build_risk_panel(
@@ -300,6 +388,8 @@ def _evidence_envelope(
     panels_ready: list[str],
     panels_empty: list[str],
     panels_blocked: list[str],
+    panels_running: list[str],
+    panels_failed: list[str],
     consulted_operations: list[str],
 ) -> JsonObject:
     common = {
@@ -311,6 +401,8 @@ def _evidence_envelope(
             "panels_ready": panels_ready,
             "panels_empty": panels_empty,
             "panels_blocked": panels_blocked,
+            "panels_running": panels_running,
+            "panels_failed": panels_failed,
         },
     }
     if panels_ready:
@@ -318,10 +410,10 @@ def _evidence_envelope(
             **common,
             answer_readiness=evidence_envelope.SCOPED_ANSWER_ONLY,
         )
-    if panels_blocked:
+    if panels_blocked or panels_running or panels_failed:
         return evidence_envelope.not_assessed(
             **common,
-            reason="requested dashboard panels were blocked by missing setup or unavailable sources",
+            reason="requested dashboard panels were blocked, running, or failed before renderable evidence was available",
         )
     return evidence_envelope.empty_consulted_scope(**common)
 

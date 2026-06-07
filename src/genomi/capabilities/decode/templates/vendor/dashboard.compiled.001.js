@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 5416a8084928bbd197613d52f9f9ba867cc28cb6933cd72f4fc6972d5cf49f6b
+// source-sha256: c75e08e91af8f2288daaa19f73a885e1db6e16b9928da5c0ad98d4107ca20d7e
 // All evidence comes from the decode pipeline via window.__GENOMI_DASHBOARD__.
 // Anything below this line is presentation/layout only — no genome data is
 // prefilled in the template.
@@ -117,6 +117,8 @@ function unavailableLabel(state) {
     blocked_position_aware_export: 'Export required',
     missing_scores: 'Scores unavailable',
     insufficient_overlap: 'Insufficient overlap',
+    running: 'Running',
+    failed: 'Failed',
     blocked_setup: 'Setup required',
     source_unavailable: 'Source unavailable',
     out_of_scope: 'Out of scope',
@@ -133,6 +135,8 @@ function unavailableMessage(item) {
     blocked_position_aware_export: 'Pharmacogenomics was checked, but broad PharmCAT rendering requires a position-aware Active Genome Index export that preserves reference and no-call loci.',
     missing_scores: 'Risk scores were checked, but no imported PGS Catalog scores were available for this dashboard.',
     insufficient_overlap: 'Ancestry context was checked, but marker overlap was too low to render reference-neighbor context.',
+    running: item && item.job_id ? `This category is still running in background job ${item.job_id}. Refresh the dashboard after the job completes.` : 'This category is still running in the background. Refresh the dashboard after it completes.',
+    failed: item && item.error && item.error.message ? `This category failed before renderable evidence was available: ${item.error.message}` : 'This category failed before renderable evidence was available.',
     blocked_setup: 'This category needs required setup before it can render evidence.',
     source_unavailable: 'The source needed for this category was unavailable during the dashboard build.',
     out_of_scope: 'This genome input is outside the supported scope for this category.',
@@ -894,7 +898,3 @@ function VariantsView() {
         color: '#aaa',
         fontSize: 12
       }
-    }, v.conditionShort), /*#__PURE__*/React.createElement("td", {
-      style: {
-        color: '#555',
-        fontSize: 11

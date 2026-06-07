@@ -350,10 +350,15 @@ def _target_agi_record(params: JsonObject) -> JsonObject | None:
 
 
 def find_active_job(operation: str, params_digest: str) -> JsonObject | None:
+    return find_latest_job(operation, params_digest, statuses=ACTIVE_STATUSES)
+
+
+def find_latest_job(operation: str, params_digest: str, *, statuses: set[str] | frozenset[str] | None = None) -> JsonObject | None:
     root = jobs_dir()
     if not root.exists():
         return None
     candidates: list[JsonObject] = []
+    allowed_statuses = set(statuses) if statuses is not None else None
     for path in root.glob("*.json"):
         try:
             job = read_job(job_path=path)
@@ -361,8 +366,9 @@ def find_active_job(operation: str, params_digest: str) -> JsonObject | None:
             continue
         if job.get("operation") != operation or job.get("params_digest") != params_digest:
             continue
-        if job.get("status") in ACTIVE_STATUSES:
-            candidates.append(job)
+        if allowed_statuses is not None and job.get("status") not in allowed_statuses:
+            continue
+        candidates.append(job)
     if not candidates:
         return None
     return sorted(candidates, key=lambda item: str(item.get("created_at") or ""), reverse=True)[0]

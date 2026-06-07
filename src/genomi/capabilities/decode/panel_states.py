@@ -83,6 +83,19 @@ def normalize_dashboard_panel_states(panel_states: Any, panel_keys: tuple[str, .
             value = item.get(key)
             if value not in (None, "", []):
                 state[key] = str(value)
+        for key in ("job_id", "message", "created_at", "started_at", "heartbeat_at"):
+            value = item.get(key)
+            if value not in (None, "", []):
+                state[key] = str(value)
+        check = item.get("check")
+        if isinstance(check, dict):
+            state["check"] = check
+        error = item.get("error")
+        if isinstance(error, dict):
+            state["error"] = error
+        seconds_since_heartbeat = item.get("seconds_since_heartbeat")
+        if isinstance(seconds_since_heartbeat, (int, float)):
+            state["seconds_since_heartbeat"] = seconds_since_heartbeat
         row_count = item.get("row_count")
         if isinstance(row_count, int):
             state["row_count"] = row_count
@@ -158,11 +171,19 @@ def _unavailable_panels(
         item: JsonObject = {"panel": panel, "state": _unavailable_state(panel, source_status)}
         if source_status:
             item["source_status"] = source_status
+        for key in ("job_id", "message", "check", "heartbeat_at", "seconds_since_heartbeat", "error"):
+            value = state.get(key) if state else None
+            if value not in (None, "", []):
+                item[key] = value
         unavailable.append(item)
     return unavailable
 
 
 def _unavailable_state(panel: str, source_status: str) -> str:
+    if source_status == "in_progress":
+        return "running"
+    if source_status == "failed":
+        return "failed"
     if source_status == "position_aware_pharmcat_export_required":
         return "blocked_position_aware_export"
     if source_status == "requires_score_import":

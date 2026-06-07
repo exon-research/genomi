@@ -17,13 +17,13 @@ from __future__ import annotations
 import base64
 import json
 import re
-import shlex
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ...active_genome_index.array_genotypes import called_genotype_tokens
+from . import local_server
 from .panel_adapters import (
     PanelNormalizationError,
     is_native_empty_panel,
@@ -871,6 +871,7 @@ def render_dashboard(
     clear_panels: list[str] | None = None,
     panel_states: list[JsonObject] | None = None,
     panels_requested: list[str] | None = None,
+    start_server: bool = False,
 ) -> JsonObject:
     """Render or update the Genomi Dashboard artifact.
 
@@ -950,11 +951,10 @@ def render_dashboard(
     panels_empty = [key for key in PANEL_KEYS if key not in merged]
     resolved_path = out_path.resolve()
     serve_dir = resolved_path.parent
-    serve_port = 8765
-    serve_url = f"http://127.0.0.1:{serve_port}/{resolved_path.name}"
-    serve_command = (
-        f"python3 -m http.server {serve_port} --bind 127.0.0.1 "
-        f"--directory {shlex.quote(str(serve_dir))}"
+    serve = local_server.serve_dashboard_info(
+        directory=serve_dir,
+        filename=resolved_path.name,
+        start_server=start_server,
     )
     return {
         "status": "completed",
@@ -962,17 +962,5 @@ def render_dashboard(
         "dashboard_path": str(resolved_path),
         "panels_rendered": panels_rendered,
         "panels_empty": panels_empty,
-        "serve": {
-            "directory": str(serve_dir),
-            "filename": resolved_path.name,
-            "port": serve_port,
-            "url": serve_url,
-            "command": serve_command,
-            "note": (
-                "The host agent serves the dashboard locally. Run `command` in the "
-                "background (Claude Code: Bash with run_in_background=true; Codex: "
-                "append `&`), then tell the user the URL. If port 8765 is busy, "
-                "pick a free port and adjust the URL."
-            ),
-        },
+        "serve": serve,
     }

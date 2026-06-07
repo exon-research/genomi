@@ -1,5 +1,9 @@
 // AUTO-GENERATED chunk 2/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 5416a8084928bbd197613d52f9f9ba867cc28cb6933cd72f4fc6972d5cf49f6b
+// source-sha256: c75e08e91af8f2288daaa19f73a885e1db6e16b9928da5c0ad98d4107ca20d7e
+    }, v.conditionShort), /*#__PURE__*/React.createElement("td", {
+      style: {
+        color: '#555',
+        fontSize: 11
       }
     }, v.evidenceQuality || ''));
   }))), plpFiltered.length === 0 && /*#__PURE__*/React.createElement("div", {

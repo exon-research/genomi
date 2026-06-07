@@ -37,6 +37,16 @@ from tests.support.matrix.source_external_operations import assert_external_sour
 from tests.support.matrix.source_runtime_operations import assert_stateful_runtime_operations
 from tests.support.matrix.source_support_operations import assert_source_support_operations
 
+DECODE_DASHBOARD_MATRIX_PANELS = [
+    "overview",
+    "variants",
+    "variants_all",
+    "pgx",
+    "risk",
+    "ancestry",
+    "nutrigenomics",
+]
+
 
 def _extract_dashboard_evidence(html: str) -> dict[str, object]:
     marker = "window.__GENOMI_DASHBOARD__"
@@ -722,7 +732,7 @@ class ActiveGenomeIndexDownstreamContractTests(
                 result = call_operation(
                     "decode.render_dashboard",
                     {
-                        "panels": ["overview", "variants", "variants_all", "pgx", "risk", "ancestry", "nutrigenomics"],
+                        "panels": DECODE_DASHBOARD_MATRIX_PANELS,
                         "risk_score_ids": ["PGSAGI001"],
                         "nutrigenomics_domain_ids": ["folate_metabolism"],
                         "output": str(out),
@@ -746,6 +756,7 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertEqual(len(pgx_states), 1, result)
             self.assertEqual(pgx_states[0]["status"], "requires_library_install")
             dashboard = _extract_dashboard_evidence(out.read_text(encoding="utf-8"))
+            self._assert_decode_dashboard_metadata_contract(result, dashboard)
             dashboard_overview = dashboard["overview"]
             expected_count = (
                 contract.expected_record_stats["pass_records"]
@@ -765,6 +776,36 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertTrue(dashboard["ancestry"]["neighbors"])
             self.assertEqual(dashboard["nutrigenomics"][0]["rsid"], "rs1801133")
             self.assertEqual(dashboard["nutrigenomics"][0]["gene"], "MTHFR")
+
+    def _assert_decode_dashboard_metadata_contract(
+        self,
+        result: dict[str, object],
+        dashboard: dict[str, object],
+    ) -> None:
+        self.assertEqual(result["evidence_build"]["panels_running"], [])
+        self.assertEqual(result["evidence_build"]["panels_failed"], [])
+        self.assertEqual(result["serve"]["status"], "ready_to_start")
+        metadata = dashboard["__dashboard"]
+        self.assertEqual(metadata["panelsRequested"], DECODE_DASHBOARD_MATRIX_PANELS)
+        states_by_panel = {
+            state["panel"]: state
+            for state in metadata["panelStates"]
+        }
+        self.assertEqual(set(states_by_panel), set(DECODE_DASHBOARD_MATRIX_PANELS))
+        self.assertEqual(states_by_panel["overview"]["status"], "data_returned")
+        self.assertEqual(states_by_panel["variants"]["status"], "data_returned")
+        self.assertEqual(states_by_panel["variants_all"]["status"], "deferred_source")
+        self.assertEqual(states_by_panel["risk"]["status"], "data_returned")
+        self.assertEqual(states_by_panel["ancestry"]["status"], "data_returned")
+        self.assertEqual(states_by_panel["nutrigenomics"]["status"], "data_returned")
+        self.assertEqual(states_by_panel["pgx"]["status"], "requires_library_install")
+        unavailable_by_panel = {
+            item["panel"]: item
+            for item in metadata["unavailablePanels"]
+        }
+        self.assertEqual(set(unavailable_by_panel), {"pgx"})
+        self.assertEqual(unavailable_by_panel["pgx"]["state"], "blocked_setup")
+        self.assertEqual(unavailable_by_panel["pgx"]["source_status"], "requires_library_install")
 
     @contextmanager
     def _mock_contract_pgx_sources(self):

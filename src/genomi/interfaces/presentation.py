@@ -91,7 +91,7 @@ def _present_decode_dashboard(result: JsonObject) -> JsonObject:
         "panels_rendered": result.get("panels_rendered"),
         "panels_empty": result.get("panels_empty"),
         "evidence_build": _compact_decode_evidence_build(result.get("evidence_build")),
-        "serve": _select(serve, ("directory", "filename", "port", "url", "command", "note")),
+        "serve": _select(serve, ("status", "directory", "filename", "port", "url", "command", "pid", "http_status", "error")),
         "defaults_applied": result.get("defaults_applied"),
     })
     return _drop_none(payload)
@@ -105,6 +105,8 @@ def _compact_decode_evidence_build(value: Any) -> JsonObject | None:
             "panels_ready": value.get("panels_ready"),
             "panels_empty": value.get("panels_empty"),
             "panels_blocked": value.get("panels_blocked"),
+            "panels_running": value.get("panels_running"),
+            "panels_failed": value.get("panels_failed"),
             "panel_states": _compact_generic_value(value.get("panel_states")),
         }
     )
@@ -124,6 +126,8 @@ def _present_decode_build_dashboard_evidence(result: JsonObject) -> JsonObject:
         "panels_ready": result.get("panels_ready"),
         "panels_empty": result.get("panels_empty"),
         "panels_blocked": result.get("panels_blocked"),
+        "panels_running": result.get("panels_running"),
+        "panels_failed": result.get("panels_failed"),
         "panel_states": _compact_generic_value(result.get("panel_states")),
         "defaults_applied": result.get("defaults_applied"),
     })

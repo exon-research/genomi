@@ -262,6 +262,7 @@ def _decode_render_dashboard(params: JsonObject) -> JsonObject:
             variants_all_source=variants_all_source,
             panel_states=build_result.get("panel_states", []),
             panels_requested=build_result.get("panels_requested", []),
+            start_server=True,
         )
     except decode_dashboard.DashboardRenderError as exc:
         raise OperationError(exc.code, exc.message) from exc
@@ -270,6 +271,8 @@ def _decode_render_dashboard(params: JsonObject) -> JsonObject:
             "panels_ready": build_result.get("panels_ready", []),
             "panels_empty": build_result.get("panels_empty", []),
             "panels_blocked": build_result.get("panels_blocked", []),
+            "panels_running": build_result.get("panels_running", []),
+            "panels_failed": build_result.get("panels_failed", []),
             "panel_states": build_result.get("panel_states", []),
         }
     return result

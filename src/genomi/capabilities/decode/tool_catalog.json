@@ -19,7 +19,7 @@
     "decode.build_dashboard_evidence": {
       "capability": "decode",
       "namespace": "decode",
-      "description": "Build Genomi Dashboard panel states from the approved Active Genome Index and existing capability operations. Used by decode.render_dashboard; presented output reports panel readiness and gaps.",
+      "description": "Build Genomi Dashboard panel states from the approved Active Genome Index and existing capability operations. Used by decode.render_dashboard; presented output reports panel readiness, running jobs, and gaps.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -86,7 +86,7 @@
     "decode.render_dashboard": {
       "capability": "decode",
       "namespace": "decode",
-      "description": "Build, shape, and render the Genomi Dashboard self-contained HTML artifact from the approved Active Genome Index.",
+      "description": "Build, shape, render, and expose the Genomi Dashboard self-contained HTML artifact from the approved Active Genome Index.",
       "input_schema": {
         "type": "object",
         "properties": {

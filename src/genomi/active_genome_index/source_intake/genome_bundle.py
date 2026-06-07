@@ -376,7 +376,10 @@ def _safe_extract_tar(archive: tarfile.TarFile, target_root: Path) -> None:
         target = (target_root / member.name).resolve()
         if target != resolved_root and not str(target).startswith(str(resolved_root) + "/"):
             raise ValueError(f"unsafe tar member path in .genome bundle: {member.name}")
-    archive.extractall(target_root)
+    try:
+        archive.extractall(target_root, filter="data")
+    except TypeError:
+        archive.extractall(target_root)
 
 
 def _safe_extract_zip(archive: zipfile.ZipFile, target_root: Path) -> None:

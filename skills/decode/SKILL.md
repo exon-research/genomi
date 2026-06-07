@@ -9,8 +9,8 @@ description: |
   in one shot, not a per-target lookup.
 
   Composes evidence from every relevant Genomi capability into a single
-  self-contained Genomi Dashboard.html, then returns a localhost serve
-  command the host agent runs in the background. Active genome required.
+  self-contained Genomi Dashboard.html and returns localhost serve metadata.
+  Active genome required.
 tools:
   - decode.render_dashboard
 mutating: true
@@ -57,8 +57,9 @@ Summary for decode:
 
 Call `decode.render_dashboard`. Decode owns panel gathering, panel shaping,
 and rendering. The agent may choose dashboard categories through structured
-parameters such as `panels`, select declared score/domain options, and install
-optional libraries after approval. The agent does not assemble panel evidence.
+parameters such as `panels` and select declared score/domain options. Omitted
+`panels` means every dashboard category. The agent does not assemble panel
+evidence and does not ask which PGx route to run; decode owns that work.
 
 The renderer normalizes native upstream-op shapes internally:
 
@@ -87,6 +88,9 @@ The renderer's response is the source of truth:
 - `panels_rendered`: panels that landed with real data.
 - `panels_empty`: panels with no usable evidence — they render as
   category-specific unavailable states in the UI.
+- `evidence_build.panels_running`: panels still running in a background job.
+- `evidence_build.panel_states`: per-panel source status, including PGx
+  background job ids and check operations when applicable.
 
 Read `panels_empty` and any `evidence_build.panel_states` before telling the
 user the dashboard is ready. Surface incomplete categories honestly with their
@@ -105,34 +109,27 @@ By default the artifact is written to
 `output` with any absolute filesystem path; the parent directory is created on
 demand.
 
-## Serving the dashboard (agent runs this, not the MCP server)
+## Serving the dashboard
 
 `decode.render_dashboard` returns a `serve` block:
 
 ```json
 {
   "serve": {
+    "status": "started",
     "directory": "...",
     "filename": "dashboard.html",
-    "port": 8765,
-    "url": "http://127.0.0.1:8765/dashboard.html",
-    "command": "python3 -m http.server 8765 --bind 127.0.0.1 --directory ..."
+    "port": 8766,
+    "url": "http://127.0.0.1:8766/dashboard.html",
+    "command": "python3 -m http.server 8766 --bind 127.0.0.1 --directory ..."
   }
 }
 ```
 
-After the render call returns, the host agent:
-
-1. Runs `serve.command` **in the background** using the host's standard
-   background-process pattern (Claude Code: `Bash` with `run_in_background=true`;
-   Codex: append `&`; etc.). Do not block the conversation on it.
-2. Tells the user the URL on a single line:
-   `Your Genomi dashboard is live at http://127.0.0.1:8765/dashboard.html.`
-3. If port 8765 is busy, pick a free port and rewrite the URL.
-
-The MCP server itself does not open ports. The dashboard is a static HTML
-file; the agent serves it because the host process is where background
-processes belong.
+Normal runtime calls start a local static dashboard server automatically and
+choose a free localhost port. Tell the user `serve.url`. If `serve.status` is
+`ready_to_start` or `start_failed`, run `serve.command` as a fallback and then
+tell the user the adjusted URL.
 
 ## Boundaries
 

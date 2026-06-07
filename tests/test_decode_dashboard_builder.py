@@ -157,6 +157,101 @@ class DecodeDashboardEvidenceBuilderTests(unittest.TestCase):
         self.assertEqual(result["panel_states"][0]["status"], "position_aware_pharmcat_export_required")
         self.assertEqual(calls, [("pharmacogenomics.run_pharmcat", {})])
 
+    def test_pgx_runs_as_background_panel_when_runtime_background_enabled(self) -> None:
+        calls: list[tuple[str, dict]] = []
+
+        def run(operation: str, params: dict) -> dict:
+            calls.append((operation, params))
+            raise AssertionError(f"unexpected inline operation {operation}")
+
+        started = {
+            "job_id": "pharmacogenomics-run-pharmcat-1",
+            "operation": "pharmacogenomics.run_pharmcat",
+            "status": "running",
+        }
+        public_status = {
+            "status": "in_progress",
+            "job_id": "pharmacogenomics-run-pharmcat-1",
+            "operation": "pharmacogenomics.run_pharmcat",
+            "heartbeat_at": "2026-06-07T00:00:00+00:00",
+            "check": {
+                "operation": "genomi.check_background_job",
+                "params": {"job_id": "pharmacogenomics-run-pharmcat-1"},
+            },
+            "message": "pharmacogenomics.run_pharmcat is still running in the background.",
+        }
+        with (
+            mock.patch.object(evidence_builder.background_jobs, "background_enabled", return_value=True),
+            mock.patch.object(evidence_builder.background_jobs, "operation_params_digest", return_value="pgx-digest"),
+            mock.patch.object(evidence_builder.background_jobs, "find_latest_job", return_value=None),
+            mock.patch.object(evidence_builder.background_jobs, "start_operation_job", return_value=started) as start_job,
+            mock.patch.object(evidence_builder.background_jobs, "wait_for_job", return_value=started) as wait_job,
+            mock.patch.object(evidence_builder.background_jobs, "public_job_status", return_value=public_status),
+        ):
+            result = evidence_builder.build_dashboard_evidence(
+                params={"panels": ["pgx"]},
+                run_operation=run,
+                active_genome_index_context={"agi_id": "agi-target"},
+            )
+
+        self.assertEqual(calls, [])
+        start_job.assert_called_once_with("pharmacogenomics.run_pharmcat", {"agi_id": "agi-target"})
+        wait_job.assert_called_once_with("pharmacogenomics-run-pharmcat-1", timeout_seconds=0.0)
+        self.assertNotIn("pgx", result["panels_ready"])
+        self.assertIn("pgx", result["panels_empty"])
+        self.assertEqual(result["panels_running"], ["pgx"])
+        self.assertEqual(result["panels_blocked"], [])
+        self.assertEqual(result["panel_states"][0]["status"], "in_progress")
+        self.assertEqual(result["panel_states"][0]["job_id"], "pharmacogenomics-run-pharmcat-1")
+        self.assertEqual(
+            result["panel_states"][0]["check"],
+            {"operation": "genomi.check_background_job", "params": {"job_id": "pharmacogenomics-run-pharmcat-1"}},
+        )
+
+    def test_pgx_reuses_completed_background_job_as_panel_evidence(self) -> None:
+        def run(operation: str, params: dict) -> dict:
+            raise AssertionError(f"unexpected inline operation {operation}")
+
+        completed_job = {
+            "job_id": "pharmacogenomics-run-pharmcat-done",
+            "operation": "pharmacogenomics.run_pharmcat",
+            "status": "completed",
+            "result": {
+                "status": "completed",
+                "record_research_payloads": [
+                    {
+                        "gene": "CYP2C19",
+                        "diplotype": "*1/*2",
+                        "phenotype": "intermediate metabolizer",
+                    }
+                ],
+            },
+        }
+
+        with (
+            mock.patch.object(evidence_builder.background_jobs, "background_enabled", return_value=True),
+            mock.patch.object(evidence_builder.background_jobs, "operation_params_digest", return_value="pgx-digest"),
+            mock.patch.object(evidence_builder.background_jobs, "find_latest_job", return_value=completed_job) as find_job,
+            mock.patch.object(evidence_builder.background_jobs, "start_operation_job") as start_job,
+            mock.patch.object(evidence_builder.background_jobs, "wait_for_job", return_value=completed_job),
+        ):
+            result = evidence_builder.build_dashboard_evidence(
+                params={"panels": ["pgx"]},
+                run_operation=run,
+                active_genome_index_context={"agi_id": "agi-target"},
+            )
+
+        find_job.assert_called_once_with(
+            "pharmacogenomics.run_pharmcat",
+            "pgx-digest",
+            statuses={"completed"},
+        )
+        start_job.assert_not_called()
+        self.assertEqual(result["panels_ready"], ["pgx"])
+        self.assertEqual(result["panels_empty"], [])
+        self.assertEqual(result["panels_running"], [])
+        self.assertEqual(result["render_params"]["evidence"]["pgx"]["status"], "completed")
+
     def test_decode_panel_runner_threads_target_agi_to_private_panels(self) -> None:
         seen: list[tuple[str, dict]] = []
 
