@@ -235,7 +235,13 @@ def _parse_calls_only_tsv(path: Path, *, max_calls: int) -> JsonObject:
     rows = []
     try:
         with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
+            lines = handle.readlines()
+        # PharmCAT prefixes the calls-only TSV with a title line (e.g. "PharmCAT 3.2.0")
+        # before the tab-delimited "Gene\t..." header. Skip leading lines that do not
+        # contain the delimiter so DictReader uses the real column header.
+        header_index = next((i for i, line in enumerate(lines) if "\t" in line), None)
+        if header_index is not None:
+            reader = csv.DictReader(lines[header_index:], delimiter="\t")
             for row in reader:
                 rows.append({key: value for key, value in row.items() if key is not None and value not in {None, ""}})
                 if len(rows) >= max_calls:

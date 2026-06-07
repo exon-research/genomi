@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from genomi.capabilities.decode.panel_adapters import normalize_pgx_panel
 from genomi.capabilities.pharmacogenomics.pharmcat import (
+    _parse_calls_only_tsv,
     import_pharmcat_artifacts,
     pharmcat_preflight,
     pharmcat_status,
@@ -17,6 +19,44 @@ from genomi.capabilities.pharmacogenomics.pharmcat import (
 )
 from genomi.operations import call_operation, list_operations
 from genomi.runtime import context as runtime_context
+
+
+# A realistic PharmCAT 3.x calls-only TSV: a leading version/title line, then the
+# tab-delimited "Gene" header, then one gene per row. PharmCAT always emits the
+# title line, so the parser must skip it and lock onto the "Gene" header.
+_REAL_CALLS_ONLY_TSV = (
+    "PharmCAT 3.2.0\n"
+    "Gene\tSource Diplotype\tPhenotype\tActivity Score\n"
+    "CYP2C19\t*1/*2\tIntermediate Metabolizer\t\n"
+    "CYP3A5\t*3/*3\tPoor Metabolizer\t\n"
+)
+
+
+class CallsOnlyTsvParsingTests(unittest.TestCase):
+    """Guard the calls-only TSV parser against the real title-line format."""
+
+    def test_skips_title_line_and_keys_rows_by_gene(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.report.tsv"
+            path.write_text(_REAL_CALLS_ONLY_TSV, encoding="utf-8")
+            parsed = _parse_calls_only_tsv(path, max_calls=200)
+        self.assertEqual(parsed["genes"], ["CYP2C19", "CYP3A5"])
+        self.assertEqual(parsed["rows"][0]["Gene"], "CYP2C19")
+        self.assertEqual(parsed["rows"][0]["Source Diplotype"], "*1/*2")
+        self.assertEqual(parsed["rows"][0]["Phenotype"], "Intermediate Metabolizer")
+
+    def test_parsed_rows_map_into_decode_pgx_cards(self) -> None:
+        # The parse->adapt seam: real-format calls must shape into dashboard cards.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.report.tsv"
+            path.write_text(_REAL_CALLS_ONLY_TSV, encoding="utf-8")
+            parsed = _parse_calls_only_tsv(path, max_calls=200)
+        rows = normalize_pgx_panel({"artifacts": {"calls_only": parsed}})
+        self.assertIsNotNone(rows)
+        by_gene = {row["gene"]: row for row in rows}
+        self.assertEqual(by_gene["CYP2C19"]["diplotype"], "*1/*2")
+        self.assertEqual(by_gene["CYP2C19"]["phenotype"], "Intermediate Metabolizer")
+        self.assertEqual(by_gene["CYP3A5"]["phenotype"], "Poor Metabolizer")
 
 
 def _escaped_header_vcf_text() -> str:
@@ -160,6 +200,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
                 base = command[command.index("-bf") + 1]
                 out_dir.mkdir(parents=True, exist_ok=True)
                 (out_dir / f"{base}.report.tsv").write_text(
+                    "PharmCAT 3.2.0\n"
                     "Gene\tSource Diplotype\tPhenotype\tActivity Score\n"
                     "CYP2C19\t*1/*2\tIntermediate Metabolizer\t\n",
                     encoding="utf-8",
@@ -299,7 +340,9 @@ class PharmCATIntegrationTests(unittest.TestCase):
                 base = command[command.index("-bf") + 1]
                 out_dir.mkdir(parents=True, exist_ok=True)
                 (out_dir / f"{base}.report.tsv").write_text(
-                    "Gene\tSource Diplotype\tPhenotype\tActivity Score\n", encoding="utf-8"
+                    "PharmCAT 3.2.0\n"
+                    "Gene\tSource Diplotype\tPhenotype\tActivity Score\n",
+                    encoding="utf-8",
                 )
                 return subprocess.CompletedProcess(command, 0, "saved report", "")
 
@@ -378,6 +421,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
             phenotype = Path(tmp) / "sample.phenotype.json"
             missing = Path(tmp) / "sample.missing_pgx_positions.vcf"
             calls.write_text(
+                "PharmCAT 3.2.0\n"
                 "Gene\tSource Diplotype\tPhenotype\tActivity Score\n"
                 "CYP2C19\t*1/*2\tIntermediate Metabolizer\t\n",
                 encoding="utf-8",
@@ -952,6 +996,19 @@ class RealPharmCATJarTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed", result)
         self.assertEqual(result["execution"]["returncode"], 0, result)
         self.assertTrue(result["interpretation_readiness"]["has_report_artifact"], result)
+
+        # The genuine jar writes a title line (e.g. "PharmCAT 3.2.0") before the
+        # tab-delimited "Gene" header. Assert the parser saw past it: every parsed
+        # calls row must be keyed by the real columns, and the rows must shape into
+        # decode PGx cards without error. Under the title-line misparse this fixture
+        # produced a single {"PharmCAT <ver>": "Gene"} row with no "Gene" key, which
+        # both fails the key check and makes the adapter raise. (This minimal
+        # single-variant fixture calls no genes, so row content richness is asserted
+        # by CallsOnlyTsvParsingTests; here we guard the real-format parse->adapt seam.)
+        calls = result["artifacts"]["calls_only"]
+        for row in calls["rows"]:
+            self.assertIn("Gene", row, result)
+        normalize_pgx_panel(result)
 
 
 if __name__ == "__main__":
