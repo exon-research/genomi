@@ -25,21 +25,24 @@ from .catalog_meta import (
 from .coerce import _int, _list_str, _str, _with_defaults_applied
 from .errors import JsonObject, OperationError
 from .model import Operation, _operation_capability
-from .handlers_admin import (
+from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
     _genomi_assign_user_genome,
     _genomi_clear_default_user,
     _genomi_clear_selection,
     _genomi_describe_context,
-    _genomi_install,
-    _genomi_invoke,
-    _genomi_list_users,
-    _genomi_parse_source,
+    _genomi_list_agis,
+    _genomi_remove_agi,
     _genomi_rename_user,
     _genomi_revoke_agi_access,
-    _genomi_search_indexes,
     _genomi_select_user,
     _genomi_set_default_user,
+)
+from .handlers_admin import (
+    _genomi_install,
+    _genomi_invoke,
+    _genomi_parse_source,
+    _genomi_search_indexes,
     _genomi_set_response_profile,
     _resources_libraries,
     _resources_list,
@@ -143,7 +146,8 @@ OPERATIONS: list[Operation] = [
     Operation('genomi.search_indexes', _genomi_search_indexes),
     Operation('active_genome_index.approve_access', _genomi_approve_agi_access),
     Operation('active_genome_index.revoke_access', _genomi_revoke_agi_access),
-    Operation('active_genome_index.list_users', _genomi_list_users),
+    Operation('active_genome_index.list', _genomi_list_agis),
+    Operation('active_genome_index.remove', _genomi_remove_agi),
     Operation('active_genome_index.select_user', _genomi_select_user),
     Operation('active_genome_index.rename_user', _genomi_rename_user),
     Operation('active_genome_index.assign_user_genome', _genomi_assign_user_genome),

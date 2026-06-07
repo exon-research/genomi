@@ -9,6 +9,7 @@ from unittest import mock
 from genomi.interfaces.presentation import present_result
 from genomi.operations import OperationError, call_operation
 from genomi.runtime import context as runtime_context
+from genomi.runtime.paths import sample_slug_from_source
 
 from tests.support.runtime.genomi import (
     GenomiRuntimeTestCase,
@@ -287,6 +288,127 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             finally:
                 os.chdir(previous)
 
+    def test_remove_active_genome_index_cleans_registry_users_session_and_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                vcf = Path("sample.vcf")
+                vcf.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNA12878\n",
+                    encoding="utf-8",
+                )
+                parsed = call_operation(
+                    "genomi.parse_source",
+                    {"source": str(vcf), "user_nickname": "Alex", "set_default_user": True},
+                )
+                agi_id = parsed["active_genome_index"]["agi_id"]
+                project_dir = self.genomi_home / agi_id
+                self.assertTrue(project_dir.exists())
+                listed = call_operation("active_genome_index.list")
+                self.assertEqual(listed["active"]["agi_id"], agi_id)
+                inventory_agi = next(agi for agi in listed["active_genome_indexes"] if agi["agi_id"] == agi_id)
+                self.assertIn("source_content_sha256", inventory_agi["hashes"])
+                self.assertEqual(inventory_agi["names"]["user_nicknames"], ["Alex"])
+                self.assertEqual(inventory_agi["source_references"][0]["kind"], "local_path")
+                self.assertTrue(inventory_agi["source_references"][0]["value"].endswith("/sample.vcf"))
+                self.assertTrue(any(user["nickname"] == "Alex" for user in listed["users"]))
+
+                removed = call_operation(
+                    "active_genome_index.remove",
+                    {"agi_id": agi_id, "confirmed_by_user": True},
+                )
+
+                self.assertEqual(removed["removed_count"], 1)
+                removed_agi = removed["removed"][0]
+                self.assertEqual(removed_agi["agi_id"], agi_id)
+                self.assertTrue(removed_agi["removed_from_registry"])
+                self.assertTrue(removed_agi["removed_from_session"])
+                self.assertGreaterEqual(removed_agi["artifact_cleanup"]["removed_count"], 1)
+                self.assertFalse(project_dir.exists())
+                current = call_operation("genomi.describe_context")
+                self.assertFalse(current["has_active_genome_index"])
+                self.assertEqual(current["active_genome_index_registry"]["known_agi_count"], 0)
+                users = call_operation("active_genome_index.list")["users"]
+                self.assertEqual(users[0]["agi_ids"], [])
+                self.assertIsNone(users[0]["active_agi_id"])
+            finally:
+                os.chdir(previous)
+
+    def test_remove_active_genome_index_requires_explicit_confirmation(self) -> None:
+        with self.assertRaises(OperationError) as raised:
+            call_operation("active_genome_index.remove", {"agi_id": "missing"})
+        self.assertEqual(raised.exception.code, "confirmation_required")
+
+    def test_remove_active_genome_index_requires_exact_target_after_confirmation(self) -> None:
+        with self.assertRaises(OperationError) as raised:
+            call_operation("active_genome_index.remove", {"confirmed_by_user": True})
+        self.assertEqual(raised.exception.code, "invalid_params")
+
+    def test_remove_active_genome_index_by_source_cleans_unregistered_project_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                raw = Path("half.genome")
+                raw.write_text("partial", encoding="utf-8")
+                project_dir = self.genomi_home / sample_slug_from_source(raw, source_format="genome")
+                project_dir.mkdir(parents=True)
+                (project_dir / "work").mkdir()
+                (project_dir / "work" / "active-genome-index.sqlite").write_text("partial", encoding="utf-8")
+
+                removed = call_operation(
+                    "active_genome_index.remove",
+                    {"source": str(raw), "confirmed_by_user": True},
+                )
+
+                self.assertEqual(removed["removed"][0]["agi_id"], project_dir.name)
+                self.assertFalse(project_dir.exists())
+                self.assertFalse(call_operation("genomi.describe_context")["has_active_genome_index"])
+            finally:
+                os.chdir(previous)
+
+    def test_remove_active_genome_index_does_not_delete_mispointed_project_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                one = Path("one.vcf")
+                two = Path("two.vcf")
+                one.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tONE\n",
+                    encoding="utf-8",
+                )
+                two.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tTWO\n",
+                    encoding="utf-8",
+                )
+                first = call_operation("genomi.parse_source", {"source": str(one)})
+                second = call_operation("genomi.parse_source", {"source": str(two)})
+                first_agi_id = first["active_genome_index"]["agi_id"]
+                second_agi_id = second["active_genome_index"]["agi_id"]
+                second_project_dir = self.genomi_home / second_agi_id
+                self.assertTrue(second_project_dir.exists())
+
+                registry = runtime_context.load_registry()
+                registry["agis"][first_agi_id]["project_dir"] = str(second_project_dir)
+                runtime_context.save_registry(registry)
+
+                removed = call_operation(
+                    "active_genome_index.remove",
+                    {"agi_id": first_agi_id, "confirmed_by_user": True},
+                )
+
+                self.assertEqual(removed["removed"][0]["agi_id"], first_agi_id)
+                self.assertTrue(second_project_dir.exists())
+                cleanup_entries = removed["removed"][0]["artifact_cleanup"]["entries"]
+                self.assertTrue(any(entry["state"] == "outside_expected_agi_project" for entry in cleanup_entries))
+            finally:
+                os.chdir(previous)
+
     def test_known_agis_do_not_auto_activate_without_default_in_another_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as cwd_one, tempfile.TemporaryDirectory() as cwd_two:
             previous = os.getcwd()
@@ -300,7 +422,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 )
                 set_result = call_operation("genomi.parse_source", {"source": str(vcf), "user_nickname": "Alex"})
                 agi_id = set_result["active_genome_index"]["agi_id"]
-                listed = call_operation("active_genome_index.list_users")
+                listed = call_operation("active_genome_index.list")
                 self.assertEqual(listed["users"][0]["nickname"], "Alex")
                 renamed = call_operation("active_genome_index.rename_user", {"nickname": "Alex", "new_nickname": "Alex Renamed"})
                 self.assertEqual(renamed["user"]["nickname"], "Alex Renamed")

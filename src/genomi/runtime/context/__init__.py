@@ -56,33 +56,41 @@ from .storage import (
     save_registry,
     set_response_profile_id,
 )
-from .agi import (
-    _active_genome_index_state,
-    _active_user,
-    _auto_selected_agi_record,
-    _default_selected_agi,
-    _find_agi,
-    _is_digitized_agi_record,
+from .agi_access import (
     _resolve_access_target,
-    _selection_source,
     active_accessible_agi_record,
-    active_agi_record,
     agi_access_approved,
     agi_access_status,
     approve_agi_access,
-    clear_active_genome_index,
-    describe_context,
+    revoke_agi_access,
+)
+from .agi_inference import infer_agi_record
+from .agi_records import (
+    _active_genome_index_state,
+    _is_digitized_agi_record,
     describe_agi_record,
     describe_user,
-    find_agi,
-    infer_agi_record,
     list_agis,
+)
+from .agi_registry import (
+    _find_agi,
+    find_agi,
     reconcile_current_agi_registry,
-    revoke_agi_access,
     save_agi_to_registry,
+)
+from .agi_removal import remove_active_genome_index
+from .agi_inventory import list_active_genome_index_inventory
+from .agi_selection import (
+    _active_user,
+    _auto_selected_agi_record,
+    _default_selected_agi,
+    _selection_source,
+    active_agi_record,
+    clear_active_genome_index,
     set_active_agi_id,
     set_active_agi_from_source,
 )
+from .agi_summary import describe_context
 from .users import (
     assign_user_genome,
     clear_default_user,
@@ -122,10 +130,12 @@ __all__ = [
     "get_response_profile_id",
     "infer_agi_record",
     "list_agis",
+    "list_active_genome_index_inventory",
     "list_users",
     "load_context",
     "load_registry",
     "reconcile_current_agi_registry",
+    "remove_active_genome_index",
     "registry_path",
     "rename_user",
     "revoke_agi_access",

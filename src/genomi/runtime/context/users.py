@@ -14,12 +14,12 @@ from .normalize import (
     _normalize_nickname,
     _now,
 )
-from .agi import (
+from .agi_inference import infer_agi_record
+from .agi_registry import (
     _find_agi,
-    describe_user,
     find_agi_by_intake_source,
-    infer_agi_record,
 )
+from .agi_records import describe_user
 from .storage import (
     load_context,
     load_registry,

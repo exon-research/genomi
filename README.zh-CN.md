@@ -192,7 +192,7 @@ DNA 文件在哪儿，Genomi 就在哪儿读。磁盘上任何一份 VCF 或 gVC
 主流的消费级 DTC 厂商也原生支持。账户里导出来什么样，原样递给 Genomi，它自己会认：
 
 - **23andMe**、**AncestryDNA**、**MyHeritage**、**FamilyTreeDNA**（Family Finder）、**Living DNA**——厂商导出的原始基因型文本/CSV、gzip/bzip2/xz 压缩文件、zip/tar 归档都行。
-- **`.genome/1.0` bundle**——包括 `sample.genome.tar.gz`，含 `manifest.json`、`schema.json` 和分区 `variants.parquet` 记录。
+- **genome.computer**——`.genome/1.0` bundle，含 `manifest.json`、`schema.json` 和分区 `variants.parquet` 记录。
 - **Nebula Genomics**、**Dante Labs**、**Sequencing.com**——它们交付的 VCF 会被认出来，并打上来源厂商的标签。
 - **Nebula / Dante / Sequencing.com 的 FASTQ**——双端原始 reads 在本地比对（长读 minimap2，短读 bwa-mem2），排序之后走同一条 BAM → 衍生 VCF 的通路。`wgs-alignment` 这个 install purpose 会把两个比对器一起拉下来。
 

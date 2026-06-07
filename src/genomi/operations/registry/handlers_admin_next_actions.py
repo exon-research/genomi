@@ -2,6 +2,29 @@ from __future__ import annotations
 
 from .errors import JsonObject
 
+_ACTIVE_GENOME_INDEX_SKILL = "skills/active-genome-index/SKILL.md"
+
+
+def read_agi_skill_next_action(why: str) -> JsonObject:
+    """Tell the host to read the focused Active Genome Index skill."""
+    return {
+        "action": "read_skill",
+        "skill": _ACTIVE_GENOME_INDEX_SKILL,
+        "why": why,
+        "then": (
+            "Active Genome Index selection, approval, and interpretation tools "
+            "(active_genome_index.*) are invoke-only — read this skill, then call "
+            "them through genomi.invoke."
+        ),
+    }
+
+
+def with_next_action(result: JsonObject, action: JsonObject) -> JsonObject:
+    existing = result.get("next_actions")
+    actions = list(existing) if isinstance(existing, list) else []
+    actions.append(action)
+    return {**result, "next_actions": actions}
+
 
 def assign_profile_next_action() -> JsonObject:
     return {

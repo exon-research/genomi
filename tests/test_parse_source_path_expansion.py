@@ -140,6 +140,7 @@ class ParseSourcePathExpansionTests(GenomiRuntimeTestCase):
                 "reference_fasta",
                 "sample_slug",
                 "shared_evidence_db",
+                "source_content_sha256",
                 "status",
                 "updated_at",
                 "work_dir",

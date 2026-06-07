@@ -34,6 +34,7 @@ AGI_RECORD_FIELDS = frozenset(
         "agi_source_kind",
         "agi_source_member",
         "agi_source_provider",
+        "source_content_sha256",
         "project_dir",
         "work_dir",
         "evidence_dir",
@@ -81,6 +82,8 @@ def _infer_agi_source_format(agi_intake_path: Path, source_format: object | None
         return "vcf"
     if name.endswith(".bam"):
         return "bam"
+    if name.endswith(".genome") or ".genome." in name:
+        return "genome"
     if name.endswith((".fastq", ".fq", ".fastq.gz", ".fq.gz", ".fastq.bgz")):
         return "fastq"
     if "ancestry" in name:

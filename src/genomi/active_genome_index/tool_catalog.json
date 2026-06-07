@@ -18,7 +18,8 @@
         "active_genome_index.classify_region_callability",
         "active_genome_index.clear_default_user",
         "active_genome_index.clear_selection",
-        "active_genome_index.list_users",
+        "active_genome_index.list",
+        "active_genome_index.remove",
         "active_genome_index.rename_user",
         "active_genome_index.revoke_access",
         "active_genome_index.select_user",
@@ -364,6 +365,93 @@
       ],
       "discovery_role": "focused_tool"
     },
+    "active_genome_index.remove": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "Remove confirmed Active Genome Index records and Genomi-owned local artifacts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "confirmed_by_user": {
+            "type": "boolean"
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "agi_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "$ref": "#/schema_fragments/properties/local_path"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/schema_fragments/properties/local_path"
+            }
+          },
+          "remove_artifacts": {
+            "$ref": "#/schema_fragments/properties/boolean_default_true"
+          }
+        },
+        "required": [
+          "confirmed_by_user"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [
+        "confirmed_active_genome_index_targets"
+      ],
+      "produces": [
+        "active_genome_index_removal"
+      ],
+      "context_optional": [
+        "agi_id",
+        "agi_ids",
+        "source",
+        "sources"
+      ],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "active_genome_index.list": {
+      "capability": "active-genome-index",
+      "namespace": "active_genome_index",
+      "description": "List users and Active Genome Index records in one structured inventory.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/active-genome-index/SKILL.md",
+      "area": "context",
+      "requires": [],
+      "produces": [
+        "active_genome_index_records",
+        "user_registry_metadata"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
     "active_genome_index.assign_user_genome": {
       "capability": "active-genome-index",
       "namespace": "active_genome_index",
@@ -568,32 +656,6 @@
       "privacy_scope": "metadata_only",
       "operation_scope": "write",
       "mutating": true,
-      "external_io": [],
-      "data_access": [
-        "local_artifact_metadata"
-      ],
-      "discovery_role": "focused_tool"
-    },
-    "active_genome_index.list_users": {
-      "capability": "active-genome-index",
-      "namespace": "active_genome_index",
-      "description": "List user/profile metadata and the Active Genome Index records assigned to each user.",
-      "input_schema": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      },
-      "skill": "skills/active-genome-index/SKILL.md",
-      "area": "context",
-      "requires": [],
-      "produces": [
-        "user_registry_metadata"
-      ],
-      "context_optional": [],
-      "privacy_scope": "metadata_only",
-      "operation_scope": "read",
-      "mutating": false,
       "external_io": [],
       "data_access": [
         "local_artifact_metadata"

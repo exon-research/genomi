@@ -246,7 +246,8 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
                 "active_genome_index.set_default_user",
                 "active_genome_index.clear_default_user",
                 "active_genome_index.rename_user",
-                "active_genome_index.list_users",
+                "active_genome_index.list",
+                "active_genome_index.remove",
                 "active_genome_index.clear_selection",
             },
         )
@@ -357,6 +358,7 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
             "refresh",
             "render",
             "rename",
+            "remove",
             "retrieve",
             "resolve",
             "revoke",

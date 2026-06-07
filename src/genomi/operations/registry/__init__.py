@@ -129,21 +129,22 @@ from .coerce import (
     _with_defaults_applied,
     defaults_applied_for_call,
 )
-from .handlers_admin import (
+from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
     _genomi_assign_user_genome,
     _genomi_clear_default_user,
     _genomi_clear_selection,
     _genomi_describe_context,
-    _genomi_install,
-    _genomi_invoke,
-    _genomi_list_users,
-    _genomi_parse_source,
     _genomi_rename_user,
     _genomi_revoke_agi_access,
-    _genomi_search_indexes,
     _genomi_select_user,
     _genomi_set_default_user,
+)
+from .handlers_admin import (
+    _genomi_install,
+    _genomi_invoke,
+    _genomi_parse_source,
+    _genomi_search_indexes,
     _genomi_set_response_profile,
     _metadata_retrieval_queries,
     _refresh_active_metadata_index,

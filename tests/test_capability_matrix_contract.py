@@ -75,13 +75,20 @@ class CapabilityMatrixContractTests(unittest.TestCase):
         fixture_formats |= set(SEQUENCING_SOURCE_FIXTURE_FORMATS.values())
         self.assertEqual(fixture_formats, SOURCE_FORMAT_MATRIX_SOURCE_FORMATS)
 
-    def test_source_fixture_inventory_has_direct_genome_extension_case(self) -> None:
-        direct_genome_cases = [
-            spec for spec in SOURCE_FIXTURE_INVENTORY
-            if spec.expected_format == "genome" and spec.case_id == "genome"
-        ]
-        self.assertEqual(len(direct_genome_cases), 1)
-        self.assertEqual(direct_genome_cases[0].writer_method, "_write_genome_text_source")
+    def test_source_fixture_inventory_has_genome_bundle_cases(self) -> None:
+        genome_cases = {
+            spec.case_id: spec.writer_method
+            for spec in SOURCE_FIXTURE_INVENTORY
+            if spec.expected_format == "genome"
+        }
+        self.assertEqual(
+            genome_cases,
+            {
+                "genome": "_write_genome_bundle_source",
+                "genome_tar_gz": "_write_genome_tar_source",
+                "genome_root_tar_gz": "_write_genome_root_tar_source",
+            },
+        )
 
     def test_source_fixture_inventory_case_ids_are_unique(self) -> None:
         case_ids = [spec.case_id for spec in SOURCE_FIXTURE_INVENTORY]

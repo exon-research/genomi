@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed, ActiveGenomeIndexReader
 from ...capabilities.clinvar import static_annotation
+from ...runtime.paths import CLINVAR_MATCHES_NAME
 from .agi_access import open_agi
 from .coerce import (
     _bool,
@@ -27,7 +28,7 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar matching.",
         )
-    output = resolved.get("output") or str(agi_path.with_name("clinvar.matches.jsonl"))
+    output = resolved.get("output") or str(agi_path.with_name(CLINVAR_MATCHES_NAME))
     return static_annotation.match_static_clinvar_from_active_genome_index(
         reader,
         evidence_db=_path(resolved, "db"),
@@ -63,7 +64,7 @@ def _materialize_clinvar_matches_for_scan(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar candidate scanning.",
         )
-    output_path = agi_path.with_name("clinvar.matches.jsonl")
+    output_path = agi_path.with_name(CLINVAR_MATCHES_NAME)
     materialized = static_annotation.match_static_clinvar_from_active_genome_index(
         reader,
         evidence_db=_path(resolved, "db"),

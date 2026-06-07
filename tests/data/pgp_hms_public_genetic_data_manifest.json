@@ -44,7 +44,8 @@
       ],
       "contract_fixture_cases": [
         "genome",
-        "genome_tar_gz"
+        "genome_tar_gz",
+        "genome_root_tar_gz"
       ]
     },
     "ancestrydna": {
@@ -235,11 +236,13 @@
       "sample_access_kind": "no_public_example_observed",
       "observed_wrappers": [
         "direct .genome file",
-        "gzip-compressed tar archive with .genome member"
+        "gzip-compressed tar archive with .genome member",
+        "gzip-compressed tar archive with bundle files at archive root"
       ],
       "observed_filename_patterns": [
         "*.genome",
-        "sample.genome.tar.gz"
+        "sample.genome.tar.gz",
+        "sample-root.genome.tar.gz"
       ],
       "observed_headers_or_columns": [
         "# rsid chromosome position genotype",
@@ -248,6 +251,7 @@
       "anonymized_fixture_names": [
         "contract.genome",
         "sample.genome.tar.gz",
+        "sample-root.genome.tar.gz",
         "sample.genome"
       ],
       "content_rows_committed": false

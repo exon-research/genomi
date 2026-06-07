@@ -111,7 +111,7 @@ def detect_source(source: str | Path) -> SourceDetection:
 
     raise ValueError(
         "Could not detect the genome source type from its content. Supported sources: "
-        ".genome/1.0 bundles, VCF/gVCF, BAM, paired-end FASTQ, and raw genotype exports from 23andMe, "
+        "genome.computer .genome/1.0 bundles, VCF/gVCF, BAM, paired-end FASTQ, and raw genotype exports from 23andMe, "
         "AncestryDNA, MyHeritage, FamilyTreeDNA (Family Finder), and Living DNA — "
         "compressed (gzip/bzip2/xz) or inside a zip/tar archive."
     )

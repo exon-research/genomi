@@ -240,9 +240,8 @@ deliverable straight from your account export and it figures out the rest:
 - **23andMe**, **AncestryDNA**, **MyHeritage**, **FamilyTreeDNA** (Family
   Finder), and **Living DNA** — raw genotype text/CSV as exported by the
   provider, including gzip/bzip2/xz-compressed files and zip/tar archives.
-- **`.genome/1.0` bundles** — directories or archives such as
-  `sample.genome.tar.gz`, with `manifest.json`, `schema.json`, and
-  partitioned `variants.parquet` records.
+- **genome.computer** — `.genome/1.0` bundles with `manifest.json`,
+  `schema.json`, and partitioned `variants.parquet` records.
 - **Nebula Genomics**, **Dante Labs**, and **Sequencing.com** — their VCF
   deliverables are recognized and tagged with the originating provider.
 - **Nebula / Dante / Sequencing.com FASTQ** — paired-end raw reads are

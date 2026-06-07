@@ -185,12 +185,16 @@ Edit this section only with explicit owner approval.
    responsibilities are accumulating and decide how they should be positioned
    across Genomi's package structure: shared runtime contracts, Active Genome
    Index intake/reader code, capability-owned logic, test fixtures, matrix case
-   declarations, or assertion helpers. Extract only when there is a natural
-   ownership, data-contract, call-flow, or reuse boundary, and name the new
-   module for that responsibility. Do not split a file merely to satisfy a
-   numeric threshold, move random helpers into junk modules, or create
-   abstractions that only hide length. Generated bundles should still be split
-   at the generation step when they become too large to review.
+   declarations, or assertion helpers. When one responsibility is extracted
+   from an already large file, actively inspect the neighboring responsibilities
+   and redistribute the larger module along coherent ownership boundaries
+   instead of moving a single helper and leaving the mixed file intact. Extract
+   only when there is a natural ownership, data-contract, call-flow, or reuse
+   boundary, and name the new module for that responsibility. Do not split a
+   file merely to satisfy a numeric threshold, move random helpers into junk
+   modules, or create abstractions that only hide length. Generated bundles
+   should still be split at the generation step when they become too large to
+   review.
 
 28. Tests must assert behavior, not refactor artifacts.
    Do not write `assertNotIn`/negative-string tests or before/after snapshots

@@ -34,7 +34,7 @@ def assert_source_support_operations(
     _assert_pgx_support_operations(testcase, contract, ctx, seen_operations)
     _assert_variant_context_operations(testcase, contract, ctx, allele_locus, seen_operations)
     _assert_decode_evidence_builder(testcase, contract, seen_operations)
-    _assert_agi_user_context_operations(testcase, contract, source, parsed, seen_operations)
+    _assert_agi_and_user_context_operations(testcase, contract, source, parsed, seen_operations)
     return seen_operations
 
 
@@ -148,7 +148,7 @@ def _assert_decode_evidence_builder(
     testcase.assertEqual(overview["metadata"]["source_format"], contract.expected_format)
 
 
-def _assert_agi_user_context_operations(
+def _assert_agi_and_user_context_operations(
     testcase: SupportsAssertions,
     contract: SourceContractCase,
     source: Path,
@@ -171,10 +171,11 @@ def _assert_agi_user_context_operations(
     testcase.assertEqual(assigned["status"], "completed")
     testcase.assertEqual(assigned["user"]["nickname"], nickname)
 
-    users = call_operation("active_genome_index.list_users")
-    seen_operations.add("active_genome_index.list_users")
-    testcase.assertEqual(users["status"], "completed")
-    testcase.assertTrue(any(user["nickname"] == nickname for user in users["users"]))
+    agis = call_operation("active_genome_index.list")
+    seen_operations.add("active_genome_index.list")
+    testcase.assertEqual(agis["status"], "completed")
+    testcase.assertTrue(any(agi["agi_id"] == assigned["user"]["active_agi_id"] for agi in agis["active_genome_indexes"]))
+    testcase.assertTrue(any(user["nickname"] == nickname for user in agis["users"]))
 
     selected = call_operation("active_genome_index.select_user", {"nickname": nickname})
     seen_operations.add("active_genome_index.select_user")

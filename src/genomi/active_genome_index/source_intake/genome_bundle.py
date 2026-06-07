@@ -11,6 +11,7 @@ from typing import Any
 
 from ...runtime.external import file_metadata
 from ...runtime.paths import (
+    ACTIVE_GENOME_INDEX_DB_NAME,
     run_evidence_db_path_for_source,
     run_evidence_dir_for_source,
     run_output_path_for_source,
@@ -69,7 +70,7 @@ def parse_genome_bundle_source(
         else run_evidence_db_path_for_source(source_path, source_format="genome")
     )
     shared_db = Path(shared_evidence_db) if shared_evidence_db is not None else shared_evidence_db_path()
-    agi_path = run_output_path_for_source(source_path, "active-genome-index.sqlite", source_format="genome")
+    agi_path = run_output_path_for_source(source_path, ACTIVE_GENOME_INDEX_DB_NAME, source_format="genome")
     project_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -411,7 +412,7 @@ def _insert_genome_bundle_header_lines(connection: sqlite3.Connection, *, manife
     lines = [
         "##fileformat=VCFv4.2",
         "##source=Genomi .genome bundle",
-        f"##genomiSourceFormat=genome",
+        "##genomiSourceFormat=genome",
         f"##genomiGenomeSchemaVersion={manifest.get('schema_version') or ''}",
         f"##genomiGenomePipelineVersion={manifest.get('pipeline_version') or ''}",
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",

@@ -22,7 +22,12 @@ from .catalog_meta import (
     BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST,
     TOOL_CATALOG_OPERATIONS,
 )
-from .handlers_admin_next_actions import assign_profile_next_action, reference_pass_next_action
+from .handlers_admin_next_actions import (
+    assign_profile_next_action,
+    read_agi_skill_next_action,
+    reference_pass_next_action,
+    with_next_action,
+)
 from .coerce import (
     _bool,
     _int,
@@ -40,153 +45,6 @@ from .errors import JsonObject, OperationError
 # Gate for the runtime git pull. The pull is the default on `genomi install`;
 # distributions that are not git-bound set this to suppress it.
 SKIP_GIT_PULL_ENV = "GENOMI_SKIP_RUNTIME_GIT_PULL"
-
-
-_ACTIVE_GENOME_INDEX_SKILL = "skills/active-genome-index/SKILL.md"
-
-
-def _read_agi_skill_next_action(why: str) -> JsonObject:
-    """A `next_actions` entry telling the host to read the active-genome-index
-    skill. The AGI selection/approval/interpretation tools (active_genome_index.*)
-    are invoke-only, so the host must read that skill before it can reach them
-    via genomi.invoke. parse_source and describe_context are the two base tools
-    that funnel into AGI work, so they surface this pointer."""
-    return {
-        "action": "read_skill",
-        "skill": _ACTIVE_GENOME_INDEX_SKILL,
-        "why": why,
-        "then": (
-            "Active Genome Index selection, approval, and interpretation tools "
-            "(active_genome_index.*) are invoke-only — read this skill, then call "
-            "them through genomi.invoke."
-        ),
-    }
-
-
-def _with_next_action(result: JsonObject, action: JsonObject) -> JsonObject:
-    existing = result.get("next_actions")
-    actions = list(existing) if isinstance(existing, list) else []
-    actions.append(action)
-    return {**result, "next_actions": actions}
-
-
-def _genomi_describe_context(_: JsonObject) -> JsonObject:
-    context = runtime_context.describe_context()
-    access = context.get("active_genome_index_access") or {}
-    approved = bool(access.get("approved")) if isinstance(access, dict) else False
-    has_active = bool(context.get("has_active_genome_index"))
-    has_genome_data = bool(context.get("users")) or bool(context.get("session_agis")) or has_active
-    # Point at the AGI skill only when there is genome data to work with but it
-    # is not already active + approved (so the host needs the invoke-only
-    # selection/approval tools). When the default user's AGI is auto-selected
-    # and approved, downstream capability tools read it directly — no pointer.
-    if has_genome_data and not (has_active and approved):
-        context = _with_next_action(
-            context,
-            _read_agi_skill_next_action(
-                "Genome data exists for this machine but is not active and approved this "
-                "session; selecting a profile or approving access for a personal-data "
-                "question uses invoke-only active_genome_index.* tools."
-            ),
-        )
-    return context
-
-
-def _genomi_approve_agi_access(params: JsonObject) -> JsonObject:
-    if not _bool(params, "approved_by_user"):
-        raise OperationError(
-            "approval_required",
-            "Set approved_by_user=true only after the user explicitly approves Active Genome Index access for this chat.",
-        )
-    try:
-        return runtime_context.approve_agi_access(
-            agi_id=params.get("agi_id"),
-            source=params.get("source"),
-            user_id=params.get("user_id"),
-            nickname=params.get("nickname"),
-            reason=params.get("reason"),
-        )
-    except KeyError as exc:
-        raise OperationError("missing_context", f"Known genomi agi not found for access target: {exc}") from exc
-
-
-def _genomi_revoke_agi_access(params: JsonObject) -> JsonObject:
-    return runtime_context.revoke_agi_access(agi_id=params.get("agi_id"))
-
-
-def _genomi_list_users(_: JsonObject) -> JsonObject:
-    return {
-        "status": "completed",
-        "active_user_id": runtime_context.describe_context().get("active_user_id"),
-        "users": runtime_context.list_users(),
-    }
-
-
-def _genomi_select_user(params: JsonObject) -> JsonObject:
-    target = _str(params, "user_id", "") or _str(params, "nickname", "")
-    if not target:
-        raise OperationError("invalid_params", "Provide user_id or nickname.")
-    try:
-        user = runtime_context.select_user(target)
-    except KeyError as exc:
-        raise OperationError("missing_context", f"Known user not found: {target}") from exc
-    return {
-        "status": "completed",
-        "user": runtime_context.describe_user(user),
-        "context": runtime_context.describe_context(),
-    }
-
-
-def _genomi_rename_user(params: JsonObject) -> JsonObject:
-    target = _str(params, "user_id", "") or _str(params, "nickname", "")
-    if not target:
-        raise OperationError("invalid_params", "Provide user_id or current nickname.")
-    try:
-        user = runtime_context.rename_user(target, _str(params, "new_nickname"))
-    except KeyError as exc:
-        raise OperationError("missing_context", f"Known user not found: {target}") from exc
-    except ValueError as exc:
-        raise OperationError("invalid_params", str(exc)) from exc
-    return {"status": "completed", "user": runtime_context.describe_user(user), "context": runtime_context.describe_context()}
-
-
-def _genomi_assign_user_genome(params: JsonObject) -> JsonObject:
-    try:
-        user = runtime_context.assign_user_genome(
-            user_id=params.get("user_id"),
-            nickname=params.get("nickname"),
-            agi_id=params.get("agi_id"),
-            source=params.get("source"),
-            db=_optional_path(params, "db"),
-            agi_path=_optional_path(params, "agi_path"),
-            matches=_optional_path(params, "matches"),
-            shared_db=_optional_path(params, "shared_db"),
-            reference_fasta=_optional_path(params, "reference_fasta"),
-            genotype_reference_fasta=_optional_path(params, "genotype_reference_fasta"),
-            genome_build=params.get("genome_build"),
-            set_active=_bool(params, "set_active", True),
-            set_default_user=_bool(params, "set_default_user"),
-        )
-    except KeyError as exc:
-        raise OperationError("missing_context", f"Known genomi agi not found: {exc}") from exc
-    except ValueError as exc:
-        raise OperationError("invalid_params", str(exc)) from exc
-    return {"status": "completed", "user": runtime_context.describe_user(user), "context": runtime_context.describe_context()}
-
-
-def _genomi_set_default_user(params: JsonObject) -> JsonObject:
-    target = _str(params, "user_id", "") or _str(params, "nickname", "")
-    if not target:
-        raise OperationError("invalid_params", "Provide user_id or nickname.")
-    try:
-        user = runtime_context.set_default_user(target)
-    except KeyError as exc:
-        raise OperationError("missing_context", f"Known user not found: {target}") from exc
-    return {"status": "completed", "default_user": runtime_context.describe_user(user), "context": runtime_context.describe_context()}
-
-
-def _genomi_clear_default_user(_: JsonObject) -> JsonObject:
-    return runtime_context.clear_default_user()
 
 
 def _genomi_set_response_profile(params: JsonObject) -> JsonObject:
@@ -653,10 +511,6 @@ def _tail(text: str, *, limit: int = 4000) -> str:
     return stripped[-limit:]
 
 
-def _genomi_clear_selection(params: JsonObject) -> JsonObject:
-    return runtime_context.clear_active_genome_index(forget_active_genome_indexes=_bool(params, "forget_active_genome_indexes"))
-
-
 def _genomi_invoke(params: JsonObject) -> JsonObject:
     """Dispatch a Genomi capability operation by qualified name.
 
@@ -957,9 +811,9 @@ def _genomi_parse_source(params: JsonObject) -> JsonObject:
     reference_pending = build_status == "variants_ready" or bool(reference_job_id)
 
     if parse_completed:
-        parsed = _with_next_action(
+        parsed = with_next_action(
             parsed,
-            _read_agi_skill_next_action(
+            read_agi_skill_next_action(
                 "Every variant is now queryable in the Active Genome Index. Interpreting "
                 "it and assigning it to a user profile use invoke-only active_genome_index.* tools."
             ),
@@ -967,7 +821,7 @@ def _genomi_parse_source(params: JsonObject) -> JsonObject:
     # The user did not pre-supply a profile name, so prompt for one (and whether
     # to make it the default) exactly like INSTALL_FOR_AGENTS.md Step 8.
     if parse_completed and not params.get("user_nickname"):
-        parsed = _with_next_action(parsed, assign_profile_next_action())
+        parsed = with_next_action(parsed, assign_profile_next_action())
     if reference_pending:
-        parsed = _with_next_action(parsed, reference_pass_next_action(reference_job_id, outputs.get("reference_pass_job_path")))
+        parsed = with_next_action(parsed, reference_pass_next_action(reference_job_id, outputs.get("reference_pass_job_path")))
     return parsed

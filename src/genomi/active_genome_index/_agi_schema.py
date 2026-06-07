@@ -6,7 +6,7 @@ except ImportError:  # pragma: no cover - non-POSIX support is best-effort
     fcntl = None  # type: ignore[assignment]
 
 from ..runtime.external import utc_now
-from ..runtime.paths import run_output_path
+from ..runtime.paths import ACTIVE_GENOME_INDEX_DB_NAME, run_output_path
 from ..runtime.sqlite_support import DEFAULT_BUSY_TIMEOUT_SECONDS
 from ..runtime.sqlite_support import connect_sqlite, connect_readonly_sqlite
 from .vcf import SIMPLE_GENE_KEYS
@@ -84,7 +84,7 @@ class ActiveGenomeIndexStats:
         }
 
 def default_agi_path(vcf_path: str | Path, root: str | Path | None = None) -> Path:
-    return run_output_path(vcf_path, "active-genome-index.sqlite", root=root)
+    return run_output_path(vcf_path, ACTIVE_GENOME_INDEX_DB_NAME, root=root)
 
 def connect(agi_path: str | Path) -> sqlite3.Connection:
     # Even with the advisory build lock holding off other builders, a long-

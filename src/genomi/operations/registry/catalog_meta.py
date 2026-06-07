@@ -19,6 +19,7 @@ TOOL_CATALOG_OPERATIONS: dict[str, JsonObject] = {
 WRITE_OPERATIONS = {
     "active_genome_index.approve_access",
     "active_genome_index.revoke_access",
+    "active_genome_index.remove",
     "active_genome_index.select_user",
     "active_genome_index.rename_user",
     "active_genome_index.assign_user_genome",

@@ -2,14 +2,13 @@
 name: active-genome-index
 description: |
   Register, parse, and digitize private genome source files into a local Active Genome Index and
-  supporting evidence stores. Use when the session explicitly supplies a VCF/gVCF, BAM, .genome/1.0
-  bundle, 23andMe raw genotype export, AncestryDNA raw genotype export, MyHeritage raw
+  supporting evidence stores. Use when the session explicitly supplies a VCF/gVCF, BAM,
+  genome.computer .genome/1.0 bundle, 23andMe raw genotype export, AncestryDNA raw genotype export, MyHeritage raw
   genotype export, FamilyTreeDNA Family Finder export, Living DNA autosomal export, supported source zip/tar,
   or known Active Genome Index.
 tools:
   - genomi.describe_context
   - active_genome_index.approve_access
-  - active_genome_index.list_users
   - active_genome_index.select_user
   - active_genome_index.assign_user_genome
   - genomi.parse_source
@@ -22,6 +21,8 @@ tools:
   - active_genome_index.classify_region_callability
   - active_genome_index.clear_selection
   - active_genome_index.revoke_access
+  - active_genome_index.list
+  - active_genome_index.remove
 mutating: true
 ---
 
@@ -59,7 +60,7 @@ Contract:
 - BAM: aligned sequencing reads. Genomi derives a local VCF from the reads with a matching reference FASTA, then builds an Active Genome Index for the derived callset for normal sample-specific tools.
 - FASTQ (paired-end): raw reads from sequencing services such as Nebula, Dante Labs, and Sequencing.com. Genomi auto-detects the R2 sibling, picks minimap2 (long reads) or bwa-mem2 (short reads) by the median sniffed read length, sorts the aligned BAM with samtools, then hands the BAM off to the standard BAM → derived-VCF path. Requires the `wgs-alignment` install purpose (or aligner binaries on PATH); a missing aligner returns `requires_library_install` instead of failing.
 - 23andMe raw genotype text or zip/tar archive: consumer SNP-array calls with `rsid`, chromosome, position, and plus-strand genotype on GRCh37.
-- `.genome/1.0` bundle such as `sample.genome.tar.gz`, with `manifest.json`, `schema.json`, and partitioned `variants.parquet` records.
+- genome.computer `.genome/1.0` bundle directory or archive with `manifest.json`, `schema.json`, and partitioned `variants.parquet` records.
 - AncestryDNA raw genotype text or zip/tar archive: consumer SNP-array calls with `rsid`, chromosome, position, `allele1`, and `allele2` on GRCh37/build 37.1.
 - MyHeritage raw genotype CSV or zip/tar archive: comma-delimited `RSID,CHROMOSOME,POSITION,RESULT` exports prefixed with a `# MyHeritage DNA raw data` banner, GRCh37.
 - FamilyTreeDNA Family Finder autosomal CSV or compressed/zip/tar archive: same `RSID,CHROMOSOME,POSITION,RESULT` columns as MyHeritage but with no banner, build encoded in the filename (`_o37_`), GRCh37.
@@ -122,17 +123,23 @@ Clear persistent default user/profile selection for this GENOMI_HOME.
 
 **Result semantics**: Clears default=true from all known users; session selections and artifacts remain.
 
-### active_genome_index.list_users
+### active_genome_index.list
 
-List user/profile metadata and the Active Genome Index records assigned to each user.
+List users and Active Genome Index records.
 
-**Use when**: The user asks which people or profiles are configured, or which genomes are assigned to a user.
+**Use when**: The user asks what AGIs or users exist, or gives a vague AGI lifecycle request that needs disambiguation before selecting exact records.
 
-**Why necessary**: User nicknames belong to people/profiles, not genome artifacts, so agents need a metadata-only user registry view.
+**Result semantics**: Returns structured `users` and `active_genome_indexes`; AGI records include IDs, hashes, names, typed source references, source metadata, linked users, readiness, and artifact availability. It does not approve private reads.
 
-**Example prompts**: Which users have genomes imported?
+### active_genome_index.remove
 
-**Result semantics**: Returns user and genomi agi metadata only; it does not approve reading genome artifacts.
+Remove confirmed Active Genome Index records and Genomi-owned artifacts.
+
+**Use when**: The user has confirmed the exact AGI record(s) to remove.
+
+**Not for**: User/profile management. Use the user tools for user/profile metadata.
+
+**Result semantics**: Removes the targeted AGI registry/session record, session access grant, user/profile AGI links, and Genomi-owned run artifacts. The original intake source and shared evidence database are not deleted.
 
 ### genomi.parse_source
 
