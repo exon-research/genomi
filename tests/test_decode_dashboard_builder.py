@@ -374,11 +374,30 @@ class DecodeRenderAutoBuildTests(unittest.TestCase):
                     "panels_ready": ["overview"],
                     "panels_empty": ["variants"],
                     "panels_blocked": [],
+                    "panels_running": [],
+                    "panels_failed": ["pgx"],
                     "panels_requested": ["overview", "pgx"],
                     "panel_states": [
                         {"panel": "overview", "status": "data_returned"},
-                        {"panel": "pgx", "status": "position_aware_pharmcat_export_required"},
+                        {
+                            "panel": "pgx",
+                            "status": "failed",
+                            "source_operation": "pharmacogenomics.run_pharmcat",
+                            "error": {"code": "pharmcat_vcf_parse_failed", "message": "invalid INFO field"},
+                        },
                     ],
+                    "evidence_envelope": {
+                        "operation": "decode.build_dashboard_evidence",
+                        "headline": "decode.build_dashboard_evidence: evidence_present · scoped_answer_only",
+                        "finding_state": "evidence_present",
+                        "answer_readiness": "scoped_answer_only",
+                        "guidance": [],
+                        "negative_inference": {"allowed": False, "requires": []},
+                        "observations": {
+                            "panels_ready": ["overview"],
+                            "panels_failed": ["pgx"],
+                        },
+                    },
                 }
                 with mock.patch(_DECODE_BUILDER_PATCH, return_value=built) as build:
                     result = call_operation(
@@ -388,6 +407,9 @@ class DecodeRenderAutoBuildTests(unittest.TestCase):
 
                 self.assertEqual(result["status"], "completed")
                 self.assertEqual(result["evidence_build"]["panels_ready"], ["overview"])
+                self.assertEqual(result["evidence_build"]["panels_failed"], ["pgx"])
+                self.assertEqual(result["evidence_envelope"]["operation"], "decode.render_dashboard")
+                self.assertEqual(result["evidence_envelope"]["observations"]["panels_failed"], ["pgx"])
                 parsed = _extract_evidence(out.read_text(encoding="utf-8"))
                 self.assertEqual(parsed["overview"]["sampleId"], "BUILT")
                 self.assertEqual(parsed["__dashboard"]["panelStates"][1]["panel"], "pgx")

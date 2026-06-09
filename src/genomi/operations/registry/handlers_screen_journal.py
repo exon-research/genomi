@@ -275,7 +275,22 @@ def _decode_render_dashboard(params: JsonObject) -> JsonObject:
             "panels_failed": build_result.get("panels_failed", []),
             "panel_states": build_result.get("panel_states", []),
         }
+        envelope = _decode_render_envelope(build_result)
+        if envelope is not None:
+            result["evidence_envelope"] = envelope
     return result
+
+
+def _decode_render_envelope(build_result: JsonObject) -> JsonObject | None:
+    envelope = build_result.get("evidence_envelope")
+    if not isinstance(envelope, dict):
+        return None
+    rendered = dict(envelope)
+    rendered["operation"] = "decode.render_dashboard"
+    finding_state = str(rendered.get("finding_state") or "not_assessed")
+    answer_readiness = str(rendered.get("answer_readiness") or "cannot_answer_yet")
+    rendered["headline"] = f"decode.render_dashboard: {finding_state} · {answer_readiness}"
+    return rendered
 
 
 def _decode_build_params(params: JsonObject) -> JsonObject:
