@@ -22,6 +22,7 @@ PRIMARY_CONTIGS_GRCH38_WITH_ALIASES = tuple(
     + [f"chr{number}" for number in range(1, 23)]
     + ["chrX", "chrY", "chrM", "chrMT"]
 )
+EXPORT_VARIANTS_WRITER_VERSION = "export-variants-v2-vcf-info-format"
 
 
 def export_variants(
@@ -90,6 +91,7 @@ def export_variants(
     manifest_path = f"{output_path}.genomi-manifest.json"
     cache_expected = {
         "step": "export-variants",
+        "writer_version": EXPORT_VARIANTS_WRITER_VERSION,
         "agi_path": file_metadata(agi_path),
         "filters": filters,
     }
@@ -131,6 +133,7 @@ def export_variants(
 
     manifest = {
         "step": "export-variants",
+        "writer_version": EXPORT_VARIANTS_WRITER_VERSION,
         "created_at_utc": utc_now(),
         "agi_path": file_metadata(agi_path),
         "output": file_metadata(output_path),

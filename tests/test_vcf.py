@@ -39,6 +39,7 @@ from genomi.active_genome_index.vcf import (
     read_header_lines,
     sample_metrics,
 )
+from genomi.runtime.external import file_metadata, write_manifest
 
 FIXTURE = Path(__file__).parent / "data" / "tiny.gvcf.vcf"
 
@@ -826,6 +827,59 @@ class IndexTests(unittest.TestCase):
             rows = [line.split("\t") for line in output_path.read_text(encoding="utf-8").splitlines() if not line.startswith("#")]
             info = next(row[7] for row in rows if row[1] == "10250")
             self.assertEqual(result["exported_records"], 4)
+            self.assertEqual(info, "variant_id=chr1:10250:A:C")
+            self.assertNotIn("{", info)
+            self.assertNotRegex(info, r"\s")
+
+    def test_export_variants_rewrites_stale_cached_info_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            agi_path = Path(tmp) / "tiny.sqlite"
+            output_path = Path(tmp) / "pharmcat-input.vcf"
+            create_active_genome_index(FIXTURE, agi_path)
+            with connect_sqlite(agi_path) as connection:
+                connection.execute(
+                    "update records set info = ? where chrom = '1' and pos = 10250",
+                    (json.dumps({"variant_id": "chr1:10250:A:C"}, sort_keys=True),),
+                )
+                connection.commit()
+
+            output_path.write_text(
+                "\n".join(
+                    [
+                        "##fileformat=VCFv4.2",
+                        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+                        '1\t10250\trs199706086\tA\tC\t123.38\tPASS\t{"variant_id": "chr1:10250:A:C"}=\tGT\t0/1',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            write_manifest(
+                f"{output_path}.genomi-manifest.json",
+                {
+                    "step": "export-variants",
+                    "created_at_utc": "2026-06-09T00:00:00+00:00",
+                    "agi_path": file_metadata(agi_path),
+                    "output": file_metadata(output_path),
+                    "filters": {
+                        "variants_only": False,
+                        "pass_only": True,
+                        "primary_contigs_only": False,
+                        "contigs": None,
+                        "chrom_style": "input",
+                        "max_records": None,
+                        "sanitize_metadata": True,
+                    },
+                    "candidate_records": 4,
+                    "exported_records": 4,
+                },
+            )
+
+            result = export_variants(agi_path, output_path, variants_only=False, pass_only=True, sanitize_metadata=True)
+
+            rows = [line.split("\t") for line in output_path.read_text(encoding="utf-8").splitlines() if not line.startswith("#")]
+            info = next(row[7] for row in rows if row[1] == "10250")
+            self.assertEqual(result["status"], "completed")
             self.assertEqual(info, "variant_id=chr1:10250:A:C")
             self.assertNotIn("{", info)
             self.assertNotRegex(info, r"\s")
