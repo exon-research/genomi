@@ -809,6 +809,27 @@ class IndexTests(unittest.TestCase):
             self.assertEqual([row[1] for row in records], ["1", "2", "3"])
             self.assertEqual([row[9] for row in records], ["0/1", "0/0", "./."])
 
+    def test_export_variants_formats_structured_info_as_vcf_info(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            agi_path = Path(tmp) / "tiny.sqlite"
+            output_path = Path(tmp) / "pharmcat-input.vcf"
+            create_active_genome_index(FIXTURE, agi_path)
+            with connect_sqlite(agi_path) as connection:
+                connection.execute(
+                    "update records set info = ? where chrom = '1' and pos = 10250",
+                    (json.dumps({"variant_id": "chr1:10250:A:C"}, sort_keys=True),),
+                )
+                connection.commit()
+
+            result = export_variants(agi_path, output_path, variants_only=False, pass_only=True)
+
+            rows = [line.split("\t") for line in output_path.read_text(encoding="utf-8").splitlines() if not line.startswith("#")]
+            info = next(row[7] for row in rows if row[1] == "10250")
+            self.assertEqual(result["exported_records"], 4)
+            self.assertEqual(info, "variant_id=chr1:10250:A:C")
+            self.assertNotIn("{", info)
+            self.assertNotRegex(info, r"\s")
+
     def test_unfiltered_dot_variant_is_passing_for_reader_and_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             vcf_path = Path(tmp) / "dot-filter.vcf"

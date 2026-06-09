@@ -31,6 +31,7 @@ from ..record_kinds import (
     RECORD_KIND_VARIANT_CALL,
     _is_no_call_genotype,
 )
+from ..vcf_info import format_vcf_info
 from .agi_store import (
     JsonObject,
     _cached_array_active_genome_index_if_usable,
@@ -279,7 +280,7 @@ def _genome_bundle_record_row(row: tuple[Any, ...], *, row_index: int) -> tuple[
     else:
         record_kind = RECORD_KIND_VARIANT_CALL
     info_genes = [str(gene_symbol)] if gene_symbol else []
-    info = json.dumps({"variant_id": variant_id}, sort_keys=True) if variant_id else "."
+    info = format_vcf_info({"variant_id": variant_id}) if variant_id else "."
     sample = genotype
     if dp is not None or gq is not None:
         sample = f"{genotype}:{'.' if dp is None else int(dp)}:{'.' if gq is None else int(gq)}"
@@ -418,6 +419,7 @@ def _insert_genome_bundle_header_lines(connection: sqlite3.Connection, *, manife
         "##genomiSourceFormat=genome",
         f"##genomiGenomeSchemaVersion={manifest.get('schema_version') or ''}",
         f"##genomiGenomePipelineVersion={manifest.get('pipeline_version') or ''}",
+        '##INFO=<ID=variant_id,Number=1,Type=String,Description="Genomi variant identifier">',
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
     ]
     connection.execute("delete from source_header_lines")

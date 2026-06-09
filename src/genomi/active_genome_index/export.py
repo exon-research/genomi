@@ -13,6 +13,7 @@ from .active_genome_index import (
     read_header_from_active_genome_index,
 )
 from .filtering import passing_filter_sql
+from .vcf_info import format_vcf_info
 
 PRIMARY_CONTIGS_GRCH38 = tuple([str(number) for number in range(1, 23)] + ["X", "Y", "MT"])
 PRIMARY_CONTIGS_GRCH38_WITH_ALIASES = tuple(
@@ -237,7 +238,7 @@ def _synthesize_record_line(group: list[sqlite3.Row], chrom_style: str, sample_c
     rsid = first["rsid"] if first["rsid"] not in (None, "") else "."
     alt = first["alt"] if first["alt"] not in (None, "", ".") else "."
     qual = first["qual"] if first["qual"] not in (None, "") else "."
-    info = first["info"] if first["info"] not in (None, "") else "."
+    info = format_vcf_info(first["info"])
     fmt = first["format"] if first["format"] not in (None, "") else None
     fields = [
         chrom,
@@ -247,7 +248,7 @@ def _synthesize_record_line(group: list[sqlite3.Row], chrom_style: str, sample_c
         str(alt),
         str(qual),
         str(first["filter"]),
-        str(info),
+        info,
     ]
     # When the header declares samples, every data line must carry FORMAT plus
     # exactly one column per declared sample. Place each stored sample row by its

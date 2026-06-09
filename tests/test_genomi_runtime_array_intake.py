@@ -10,6 +10,7 @@ from pathlib import Path
 from genomi.operations import call_operation
 from genomi.operations.registry.errors import OperationError
 from genomi.active_genome_index.active_genome_index import SCHEMA_VERSION, active_genome_index_readiness
+from genomi.active_genome_index.export import export_variants
 from genomi.runtime.sqlite_support import connect_sqlite
 
 from tests.support.active_genome_index.contract_fixtures import ActiveGenomeIndexContractFixtureMixin
@@ -66,6 +67,23 @@ class GenomiRuntimeArrayIntakeTests(ActiveGenomeIndexContractFixtureMixin, Genom
                 self.assertEqual(match["record_kind"], "variant_call")
                 self.assertEqual(match["genotype"], "1/1")
                 self.assertEqual(match["observed_alleles"], ["C", "C"])
+
+                export_path = Path("genome-pharmcat-input.vcf")
+                export_result = export_variants(
+                    parsed["outputs"]["agi_path"],
+                    export_path,
+                    variants_only=False,
+                    pass_only=True,
+                    primary_contigs_only=True,
+                    chrom_style="chr",
+                )
+                lines = export_path.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(export_result["exported_records"], 4)
+                self.assertTrue(any(line.startswith("##INFO=<ID=variant_id,") for line in lines))
+                exported_rows = [line.split("\t") for line in lines if not line.startswith("#")]
+                exported_match = next(row for row in exported_rows if row[2] == "rs900000001")
+                self.assertEqual(exported_match[7], "variant_id=chr1:100:A:C")
+                self.assertNotRegex(exported_match[7], r"\s")
             finally:
                 os.chdir(previous)
 
