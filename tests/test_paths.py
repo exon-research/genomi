@@ -19,8 +19,10 @@ from genomi.evidence import (
     record_research_findings,
 )
 from genomi.runtime.paths import (
+    default_genomi_home,
     default_export_variants_path,
     enclosing_work_dir,
+    genomi_data_root,
     run_evidence_db_path,
     run_evidence_dir,
     run_output_path,
@@ -77,6 +79,58 @@ class GenomiDataPathTests(unittest.TestCase):
                     self.assertEqual(shared_evidence_db_path(), home / "shared-evidence.sqlite")
                 finally:
                     os.chdir(previous)
+
+    def test_genomi_home_env_overrides_xdg_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "explicit-home"
+            xdg_home = Path(tmp) / "xdg-data"
+            with mock.patch.dict(os.environ, {"GENOMI_HOME": str(explicit), "XDG_DATA_HOME": str(xdg_home)}):
+                self.assertEqual(genomi_data_root(), explicit)
+
+    def test_xdg_data_home_sets_default_genomi_home_on_any_platform(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xdg_home = Path(tmp) / "xdg-data"
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(Path(tmp) / "home"), "XDG_DATA_HOME": str(xdg_home)}),
+                mock.patch("genomi.runtime.paths.sys.platform", "darwin"),
+            ):
+                os.environ.pop("GENOMI_HOME", None)
+                self.assertEqual(default_genomi_home(), xdg_home / "genomi")
+                self.assertEqual(genomi_data_root(), xdg_home / "genomi")
+
+    def test_linux_default_genomi_home_uses_xdg_data_default_when_xdg_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(home)}),
+                mock.patch("genomi.runtime.paths.sys.platform", "linux"),
+            ):
+                os.environ.pop("GENOMI_HOME", None)
+                os.environ.pop("XDG_DATA_HOME", None)
+                self.assertEqual(default_genomi_home(), home / ".local" / "share" / "genomi")
+                self.assertEqual(genomi_data_root(), home / ".local" / "share" / "genomi")
+
+    def test_non_linux_default_genomi_home_keeps_legacy_home_when_xdg_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(home)}),
+                mock.patch("genomi.runtime.paths.sys.platform", "darwin"),
+            ):
+                os.environ.pop("GENOMI_HOME", None)
+                os.environ.pop("XDG_DATA_HOME", None)
+                self.assertEqual(default_genomi_home(), home / ".genomi")
+                self.assertEqual(genomi_data_root(), home / ".genomi")
+
+    def test_relative_xdg_data_home_is_ignored_for_default_genomi_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(home), "XDG_DATA_HOME": "relative-xdg"}),
+                mock.patch("genomi.runtime.paths.sys.platform", "linux"),
+            ):
+                os.environ.pop("GENOMI_HOME", None)
+                self.assertEqual(default_genomi_home(), home / ".local" / "share" / "genomi")
 
     def test_shared_evidence_db_env_overrides_default_shared_db(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

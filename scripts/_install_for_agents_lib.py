@@ -39,7 +39,10 @@ def _library_manager():
 
 
 def genomi_home_path() -> Path:
-    return Path(os.environ.get("GENOMI_HOME") or str(Path("~/.genomi").expanduser())).expanduser().resolve(strict=False)
+    _ensure_src_on_path()
+    from genomi.runtime.paths import genomi_data_root
+
+    return genomi_data_root().resolve(strict=False)
 
 
 def install_genomi_command_shim() -> Path:

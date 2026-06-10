@@ -4,7 +4,7 @@ Rules for selecting the Active Genome Index and evidence database.
 
 ## Context Axes
 
-- **Active Genome Index home** = durable Active Genome Index storage. `GENOMI_HOME`, default `~/.genomi`.
+- **Active Genome Index home** = durable Active Genome Index storage. `GENOMI_HOME`, default resolved by runtime: explicit `GENOMI_HOME`, then absolute `$XDG_DATA_HOME/genomi`, then Linux `~/.local/share/genomi`, then legacy `~/.genomi` on other platforms.
 - **Active Genome Index** = the currently selected digitized genome source for this agent session.
   `GENOMI_CONTEXT` can pin a context file; `GENOMI_SESSION_ID` can pin a
   session namespace.

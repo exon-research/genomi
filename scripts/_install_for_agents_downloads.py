@@ -13,7 +13,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from pathlib import Path
+
+from _install_for_agents_lib import genomi_home_path
 
 
 def _report_existing_install(selected: list[str], *, force: bool) -> None:
@@ -26,7 +27,7 @@ def _report_existing_install(selected: list[str], *, force: bool) -> None:
     """
     if not selected:
         return
-    home = Path(os.environ.get("GENOMI_HOME") or str(Path("~/.genomi").expanduser())).expanduser()
+    home = genomi_home_path()
     if not home.exists():
         return
     populated = [child for child in ("resources", "reference", "tools") if (home / child).is_dir() and any((home / child).iterdir())]

@@ -25,7 +25,26 @@ That's it. The agent will ask you three questions and handle the rest.
 **Alternative — do it yourself (not recommended):**
 
 ```bash
-export GENOMI_HOME=~/.genomi
+GENOMI_DEFAULT_HOME="$(
+python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+xdg = os.environ.get("XDG_DATA_HOME")
+if xdg:
+    xdg_path = Path(os.path.expandvars(os.path.expanduser(xdg)))
+    if xdg_path.is_absolute():
+        print(xdg_path / "genomi")
+        raise SystemExit
+if sys.platform == "linux":
+    print(Path.home() / ".local" / "share" / "genomi")
+else:
+    print(Path.home() / ".genomi")
+PY
+)"
+GENOMI_HOME="${GENOMI_HOME:-$GENOMI_DEFAULT_HOME}"
+export GENOMI_HOME
 git clone git@github.com:exon-research/genomi.git "$GENOMI_HOME/genomi"
 cd "$GENOMI_HOME/genomi"
 python3 scripts/install_for_agents.py --libraries everything
@@ -39,7 +58,9 @@ install `minimap2` / `bwa-mem2` via your package manager if you need FASTQ
 support. Everything else — variants, ClinVar, pharmacogenomics, ancestry,
 PRS, sequence utilities — works the same on every platform. The full
 install caches ~7 GB of public reference libraries under `GENOMI_HOME`
-(defaults to `~/.genomi`).
+(preferred default: explicit `GENOMI_HOME`, then absolute
+`$XDG_DATA_HOME/genomi`, then `~/.local/share/genomi` on Linux, otherwise
+`~/.genomi`).
 
 After install, peek at [`SKILL.md`](./SKILL.md) and the focused skill docs to
 see what your agent can now do.
@@ -54,15 +75,35 @@ had before — a real human genome, queryable in natural language, kept
 entirely on this machine.
 
 Read this whole document before sending your first message. Decide whether
-Genomi is already installed by checking whether `$GENOMI_HOME/genomi` (default
-`~/.genomi/genomi`) holds the project:
+Genomi is already installed by computing the preferred default home and checking
+whether `$GENOMI_HOME/genomi` holds the project:
 
 ```bash
-test -f "${GENOMI_HOME:-$HOME/.genomi}/genomi/pyproject.toml" && echo installed || echo not-installed
+GENOMI_DEFAULT_HOME="$(
+python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+xdg = os.environ.get("XDG_DATA_HOME")
+if xdg:
+    xdg_path = Path(os.path.expandvars(os.path.expanduser(xdg)))
+    if xdg_path.is_absolute():
+        print(xdg_path / "genomi")
+        raise SystemExit
+if sys.platform == "linux":
+    print(Path.home() / ".local" / "share" / "genomi")
+else:
+    print(Path.home() / ".genomi")
+PY
+)"
+GENOMI_HOME="${GENOMI_HOME:-$GENOMI_DEFAULT_HOME}"
+export GENOMI_HOME
+test -f "$GENOMI_HOME/genomi/pyproject.toml" && echo installed || echo not-installed
 ```
 
 - **Installed** → this is an **update**: run `genomi install` (alias
-  `genomi update`), or `"${GENOMI_HOME:-$HOME/.genomi}/bin/genomi" install` if
+  `genomi update`), or `"$GENOMI_HOME/bin/genomi" install` if
   `genomi` isn't on PATH. It git-pulls the runtime, reinstalls, fills missing
   libraries, and refreshes any whose upstream source changed (idempotent). Then
   stop — skip the rest of this doc.
@@ -185,13 +226,41 @@ downloaded reference library, up to ~7 GB depending on Q1.
 Where should Genomi store its data root (Active Genome Index + reference
 libraries)? Up to ~7 GB depending on what you picked above.
 
-Default: ~/.genomi
+Preferred default: compute it with the resolver below.
 Or give any path (relative or absolute) on a disk with enough free space.
 ```
 
-Resolve to an absolute path before exporting. Then:
+Resolve to an absolute path before exporting. The resolver matches Genomi's
+runtime order: explicit `GENOMI_HOME`, then absolute `$XDG_DATA_HOME/genomi`,
+then Linux `~/.local/share/genomi`, then legacy `~/.genomi` on other platforms.
 
-- `~/.genomi` → `export GENOMI_HOME=~/.genomi`. No extra flag.
+```bash
+GENOMI_DEFAULT_HOME="$(
+python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+xdg = os.environ.get("XDG_DATA_HOME")
+if xdg:
+    xdg_path = Path(os.path.expandvars(os.path.expanduser(xdg)))
+    if xdg_path.is_absolute():
+        print(xdg_path / "genomi")
+        raise SystemExit
+if sys.platform == "linux":
+    print(Path.home() / ".local" / "share" / "genomi")
+else:
+    print(Path.home() / ".genomi")
+PY
+)"
+GENOMI_HOME="${GENOMI_HOME:-$GENOMI_DEFAULT_HOME}"
+export GENOMI_HOME
+printf '%s\n' "$GENOMI_HOME"
+```
+
+Then:
+
+- Preferred default → export the computed `GENOMI_HOME`. No extra flag.
 - Anywhere else → `export GENOMI_HOME=<absolute path>` **and** pass
   `--genomi-home <absolute path>` to the installer.
 
@@ -229,7 +298,7 @@ the project, Genomi is installed → update it via Step 6. Otherwise
 clone/bootstrap in Step 5.
 
 ```bash
-test -f "${GENOMI_HOME:-$HOME/.genomi}/genomi/pyproject.toml" && echo installed || echo not-installed
+test -f "$GENOMI_HOME/genomi/pyproject.toml" && echo installed || echo not-installed
 python3 --version    # need 3.10+
 python3 -m pip --version || uv --version
 git --version
@@ -295,7 +364,7 @@ Source bootstrap fallback, only after Step 5 cloned or selected a checkout:
 export GENOMI_HOME=<Q2-path>
 python3 scripts/install_for_agents.py \
   --libraries <Q1-value> \
-  [--genomi-home <Q2-path>]   # include only when Q2 ≠ ~/.genomi
+  [--genomi-home <Q2-path>]   # include only when Q2 is not the computed default
   [--genome-source /path/to/file] [--user-nickname "Name"] [--set-default-user]
 ```
 
@@ -368,8 +437,7 @@ exact value on completion). Don't write `"command": "genomi"` — that depends
 on the MCP host's launch PATH, which often differs from the user's shell PATH.
 
 In the snippets below, substitute `<GENOMI_HOME>` with the resolved absolute
-path. Examples assume `~/.genomi`, expanded to `/Users/<you>/.genomi` (macOS) or
-`/home/<you>/.genomi` (Linux).
+path from Q2 or the installer summary.
 
 After writing the entry below, ask the user to restart the host so the
 server is spawned. Some hosts also require a per-host approval step

@@ -4,13 +4,14 @@ import gzip
 import hashlib
 import os
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 
 GENOMI_HOME_ENV = "GENOMI_HOME"
+XDG_DATA_HOME_ENV = "XDG_DATA_HOME"
 GENOMI_SHARED_EVIDENCE_DB_ENV = "GENOMI_SHARED_EVIDENCE_DB"
-DEFAULT_GENOMI_HOME = Path.home() / ".genomi"
-GENOMI_DATA_ROOT = DEFAULT_GENOMI_HOME
+DOT_GENOMI_HOME_NAME = ".genomi"
 WORKSPACE_DATA_ROOT_NAME = ".genomi-data"
 WORK_DIR_NAME = "work"
 EVIDENCE_DIR_NAME = "evidence"
@@ -51,15 +52,30 @@ _GENERIC_FILE_SLUGS = {
 }
 
 
+def expand_user_path(value: str | Path) -> Path:
+    return Path(os.path.expandvars(str(value))).expanduser()
+
+
+def default_genomi_home() -> Path:
+    configured_xdg = os.environ.get(XDG_DATA_HOME_ENV)
+    if configured_xdg:
+        xdg_home = expand_user_path(configured_xdg)
+        if xdg_home.is_absolute():
+            return xdg_home / "genomi"
+    if sys.platform == "linux":
+        return Path.home() / ".local" / "share" / "genomi"
+    return Path.home() / DOT_GENOMI_HOME_NAME
+
+
+DEFAULT_GENOMI_HOME = default_genomi_home()
+GENOMI_DATA_ROOT = DEFAULT_GENOMI_HOME
+
+
 def genomi_data_root(root: str | Path | None = None) -> Path:
     if root is not None:
         return expand_user_path(root)
     configured = os.environ.get(GENOMI_HOME_ENV)
-    return expand_user_path(configured) if configured else DEFAULT_GENOMI_HOME
-
-
-def expand_user_path(value: str | Path) -> Path:
-    return Path(os.path.expandvars(str(value))).expanduser()
+    return expand_user_path(configured) if configured else default_genomi_home()
 
 
 def genomi_tools_dir(root: str | Path | None = None) -> Path:
@@ -281,7 +297,7 @@ def enclosing_project_dir(path: str | Path, root: str | Path | None = None) -> P
 
     parts = path_obj.parts
     for index, part in enumerate(parts[:-2]):
-        if part not in {DEFAULT_GENOMI_HOME.name, WORKSPACE_DATA_ROOT_NAME}:
+        if part not in {DOT_GENOMI_HOME_NAME, WORKSPACE_DATA_ROOT_NAME}:
             continue
         subdir_index = index + 2
         if parts[subdir_index] in {WORK_DIR_NAME, EVIDENCE_DIR_NAME, REFERENCE_DIR_NAME}:

@@ -146,6 +146,21 @@ class InstallForAgentsTests(unittest.TestCase):
             self.assertIn("export GENOMI_HOME", text)
             self.assertIn("-m genomi", text)
 
+    def test_installer_default_home_uses_xdg_data_home_without_genomi_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xdg_home = Path(tmp) / "xdg-data"
+            expected_home = (xdg_home / "genomi").resolve(strict=False)
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(Path(tmp) / "home"), "XDG_DATA_HOME": str(xdg_home)}),
+                mock.patch("genomi.runtime.paths.sys.platform", "darwin"),
+            ):
+                os.environ.pop("GENOMI_HOME", None)
+                shim = install_for_agents.install_genomi_command_shim()
+
+            self.assertEqual(shim, expected_home / "bin" / "genomi")
+            text = shim.read_text(encoding="utf-8")
+            self.assertIn(f"GENOMI_HOME={expected_home}", text)
+
     def test_genomi_command_shim_preserves_explicit_genomi_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "genomi-home"
