@@ -8,23 +8,18 @@ SKILL_PATH = "SKILL.md"
 STAGE_CONTRACTS: dict[str, dict[str, str]] = {
     "static": {
         "name": "Active Genome Indexing and library-scoped evidence materialization",
-        "section": "Tool Groups",
-        "anchor": "#tool-groups",
+        "section": "Parsing A Genome Source",
+        "anchor": "#parsing-a-genome-source",
     },
     "research": {
         "name": "LLM-guided research based on user intent",
-        "section": "Intent Research",
-        "anchor": "#intent-research",
-    },
-    "report": {
-        "name": "Markdown report with citations",
-        "section": "Reporting",
-        "anchor": "#reporting",
+        "section": "Routing",
+        "anchor": "#routing",
     },
     "complete": {
         "name": "Workflow complete",
-        "section": "Core Contract",
-        "anchor": "#core-contract",
+        "section": "Core Rules",
+        "anchor": "#core-rules",
     },
 }
 

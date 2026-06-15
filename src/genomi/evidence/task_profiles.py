@@ -160,28 +160,6 @@ PGX_MEDICATION_REVIEW = TaskProfile(
     abstain_when_no_supported_candidate=False,
 )
 
-REPORT_CANDIDATE_REVIEW = TaskProfile(
-    profile_id="report_candidate_review",
-    candidate_type="report_claim_candidate",
-    preferred_evidence_lanes=(
-        DIRECT_SOURCE_MATCH,
-        EXACT_TRAIT_MATCH,
-        SAME_GENE_OR_LOCUS,
-        NEARBY_TRAIT_MATCH,
-        LITERATURE_PLAUSIBILITY,
-    ),
-    ranking_weights={
-        DIRECT_SOURCE_MATCH: 0.9,
-        EXACT_TRAIT_MATCH: 0.75,
-        SAME_GENE_OR_LOCUS: 0.55,
-        NEARBY_TRAIT_MATCH: 0.35,
-        LITERATURE_PLAUSIBILITY: 0.2,
-    },
-    answer_format="report_claim_review",
-    support_level_cap_without_direct_source="medium",
-    abstain_when_no_supported_candidate=False,
-)
-
 RARE_DISEASE_CANCER_RISK_INVESTIGATION = TaskProfile(
     profile_id="rare_disease_cancer_risk_investigation",
     candidate_type="gene_condition_or_variant",
@@ -317,7 +295,6 @@ TASK_PROFILES = {
     CLINVAR_CANDIDATE_SCAN.profile_id: CLINVAR_CANDIDATE_SCAN,
     PANEL_MARKER_SCAN.profile_id: PANEL_MARKER_SCAN,
     PGX_MEDICATION_REVIEW.profile_id: PGX_MEDICATION_REVIEW,
-    REPORT_CANDIDATE_REVIEW.profile_id: REPORT_CANDIDATE_REVIEW,
     RARE_DISEASE_CANCER_RISK_INVESTIGATION.profile_id: RARE_DISEASE_CANCER_RISK_INVESTIGATION,
     PHENOTYPE_DISEASE_PRIORITIZATION.profile_id: PHENOTYPE_DISEASE_PRIORITIZATION,
     PHENOTYPE_GENE_PRIORITIZATION.profile_id: PHENOTYPE_GENE_PRIORITIZATION,

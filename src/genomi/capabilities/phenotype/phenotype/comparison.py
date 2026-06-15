@@ -768,7 +768,7 @@ def _next_actions(query: dict[str, Any], *, mode: str, direct: bool) -> list[dic
             {
                 "operation": "research.record",
                 "params": {"payload": "<reviewed finding>", "scope": "shared"},
-                "reason": "persist source-backed phenotype evidence before report synthesis",
+                "reason": "persist source-backed phenotype evidence before user-facing interpretation",
             }
         ]
     actions = [

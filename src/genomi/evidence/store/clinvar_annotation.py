@@ -236,7 +236,7 @@ def build_clinvar_annotation_index(
             "scope": [
                 "materializes objective ClinVar annotation fields",
                 "preserves all matched rows for agent-selected intent filtering",
-                "feeds report-specific interpretation written by the agent",
+                "feeds source-specific interpretation written by the agent",
             ],
         },
         "summary": {

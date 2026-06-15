@@ -628,7 +628,7 @@ def _next_actions(query: dict[str, Any], *, direct: bool) -> list[dict[str, Any]
             {
                 "operation": "research.record",
                 "params": {"payload": "<reviewed finding>", "scope": "shared"},
-                "reason": "persist direct target evidence before report synthesis",
+                "reason": "persist direct target evidence before user-facing interpretation",
             }
         ]
     return [

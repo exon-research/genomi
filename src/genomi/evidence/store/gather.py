@@ -372,7 +372,7 @@ def _variant_evidence_options(
             ],
             "evidence_context": evidence_context(
                 "research",
-                reason="Gathered evidence can be interpreted within the research contract or rendered from agent-selected report claims.",
+                reason="Gathered evidence can be interpreted within the research contract after the agent selects supported claims.",
             ),
         }
     )
@@ -423,7 +423,7 @@ def _gene_evidence_options(
             "evidence_boundary": "Gene-level facts and variant-level facts remain separate evidence components.",
             "evidence_context": evidence_context(
                 "research",
-                reason="Gene evidence can be interpreted inside the research contract or rendered from agent-selected report claims.",
+                reason="Gene evidence can be interpreted inside the research contract after the agent selects supported claims.",
             ),
         }
     )

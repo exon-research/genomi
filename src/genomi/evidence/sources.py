@@ -429,7 +429,7 @@ def _agent_source_contract(source: dict[str, Any]) -> dict[str, Any]:
         contract["agent_contract"]["focused_review_steps"] = [
             "Use the selected public target to inspect the official source or primary literature.",
             "Extract only the finding needed for the user's question.",
-            "Store the reviewed finding before report rendering or future reuse.",
+            "Store the reviewed finding before interpretation or future reuse.",
         ]
     return contract
 

@@ -138,7 +138,7 @@ the pieces supported by the returned data and reviewed sources:
   sources.
 - Population evidence tension when allele frequency affects interpretation.
 - Shared public-source knowledge versus private user-specific interpretation.
-- Citations for every finding that reaches report output.
+- Citations for every finding that reaches the user-facing answer.
 
 Use explicit user/source evidence for phenotype, family history, medications,
 and phase. Use source titles or URLs as citations, not evidence classes. Keep

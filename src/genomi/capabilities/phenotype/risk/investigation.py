@@ -139,7 +139,7 @@ def prepare_risk_investigation(
         "next_actions": _next_actions(mode, target=target, context_scope=context_scope),
         "evidence_context": evidence_context(
             "research",
-            reason="Risk investigation guidance is ready; record reviewed public findings before report synthesis.",
+            reason="Risk investigation guidance is ready; record reviewed public findings before user-facing interpretation.",
             commands=[
                 "genomi call research.list_sources --params '{\"target_type\":\"gene\"}'",
                 "genomi call research.record --params '{\"payload\":{...},\"scope\":\"shared\"}'",

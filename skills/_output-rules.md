@@ -52,7 +52,7 @@ Each answer should include:
 - Evidence classes used: sample observation, callability, ClinVar/static,
   population frequency, GWAS, reviewed source, or limitation.
 - Evidence implications: answer support, parse/digitize, genotype support,
-  callability, source review, clinical confirmation, or report rendering.
+  callability, source review, clinical confirmation, or final interpretation.
 - Active Genome Index status only when it materially affects those evidence
   classes or implications. Do not include a routine statement that no Active
   Genome Index was used.

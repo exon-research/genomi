@@ -643,7 +643,7 @@ def _record_research_options(records: list[dict[str, Any]]) -> list[dict[str, An
                     "target_id": record["target_id"],
                     "evidence_context": evidence_context(
                         "research",
-                        reason="Recorded topic/drug/condition research must be queried and attached to structured claims before reporting.",
+                        reason="Recorded topic/drug/condition research must be queried before attaching it to structured interpretation.",
                     ),
                 }
             )
