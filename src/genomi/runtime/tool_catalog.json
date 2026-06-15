@@ -72,7 +72,7 @@
     "genomi.install": {
       "capability": "genomi",
       "namespace": "genomi",
-      "description": "Install or update Genomi. `genomi install` and `genomi update` are the same operation: they update the runtime code, retrieval indexes, and reparse any stale genome, and install reference libraries — all of them by default, or the subset named in `libraries` (e.g. one library to add at runtime). For a first-time install on a machine without the genomi runtime, follow INSTALL_FOR_AGENTS.md instead.",
+      "description": "Install or update Genomi. `genomi install` and `genomi update` are the same operation: they update the runtime code, reconcile host-agent skill symlinks, refresh retrieval indexes, reparse any stale genome, and install reference libraries — all of them by default, or the subset named in `libraries` (e.g. one library to add at runtime). For a first-time install on a machine without the genomi runtime, follow INSTALL_FOR_AGENTS.md instead.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -116,6 +116,7 @@
       "produces": [
         "installed_libraries",
         "response_profile",
+        "host_skill_links",
         "retrieval_index_refresh"
       ],
       "context_optional": [

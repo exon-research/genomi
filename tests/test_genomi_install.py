@@ -381,3 +381,53 @@ class GenomiShimTests(GenomiRuntimeTestCase):
 
         content = shim.read_text(encoding="utf-8")
         self.assertIn(f"exec {venv_python} -m genomi \"$@\"", content.splitlines())
+
+
+class GenomiInstallHostSkillLinkTests(GenomiRuntimeTestCase):
+    def test_install_scope_lists_host_skill_links(self) -> None:
+        from genomi.operations.registry import handlers_admin
+
+        scope = handlers_admin._genomi_install_scope()
+        self.assertIn("host_skill_links", scope["updates"])
+        self.assertIn("host_skill_links_when_not_a_git_checkout", scope["does_not_update"])
+
+    def test_packaged_install_reports_host_skill_links_skipped(self) -> None:
+        # Harness default: the runtime is reported as "not a git checkout", so
+        # there is no source tree to link from and no host dir is touched.
+        result = call_operation("genomi.install", {})
+        links = result["host_skill_links"]
+        self.assertEqual(links["status"], "skipped")
+        self.assertEqual(links["reason"], "runtime_not_a_git_checkout")
+
+    def test_install_reconciles_skill_links_against_runtime_checkout(self) -> None:
+        from genomi.operations.registry import handlers_admin
+
+        captured: dict[str, object] = {}
+
+        def _fake_reconcile(source_root, **kwargs):
+            captured["source_root"] = source_root
+            captured["force"] = kwargs.get("force")
+            return {
+                "status": "completed",
+                "source_root": str(source_root),
+                "host_dirs": [],
+                "summary": {
+                    "host_dir_count": 0,
+                    "created": 0,
+                    "repaired": 0,
+                    "ok": 0,
+                    "skipped_conflict": 0,
+                    "removed_orphaned": 0,
+                },
+            }
+
+        repo = handlers_admin.Path("/tmp/genomi-checkout")
+        with mock.patch.object(handlers_admin, "_runtime_update_step", return_value={"status": "skipped"}), \
+             mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=repo), \
+             mock.patch.object(handlers_admin.host_skills, "reconcile_host_skill_links", side_effect=_fake_reconcile):
+            result = call_operation("genomi.install", {"force": True})
+
+        # The step delegates to the shared reconciler with the checkout root.
+        self.assertEqual(captured["source_root"], repo)
+        self.assertIs(captured["force"], True)
+        self.assertEqual(result["host_skill_links"]["status"], "completed")

@@ -114,6 +114,8 @@ class InstallForAgentsTests(unittest.TestCase):
                 self.assertTrue((skill_dir / "genomi").is_symlink(), str(skill_dir))
                 self.assertEqual((skill_dir / "genomi").resolve(), install_for_agents.REPO_ROOT)
                 self.assertTrue((skill_dir / "genomi" / "SKILL.md").is_file())
+                self.assertTrue((skill_dir / "genomi-decode").is_symlink(), str(skill_dir))
+                self.assertTrue((skill_dir / "genomi-decode" / "SKILL.md").is_file())
             text = output.getvalue()
             for expected in [
                 "Host skill invocation:",

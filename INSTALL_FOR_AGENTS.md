@@ -105,13 +105,17 @@ test -f "$GENOMI_HOME/genomi/pyproject.toml" && echo installed || echo not-insta
 - **Installed** → this is an **update**: run `genomi install` (alias
   `genomi update`), or `"$GENOMI_HOME/bin/genomi" install` if
   `genomi` isn't on PATH. It git-pulls the runtime, reinstalls, fills missing
-  libraries, and refreshes any whose upstream source changed (idempotent). Then
+  libraries, refreshes any whose upstream source changed, re-links any
+  host-agent skill symlinks that went stale or dangling, and removes obsolete
+  Genomi-owned skill symlinks for capabilities that no longer exist
+  (idempotent). Then
   stop — skip the rest of this doc.
 - **Not installed** → **first-time install**: follow the steps below to
   bootstrap from source with `scripts/install_for_agents.py`.
 
 Use `--force` / `force: true` only when the user explicitly asks to re-download
-already cached public libraries; it's never needed to fill in missing ones.
+already cached public libraries or replace a non-symlink file/directory that is
+blocking a Genomi host-skill link; it's never needed to fill in missing ones.
 
 ### Step 0: Greet the user
 
@@ -373,7 +377,8 @@ The installer will:
 - create a stable command shim at `<GENOMI_HOME>/bin/genomi`,
 - download the selected public libraries into `GENOMI_HOME`,
 - parse the genome source if `--genome-source` was passed,
-- symlink the `genomi` host-agent skill into detected skill dirs,
+- symlink the `genomi` umbrella skill and `genomi-<capability>` focused skills
+  into detected host skill dirs,
 - run its built-in install verification through `<GENOMI_HOME>/bin/genomi`.
 
 The installer does **not** touch host MCP config files — see Step 7, you'll
@@ -415,7 +420,7 @@ freshness. To find what's missing first, check the library inventory
 
 | Flag | When to use |
 | --- | --- |
-| `--force` | Re-download selected libraries unconditionally, even if unchanged upstream. Not needed to fill gaps or refresh changed caches — a normal run does both. |
+| `--force` | Re-download selected libraries unconditionally, even if unchanged upstream, and replace non-symlink Genomi host-skill link conflicts. Not needed to fill gaps, refresh changed caches, or repair stale symlinks — a normal run does those. |
 | `--ancestry-panel-dir /path` | Use a locally-built ancestry panel instead of the release tarball. |
 | `--ancestry-panel-url <URL>` | Mirror or unreleased panel build. |
 | `--pharmcat-version v2.15.5` | Pin a PharmCAT release. |

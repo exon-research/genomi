@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ...active_genome_index import source_intake
 from ...runtime import context as runtime_context
-from ...runtime import host_response, resources
+from ...runtime import host_response, host_skills, resources
 from ...runtime.libraries import manager as library_manager
 from ...runtime.libraries.manager import inventory as library_inventory
 from ...runtime.libraries.manager import status as library_status
@@ -66,12 +66,12 @@ def _genomi_set_response_profile(params: JsonObject) -> JsonObject:
 
 def _genomi_install(params: JsonObject) -> JsonObject:
     # `genomi install` always updates everything that can be
-    # updated: runtime code, reference libraries, retrieval indexes, and a
-    # background reparse of every stale genome. There are deliberately no
-    # per-step skip flags — exposing them only invited a host agent to
-    # rationalize a do-nothing "setup-only" call as a valid update. The single
-    # real gate is the env var GENOMI_SKIP_RUNTIME_GIT_PULL, for distributions
-    # that update the runtime outside git.
+    # updated: runtime code, host-agent skill links, reference libraries,
+    # retrieval indexes, and a background reparse of every stale genome. There
+    # are deliberately no per-step skip flags — exposing them only invited a
+    # host agent to rationalize a do-nothing "setup-only" call as a valid
+    # update. The single real gate is the env var GENOMI_SKIP_RUNTIME_GIT_PULL,
+    # for distributions that update the runtime outside git.
     # `libraries` selects WHICH reference libraries to materialize. It defaults
     # to "everything" — a bare install installs them all — and otherwise
     # names a targeted subset (e.g. clinvar-grch38) for the on-demand
@@ -83,6 +83,11 @@ def _genomi_install(params: JsonObject) -> JsonObject:
         raise OperationError("invalid_params", "libraries is required. Use everything (the default) or a specific library selection such as common-questions or clinvar-grch38.")
 
     runtime_update = _runtime_update_step()
+
+    # Reconcile host-agent skill symlinks against the (possibly just-pulled)
+    # checkout, so links a prior bootstrap left stale or dangling are repaired
+    # and links for newly-added capabilities are created on every update.
+    host_skill_links = _reconcile_host_skill_links_step(force=_bool(params, "force"))
 
     response_profile = _optional_str(params, "response_profile") or _optional_str(params, "profile")
     active_profile: JsonObject | None = None
@@ -120,6 +125,7 @@ def _genomi_install(params: JsonObject) -> JsonObject:
         "libraries_requested": libraries,
         "install_scope": _genomi_install_scope(),
         "runtime_update": runtime_update,
+        "host_skill_links": host_skill_links,
         "install": install_result,
         "reindex": reindex_result,
         "reparse": reparse_result,
@@ -210,6 +216,7 @@ def _genomi_install_scope() -> JsonObject:
         "updates": [
             "genomi_home_setup",
             "runtime_code",
+            "host_skill_links",
             "public_reference_libraries",
             "retrieval_indexes",
             "stale_genome_reparse",
@@ -218,8 +225,9 @@ def _genomi_install_scope() -> JsonObject:
         "does_not_update": [
             "runtime_code_when_GENOMI_SKIP_RUNTIME_GIT_PULL_is_set",
             "runtime_code_when_not_a_git_checkout",
+            "host_skill_links_when_not_a_git_checkout",
         ],
-        "force_behavior": "Library install is idempotent — already-present libraries are skipped; force=true re-downloads them. Runtime code updates via git pull unless GENOMI_SKIP_RUNTIME_GIT_PULL is set or the runtime is not a git checkout. A manifest-changing pull also reconciles dependencies.",
+        "force_behavior": "Library install is idempotent — already-present libraries are skipped; force=true re-downloads them and replaces non-symlink host-skill link conflicts. Runtime code updates via git pull unless GENOMI_SKIP_RUNTIME_GIT_PULL is set or the runtime is not a git checkout. A manifest-changing pull also reconciles dependencies.",
     }
 
 
@@ -278,6 +286,23 @@ def _runtime_git_repo() -> Path | None:
         return None
     top = completed.stdout.strip()
     return Path(top) if completed.returncode == 0 and top else None
+
+
+def _reconcile_host_skill_links_step(*, force: bool = False) -> JsonObject:
+    """Repair/create host-agent skill symlinks against the runtime checkout.
+
+    Skills live in the source tree (``<checkout>/SKILL.md`` and
+    ``<checkout>/skills/<name>``), so linking only applies to a git-checkout
+    install. A packaged install has no such tree and is reported as skipped.
+    """
+    repo = _runtime_git_repo()
+    if repo is None:
+        return {
+            "status": "skipped",
+            "reason": "runtime_not_a_git_checkout",
+            "message": "Runtime is not a git checkout; host skills are linked only from a source checkout.",
+        }
+    return host_skills.reconcile_host_skill_links(repo, force=force)
 
 
 def _git_pull_runtime_step() -> JsonObject:

@@ -25,19 +25,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _install_for_agents_lib import *  # noqa: F401,F403  (re-export public API)
 from _install_for_agents_lib import (  # noqa: F401  (explicit; incl. underscore names)
-    CAPABILITY_SKILL_DIRS_TO_SKIP,
-    CAPABILITY_SKILLS_ROOT,
-    DEFAULT_HOST_SKILL_PARENTS,
     GENOMI_USER_AGENT,
-    HOST_AGENT_SKILL_DIR,
     REPO_ROOT,
     SRC_DIR,
-    _capability_skill_sources,
     _ensure_src_on_path,
     _load_existing_users,
     configure_genome_source as _configure_genome_source,
     genomi_home_path,
-    install_capability_skills,
     install_genomi_command_shim,
     install_host_agent_skill,
     parse_args,

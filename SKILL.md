@@ -133,7 +133,9 @@ be updated: the runtime code (`git pull --ff-only` on a git checkout, unless
 reference libraries into `GENOMI_HOME` (idempotent — each installed library is
 checked against its source and re-downloaded only if it changed upstream, so
 re-running transfers nothing when nothing changed; pass `force` to re-download
-regardless), the public retrieval indexes, and a
+regardless), host-agent skill symlinks in detected host skill directories
+(including stale/dangling repair and obsolete Genomi capability-link removal),
+the public retrieval indexes, and a
 background reparse of any genome whose index schema is older than the updated
 runtime's. There are no per-step skip flags — `genomi update` does the full
 update by default. The `libraries` parameter only narrows *which* reference

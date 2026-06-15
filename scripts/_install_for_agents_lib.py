@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import os
 import shlex
-import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -173,42 +172,39 @@ def parse_library_selection(value: str) -> list[str]:
         raise SystemExit(str(exc)) from exc
 
 
-HOST_AGENT_SKILL_DIR = REPO_ROOT
-CAPABILITY_SKILLS_ROOT = REPO_ROOT / "skills"
-CAPABILITY_SKILL_DIRS_TO_SKIP = frozenset({"host-agent", "conventions"})
-# Host-agent skill directories that follow the Anthropic SKILL.md convention.
-# Hosts differ in how they invoke installed skills, so the installer only links
-# SKILL.md into known skill directories. Invocation must come from the active
-# host's own skill list/help instead of being inferred from a directory name.
-DEFAULT_HOST_SKILL_PARENTS = (
-    Path("~/.claude/skills"),
-    Path("~/.codex/skills"),
-    Path("~/.openclaw/skills"),
-    Path("~/.hermes/skills"),
-    Path("~/.agents/skills"),
-)
+# Host-agent skill wiring (link creation, stale/dangling repair, capability
+# fan-out) is owned by ``genomi.runtime.host_skills`` so this first-time
+# bootstrap and the in-place ``genomi install`` updater share one
+# implementation. This entry point only resolves which host dirs to target and
+# prints invocation guidance.
+
+
+def _host_skills_module():
+    """Import the runtime host-skill reconciler, ensuring src/ is importable."""
+    _ensure_src_on_path()
+    from genomi.runtime import host_skills
+
+    return host_skills
 
 
 def install_host_agent_skill(args: argparse.Namespace) -> None:
-    """Symlink the in-repo Genomi skill into each detected host-agent skills dir.
+    """Link the in-repo Genomi skills into each detected host-agent skills dir.
 
-    Symlinks (rather than copies) so updates to the canonical skill in the
-    Genomi repo propagate to every host without re-running the installer.
+    Symlinks (rather than copies) so updates to the canonical skills in the
+    Genomi repo propagate to every host without re-running the installer. Links
+    that a prior run left stale or dangling are repaired in place. Reconciliation
+    itself (the umbrella ``genomi`` link plus every ``genomi-<capability>`` link)
+    is owned by ``genomi.runtime.host_skills`` and shared with ``genomi install``.
     """
     if getattr(args, "skip_host_skill", False):
         return
-    if not HOST_AGENT_SKILL_DIR.is_dir() or not (HOST_AGENT_SKILL_DIR / "SKILL.md").is_file():
-        print(
-            f"Skipping host-agent skill: canonical source not found at {HOST_AGENT_SKILL_DIR}",
-            file=sys.stderr,
-        )
-        return
 
+    host_skills = _host_skills_module()
     raw_targets = getattr(args, "host_skill_dir", None)
     if raw_targets:
         parents = [Path(p).expanduser() for p in raw_targets]
     else:
-        parents = [p.expanduser() for p in DEFAULT_HOST_SKILL_PARENTS if p.expanduser().exists()]
+        parents = host_skills.default_existing_parents()
 
     if not parents:
         print(
@@ -219,101 +215,42 @@ def install_host_agent_skill(args: argparse.Namespace) -> None:
         )
         return
 
-    source = HOST_AGENT_SKILL_DIR.resolve()
-    installed_any = False
-    for parent in parents:
-        link = parent / "genomi"
-        parent.mkdir(parents=True, exist_ok=True)
-        if link.is_symlink():
-            if link.resolve() == source:
-                print(f"Genomi host skill already linked: {link} -> {source}")
-                installed_any = True
-                continue
-            link.unlink()
-        elif link.exists():
-            if getattr(args, "force", False):
-                shutil.rmtree(link)
-            else:
-                print(
-                    f"Skipping {link}: a non-symlink directory or file already exists. "
-                    "Pass --force to replace it.",
-                    file=sys.stderr,
-                )
-                continue
-        link.symlink_to(source, target_is_directory=True)
-        print(f"Genomi host skill installed: {link} -> {source}")
-        installed_any = True
-    if installed_any:
+    result = host_skills.reconcile_host_skill_links(
+        REPO_ROOT, parents=parents, force=getattr(args, "force", False)
+    )
+    if result.get("status") != "completed":
+        print(
+            f"Skipping host-agent skill: canonical source not found at {REPO_ROOT}",
+            file=sys.stderr,
+        )
+        return
+
+    for host in result["host_dirs"]:
+        for entry in host.get("repaired", []):
+            print(f"Repaired stale skill link: {host['path']}/{entry['name']} -> {entry['target']}")
+        for entry in host.get("removed_orphaned", []):
+            print(
+                f"Removed obsolete Genomi skill link: "
+                f"{host['path']}/{entry['name']} (was {entry['previous_target']})"
+            )
+        for conflict in host.get("skipped_conflict", []):
+            print(
+                f"Skipping {host['path']}/{conflict}: a non-symlink already exists. "
+                "Pass --force to replace it.",
+                file=sys.stderr,
+            )
+
+    summary = result["summary"]
+    linked = summary["created"] + summary["repaired"] + summary["ok"]
+    if linked:
+        print(
+            f"Genomi host skills linked: {linked} symlink(s) across "
+            f"{summary['host_dir_count']} host dir(s)."
+        )
         print("Host skill invocation:")
         print("  Invocation is controlled by the active host, not by this installer.")
         print("  Ask the host to list installed skills, then use that host's documented skill syntax.")
         print("  Do not assume /genomi works in every host.")
-    install_capability_skills(args)
-
-
-def _capability_skill_sources() -> list[tuple[str, Path]]:
-    """Return (capability_name, abs_skill_dir) for every per-capability skill."""
-    out: list[tuple[str, Path]] = []
-    if not CAPABILITY_SKILLS_ROOT.is_dir():
-        return out
-    for entry in sorted(CAPABILITY_SKILLS_ROOT.iterdir()):
-        if not entry.is_dir():
-            continue
-        if entry.name in CAPABILITY_SKILL_DIRS_TO_SKIP:
-            continue
-        if not (entry / "SKILL.md").is_file():
-            continue
-        out.append((entry.name, entry.resolve()))
-    return out
-
-
-def install_capability_skills(args: argparse.Namespace) -> None:
-    """Symlink each per-capability skill dir into every detected host skill dir.
-
-    Per-capability skills (e.g. ``skills/decode``, ``skills/clinvar``) land at
-    ``~/.claude/skills/genomi-<name>/`` so the host's skill matcher can read
-    each one's ``description:`` frontmatter and route on it. The monolithic
-    ``~/.claude/skills/genomi`` skill remains as the umbrella entry.
-    """
-    if getattr(args, "skip_host_skill", False):
-        return
-    sources = _capability_skill_sources()
-    if not sources:
-        return
-
-    raw_targets = getattr(args, "host_skill_dir", None)
-    if raw_targets:
-        parents = [Path(p).expanduser() for p in raw_targets]
-    else:
-        parents = [p.expanduser() for p in DEFAULT_HOST_SKILL_PARENTS if p.expanduser().exists()]
-    if not parents:
-        return
-
-    force = bool(getattr(args, "force", False))
-    installed = 0
-    for parent in parents:
-        parent.mkdir(parents=True, exist_ok=True)
-        for cap_name, cap_source in sources:
-            link = parent / f"genomi-{cap_name}"
-            if link.is_symlink():
-                if link.resolve() == cap_source:
-                    installed += 1
-                    continue
-                link.unlink()
-            elif link.exists():
-                if force:
-                    shutil.rmtree(link)
-                else:
-                    print(
-                        f"Skipping {link}: non-symlink already exists. "
-                        "Pass --force to replace it.",
-                        file=sys.stderr,
-                    )
-                    continue
-            link.symlink_to(cap_source, target_is_directory=True)
-            installed += 1
-    if installed:
-        print(f"Genomi per-capability skills linked: {installed} symlinks across {len(parents)} host dir(s).")
 
 
 def configure_genome_source(
