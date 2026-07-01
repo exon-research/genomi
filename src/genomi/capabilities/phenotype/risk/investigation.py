@@ -9,11 +9,14 @@ from ....evidence.candidate_evidence import (
     apply_evidence_view,
     evidence_view,
 )
+from ....evidence.store.candidate_groups import missing_interpretation_gates
 from ....evidence.task_profiles import RARE_DISEASE_CANCER_RISK_INVESTIGATION
 from ....runtime.handoff import evidence_context
 
 from ._base import (
     CANCER_TERMS,
+    CARRIER_REVIEW_TERMS,
+    OBSERVED_CONDITION_REVIEW_TERMS,
     RARE_DISEASE_TERMS,
     RISK_INVESTIGATION_TYPES,
     _clean_text,
@@ -52,16 +55,18 @@ def prepare_risk_investigation(
     normalized_condition = _clean_text(condition)
     normalized_topic = _clean_text(topic) or _clean_text(question)
     question_text = _clean_text(question)
-    if not any((question_text, normalized_genes, normalized_condition, normalized_topic)):
-        raise ValueError("phenotype.plan_risk_investigation requires question, gene, condition, or topic")
+    matches_path = Path(matches) if matches is not None else None
+    if not any((question_text, normalized_genes, normalized_condition, normalized_topic, matches_path)):
+        raise ValueError("phenotype.plan_risk_investigation requires question, gene, condition, topic, or matches")
 
+    evidence_db_path = Path(evidence_db)
     mode = _resolve_investigation_type(
         investigation_type,
         question=question_text,
         condition=normalized_condition,
         topic=normalized_topic,
+        has_active_candidate_inventory=matches_path is not None,
     )
-    evidence_db_path = Path(evidence_db)
 
     target = {
         "question": question_text,
@@ -71,7 +76,6 @@ def prepare_risk_investigation(
         "topic": normalized_topic,
         "genome_build": genome_build,
     }
-    matches_path = Path(matches) if matches is not None else None
     if matches_path is not None and not matches_path.exists():
         return _materialization_incomplete_response(target, mode=mode, genome_build=genome_build)
 
@@ -175,18 +179,25 @@ def _materialization_incomplete_response(
     genome_build: str,
 ) -> dict[str, Any]:
     context_scope = "active_genome_index_selected"
+    clinvar_library = _clinvar_library_for_build(genome_build)
     materialization = {
-        "library": "clinvar-grch38",
+        "library": clinvar_library,
         "artifact": "clinvar_candidate_inventory",
         "status": "not_materialized",
         "genome_build": genome_build,
     }
     active_candidates = {
         "status": "materialization_incomplete",
-        "summary": {"candidate_count": 0},
+        "summary": {"candidate_count": 0, "review_group_count": 0},
         "result_state": "clinvar_candidate_inventory_not_materialized",
         "materialization": materialization,
         "candidate_summaries": [],
+        "candidate_review_groups": {
+            "policy_id": "clinvar_candidate_review_groups_v1",
+            "group_count": 0,
+            "groups": [],
+            "group_counts_by_type": [],
+        },
     }
     next_actions = [
         {
@@ -213,7 +224,7 @@ def _materialization_incomplete_response(
     coverage = _env._coverage(
         libraries=[
             _env.LibraryUse(
-                library="clinvar-grch38",
+                library=clinvar_library,
                 state="not_materialized",
                 materialization_id="clinvar_candidate_inventory",
             )
@@ -234,6 +245,9 @@ def _materialization_incomplete_response(
         coverage=coverage,
         observations={
             "active_candidate_count": 0,
+            "active_candidate_review_group_count": 0,
+            "candidate_review_group_counts_by_type": [],
+            "missing_interpretation_gates": [],
             "ranked_review_targets": 0,
             "result_state": active_candidates["result_state"],
             "pending_materialization": "clinvar_candidate_inventory",
@@ -280,6 +294,13 @@ def _materialization_incomplete_response(
     return payload
 
 
+def _clinvar_library_for_build(genome_build: str) -> str:
+    build = str(genome_build or "").strip().lower()
+    if build in {"grch37", "hg19"}:
+        return "clinvar-grch37"
+    return "clinvar-grch38"
+
+
 def _build_risk_envelope(
     *,
     view: dict[str, Any],
@@ -290,6 +311,7 @@ def _build_risk_envelope(
 ) -> dict[str, Any]:
     active_status = active_candidates.get("status")
     active_count = int((active_candidates.get("summary") or {}).get("candidate_count") or 0)
+    active_group_count = int((active_candidates.get("summary") or {}).get("review_group_count") or 0)
     rankings = view.get("rankings") or []
     query_scope = {
         **(dict(view.get("query") or {})),
@@ -302,11 +324,18 @@ def _build_risk_envelope(
     )
     observations = {
         "active_candidate_count": active_count,
+        "active_candidate_review_group_count": active_group_count,
+        "candidate_review_group_counts_by_type": (
+            (active_candidates.get("candidate_review_groups") or {}).get("group_counts_by_type")
+            if isinstance(active_candidates.get("candidate_review_groups"), dict)
+            else []
+        ),
+        "missing_interpretation_gates": _missing_interpretation_gate_observations(active_candidates),
         "ranked_review_targets": len(rankings),
         "result_state": active_candidates.get("result_state"),
     }
 
-    if context_scope == "active_genome_index_selected" and active_status == "available" and active_count == 0:
+    if context_scope == "active_genome_index_selected" and active_status == "available" and active_count == 0 and active_group_count == 0:
         return _env.empty_consulted_scope(
             operation="phenotype.plan_risk_investigation",
             query_scope=query_scope,
@@ -331,7 +360,7 @@ def _build_risk_envelope(
             personal_context=personal_context,
             coverage=coverage,
             observations=observations,
-            answer_readiness=_env.SCOPED_ANSWER_ONLY,
+            answer_readiness=_env.NEEDS_CLINICAL_CONFIRMATION,
         )
 
     return _env.not_assessed(
@@ -354,6 +383,7 @@ def _resolve_investigation_type(
     question: str | None,
     condition: str | None,
     topic: str | None,
+    has_active_candidate_inventory: bool = False,
 ) -> str:
     value = str(investigation_type or "auto").strip().lower()
     if value not in RISK_INVESTIGATION_TYPES:
@@ -363,6 +393,33 @@ def _resolve_investigation_type(
     text = " ".join(item for item in (question, condition, topic) if item).casefold()
     if any(term in text for term in CANCER_TERMS):
         return "cancer_risk"
+    if any(term in text for term in CARRIER_REVIEW_TERMS):
+        return "carrier_review"
+    if any(term in text for term in OBSERVED_CONDITION_REVIEW_TERMS):
+        return "observed_condition_review"
     if any(term in text for term in RARE_DISEASE_TERMS):
         return "rare_disease"
+    if has_active_candidate_inventory:
+        return "observed_condition_review"
     return "rare_disease"
+
+
+def _missing_interpretation_gate_observations(active_candidates: dict[str, Any]) -> list[dict[str, Any]]:
+    matrix = active_candidates.get("candidate_review_groups")
+    groups = matrix.get("groups") if isinstance(matrix, dict) else []
+    missing: list[dict[str, Any]] = []
+    for group in groups or []:
+        if not isinstance(group, dict):
+            continue
+        gates = group.get("interpretation_gates") if isinstance(group.get("interpretation_gates"), dict) else {}
+        for gate in missing_interpretation_gates(group):
+            state = gates.get(gate) if isinstance(gates.get(gate), dict) else {}
+            missing.append(
+                {
+                    "group_id": group.get("group_id"),
+                    "group_type": group.get("group_type"),
+                    "gate": gate,
+                    "state": state.get("state"),
+                }
+            )
+    return missing

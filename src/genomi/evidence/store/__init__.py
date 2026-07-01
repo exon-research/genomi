@@ -233,6 +233,10 @@ from .candidate_scoring import (
     _sample_quality_context_needed,
     _with_population_tags,
 )
+from .candidate_groups import (
+    CANDIDATE_REVIEW_GROUP_POLICY_ID,
+    build_candidate_review_groups,
+)
 from .candidates import (
     _candidate_inventory_options,
     _clinvar_candidate_evidence_view,
@@ -258,6 +262,7 @@ __all__ = [
     'CANDIDATE_EVIDENCE_GROUPS',
     'CANDIDATE_EVIDENCE_GROUP_DESCRIPTIONS',
     'CANDIDATE_RULE_SET_VERSION',
+    'CANDIDATE_REVIEW_GROUP_POLICY_ID',
     'CLINVAR_ANNOTATION_INDEX_RULE_SET_VERSION',
     'CLINVAR_CANDIDATE_BUCKETS',
     'CLINVAR_CANDIDATE_BUCKET_DESCRIPTIONS',
@@ -427,6 +432,7 @@ __all__ = [
     'answerability_for_lane',
     'apply_evidence_view',
     'build_clinvar_annotation_index',
+    'build_candidate_review_groups',
     'build_clinvar_gene_index',
     'build_clinvar_rsid_annotation_index',
     'build_clinvar_rsid_index',

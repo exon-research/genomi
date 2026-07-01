@@ -133,6 +133,80 @@
       }
     },
     "property_groups": {
+      "decode_dashboard_options": {
+        "properties": {
+          "panels": {
+            "type": "array",
+            "description": "Optional subset of dashboard panels to gather. Omitted means every dashboard panel.",
+            "items": {
+              "type": "string",
+              "enum": ["overview", "variants", "variants_all", "pgx", "risk", "ancestry", "nutrigenomics"]
+            },
+            "uniqueItems": true
+          },
+          "risk_score_ids": {
+            "type": "array",
+            "description": "Optional PGS IDs to score for the risk panel. Omitted means use imported local scores up to risk_score_limit.",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "risk_score_limit": {
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "description": "Maximum imported local PGS scores to calculate when risk_score_ids is omitted."
+          },
+          "risk_review_types": {
+            "type": "array",
+            "description": "Phenotype review modes to add to the risk panel from selected Active Genome Index ClinVar review groups. Empty array disables phenotype review rows.",
+            "default": ["carrier_review", "observed_condition_review"],
+            "items": {
+              "type": "string",
+              "enum": ["carrier_review", "observed_condition_review", "rare_disease", "cancer_risk"]
+            },
+            "uniqueItems": true
+          },
+          "pgx_review_targets": {
+            "type": "array",
+            "description": "Optional medication-review targets to add to the PGx panel.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "drug": {"type": "string"},
+                "gene": {"type": "string"},
+                "rsid": {"type": "string"},
+                "atc_code": {"type": "string"},
+                "drugbank_id": {"type": "string"},
+                "known_genotype": {"type": "string"},
+                "known_diplotype": {"type": "string"},
+                "known_phenotype": {"type": "string"},
+                "known_activity_score": {"type": "string"},
+                "known_pgx_source": {"type": "string"},
+                "source_sample_pgx_row_id": {"type": "string"},
+                "indication": {"type": "string"},
+                "dose": {"type": "string"},
+                "current_medications": {"type": "string"},
+                "allergies_or_contraindications": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1},
+                "semantic_context": {"$ref": "#/schema_fragments/properties/semantic_context"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "pgx_review_target_limit": {
+            "type": "integer",
+            "default": 12,
+            "minimum": 1,
+            "description": "Maximum medication-review targets to run for the PGx panel."
+          },
+          "nutrigenomics_domain_ids": {
+            "type": "array",
+            "description": "Optional nutrigenomics domains to retrieve. Omitted means every declared in-scope domain.",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          }
+        }
+      },
       "storage_db_pair": {
         "properties": {
           "db": {

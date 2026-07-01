@@ -45,7 +45,7 @@ NAV_LABELS = (
     "Overview",
     "Variants",
     "Pharmacogenomics",
-    "Risk Scores",
+    "Risk Review",
     "Ancestry",
     "Nutrigenomics",
 )
@@ -60,14 +60,29 @@ class DashboardCatalogTests(unittest.TestCase):
         self.assertIn("decode", TOOL_CATALOG["capabilities"])
         decode_cap = TOOL_CATALOG["capabilities"]["decode"]
         self.assertIn("decode.render_dashboard", decode_cap["entry_operations"])
-        schema_props = TOOL_CATALOG["operations"]["decode.render_dashboard"]["input_schema"]["properties"]
+        render_operation = next(op for op in OPERATIONS if op.name == "decode.render_dashboard")
+        schema_props = render_operation.input_schema["properties"]
         self.assertEqual(
             set(schema_props),
             {
                 "nutrigenomics_domain_ids",
                 "output",
                 "panels",
+                "pgx_review_target_limit",
+                "pgx_review_targets",
+                "risk_review_types",
                 "risk_score_ids",
                 "risk_score_limit",
             },
         )
+        risk_review = schema_props["risk_review_types"]
+        self.assertEqual(risk_review["default"], ["carrier_review", "observed_condition_review"])
+        self.assertEqual(
+            set(risk_review["items"]["enum"]),
+            {"carrier_review", "observed_condition_review", "rare_disease", "cancer_risk"},
+        )
+
+        build_catalog = TOOL_CATALOG["operations"]["decode.build_dashboard_evidence"]["input_schema"]
+        render_catalog = TOOL_CATALOG["operations"]["decode.render_dashboard"]["input_schema"]
+        self.assertEqual(build_catalog["x_genomi_property_groups"], ["decode_dashboard_options"])
+        self.assertEqual(render_catalog["x_genomi_property_groups"], ["decode_dashboard_options"])

@@ -5,7 +5,13 @@ from typing import Any
 
 from ....runtime.external import utc_now
 
-RISK_INVESTIGATION_TYPES = ("auto", "rare_disease", "cancer_risk")
+RISK_INVESTIGATION_TYPES = (
+    "auto",
+    "rare_disease",
+    "cancer_risk",
+    "carrier_review",
+    "observed_condition_review",
+)
 
 CANCER_TERMS = (
     "cancer",
@@ -32,6 +38,20 @@ RARE_DISEASE_TERMS = (
     "mendelian",
     "phenotype",
     "hpo",
+)
+CARRIER_REVIEW_TERMS = (
+    "carrier",
+    "carrier status",
+    "carrier screen",
+    "recessive",
+    "heterozygous",
+)
+OBSERVED_CONDITION_REVIEW_TERMS = (
+    "observed condition",
+    "condition review",
+    "diagnosis",
+    "pathogenic variant",
+    "clinvar finding",
 )
 RARE_DISEASE_SOURCE_IDS = (
     "clinvar",

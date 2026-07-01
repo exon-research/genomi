@@ -1,8 +1,9 @@
 ---
 name: rare-disease-cancer
 description: |
-  Plan rare disease, hereditary disease, and cancer risk source investigation
-  from public targets or selected active genome evidence.
+  Plan rare disease, hereditary disease, cancer risk, carrier-relevance, and
+  observed-condition source investigation from public targets or selected
+  active genome evidence.
 tools:
   - phenotype.plan_risk_investigation
   - phenotype.normalize_terms
@@ -20,12 +21,13 @@ tools:
 mutating: true
 ---
 
-# Rare Disease And Cancer Risk
+# Condition Review
 
 Use this skill when the user asks about rare disease, hereditary disease,
 cancer risk genes, hereditary cancer, GeneCards-style gene context, MalaCards
 disease context, HPO/phenotype-to-disease review, HPO-style
-phenotype-to-gene review, or disease-gene source review.
+phenotype-to-gene review, carrier-relevance evidence, observed-condition
+review, or disease-gene source review.
 
 **Not for common-trait phenotypes.** Common, complex-disease, GWAS-style, or
 drug-target candidate-gene questions use the matching source-specific tool.
@@ -43,6 +45,10 @@ Support both public-only questions and selected active genome evidence.
   themselves.
 - Cancer-gene role, somatic cancer evidence, and inherited germline risk remain
   separate unless a reviewed source links them.
+- Carrier-review output consumes ClinVar `carrier_relevance` groups and ranks
+  review targets by evidence strength plus missing interpretation gates.
+- Observed-condition review consumes observed-condition, uncertainty/conflict,
+  risk-association, benign/counterevidence, and population-context groups.
 - Reviewed source findings are stored before final interpretation or reporting.
 - HPO and symptom overlap can prioritize review targets, but it is not a
   diagnosis.
@@ -52,6 +58,8 @@ Support both public-only questions and selected active genome evidence.
 Call `phenotype.plan_risk_investigation` first. Provide any public targets the user gave:
 
 - `phenotype.plan_risk_investigation` with `{"question":"BRCA1 hereditary breast cancer risk","gene":"BRCA1","investigation_type":"cancer_risk"}`
+- `phenotype.plan_risk_investigation` with `{"question":"carrier relevance review","investigation_type":"carrier_review"}`
+- `phenotype.plan_risk_investigation` with `{"question":"observed ClinVar condition review","investigation_type":"observed_condition_review"}`
 
 For a selected Active Genome Index, add:
 
@@ -172,15 +180,15 @@ Normalize phenotype text and HPO IDs into public evidence-review targets.
 
 ### phenotype.plan_risk_investigation
 
-Plan rare disease or cancer risk investigation from public targets and optionally selected Active Genome Index evidence.
+Plan rare disease, cancer risk, carrier-relevance, or observed-condition investigation from public targets and optionally selected Active Genome Index evidence.
 
-**Use when**: Returns rare disease, hereditary disease, hereditary cancer, cancer-risk-gene, and disease-gene source-review plans. Can include selected active-genome-index review targets when explicitly supplied or approved.
+**Use when**: Returns rare disease, hereditary disease, hereditary cancer, cancer-risk-gene, carrier-relevance, observed-condition, and disease-gene source-review plans. Can include selected active-genome-index review targets when explicitly supplied or approved.
 
 **Why necessary**: Broad disease and cancer-risk questions need declared source-review boundaries before any personal-risk wording.
 
 **Example prompts**: Any inherited disease or cancer-risk findings worth following up?
 
-**Result semantics**: Returns structured investigation guidance, relevant public source classes, reviewed-research gaps, and optional selected active-genome-index candidate context. Without include_active_genome_index or explicit matches, the operation stays public-only. GeneCards and MalaCards are treated as context sources that require cross-checking before clinical or personal-risk wording.
+**Result semantics**: Returns structured investigation guidance, relevant public source classes, reviewed-research gaps, and optional selected active-genome-index `candidate_review_groups`. Without include_active_genome_index or explicit matches, the operation stays public-only. GeneCards and MalaCards are treated as context sources that require cross-checking before clinical, carrier, or personal-risk wording.
 
 ### phenotype.retrieve_gene_disease_associations
 

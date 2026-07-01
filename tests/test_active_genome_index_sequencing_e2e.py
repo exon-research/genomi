@@ -412,7 +412,24 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
         self.assertEqual(dashboard_result["status"], "completed", dashboard_result)
         dashboard = _extract_dashboard_evidence(out.read_text(encoding="utf-8"))
         self.assertEqual(dashboard["overview"]["genomeSource"], source_format)
-        self.assertEqual(dashboard["risk"][0]["sources"], [NATIVE_PGS_ID])
+        risk_sources = [row.get("sources") for row in dashboard["risk"]]
+        self.assertIn([NATIVE_PGS_ID], risk_sources)
+        self.assertTrue(
+            any(
+                row.get("row_type") == "phenotype_review_target"
+                and "phenotype.plan_risk_investigation" in row.get("sources", [])
+                and "ClinVar" in row.get("sources", [])
+                for row in dashboard["risk"]
+            ),
+            dashboard["risk"],
+        )
+        risk_state_operations = [
+            state.get("source_operation")
+            for state in dashboard_result["evidence_build"]["panel_states"]
+            if state.get("panel") == "risk"
+        ]
+        self.assertIn("clinvar.scan_candidates", risk_state_operations)
+        self.assertIn("prs.calculate_score", risk_state_operations)
         self.assertTrue(dashboard["ancestry"]["neighbors"])
         self.assertIn("pgx", dashboard_result["evidence_build"]["panels_blocked"])
         self.assertIn("pgx", dashboard_result["evidence_build"]["panels_empty"])

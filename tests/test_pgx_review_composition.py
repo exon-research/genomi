@@ -3,11 +3,70 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from genomi.capabilities.pharmacogenomics.review import review_medication_interaction
+from genomi.capabilities.pharmacogenomics.review.medication_matrix import build_medication_review_matrix
 
 from tests.support.capabilities.pgx_review import PGxMedicationReviewTestBase
 
 
 class PGxMedicationReviewCompositionTests(PGxMedicationReviewTestBase):
+    def test_variant_rows_do_not_promote_gene_only_sample_evidence_to_target_observed(self) -> None:
+        matrix = build_medication_review_matrix(
+            query={"drug": "clopidogrel", "gene": "CYP2C19", "rsid": "rs4244285"},
+            sample_context_requested=True,
+            interpretation_readiness={"requires_before_personal_actionability": ["clinical confirmation"]},
+            evidence_items=[
+                {
+                    "evidence_id": "source_variant",
+                    "evidence_role": "medication_source_evidence",
+                    "evidence_class": "pgxdb_pharmacogenomic_association",
+                    "source": {"source_id": "pgxdb"},
+                    "target": {"drug": "clopidogrel", "gene": "CYP2C19", "rsid": "rs4244285"},
+                    "finding": {"summary": "CYP2C19 variant evidence."},
+                },
+                {
+                    "evidence_id": "sample_gene_marker",
+                    "evidence_role": "sample_pgx_evidence",
+                    "evidence_class": "pharmcat_sample_pgx_phenotype",
+                    "source": {"source_id": "pharmcat_sample_pgx_matrix"},
+                    "target": {"gene": "CYP2C19"},
+                    "finding": {"known_phenotype": "Intermediate Metabolizer"},
+                },
+            ],
+        )
+
+        variant_row = next(row for row in matrix["rows"] if row["source_evidence_ids"] == ["source_variant"])
+        self.assertEqual(variant_row["sample_evidence_ids"], ["sample_gene_marker"])
+        self.assertEqual(variant_row["sample_relevance"]["state"], "sample_marker_observed")
+
+    def test_variant_rows_use_exact_rsid_sample_evidence_as_target_observed(self) -> None:
+        matrix = build_medication_review_matrix(
+            query={"drug": "clopidogrel", "gene": "CYP2C19", "rsid": "rs4244285"},
+            sample_context_requested=True,
+            interpretation_readiness={"requires_before_personal_actionability": ["clinical confirmation"]},
+            evidence_items=[
+                {
+                    "evidence_id": "source_variant",
+                    "evidence_role": "medication_source_evidence",
+                    "evidence_class": "pgxdb_pharmacogenomic_association",
+                    "source": {"source_id": "pgxdb"},
+                    "target": {"drug": "clopidogrel", "gene": "CYP2C19", "rsid": "rs4244285"},
+                    "finding": {"summary": "CYP2C19 variant evidence."},
+                },
+                {
+                    "evidence_id": "sample_variant",
+                    "evidence_role": "sample_pgx_evidence",
+                    "evidence_class": "active_genome_index_variant_match",
+                    "source": {"source_id": "active_genome_index"},
+                    "target": {"rsid": "rs4244285"},
+                    "finding": {"genotype": "AG"},
+                },
+            ],
+        )
+
+        variant_row = next(row for row in matrix["rows"] if row["source_evidence_ids"] == ["source_variant"])
+        self.assertEqual(variant_row["sample_evidence_ids"], ["sample_variant"])
+        self.assertEqual(variant_row["sample_relevance"]["state"], "sample_target_observed")
+
     def test_review_invalid_target_exposes_agent_question_alias(self) -> None:
         result = review_medication_interaction(drug="")
         self.assertEqual(result["status"], "invalid_target")
@@ -180,7 +239,28 @@ class PGxMedicationReviewCompositionTests(PGxMedicationReviewTestBase):
         view = result["evidence_view"]
         self.assertEqual(view["task_profile"]["profile_id"], "pgx_medication_review")
         self.assertEqual(view["coverage_state"], "data_returned")
-        self.assertEqual(view["coverage"]["candidate_count"], 1)
+        medication_matrix = result["medication_review_matrix"]
+        self.assertEqual(medication_matrix["policy_id"], "pgx_medication_review_matrix_v1")
+        self.assertEqual(view["coverage"]["candidate_count"], medication_matrix["row_count"])
+        self.assertEqual(len(result["candidate_matrix"]), medication_matrix["row_count"])
+        self.assertGreaterEqual(medication_matrix["row_count"], 4)
+        self.assertEqual(
+            {row["candidate_id"] for row in result["candidate_matrix"]},
+            {row["row_id"] for row in medication_matrix["rows"]},
+        )
+        self.assertTrue(
+            all(
+                row["source_evidence_ids"] or row["sample_evidence_ids"] or row["user_supplied_evidence_ids"]
+                for row in medication_matrix["rows"]
+            )
+        )
+        self.assertIn(
+            "sample_target_observed",
+            {
+                row["sample_relevance"]["state"]
+                for row in medication_matrix["rows"]
+            },
+        )
         self.assertEqual(view["candidate_matrix"], result["candidate_matrix"])
         self.assertEqual(view["top_observed"]["answerability"], "direct_source_supported")
         self.assertTrue(view["agent_decision_required"])
@@ -361,6 +441,13 @@ class PGxMedicationReviewCompositionTests(PGxMedicationReviewTestBase):
         self.assertFalse(result["evidence_envelope"]["query_scope"]["clinical_context_requested"])
         self.assertEqual(result["evidence_envelope"]["observations"]["unresolved_components"], [])
         self.assertEqual(result["unanswered_answer_components"], [])
+        self.assertIn(
+            "sample_context_not_requested",
+            {
+                row["sample_relevance"]["state"]
+                for row in result["medication_review_matrix"]["rows"]
+            },
+        )
         components = {item["id"]: item for item in result["evidence_components"]["items"]}
         self.assertEqual(components["sample_target_selection"]["state"], "not_requested")
         self.assertEqual(components["sample_variant_or_marker_evidence"]["state"], "not_requested")

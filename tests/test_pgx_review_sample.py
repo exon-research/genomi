@@ -52,8 +52,10 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
                 known_pgx_source="outside PGx report",
             )
 
+        self.assertEqual(result["sample_evidence"]["known_sample_pgx_evidence_count"], 1)
         self.assertEqual(result["sample_evidence"]["user_provided_sample_evidence_count"], 1)
-        user_evidence = result["sample_evidence"]["user_provided_sample_evidence"][0]
+        user_evidence = result["sample_evidence"]["known_sample_pgx_evidence"][0]
+        self.assertEqual(user_evidence["source"]["source_id"], "user_provided")
         self.assertEqual(user_evidence["gene"], "CYP2C19")
         self.assertEqual(user_evidence["known_diplotype"], "*1/*2")
         self.assertEqual(user_evidence["known_phenotype"], "Intermediate Metabolizer")
@@ -78,10 +80,64 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
         self.assertEqual(user_matrix_item["finding"]["known_diplotype"], "*1/*2")
         self.assertEqual(user_matrix_item["verification"]["status"], "user_provided_unverified")
         self.assertEqual(result["evidence_matrix"]["traceability"]["user_provided_unverified_item_count"], 1)
+        user_rows = [
+            row
+            for row in result["medication_review_matrix"]["rows"]
+            if row["sample_relevance"]["state"] == "user_supplied_pgx"
+        ]
+        self.assertTrue(user_rows)
+        self.assertTrue(user_rows[0]["user_supplied_evidence_ids"])
         components = {item["id"]: item for item in result["evidence_components"]["items"]}
         self.assertEqual(components["sample_variant_or_marker_evidence"]["state"], "present")
         self.assertEqual(components["technical_sample_support"]["state"], "user_provided")
         star_lookup.assert_called_once()
+
+    def test_review_preserves_pharmcat_sample_pgx_matrix_source(self) -> None:
+        clinpgx_result = {
+            "source": {"source_id": "clinpgx"},
+            "summary": {"guideline_annotation_count": 1, "clinical_annotation_count": 0, "label_annotation_count": 0},
+            "sample_follow_up_targets": {"rsids": [], "genes": [{"symbol": "CYP2C19"}]},
+            "clinical_verification": {"requires_before_personal_actionability": []},
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+        pgxdb_result = {
+            "source": {"source_id": "pgxdb"},
+            "summary": {"pgx_record_count": 0},
+            "pgx_records": [],
+            "raw_calls": [],
+            "record_research_payloads": [],
+        }
+
+        with (
+            patch("genomi.capabilities.pharmacogenomics.clinpgx.lookup_clinpgx", return_value=clinpgx_result),
+            patch("genomi.capabilities.pharmacogenomics.pgxdb.lookup_pgxdb", return_value=pgxdb_result),
+            patch("genomi.capabilities.pharmacogenomics.pgx_star.call_star_alleles"),
+        ):
+            result = review_medication_interaction(
+                drug="clopidogrel",
+                known_diplotype="*1/*2",
+                known_phenotype="Intermediate Metabolizer",
+                known_pgx_source="pharmcat_sample_pgx_matrix",
+                source_sample_pgx_row_id="samplepgx_clopidogrel",
+            )
+
+        sample_evidence = result["sample_evidence"]
+        self.assertEqual(sample_evidence["known_sample_pgx_evidence_count"], 1)
+        self.assertEqual(sample_evidence["user_provided_sample_evidence_count"], 0)
+        self.assertEqual(sample_evidence["pharmcat_sample_pgx_matrix_evidence_count"], 1)
+        pharmcat_evidence = sample_evidence["known_sample_pgx_evidence"][0]
+        self.assertEqual(pharmcat_evidence["source"]["source_id"], "pharmcat_sample_pgx_matrix")
+        self.assertEqual(pharmcat_evidence["source"]["source_sample_pgx_row_id"], "samplepgx_clopidogrel")
+        self.assertEqual(pharmcat_evidence["evidence_class"], "pharmcat_sample_pgx_matrix_row")
+        self.assertEqual(
+            result["answer_support"]["technical_sample_support"]["status"],
+            "pharmcat_sample_pgx_matrix_available",
+        )
+        self.assertEqual(
+            result["answer_support"]["pharmcat_sample_pgx_summaries"][0]["source_sample_pgx_row_id"],
+            "samplepgx_clopidogrel",
+        )
 
     def test_sample_only_evidence_is_not_presented_as_empty_scope(self) -> None:
         clinpgx_result = {
@@ -154,6 +210,7 @@ class PGxMedicationReviewSampleTests(PGxMedicationReviewTestBase):
                 known_phenotype="Intermediate Metabolizer",
             )
 
+        self.assertEqual(result["sample_evidence"]["known_sample_pgx_evidence_count"], 0)
         self.assertEqual(result["sample_evidence"]["user_provided_sample_evidence_count"], 0)
         self.assertTrue(result["evidence_state"]["has_public_pgx_evidence"])
         self.assertFalse(result["evidence_state"]["has_sample_evidence"])

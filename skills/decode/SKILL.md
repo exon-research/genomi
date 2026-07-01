@@ -2,7 +2,7 @@
 name: genomi-decode
 description: |
   Activate this skill for "/genomi decode", "decode my genome", "decode my
-  DNA", "show me the dashboard", "the Genomi dashboard", "full report",
+  DNA", "show me the dashboard", "the Genomi dashboard",
   "one-shot rundown", or any all-at-once request that asks Genomi to
   compose every capability's findings into a single artifact. This is the
   whole-genome dashboard kicker — it sweeps every relevant Genomi capability
@@ -22,7 +22,7 @@ The `/genomi decode` kicker tells the agent to assemble every relevant Genomi
 capability's evidence about the user's active genome and emit a single
 self-contained `Genomi Dashboard.html` artifact. Activate this skill whenever
 the user types `/genomi decode`, asks for "the dashboard", asks to "decode my
-genome", or asks for a one-shot full report.
+genome", or asks for a one-shot evidence rundown.
 
 ## Activation
 
@@ -66,17 +66,32 @@ The renderer normalizes native upstream-op shapes internally:
 - `overview` — adapts `active_genome_index.summarize` output;
   snake_case keys (`genome_build`, `nickname`, `active_genome_index_completed_at`,
   `nearest_reference_groups`) are mapped automatically.
-- `variants` — adapts scan rows; both `clinvar.scan_candidates`
-  shape (`{variant, clinvar, genes}`) and `clinvar.match_variants` JSONL
-  shape (`{sample_variant, clinvar}`) are handled.
+- `variants` — adapts `clinvar.scan_candidates` variant inventory rows;
+  `clinvar.match_variants` JSONL rows (`{sample_variant, clinvar}`) are also
+  handled. Carrier/condition review groups render under `risk`, not variants.
 - `nutrigenomics` — adapts `nutrigenomics.retrieve_domain_markers`; it extracts
   `gene.symbol`, `variant.rsid`, `established_effect.claim` (→ `recommendation`),
   `evidence_tier`, and domain label (→ `marker`).
 - `ancestry` — adapts `ancestry.estimate_population_context`.
-- `pgx` — adapts native PharmCAT artifact summaries and medication-review
-  results into PGx cards.
-- `risk` — adapts native `prs.calculate_score` results into risk-score cards.
+- `pgx` — adapts PharmCAT `sample_pgx_matrix` and medication-review
+  `medication_review_matrix` rows into PGx cards without merging separate
+  medication recommendations by gene alone.
+- `risk` — adapts native `prs.calculate_score` results and
+  `phenotype.plan_risk_investigation` carrier/condition review rows into
+  risk/review cards.
 - `variants_all` — uses the ClinVar matches JSONL path materialized by decode.
+
+Decode also gathers the current carrier/condition and PGx review contracts:
+
+- For `risk`, decode runs the declared `risk_review_types` from the selected
+  Active Genome Index ClinVar matches scope. Omitted `risk_review_types` means
+  `carrier_review` plus `observed_condition_review`; pass an empty array only
+  when the user wants PRS-only risk evidence.
+- For `pgx`, decode runs `pharmacogenomics.review_medication` for explicit
+  `pgx_review_targets` and for drug/gene targets discovered in PharmCAT
+  `sample_pgx_matrix` rows, up to `pgx_review_target_limit`. Gene-only sample
+  rows can be preserved as sample evidence, but decode does not invent
+  medication-specific recommendations without a declared drug/source target.
 
 If no PRS scores are installed in the user's library, the builder supplies a
 typed empty risk state so stale risk evidence is cleared rather than preserved.

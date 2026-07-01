@@ -49,8 +49,10 @@ or pharmacogene sample evidence.
 1. Use `pharmacogenomics.review_medication` for ordinary medication questions.
    It combines ClinPGx, FDA PGx tables, PGxDB, stored reviewed research, and
    optional selected sample evidence in one bounded review.
-2. Inspect `evidence_envelope`, `evidence_matrix`, `target_inventory`,
-   `answer_support`, and `unanswered_answer_components` before answering.
+2. Inspect `evidence_envelope`, `medication_review_matrix`,
+   `evidence_matrix`, `target_inventory`, `answer_support`, and
+   `unanswered_answer_components` before answering. Treat each
+   `medication_review_matrix.rows[]` entry as the review unit.
 3. If the answer needs source review beyond returned public records, use
    `research.list_sources`, review the selected public target, then store the
    finding with `research.record`.
@@ -75,9 +77,11 @@ or pharmacogene sample evidence.
   `pharmacogenomics.validate_outside_call_tsv`: prepare or validate specialized
   outside-call evidence for PharmCAT.
 - `pharmacogenomics.run_pharmcat`: run broad PharmCAT calling from the selected
-  Active Genome Index and return provenance plus parsed artifacts.
+  Active Genome Index and return provenance plus `sample_pgx_matrix` rows
+  projected from report, phenotype, calls-only, and matcher artifacts.
 - `pharmacogenomics.import_pharmcat_artifacts`: import existing PharmCAT JSON,
-  TSV, matcher, phenotype, missing-position, or output-directory artifacts.
+  TSV, matcher, phenotype, missing-position, or output-directory artifacts and
+  return `sample_pgx_matrix`.
 
 PGx capability metadata is exposed through `genomi.list_resources`; there is
 no separate PGx capability-listing tool.
@@ -160,7 +164,7 @@ Import existing PharmCAT report JSON, calls-only TSV, matcher JSON, phenotype JS
 
 **Why necessary**: Existing PharmCAT outputs should be reused rather than rerun when sample-side PGx evidence already exists.
 
-**Result semantics**: Parses existing PharmCAT artifacts into the same evidence summaries and record_research_payloads used by pharmacogenomics.run_pharmcat, including interpretation readiness and missing-position review facts.
+**Result semantics**: Parses existing PharmCAT artifacts into `sample_pgx_matrix`, evidence summaries, and record_research_payloads used by pharmacogenomics.run_pharmcat, including interpretation readiness and missing-position review facts.
 
 ### pharmacogenomics.preflight_pharmcat
 
@@ -184,7 +188,7 @@ Prepare a PharmCAT outside-call TSV from supported specialized caller output suc
 
 ### pharmacogenomics.review_medication
 
-Review medication pharmacogenomic evidence by combining ClinPGx guideline/label context, FDA PGx table rows, PGxDB association evidence, Active Genome Index rsID lookup when selected, implemented marker-definition evidence when selected, evidence components, and target inventory.
+Review medication pharmacogenomic evidence as medication-first rows combining ClinPGx guideline/label context, FDA PGx table rows, PGxDB association evidence, Active Genome Index rsID lookup when selected, implemented marker-definition evidence when selected, evidence components, and target inventory.
 
 **Use when**: Combines public PGx evidence with selected active-genome-index or marker evidence for one medication.
 
@@ -194,17 +198,17 @@ Review medication pharmacogenomic evidence by combining ClinPGx guideline/label 
 
 **Example prompts**: Does my DNA say anything about clopidogrel?
 
-**Result semantics**: Combines public PGx source evidence with selected sample evidence; public-only by default unless active-genome-index context is selected. clinical_verification is informational only.
+**Result semantics**: Returns `medication_review_matrix` where each row carries drug, gene, variant/diplotype/phenotype, recommendation/source text, evidence IDs, sample relevance, row readiness, and clinical boundary. Public-only by default unless active-genome-index context is selected.
 
 ### pharmacogenomics.run_pharmcat
 
-Run a local PharmCAT installation from an approved Active Genome Index for broad PGx diplotype, phenotype, and recommendation artifacts.
+Run a local PharmCAT installation from an approved Active Genome Index for broad PGx diplotype, phenotype, recommendation artifacts, and `sample_pgx_matrix` rows.
 
 **Use when**: Runs local PharmCAT from the selected Active Genome Index to generate broad PGx diplotype, phenotype, and recommendation artifacts.
 
 **Why necessary**: Broad PGx diplotype and recommendation artifacts require a specialized external caller.
 
-**Result semantics**: Runs local PharmCAT as sample-side PGx evidence generation; returns input preflight, runtime provenance, outside-call validation, artifacts, warnings, interpretation readiness, and record_research_payloads for synthesis.
+**Result semantics**: Runs local PharmCAT as sample-side PGx evidence generation; returns input preflight, runtime provenance, outside-call validation, `sample_pgx_matrix`, artifacts, warnings, interpretation readiness, and record_research_payloads for synthesis.
 
 ### pharmacogenomics.validate_outside_call_tsv
 

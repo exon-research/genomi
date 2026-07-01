@@ -70,7 +70,7 @@
     "pharmacogenomics.review_medication": {
       "capability": "pharmacogenomics",
       "namespace": "pharmacogenomics",
-      "description": "Review medication pharmacogenomic evidence by combining ClinPGx guideline/label context, FDA PGx table rows, PGxDB association evidence, Active Genome Index rsID lookup when selected, implemented marker-definition evidence when selected, evidence components, and target inventory.",
+      "description": "Review pharmacogenomic evidence for a selected medication, drug-gene, or drug-variant target.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -99,6 +99,9 @@
             "type": "string"
           },
           "known_pgx_source": {
+            "type": "string"
+          },
+          "source_sample_pgx_row_id": {
             "type": "string"
           },
           "semantic_context": {
@@ -158,21 +161,21 @@
       ],
       "produces": [
         "pharmacogenomic_medication_review",
-        "pgx_unanswered_answer_components",
-        "pgx_answer_support",
-        "pgx_evidence_components",
-        "pgx_target_inventory",
-        "pgx_evidence_matrix",
-        "pgx_evidence_envelope",
-        "pgx_evidence_traceability",
-        "pgx_evidence_state",
+        "medication_review_matrix",
+        "unanswered_answer_components",
+        "answer_support",
+        "evidence_components",
+        "target_inventory",
+        "evidence_matrix",
+        "evidence_envelope",
+        "evidence_traceability",
+        "evidence_state",
         "candidate_matrix",
         "evidence_view",
         "decision_evidence",
         "top_observed_candidate",
-        "sample_variant_evidence",
-        "sample_marker_definition_evidence",
-        "public_pgx_evidence",
+        "sample_evidence",
+        "public_evidence",
         "fda_pharmacogenomic_table_evidence",
         "record_research_payloads"
       ],
@@ -266,7 +269,7 @@
     "pharmacogenomics.import_pharmcat_artifacts": {
       "capability": "pharmacogenomics",
       "namespace": "pharmacogenomics",
-      "description": "Import existing PharmCAT report JSON, calls-only TSV, matcher JSON, phenotype JSON, missing-position VCF, or output directory without executing PharmCAT.",
+      "description": "Import existing PharmCAT artifacts without executing PharmCAT.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -299,6 +302,8 @@
       "area": "pharmacogenomics",
       "requires": [],
       "produces": [
+        "sample_pgx_matrix",
+        "medication_review_targets",
         "pharmcat_report",
         "sample_diplotype_evidence",
         "sample_phenotype_evidence",
@@ -372,7 +377,7 @@
     "pharmacogenomics.run_pharmcat": {
       "capability": "pharmacogenomics",
       "namespace": "pharmacogenomics",
-      "description": "Run a local PharmCAT installation from an approved Active Genome Index for broad PGx diplotype, phenotype, and recommendation artifacts.",
+      "description": "Run a local PharmCAT installation from an approved Active Genome Index.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -454,6 +459,8 @@
         "local_pharmcat_installation"
       ],
       "produces": [
+        "sample_pgx_matrix",
+        "medication_review_targets",
         "pharmcat_report",
         "sample_diplotype_evidence",
         "sample_phenotype_evidence",

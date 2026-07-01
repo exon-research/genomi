@@ -91,7 +91,7 @@ from .sample_evidence import (  # noqa: F401
     _stored_sample_pgx_summaries,
     _target_inventory,
     _technical_support_count,
-    _user_provided_sample_pgx_summaries,
+    _known_sample_pgx_summaries,
 )
 from .evidence_matrix import (  # noqa: F401
     _clinpgx_evidence_items,
@@ -106,7 +106,7 @@ from .evidence_matrix import (  # noqa: F401
     _star_allele_evidence_items,
     _stored_research_evidence_items,
     _stored_source_citations,
-    _user_provided_sample_evidence_items,
+    _known_sample_pgx_evidence_items,
     _with_evidence_item_ids,
 )
 from .source_state import (  # noqa: F401
@@ -121,12 +121,12 @@ from .source_state import (  # noqa: F401
 from .interaction import (  # noqa: F401
     _clinical_context,
     _known_sample_fact_count,
-    _pgx_candidate_evidence_view,
-    _pgx_candidate_id,
-    _pgx_candidate_row,
-    _pgx_candidate_warnings,
-    _pgx_unanswered_counter_evidence,
-    _user_provided_sample_pgx_evidence,
+    _known_sample_pgx_evidence,
     capability_inventory,
     review_medication_interaction,
+)
+from .medication_matrix import (  # noqa: F401
+    MEDICATION_REVIEW_MATRIX_POLICY_ID,
+    build_medication_review_matrix,
+    medication_review_evidence_view,
 )

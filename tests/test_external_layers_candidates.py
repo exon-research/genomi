@@ -35,7 +35,7 @@ class CandidateInventoryTests(EvidenceImportTestBase):
 
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["summary"]["total_match_records"], 2)
-            self.assertEqual(result["summary"]["selected_candidate_variants"], 1)
+            self.assertEqual(result["summary"]["selected_candidate_variants"], 2)
             view = result["evidence_view"]
             self.assertEqual(view["task_profile"]["profile_id"], "clinvar_candidate_scan")
             self.assertEqual(view["coverage_state"], "data_returned")
@@ -67,10 +67,22 @@ class CandidateInventoryTests(EvidenceImportTestBase):
                 )
             )
             self.assertTrue(Path(result["manifest_path"]).exists())
+            review_groups = result["candidate_review_groups"]
+            self.assertEqual(review_groups["policy_id"], "clinvar_candidate_review_groups_v1")
+            self.assertEqual(review_groups["group_count"], 4)
+            self.assertIn(["uncertain_or_conflicting", 1], review_groups["group_counts_by_type"])
+            self.assertIn(["benign_or_counterevidence", 1], review_groups["group_counts_by_type"])
+            self.assertTrue(
+                any(
+                    group["group_type"] == "uncertain_or_conflicting"
+                    and group["candidate_ids"] == ["variant:1-10257-A-C"]
+                    for group in review_groups["groups"]
+                )
+            )
 
             cached = extract_clinvar_candidates(matches, db, output)
             self.assertEqual(cached["status"], "cached")
-            self.assertEqual(cached["summary"]["selected_candidate_variants"], 1)
+            self.assertEqual(cached["summary"]["selected_candidate_variants"], 2)
             self.assertEqual(cached["evidence_view"]["task_profile"]["profile_id"], "clinvar_candidate_scan")
 
             record_research_findings(
@@ -197,6 +209,14 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             self.assertIn("clinvar_low_penetrance", low_penetrance["tags"])
             self.assertIn("low_penetrance_or_carrier_context", low_penetrance["buckets"])
             self.assertIn("heterozygous_p_lp_context_needed", low_penetrance["buckets"])
+            carrier_groups = [
+                group
+                for group in result["candidate_review_groups"]["groups"]
+                if group["group_type"] == "carrier_relevance"
+            ]
+            self.assertEqual(len(carrier_groups), 1)
+            self.assertEqual(carrier_groups[0]["candidate_ids"], ["variant:14-94847262-T-A"])
+            self.assertEqual(carrier_groups[0]["zygosity_counts"], [["heterozygous", 1]])
 
     def test_candidate_inventory_selects_source_evidence_groups_not_intents(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -221,13 +241,15 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             )
 
             default_result = extract_clinvar_candidates(matches)
-            self.assertEqual(default_result["summary"]["selected_candidate_variants"], 0)
+            self.assertEqual(default_result["summary"]["selected_candidate_variants"], 2)
             self.assertIn(
                 ["clinvar_risk_association_protective", 1],
                 default_result["summary"]["available_evidence_group_counts"],
             )
             self.assertIn(["clinvar_drug_response", 1], default_result["summary"]["available_evidence_group_counts"])
-            self.assertIn("evidence_options", default_result)
+            self.assertIn("candidate_review_groups", default_result)
+            self.assertIn(["risk_association", 1], default_result["candidate_review_groups"]["group_counts_by_type"])
+            self.assertIn(["drug_response", 1], default_result["candidate_review_groups"]["group_counts_by_type"])
 
             risk_result = extract_clinvar_candidates(
                 matches,
@@ -244,3 +266,35 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             self.assertEqual(drug_result["summary"]["selected_candidate_variants"], 1)
             self.assertEqual(drug_result["candidate_inventory"][0]["variant"]["pos"], 10257)
             self.assertIn("clinvar_drug_response", drug_result["candidate_inventory"][0]["evidence_groups"])
+
+    def test_candidate_review_groups_use_full_selected_inventory_when_display_limited(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            matches.write_text(
+                "\n".join(
+                    [
+                        '{"match_provenance":{"match_basis":"exact_allele"},'
+                        '"sample_variant":{"chrom":"1","pos":10250,"ref":"A","alt":"C","filter":"PASS",'
+                        '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
+                        '"clinvar":{"clinical_significance":"association","review_status":"no_assertion_criteria_provided",'
+                        '"gene_info":"GENE1:1","conditions":"common trait","clinvar_id":"123"}}',
+                        '{"match_provenance":{"match_basis":"exact_allele"},'
+                        '"sample_variant":{"chrom":"1","pos":10257,"ref":"A","alt":"G","filter":"PASS",'
+                        '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
+                        '"clinvar":{"clinical_significance":"drug_response","review_status":"criteria_provided,_single_submitter",'
+                        '"gene_info":"GENE2:2","conditions":"drug response","clinvar_id":"456"}}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = extract_clinvar_candidates(matches, limit=1)
+
+            self.assertEqual(result["summary"]["selected_candidate_variants"], 2)
+            self.assertEqual(result["summary"]["emitted_candidate_variants"], 1)
+            self.assertTrue(result["summary"]["truncated"])
+            self.assertEqual(len(result["candidate_inventory"]), 1)
+            self.assertGreater(result["candidate_review_groups"]["group_count"], len(result["candidate_inventory"]))
+            self.assertIn(["risk_association", 1], result["candidate_review_groups"]["group_counts_by_type"])
+            self.assertIn(["drug_response", 1], result["candidate_review_groups"]["group_counts_by_type"])

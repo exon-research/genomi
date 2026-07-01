@@ -122,7 +122,9 @@ def _evidence_state(
     sample_match_count: int,
     star_marker_match_count: int,
     stored_sample_evidence_count: int,
+    known_sample_pgx_evidence_count: int,
     user_sample_evidence_count: int,
+    pharmcat_sample_pgx_evidence_count: int,
     technical_support_count: int,
     sequencing_sample_match_count: int,
     source_availability: JsonObject,
@@ -138,7 +140,9 @@ def _evidence_state(
         "has_active_genome_variant_match": bool(sample_match_count),
         "has_star_marker_evidence": bool(star_marker_match_count),
         "has_stored_sample_evidence": bool(stored_sample_evidence_count),
+        "has_known_sample_pgx_evidence": bool(known_sample_pgx_evidence_count),
         "has_user_provided_sample_evidence": bool(user_sample_evidence_count),
+        "has_pharmcat_sample_pgx_matrix_evidence": bool(pharmcat_sample_pgx_evidence_count),
         "has_genotype_support": bool(technical_support_count),
         "has_sequencing_sample_signal": bool(sequencing_sample_match_count),
         "sample_context_requested": sample_context_requested,
@@ -149,7 +153,9 @@ def _evidence_state(
         "sample_match_count": sample_match_count,
         "star_marker_match_count": star_marker_match_count,
         "stored_sample_evidence_count": stored_sample_evidence_count,
+        "known_sample_pgx_evidence_count": known_sample_pgx_evidence_count,
         "user_provided_sample_evidence_count": user_sample_evidence_count,
+        "pharmcat_sample_pgx_matrix_evidence_count": pharmcat_sample_pgx_evidence_count,
         "technical_support_count": technical_support_count,
         "sequencing_sample_match_count": sequencing_sample_match_count,
         "source_availability_status": source_availability.get("status"),
@@ -168,6 +174,8 @@ def _component_has_evidence(state: str) -> bool:
         "observed",
         "stored",
         "user_provided",
+        "known_sample",
+        "pharmcat_sample",
         "not_requested",
     }
 
@@ -182,7 +190,9 @@ def _evidence_components(
     stored_source_evidence_count: int,
     sample_match_count: int,
     stored_sample_evidence_count: int,
+    known_sample_pgx_evidence_count: int,
     user_sample_evidence_count: int,
+    pharmcat_sample_pgx_evidence_count: int,
     technical_support_count: int,
     sequencing_sample_match_count: int,
     active_genome_index_context_available: bool,
@@ -196,7 +206,12 @@ def _evidence_components(
     fda_result: JsonObject,
     clinical_context: JsonObject,
 ) -> JsonObject:
-    sample_evidence_count = sample_match_count + star_marker_match_count + stored_sample_evidence_count + user_sample_evidence_count
+    sample_evidence_count = (
+        sample_match_count
+        + star_marker_match_count
+        + stored_sample_evidence_count
+        + known_sample_pgx_evidence_count
+    )
     target_ready = bool(selected_drug or atc_code or drugbank_id)
     source_classes = list(clinpgx_result.get("clinical_verification", {}).get("public_evidence_classes") or [])
     if int(pgxdb_result.get("summary", {}).get("pgx_record_count") or 0):
@@ -213,6 +228,8 @@ def _evidence_components(
         source_classes.append("stored_private_sample_pgx_evidence")
     if user_sample_evidence_count:
         source_classes.append("user_provided_sample_pgx_evidence")
+    if pharmcat_sample_pgx_evidence_count:
+        source_classes.append("pharmcat_sample_pgx_matrix_evidence")
     target_selection_state = "present" if target_ready else "missing"
     public_state = "present" if source_evidence_count else "absent"
     if not sample_context_requested:
@@ -237,6 +254,10 @@ def _evidence_components(
         technical_state = "observed"
     elif user_sample_evidence_count:
         technical_state = "user_provided"
+    elif pharmcat_sample_pgx_evidence_count:
+        technical_state = "pharmcat_sample"
+    elif known_sample_pgx_evidence_count:
+        technical_state = "known_sample"
     else:
         technical_state = "absent"
     broad_state = "not_requested" if not sample_context_requested else "available" if active_genome_index_context_available else "absent"
@@ -275,7 +296,9 @@ def _evidence_components(
                 "variant_match_count": sample_match_count,
                 "star_marker_match_count": star_marker_match_count,
                 "stored_sample_evidence_count": stored_sample_evidence_count,
+                "known_sample_pgx_evidence_count": known_sample_pgx_evidence_count,
                 "user_provided_sample_evidence_count": user_sample_evidence_count,
+                "pharmcat_sample_pgx_matrix_evidence_count": pharmcat_sample_pgx_evidence_count,
                 "supported_star_marker_coverage": supported_star_marker_coverage,
             },
             "missing_inputs": [] if sample_state in {"present", "not_requested"} else ["sample_variant_or_marker_evidence"],
@@ -301,7 +324,9 @@ def _evidence_components(
                 "evidence": {
                     "technical_support_count": technical_support_count,
                     "sequencing_sample_match_count": sequencing_sample_match_count,
+                    "known_sample_pgx_evidence_count": known_sample_pgx_evidence_count,
                     "user_provided_sample_evidence_count": user_sample_evidence_count,
+                    "pharmcat_sample_pgx_matrix_evidence_count": pharmcat_sample_pgx_evidence_count,
                 },
                 "missing_inputs": ["genotype_support"] if technical_state == "sample_signal_without_genotype_support" else [],
             },

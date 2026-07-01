@@ -30,7 +30,7 @@ def _evidence_matrix(
     stored_research: JsonObject,
     sample_lookups: list[JsonObject],
     star_allele_calls: list[JsonObject],
-    user_provided_sample_evidence: list[JsonObject],
+    known_sample_pgx_evidence: list[JsonObject],
 ) -> list[JsonObject]:
     items: list[JsonObject] = []
     items.extend(_clinpgx_evidence_items(clinpgx_result))
@@ -39,7 +39,7 @@ def _evidence_matrix(
     items.extend(_stored_research_evidence_items(stored_research))
     items.extend(_sample_lookup_evidence_items(sample_lookups))
     items.extend(_star_allele_evidence_items(star_allele_calls))
-    items.extend(_user_provided_sample_evidence_items(user_provided_sample_evidence))
+    items.extend(_known_sample_pgx_evidence_items(known_sample_pgx_evidence))
     return _with_evidence_item_ids(_dedupe_evidence_items(items))
 
 
@@ -421,15 +421,21 @@ def _star_allele_evidence_items(star_allele_calls: list[JsonObject]) -> list[Jso
     return items
 
 
-def _user_provided_sample_evidence_items(user_provided_sample_evidence: list[JsonObject]) -> list[JsonObject]:
+def _known_sample_pgx_evidence_items(known_sample_pgx_evidence: list[JsonObject]) -> list[JsonObject]:
     items = []
-    for evidence in user_provided_sample_evidence:
+    for evidence in known_sample_pgx_evidence:
+        source = evidence.get("source") if isinstance(evidence.get("source"), dict) else {}
         items.append(
             {
                 "evidence_role": "sample_pgx_evidence",
                 "source": {
-                    "source_id": "user_provided",
-                    "title": evidence.get("known_pgx_source"),
+                    "source_id": source.get("source_id") or "user_provided",
+                    "title": source.get("title") or evidence.get("known_pgx_source"),
+                    **(
+                        {"source_sample_pgx_row_id": source.get("source_sample_pgx_row_id")}
+                        if source.get("source_sample_pgx_row_id")
+                        else {}
+                    ),
                 },
                 "evidence_class": evidence.get("evidence_class") or "user_provided_sample_pgx_evidence",
                 "target": _compact_selected_fields(evidence, ("target_type", "gene", "rsid")),

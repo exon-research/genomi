@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...evidence.store.candidate_groups import missing_interpretation_gates
+from .pgx_panel_rows import (
+    merge_dashboard_pgx_rows,
+    normalize_dashboard_pgx_row,
+    pgx_dashboard_rows_from_matrix_result,
+    pgx_matrix_result_has_content,
+)
 from .panel_states import (
     EMPTY_COVERAGE_STATES,
     EMPTY_NATIVE_STATUSES,
@@ -26,22 +33,35 @@ class PanelNormalizationError(Exception):
 
 def normalize_pgx_panel(raw: Any) -> list[JsonObject] | None:
     if isinstance(raw, list):
-        return _normalize_dashboard_pgx_list(raw)
+        return _pgx_rows_from_list(raw) or None
     if isinstance(raw, dict) and _is_native_pgx_result(raw):
         return _pgx_rows_from_native(raw) or None
     return None
 
 
 def normalize_risk_panel(raw: Any) -> list[JsonObject] | None:
+    if isinstance(raw, dict) and _is_native_phenotype_review(raw):
+        return _risk_rows_from_phenotype_review(raw) or None
+    if isinstance(raw, dict) and _is_native_clinvar_risk_result(raw):
+        return _risk_rows_from_clinvar_result(raw) or None
     if not isinstance(raw, list):
         return None
     rows: list[JsonObject] = []
     for index, item in enumerate(raw):
+        if _is_empty_risk_list_item(item):
+            continue
+        if isinstance(item, dict) and _is_native_phenotype_review(item):
+            rows.extend(_risk_rows_from_phenotype_review(item))
+            continue
+        if isinstance(item, dict) and _is_native_clinvar_risk_result(item):
+            rows.extend(_risk_rows_from_clinvar_result(item))
+            continue
         normalized = _normalize_native_prs_row(item) if _is_native_prs_result(item) else _normalize_dashboard_risk_row(item)
         if not normalized:
             raise PanelNormalizationError(
                 f"Panel 'risk' row {index} has no recognized dashboard field. "
-                "Expected a dashboard risk row or native prs.calculate_score result."
+                "Expected a dashboard risk row, native prs.calculate_score result, native ClinVar review groups, "
+                "or native phenotype review result."
             )
         rows.append(normalized)
     return rows or None
@@ -58,10 +78,16 @@ def native_panel_rows(panel: str, raw: Any) -> list[JsonObject] | None:
 
 
 def is_native_empty_panel(panel: str, raw: Any) -> bool:
+    if panel == "pgx" and isinstance(raw, list) and raw:
+        return all(_is_empty_pgx_list_item(item) for item in raw)
     if panel == "pgx" and isinstance(raw, dict) and _is_native_pgx_result(raw):
         return not _pgx_has_native_content(raw)
     if panel == "risk" and isinstance(raw, list) and raw:
-        return all(_is_empty_prs_result(item) for item in raw)
+        return all(_is_empty_risk_list_item(item) for item in raw)
+    if panel == "risk" and isinstance(raw, dict) and _is_native_phenotype_review(raw):
+        return not _risk_rows_from_phenotype_review(raw)
+    if panel == "risk" and isinstance(raw, dict) and _is_native_clinvar_risk_result(raw):
+        return not _risk_rows_from_clinvar_result(raw)
     if panel in {"variants", "variants_all", "nutrigenomics"} and isinstance(raw, dict):
         rows = native_panel_rows(panel, raw)
         if rows is not None:
@@ -92,185 +118,41 @@ def _has_empty_native_status(raw: JsonObject) -> bool:
     return status in EMPTY_NATIVE_STATUSES or coverage_state in EMPTY_COVERAGE_STATES
 
 
-def _normalize_dashboard_pgx_list(raw: list[Any]) -> list[JsonObject] | None:
+def _pgx_rows_from_list(raw: list[Any]) -> list[JsonObject]:
     rows: list[JsonObject] = []
     for index, item in enumerate(raw):
-        normalized = _normalize_dashboard_pgx_row(item)
+        if _is_empty_pgx_list_item(item):
+            continue
+        if isinstance(item, dict) and _is_native_pgx_result(item):
+            try:
+                rows.extend(pgx_dashboard_rows_from_matrix_result(item))
+            except ValueError as exc:
+                raise PanelNormalizationError(f"Panel 'pgx' {exc}") from exc
+            continue
+        normalized = normalize_dashboard_pgx_row(item)
         if not normalized:
             raise PanelNormalizationError(
                 f"Panel 'pgx' row {index} has no recognized dashboard field. "
-                "Expected a dashboard PGx row."
+                "Expected a dashboard PGx row or native PGx matrix result."
             )
         rows.append(normalized)
-    return _merge_pgx_rows(rows) or None
+    return merge_dashboard_pgx_rows(rows)
 
 
 def _pgx_rows_from_native(raw: JsonObject) -> list[JsonObject]:
-    if isinstance(raw.get("artifacts"), dict):
-        return _pgx_rows_from_pharmcat(raw)
-    if _is_pgx_review_result(raw):
-        return _pgx_rows_from_review(raw)
-    return []
-
-
-def _pgx_rows_from_pharmcat(raw: JsonObject) -> list[JsonObject]:
-    artifacts = _as_dict(raw.get("artifacts"))
-    rows: list[JsonObject] = []
-    calls = _as_dict(artifacts.get("calls_only"))
-    for index, item in enumerate(_as_dicts(calls.get("rows"))):
-        row = _pgx_row_from_pharmcat_call(item)
-        if not row:
-            raise PanelNormalizationError(
-                f"Panel 'pgx' PharmCAT calls row {index} has no recognized dashboard field."
-            )
-        rows.append(row)
-
-    phenotype = _as_dict(artifacts.get("phenotype_json"))
-    for item in _as_dicts(phenotype.get("records")):
-        row = _pgx_row_from_phenotype_record(item)
-        if row:
-            rows.append(row)
-
-    report = _as_dict(artifacts.get("report_json"))
-    recommendations = _as_dict(report.get("recommendations"))
-    for item in _as_dicts(recommendations.get("records")):
-        rows.extend(_pgx_rows_from_recommendation_record(item))
-    return _merge_pgx_rows(rows)
-
-
-def _pgx_rows_from_review(raw: JsonObject) -> list[JsonObject]:
-    query = _as_dict(raw.get("query"))
-    sample_evidence = _as_dict(raw.get("sample_evidence"))
-    answer_support = _as_dict(raw.get("answer_support"))
-    query_drug = _clean(_pick(query, "drug", "raw_drug"))
-    query_gene = _clean(query.get("gene"))
-    recommendations = _as_dicts(answer_support.get("source_recommendation_summaries"))
-    rows: list[JsonObject] = []
-
-    for item in _as_dicts(answer_support.get("star_diplotype_summaries")):
-        gene = _clean(_pick(item, "gene"))
-        row = _normalize_dashboard_pgx_row(
-            {
-                "gene": gene,
-                "diplotype": _pick(item, "possible_diplotype", "diplotype"),
-                "phenotype": _pick(item, "predicted_phenotype", "phenotype"),
-                "drugs": _drugs_for_gene(recommendations, gene, fallback_drug=query_drug),
-            }
-        )
-        if row:
-            rows.append(row)
-
-    for item in _as_dicts(sample_evidence.get("user_provided_sample_evidence")):
-        gene = _clean(_pick(item, "gene", "known_gene"))
-        row = _normalize_dashboard_pgx_row(
-            {
-                "gene": gene,
-                "diplotype": _pick(item, "known_diplotype", "diplotype"),
-                "phenotype": _pick(item, "known_phenotype", "phenotype"),
-                "drugs": _drugs_for_gene(recommendations, gene, fallback_drug=query_drug),
-            }
-        )
-        if row:
-            rows.append(row)
-
-    if not rows:
-        genes = _unique_strings(
-            [
-                query_gene,
-                *_as_list(sample_evidence.get("star_gene_targets")),
-                *(_pick(item, "gene") for item in recommendations),
-            ]
-        )
-        for gene in genes:
-            row = _normalize_dashboard_pgx_row(
-                {
-                    "gene": gene,
-                    "drugs": _drugs_for_gene(recommendations, gene, fallback_drug=query_drug),
-                }
-            )
-            if row:
-                rows.append(row)
-    return _merge_pgx_rows(rows)
-
-
-def _pgx_row_from_phenotype_record(raw: JsonObject) -> JsonObject | None:
-    gene = _clean(_pick(raw, "gene"))
-    diplotypes = [
-        *_as_dicts(raw.get("source_diplotypes")),
-        *_as_dicts(raw.get("recommendation_diplotypes")),
-    ]
-    first = _first_diplotype_with_result(diplotypes)
-    if not gene or first is None:
-        return None
-    return _normalize_dashboard_pgx_row(
-        {
-            "gene": gene,
-            "diplotype": first.get("label"),
-            "phenotype": _first_string(first.get("phenotypes")),
-        }
-    )
-
-
-def _pgx_rows_from_recommendation_record(raw: JsonObject) -> list[JsonObject]:
-    rows: list[JsonObject] = []
-    genes = _unique_strings(_as_list(raw.get("genes")))
-    if not genes:
-        genes = _genes_from_diplotype_strings(_as_list(raw.get("diplotypes")))
-    for gene in genes:
-        rows.append(
-            _normalize_dashboard_pgx_row(
-                {
-                    "gene": gene,
-                    "diplotype": _diplotype_for_gene(raw.get("diplotypes"), gene),
-                    "phenotype": _first_string(raw.get("phenotypes")),
-                    "drugs": [_drug_from_recommendation(raw)],
-                }
-            )
-        )
-    return [row for row in rows if row]
-
-
-def _pgx_row_from_pharmcat_call(raw: JsonObject) -> JsonObject | None:
-    return _normalize_dashboard_pgx_row(
-        {
-            "gene": _clean(raw.get("Gene")),
-            "diplotype": _clean(
-                _pick(raw, "Source Diplotype", "Recommendation Lookup Diplotype")
-            ),
-            "phenotype": _clean(
-                _pick(raw, "Phenotype", "Recommendation Lookup Phenotype")
-            ),
-        }
-    )
-
-
-def _normalize_dashboard_pgx_row(raw: Any) -> JsonObject | None:
-    if not isinstance(raw, dict) or not raw:
-        return None
-    gene = _clean(raw.get("gene"))
-    diplotype = _clean(raw.get("diplotype"))
-    phenotype = _clean(raw.get("phenotype"))
-    drugs = _normalize_dashboard_drugs(raw.get("drugs"))
-
-    out: JsonObject = {}
-    if gene:
-        out["gene"] = gene
-    if diplotype:
-        out["diplotype"] = _strip_gene_prefix(diplotype, gene)
-    if phenotype:
-        out["phenotype"] = phenotype
-    impact = _clean(raw.get("impact")) or _impact_from_phenotype(phenotype)
-    if impact:
-        out["impact"] = impact
-    if drugs:
-        out["drugs"] = drugs
-    return out or None
+    try:
+        return pgx_dashboard_rows_from_matrix_result(raw)
+    except ValueError as exc:
+        raise PanelNormalizationError(f"Panel 'pgx' {exc}") from exc
 
 
 def _normalize_dashboard_risk_row(raw: Any) -> JsonObject | None:
     if not isinstance(raw, dict) or not raw:
         return None
     out: JsonObject = {}
+    row_type = _clean(raw.get("row_type") or raw.get("rowType"))
+    if row_type:
+        out["row_type"] = row_type
     for key in ("trait", "score", "percentile", "ancestryAdjusted", "overlap", "note"):
         if raw.get(key) not in (None, "", []):
             out[key] = raw[key]
@@ -304,8 +186,11 @@ def _normalize_native_prs_row(raw: Any) -> JsonObject | None:
     note = _clean(_pick(interpretation, "summary") or _pick(sample_qc, "note"))
 
     out: JsonObject = {}
+    out["row_type"] = "polygenic_score"
     if trait:
         out["trait"] = trait
+    if pgs_id:
+        out["score_id"] = pgs_id
     if score_value is not None:
         out["score"] = score_value
     if percentile is not None:
@@ -323,31 +208,126 @@ def _normalize_native_prs_row(raw: Any) -> JsonObject | None:
     return out or None
 
 
+def _is_native_phenotype_review(raw: JsonObject) -> bool:
+    return (
+        raw.get("target") not in (None, "", [])
+        and isinstance(raw.get("candidate_matrix"), list)
+        and str(raw.get("target", {}).get("investigation_type") if isinstance(raw.get("target"), dict) else "")
+        in {"carrier_review", "observed_condition_review", "rare_disease", "cancer_risk"}
+    )
+
+
+def _is_native_clinvar_risk_result(raw: JsonObject) -> bool:
+    return isinstance(raw, dict) and (
+        isinstance(raw.get("candidate_review_groups"), dict)
+        or isinstance(raw.get("candidate_inventory"), list)
+    )
+
+
+def _risk_rows_from_clinvar_result(raw: JsonObject) -> list[JsonObject]:
+    matrix = _as_dict(raw.get("candidate_review_groups"))
+    rows: list[JsonObject] = []
+    for group in _as_dicts(matrix.get("groups")):
+        row = _risk_row_from_review_group(group)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _risk_rows_from_phenotype_review(raw: JsonObject) -> list[JsonObject]:
+    rows: list[JsonObject] = []
+    for candidate in _as_dicts(raw.get("candidate_matrix")):
+        row = _risk_row_from_review_candidate(candidate)
+        if row:
+            rows.append(row)
+    if rows:
+        return rows
+    active = _as_dict(raw.get("active_genome_index_evidence"))
+    matrix = _as_dict(active.get("candidate_review_groups"))
+    for group in _as_dicts(matrix.get("groups")):
+        row = _risk_row_from_review_group(group)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def _risk_row_from_review_candidate(candidate: JsonObject) -> JsonObject | None:
+    support = _as_dicts(candidate.get("supporting_evidence"))
+    group = support[0] if support and support[0].get("group_type") else {}
+    if group:
+        row = _risk_row_from_review_group(group, row_type="phenotype_review_target")
+        if row is None:
+            return None
+        for source_key, target_key in (
+            ("candidate_id", "candidate_id"),
+            ("candidate_type", "candidate_type"),
+            ("rank", "rank"),
+            ("score", "score"),
+            ("evidence_support_level", "evidence_support_level"),
+            ("answerability", "answerability"),
+            ("best_evidence_lane", "best_evidence_lane"),
+        ):
+            value = candidate.get(source_key)
+            if value not in (None, "", []):
+                row[target_key] = value
+        row["sources"] = ["phenotype.plan_risk_investigation", "ClinVar"]
+        return row
+    trait = _clean(candidate.get("candidate_id"))
+    if not trait:
+        return None
+    out: JsonObject = {
+        "row_type": "phenotype_review_target",
+        "trait": trait,
+        "score": candidate.get("score"),
+        "candidate_id": candidate.get("candidate_id"),
+        "candidate_type": candidate.get("candidate_type"),
+        "sources": ["phenotype.plan_risk_investigation"],
+    }
+    return {key: value for key, value in out.items() if value not in (None, "", [])}
+
+
+def _risk_row_from_review_group(group: JsonObject, *, row_type: str = "clinvar_review_group") -> JsonObject | None:
+    trait = _review_trait(group)
+    if not trait:
+        return None
+    row = {
+        "row_type": row_type,
+        "trait": trait,
+        "group_id": group.get("group_id"),
+        "group_type": group.get("group_type"),
+        "gene": group.get("gene"),
+        "condition": group.get("condition"),
+        "candidate_ids": group.get("candidate_ids"),
+        "clinical_significance_counts": group.get("clinical_significance_counts"),
+        "review_status_counts": group.get("review_status_counts"),
+        "evidence_groups": group.get("evidence_groups"),
+        "zygosity_counts": group.get("zygosity_counts"),
+        "match_basis_counts": group.get("match_basis_counts"),
+        "population_flags": group.get("population_flags"),
+        "interpretation_gates": group.get("interpretation_gates"),
+        "missing_interpretation_gates": missing_interpretation_gates(group),
+        "sources": ["ClinVar"],
+    }
+    return {key: value for key, value in row.items() if value not in (None, "", [])}
+
+
+def _review_trait(group: JsonObject) -> str | None:
+    values = [group.get("gene"), group.get("condition")]
+    if not any(values):
+        values = [group.get("group_type")]
+    return " / ".join(str(value) for value in values if value) or None
+
+
 def _is_native_pgx_result(raw: JsonObject) -> bool:
     return (
-        isinstance(raw.get("artifacts"), dict)
-        or _is_pgx_review_result(raw)
+        isinstance(raw.get("sample_pgx_matrix"), dict)
+        or isinstance(raw.get("medication_review_matrix"), dict)
         or _is_empty_pgx_result(raw)
     )
 
 
-def _is_pgx_review_result(raw: JsonObject) -> bool:
-    return any(isinstance(raw.get(key), dict) for key in ("public_evidence", "sample_evidence", "answer_support"))
-
-
 def _pgx_has_native_content(raw: JsonObject) -> bool:
-    artifacts = _as_dict(raw.get("artifacts"))
-    if artifacts:
-        calls = _as_dict(artifacts.get("calls_only"))
-        report = _as_dict(artifacts.get("report_json"))
-        recommendations = _as_dict(report.get("recommendations"))
-        phenotype = _as_dict(artifacts.get("phenotype_json"))
-        return bool(
-            _as_dicts(calls.get("rows"))
-            or _as_dicts(recommendations.get("records"))
-            or _as_dicts(phenotype.get("records"))
-        )
-    return _pgx_review_has_mappable_content(raw)
+    return pgx_matrix_result_has_content(raw)
 
 
 def _is_empty_pgx_result(raw: JsonObject) -> bool:
@@ -357,24 +337,16 @@ def _is_empty_pgx_result(raw: JsonObject) -> bool:
     return str(envelope.get("finding_state") or "") in _EMPTY_ENVELOPE_FINDING_STATES
 
 
-def _pgx_review_has_mappable_content(raw: JsonObject) -> bool:
-    answer_support = _as_dict(raw.get("answer_support"))
-    sample_evidence = _as_dict(raw.get("sample_evidence"))
-    query = _as_dict(raw.get("query"))
-    recommendations = _as_dicts(answer_support.get("source_recommendation_summaries"))
-    return bool(
-        _clean(query.get("gene"))
-        or _unique_strings(_as_list(sample_evidence.get("star_gene_targets")))
-        or any(_clean(_pick(item, "gene")) for item in recommendations)
-        or any(
-            _clean(_pick(item, "gene"))
-            for item in _as_dicts(answer_support.get("star_diplotype_summaries"))
-        )
-        or any(
-            _clean(_pick(item, "gene", "known_gene"))
-            for item in _as_dicts(sample_evidence.get("user_provided_sample_evidence"))
-        )
-    )
+def _is_empty_pgx_list_item(raw: Any) -> bool:
+    return isinstance(raw, dict) and _is_native_pgx_result(raw) and not _pgx_has_native_content(raw)
+
+
+def _is_empty_risk_list_item(raw: Any) -> bool:
+    if isinstance(raw, dict) and _is_native_phenotype_review(raw):
+        return not _risk_rows_from_phenotype_review(raw)
+    if isinstance(raw, dict) and _is_native_clinvar_risk_result(raw):
+        return not _risk_rows_from_clinvar_result(raw)
+    return _is_empty_prs_result(raw)
 
 
 def _is_empty_prs_result(raw: Any) -> bool:
@@ -392,144 +364,12 @@ def _is_native_prs_result(raw: Any) -> bool:
     )
 
 
-def _merge_pgx_rows(rows: list[JsonObject]) -> list[JsonObject]:
-    merged: dict[str, JsonObject] = {}
-    order: list[str] = []
-    for row in rows:
-        if not row:
-            continue
-        key = _clean(row.get("gene")) or f"row:{len(order)}"
-        if key not in merged:
-            merged[key] = {}
-            order.append(key)
-        target = merged[key]
-        for field in ("gene", "diplotype", "phenotype", "impact"):
-            if target.get(field) in (None, "", []) and row.get(field) not in (None, "", []):
-                target[field] = row[field]
-        target["drugs"] = _merge_drugs(target.get("drugs"), row.get("drugs"))
-    return [{k: v for k, v in merged[key].items() if v not in (None, "", [])} for key in order]
-
-
-def _merge_drugs(left: Any, right: Any) -> list[JsonObject]:
-    out: list[JsonObject] = []
-    seen: set[tuple[str, str]] = set()
-    for item in [*_normalize_dashboard_drugs(left), *_normalize_dashboard_drugs(right)]:
-        name = str(item.get("name") or "")
-        recommendation = str(item.get("recommendation") or "")
-        key = (name.lower(), recommendation.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(item)
-    return out
-
-
-def _normalize_dashboard_drugs(value: Any) -> list[JsonObject]:
-    result: list[JsonObject] = []
-    for item in _as_list(value):
-        if isinstance(item, dict):
-            drug = _clean(item.get("name"))
-            recommendation = _clean(item.get("recommendation"))
-        else:
-            drug = _clean(item)
-            recommendation = None
-        if drug or recommendation:
-            row: JsonObject = {}
-            if drug:
-                row["name"] = drug
-            if recommendation:
-                row["recommendation"] = recommendation
-            result.append(row)
-    return result
-
-
-def _drug_from_recommendation(raw: JsonObject) -> JsonObject:
-    row: JsonObject = {}
-    drug = _clean(_pick(raw, "drug", "name"))
-    recommendation = _clean(_pick(raw, "recommendation", "summary", "drugRecommendation"))
-    if not recommendation:
-        recommendation = "; ".join(str(item) for item in _as_list(raw.get("implications")) if item) or None
-    if drug:
-        row["name"] = drug
-    if recommendation:
-        row["recommendation"] = recommendation
-    return row
-
-
-def _drugs_for_gene(recommendations: list[JsonObject], gene: str | None, *, fallback_drug: str | None) -> list[JsonObject]:
-    rows: list[JsonObject] = []
-    for item in recommendations:
-        record_gene = _clean(_pick(item, "gene"))
-        if gene and record_gene and record_gene != gene:
-            continue
-        row = _drug_from_recommendation(item)
-        if row:
-            rows.append(row)
-    if not rows and fallback_drug:
-        rows.append({"name": fallback_drug})
-    return rows
-
-
-def _impact_from_phenotype(value: str | None) -> str | None:
-    text = (value or "").strip().lower()
-    if not text or text in {"unknown", "no result", "n/a"}:
-        return None
-    if "poor" in text:
-        return "poor"
-    if any(token in text for token in ("intermediate", "reduced", "decreased", "loss")):
-        return "reduced"
-    if any(token in text for token in ("rapid", "ultrarapid", "increased")):
-        return "increased"
-    if any(token in text for token in ("normal", "extensive")):
-        return "normal"
-    return None
-
-
 def _risk_overlap(sample_qc: JsonObject) -> str | None:
     matched = sample_qc.get("matched_variant_count")
     total = sample_qc.get("score_variant_count")
     if isinstance(matched, (int, float)) and isinstance(total, (int, float)) and total:
         return f"{int(matched)}/{int(total)} variants"
     return None
-
-
-def _first_diplotype_with_result(items: list[JsonObject]) -> JsonObject | None:
-    for item in items:
-        label = _clean(item.get("label"))
-        phenotypes = [_clean(value) for value in _as_list(item.get("phenotypes"))]
-        phenotypes = [value for value in phenotypes if value and value.lower() not in {"unknown", "no result", "n/a"}]
-        if label and label.lower() not in {"unknown", "unknown/unknown", "no result"}:
-            return item
-        if phenotypes:
-            return item
-    return None
-
-
-def _diplotype_for_gene(value: Any, gene: str | None) -> str | None:
-    gene_text = _clean(gene)
-    for item in _as_list(value):
-        text = _clean(item)
-        if not text:
-            continue
-        if not gene_text or text.upper().startswith(gene_text.upper() + " "):
-            return _strip_gene_prefix(text, gene_text)
-    return None
-
-
-def _genes_from_diplotype_strings(value: list[Any]) -> list[str]:
-    genes: list[str] = []
-    for item in value:
-        text = _clean(item)
-        if not text or " " not in text:
-            continue
-        genes.append(text.split(" ", 1)[0])
-    return _unique_strings(genes)
-
-
-def _strip_gene_prefix(value: str, gene: str | None) -> str:
-    if gene and value.upper().startswith(gene.upper() + " "):
-        return value.split(" ", 1)[1]
-    return value
 
 
 def _normalize_sources(value: Any) -> list[str]:
@@ -549,14 +389,6 @@ def _unique_strings(values: list[Any]) -> list[str]:
         seen.add(key)
         result.append(text)
     return result
-
-
-def _first_string(value: Any) -> str | None:
-    for item in _as_list(value):
-        text = _clean(item)
-        if text:
-            return text
-    return None
 
 
 def _pick(d: dict, *keys: str) -> Any:

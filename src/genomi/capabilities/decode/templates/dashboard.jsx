@@ -14,21 +14,13 @@
     const DASHBOARD_META = EV.__dashboard || {};
     const UNAVAILABLE_PANELS = Array.isArray(DASHBOARD_META.unavailablePanels) ? DASHBOARD_META.unavailablePanels : [];
 
-    const PGX_IMPACT_COLORS = { normal: '#10b981', moderate: '#f59e0b', reduced: '#f59e0b', increased: '#f59e0b', elevated: '#ef4444', poor: '#ef4444' };
-    function prsLevel(p) {
-      if (p == null) return { label: '-', color: '#666' };
-      if (p >= 80) return { label: 'Elevated', color: '#ef4444' };
-      if (p >= 60) return { label: 'Moderate', color: '#f59e0b' };
-      if (p >= 40) return { label: 'Average', color: '#aaaaaa' };
-      return { label: 'Below Avg', color: '#10b981' };
-    }
     const RENDERED_AT = DASHBOARD_META.renderedAt || '';
 
     const NAV_ITEMS = [
       { id: 'overview', label: 'Overview', icon: '◫', section: 'Dashboard', panel: 'overview' },
       { id: 'variants', label: 'Variants', icon: '◇', section: 'Dashboard', panel: 'variants' },
       { id: 'pharmacogenomics', label: 'Pharmacogenomics', icon: '◉', section: 'Genomics', panel: 'pgx' },
-      { id: 'risk', label: 'Risk Scores', icon: '◈', section: 'Genomics', panel: 'risk' },
+      { id: 'risk', label: 'Risk Review', icon: '◈', section: 'Genomics', panel: 'risk' },
       { id: 'ancestry', label: 'Ancestry', icon: '◎', section: 'Genomics', panel: 'ancestry' },
       { id: 'nutrigenomics', label: 'Nutrigenomics', icon: '◆', section: 'Genomics', panel: 'nutrigenomics' },
     ];
@@ -162,7 +154,7 @@
               ? <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6' }}>{gq}</div><div className="stat-label">Genotype Quality</div><div className="stat-sub">{gqSub}</div></div>
               : <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6', fontSize: 14, paddingTop: 4 }}>{gs.pipeline || gs.genomeSource || '-'}</div><div className="stat-label">Variant Caller</div><div className="stat-sub">{gs.contig_count != null ? `${Number(gs.contig_count).toLocaleString()} contigs` : ''}</div></div>
             }
-            <div className="stat-card"><div className="stat-value" style={{ color: '#f59e0b' }}>{PGX_DATA ? PGX_DATA.length : '-'}</div><div className="stat-label">PGx Markers</div><div className="stat-sub">{PGX_DATA ? `${PGX_DATA.filter(d => d.impact && d.impact !== 'normal').length} actionable` : ''}</div></div>
+            <div className="stat-card"><div className="stat-value" style={{ color: '#f59e0b' }}>{PGX_DATA ? PGX_DATA.length : '-'}</div><div className="stat-label">PGx Rows</div><div className="stat-sub">{PGX_DATA ? `${PGX_DATA.filter(d => d.readiness === 'needs_clinical_confirmation').length} need confirmation` : ''}</div></div>
           </div>
 
           {sources.length > 0 && (
@@ -214,7 +206,7 @@
                     {pgxHi.map((d, i) => {
                       const ic = PGX_IMPACT_COLORS[d.impact] || '#666';
                       return (
-                        <div key={d.gene || i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div key={pgxRowKey(d, i)} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                             <span style={{ color: '#e5e5e5', fontWeight: 600, fontFamily: 'var(--mono)', fontSize: 13 }}>{d.gene || '-'}</span>
                             <span className="mono-text" style={{ fontSize: 12 }}>{d.diplotype || ''}</span>
@@ -229,9 +221,22 @@
                 </HighlightCard>
               )}
               {riskHi && (
-                <HighlightCard title="Risk Scores" onNav={onNav ? () => onNav('risk') : null}>
+                <HighlightCard title="Risk Review" onNav={onNav ? () => onNav('risk') : null}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     {riskHi.map((d, i) => {
+                      if (!isPrsRow(d)) {
+                        return (
+                          <div key={d.group_id || d.candidate_id || d.trait || i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ color: '#e5e5e5', fontSize: 13, fontWeight: 600 }}>{riskReviewLabel(d)}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630', fontSize: 10 }}>{reviewTypeLabel(d.group_type || d.row_type)}</span>
+                              {Array.isArray(d.missing_interpretation_gates) && d.missing_interpretation_gates.length > 0 && (
+                                <span style={{ color: '#555', fontSize: 10 }}>{d.missing_interpretation_gates.length} gates missing</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
                       const scoreNum = d.score != null ? Number(d.score) : null;
                       const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
                       const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
@@ -538,24 +543,29 @@
           <div className="view-header">
             <div>
               <h2 className="view-title">Pharmacogenomics</h2>
-              <p className="view-subtitle">Drug–gene interactions from ClinPGx, FDA labels, and PGxDB</p>
+              <p className="view-subtitle">Medication-row PGx evidence from PharmCAT and medication review</p>
             </div>
           </div>
           <div className="pgx-grid">
             {sortedPgx.map((d, i) => {
               const ic = impactColors[d.impact] || '#666';
+              const primaryDrug = Array.isArray(d.drugs) && d.drugs[0] ? (typeof d.drugs[0] === 'string' ? d.drugs[0] : d.drugs[0].name) : null;
+              const variantContext = d.rsid || d.variant_or_haplotype || d.diplotype || d.phenotype || '';
               return (
-                <div key={d.gene || i} className="pgx-card">
+                <div key={pgxRowKey(d, i)} className="pgx-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: '#f5f5f5', fontWeight: 700, fontSize: 15, fontFamily: 'var(--mono)' }}>{d.gene}</span>
-                        <span style={{ color: '#666', fontSize: 12, fontFamily: 'var(--mono)' }}>{d.diplotype}</span>
+                        <span style={{ color: '#f5f5f5', fontWeight: 700, fontSize: 15 }}>{primaryDrug || d.gene || 'PGx row'}</span>
+                        {d.gene && <span style={{ color: '#3b82f6', fontSize: 12, fontFamily: 'var(--mono)' }}>{d.gene}</span>}
                       </div>
-                      <div style={{ color: ic, fontSize: 13, fontWeight: 600, marginTop: 4 }}>{d.phenotype}</div>
+                      <div style={{ color: ic, fontSize: 13, fontWeight: 600, marginTop: 4 }}>{variantContext}</div>
                     </div>
-                    <span className="badge" style={{ background: ic + '18', color: ic, borderColor: ic + '30' }}>{d.impact}</span>
+                    {(d.readiness || d.impact) && <span className="badge" style={{ background: ic + '18', color: ic, borderColor: ic + '30' }}>{reviewTypeLabel(d.readiness || d.impact)}</span>}
                   </div>
+                  {d.recommendation_text && (
+                    <div style={{ marginTop: 10, color: '#aaa', fontSize: 12, lineHeight: 1.55 }}>{d.recommendation_text}</div>
+                  )}
                   {Array.isArray(d.drugs) && d.drugs.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 10 }}>
                       {d.drugs.map((drug, j) => {
@@ -567,6 +577,10 @@
                       })}
                     </div>
                   )}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', color: '#555', fontSize: 11 }}>
+                    {d.sample_relevance_state && <span>{reviewTypeLabel(d.sample_relevance_state)}</span>}
+                    {d.row_type && <span>{reviewTypeLabel(d.row_type)}</span>}
+                  </div>
                 </div>
               );
             })}
@@ -576,70 +590,92 @@
     }
 
     function RiskScoresView() {
-      if (!PRS_DATA) return <EmptyPanel title="Risk Scores" panel="risk" />;
+      if (!PRS_DATA) return <EmptyPanel title="Risk Review" panel="risk" />;
+      const prsRows = PRS_DATA.filter(isPrsRow);
+      const reviewRows = PRS_DATA.filter(row => !isPrsRow(row));
       return (
         <div className="view-content">
           <div className="view-header">
             <div>
-              <h2 className="view-title">Polygenic Risk Scores</h2>
-              <p className="view-subtitle">Published PGS Catalog scores applied to your genome</p>
+              <h2 className="view-title">Risk & Condition Review</h2>
+              <p className="view-subtitle">PRS scores and ClinVar carrier/condition review targets</p>
             </div>
           </div>
-          <div className="risk-grid">
-            {PRS_DATA.map((d, i) => {
-              const level = prsLevel(d.percentile);
-              const scoreNum = d.score != null ? Number(d.score) : null;
-              const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
-              const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
-              return (
-                <div key={d.trait || i} className="risk-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                    <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{d.trait}</div>
-                    {Array.isArray(d.sources) && d.sources.length > 0 && (
-                      <span className="mono-text" style={{ color: '#555', fontSize: 10, whiteSpace: 'nowrap' }}>{d.sources[0]}</span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10 }}>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: scoreColor }}>{scoreStr}</span>
-                    {d.percentile != null ? (
-                      <span className="badge" style={{ background: level.color + '18', color: level.color, borderColor: level.color + '30' }}>{level.label} · {d.percentile}th pct</span>
-                    ) : (
-                      <span className="badge" style={{ background: '#66666618', color: '#888', borderColor: '#66666630' }}>raw score</span>
-                    )}
-                  </div>
-                  {d.note && (
-                    <div style={{ marginTop: 10, color: '#999', fontSize: 12, lineHeight: 1.6 }}>{d.note}</div>
-                  )}
-                  <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    {d.overlap != null && <span style={{ color: '#555', fontSize: 11 }}>overlap: {d.overlap}</span>}
-                    {d.ancestryAdjusted != null && <span style={{ color: '#555', fontSize: 11 }}>ancestry-adj: {String(d.ancestryAdjusted)}</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {reviewRows.length > 0 && (
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                Carrier / Condition Review
+              </div>
+              <div className="risk-grid">
+                {reviewRows.map((d, i) => {
+                  const sig = firstCountLabel(d.clinical_significance_counts);
+                  const zygosity = firstCountLabel(d.zygosity_counts);
+                  return (
+                    <div key={d.group_id || d.candidate_id || d.trait || i} className="risk-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{riskReviewLabel(d)}</div>
+                        <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630' }}>{reviewTypeLabel(d.group_type || d.row_type)}</span>
+                      </div>
+                      <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {sig && <span className="badge" style={{ background: '#1a1a1a', color: '#aaa', borderColor: '#282828' }}>{sig.replace(/_/g, ' ')}</span>}
+                        {zygosity && <span className="badge" style={{ background: '#1a1a1a', color: '#aaa', borderColor: '#282828' }}>{zygosity.replace(/_/g, ' ')}</span>}
+                        {Array.isArray(d.missing_interpretation_gates) && d.missing_interpretation_gates.map(gate => (
+                          <span key={gate} className="badge" style={{ background: '#f59e0b18', color: '#f59e0b', borderColor: '#f59e0b30' }}>{reviewTypeLabel(gate)}</span>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', color: '#555', fontSize: 11 }}>
+                        {d.score != null && <span>rank score: {Number(d.score).toFixed(2)}</span>}
+                        {Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && <span>{d.candidate_ids.length} variants</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {prsRows.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                Polygenic Risk Scores
+              </div>
+              <div className="risk-grid">
+                {prsRows.map((d, i) => {
+                  const level = prsLevel(d.percentile);
+                  const scoreNum = d.score != null ? Number(d.score) : null;
+                  const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
+                  const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
+                  return (
+                    <div key={d.score_id || d.trait || i} className="risk-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{d.trait}</div>
+                        {Array.isArray(d.sources) && d.sources.length > 0 && (
+                          <span className="mono-text" style={{ color: '#555', fontSize: 10, whiteSpace: 'nowrap' }}>{d.sources[0]}</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10 }}>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: scoreColor }}>{scoreStr}</span>
+                        {d.percentile != null ? (
+                          <span className="badge" style={{ background: level.color + '18', color: level.color, borderColor: level.color + '30' }}>{level.label} · {d.percentile}th pct</span>
+                        ) : (
+                          <span className="badge" style={{ background: '#66666618', color: '#888', borderColor: '#66666630' }}>raw score</span>
+                        )}
+                      </div>
+                      {d.note && (
+                        <div style={{ marginTop: 10, color: '#999', fontSize: 12, lineHeight: 1.6 }}>{d.note}</div>
+                      )}
+                      <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                        {d.overlap != null && <span style={{ color: '#555', fontSize: 11 }}>overlap: {d.overlap}</span>}
+                        {d.ancestryAdjusted != null && <span style={{ color: '#555', fontSize: 11 }}>ancestry-adj: {String(d.ancestryAdjusted)}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
-
-    const POP_LABELS = {
-      EUR:'European', AFR:'African', AMR:'Admixed American', EAS:'East Asian', SAS:'South Asian',
-      IBS:'Iberian (Spain)', TSI:'Toscani (Italy)', GBR:'British (England)', CEU:'Utah / NW European',
-      FIN:'Finnish', NFE:'Non-Finnish European',
-      PUR:'Puerto Rican', CLM:'Colombian', MXL:'Mexican', PEL:'Peruvian',
-      YRI:'Yoruba (Nigeria)', LWK:'Luhya (Kenya)', GWD:'Gambian', MSL:'Mende (Sierra Leone)',
-      ESN:'Esan (Nigeria)', ASW:'African American (SW)', ACB:'African Caribbean',
-      CHB:'Han Chinese (Beijing)', JPT:'Japanese (Tokyo)', CHS:'Han Chinese (S)', CDX:'Chinese Dai', KHV:'Kinh Vietnamese',
-      GIH:'Gujarati Indian', PJL:'Punjabi (Lahore)', BEB:'Bengali', STU:'Sri Lankan Tamil', ITU:'Indian Telugu',
-    };
-    const POP_SUPERPOP = {
-      EUR:'EUR', IBS:'EUR', TSI:'EUR', GBR:'EUR', CEU:'EUR', FIN:'EUR', NFE:'EUR',
-      AFR:'AFR', YRI:'AFR', LWK:'AFR', GWD:'AFR', MSL:'AFR', ESN:'AFR', ASW:'AFR', ACB:'AFR',
-      AMR:'AMR', PUR:'AMR', CLM:'AMR', MXL:'AMR', PEL:'AMR',
-      EAS:'EAS', CHB:'EAS', JPT:'EAS', CHS:'EAS', CDX:'EAS', KHV:'EAS',
-      SAS:'SAS', GIH:'SAS', PJL:'SAS', BEB:'SAS', STU:'SAS', ITU:'SAS',
-    };
-    const SUPERPOP_COLORS = { EUR:'#3b82f6', AFR:'#10b981', AMR:'#f97316', EAS:'#f59e0b', SAS:'#8b5cf6' };
 
     function AncestryView() {
       if (!ANCESTRY_DATA) return <EmptyPanel title="Ancestry" panel="ancestry" />;

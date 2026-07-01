@@ -22,6 +22,7 @@ from ....evidence.candidate_evidence import (
     empty_lanes,
     lane,
 )
+from ....evidence.store.candidate_groups import ALL_CLINVAR_REVIEW_EVIDENCE_GROUPS
 from ....evidence.sources import evidence_source_catalog
 
 from ._base import (
@@ -32,6 +33,10 @@ from ._base import (
     _safe_external_targets,
     _short_search_query,
     _variant_candidate_id,
+)
+from .review_groups import (
+    filtered_review_groups,
+    review_group_rows,
 )
 
 
@@ -187,9 +192,7 @@ def _active_candidate_context(
             "summary": {"candidate_count": 0},
             "candidate_summaries": [],
         }
-    evidence_groups = ["clinvar_p_lp", "clinvar_conflicting", "clinvar_vus"]
-    if mode == "cancer_risk":
-        evidence_groups.append("clinvar_risk_association_protective")
+    evidence_groups = list(ALL_CLINVAR_REVIEW_EVIDENCE_GROUPS)
     try:
         inventory = extract_clinvar_candidates(
             matches_path,
@@ -214,11 +217,18 @@ def _active_candidate_context(
         for candidate in candidates
         if candidate["target_match_status"] != "not_requested_target_mismatch"
     ]
+    review_groups = filtered_review_groups(
+        inventory.get("candidate_review_groups"),
+        mode=mode,
+        genes=genes,
+        condition=condition,
+        limit=limit,
+    )
     inventory_summary = inventory.get("summary") if isinstance(inventory.get("summary"), dict) else {}
     target_filter_applied = bool(genes or condition)
     result_state = _active_candidate_result_state(
-        filtered_count=len(filtered),
-        unfiltered_count=len(candidates),
+        filtered_count=max(len(filtered), int(review_groups.get("group_count") or 0)),
+        unfiltered_count=max(len(candidates), int((inventory.get("candidate_review_groups") or {}).get("group_count") or 0) if isinstance(inventory.get("candidate_review_groups"), dict) else 0),
         target_filter_applied=target_filter_applied,
     )
     return {
@@ -229,7 +239,9 @@ def _active_candidate_context(
         },
         "summary": {
             "candidate_count": len(filtered),
+            "review_group_count": int(review_groups.get("group_count") or 0),
             "unfiltered_candidate_count": len(candidates),
+            "unfiltered_review_group_count": int((inventory.get("candidate_review_groups") or {}).get("group_count") or 0) if isinstance(inventory.get("candidate_review_groups"), dict) else 0,
             "source_status": inventory.get("status"),
             "total_clinvar_match_records": inventory_summary.get("total_match_records"),
             "total_match_variants": inventory_summary.get("total_match_variants"),
@@ -241,6 +253,7 @@ def _active_candidate_context(
         },
         "result_state": result_state,
         "candidate_summaries": filtered,
+        "candidate_review_groups": review_groups,
     }
 
 
@@ -364,6 +377,20 @@ def _review_steps(mode: str, *, context_scope: str) -> list[str]:
                 "Use COSMIC Cancer Gene Census only for cancer-gene role context unless a source explicitly supports germline risk.",
             ]
         )
+    elif mode == "carrier_review":
+        steps.extend(
+            [
+                "Treat heterozygous ClinVar P/LP groups as carrier-relevance evidence, not carrier status.",
+                "Resolve inheritance, phase, zygosity, population frequency, source review, and clinical confirmation before carrier-style wording.",
+            ]
+        )
+    elif mode == "observed_condition_review":
+        steps.extend(
+            [
+                "Separate observed-condition, uncertain, risk-association, benign, and population-context groups before interpretation.",
+                "Do not convert a source review group into a clinical finding without the required interpretation gates.",
+            ]
+        )
     return steps
 
 
@@ -376,18 +403,46 @@ def _candidate_matrix(
     active_candidates: dict[str, Any],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    rows.extend(_sample_variant_rows(active_candidates))
-    rows.extend(_gene_rows(target, stored_research=stored_research, gene_context=gene_context))
-    if target.get("condition"):
-        rows.append(_text_target_row("condition", str(target["condition"]), stored_research, context_scope=context_scope))
-    if target.get("topic") and target.get("topic") != target.get("condition"):
-        rows.append(_text_target_row("topic", str(target["topic"]), stored_research, context_scope=context_scope))
+    group_rows = review_group_rows(active_candidates)
+    rows.extend(group_rows)
+    group_review_mode = target.get("investigation_type") in {"carrier_review", "observed_condition_review"}
+    if not (group_review_mode and group_rows):
+        rows.extend(_sample_variant_rows(active_candidates))
+        rows.extend(_gene_rows(target, stored_research=stored_research, gene_context=gene_context))
+        if target.get("condition"):
+            rows.append(_text_target_row("condition", str(target["condition"]), stored_research, context_scope=context_scope))
+        if target.get("topic") and target.get("topic") != target.get("condition"):
+            rows.append(_text_target_row("topic", str(target["topic"]), stored_research, context_scope=context_scope))
     rows = _dedupe_candidate_rows(rows)
-    rows.sort(key=lambda item: (-float(item.get("score") or 0.0), str(item.get("candidate_id") or "")))
+    rows.sort(key=_candidate_row_sort_key)
     for index, row in enumerate(rows, start=1):
         row["rank"] = index
         row["why_not_selected"] = [] if index == 1 else ["Lower investigation-priority score than the selected review target."]
     return rows
+
+
+def _candidate_row_sort_key(item: dict[str, Any]) -> tuple[float, int, int, str]:
+    lane_order = {
+        DIRECT_SOURCE_MATCH: 0,
+        SAME_GENE_OR_LOCUS: 1,
+        NEARBY_TRAIT_MATCH: 2,
+        LITERATURE_PLAUSIBILITY: 3,
+        NEGATIVE_OR_CONFLICTING_EVIDENCE: 4,
+        AGENT_REASONING_ONLY: 5,
+    }
+    type_order = {
+        "clinvar_review_group": 0,
+        "sample_variant": 1,
+        "gene": 2,
+        "condition": 3,
+        "topic": 4,
+    }
+    return (
+        -float(item.get("score") or 0.0),
+        lane_order.get(str(item.get("best_evidence_lane") or ""), 9),
+        type_order.get(str(item.get("candidate_type") or ""), 9),
+        str(item.get("candidate_id") or ""),
+    )
 
 
 def _sample_variant_rows(active_candidates: dict[str, Any]) -> list[dict[str, Any]]:
@@ -602,10 +657,11 @@ def _dedupe_candidate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _decision_policy(mode: str, *, context_scope: str) -> dict[str, Any]:
     return {
-        "policy_id": "rare_disease_cancer_risk_investigation_v1",
+        "policy_id": "condition_review_investigation_v1",
         "investigation_type": mode,
         "context_scope": context_scope,
         "ranking_order": [
+            "ClinVar candidate review groups for the selected investigation type",
             "observed active-genome-index candidate variants when selected",
             "stored reviewed public-target findings",
             "gene-level sample matches",
@@ -628,8 +684,13 @@ def _warnings(
         warnings.append("public_only_context:user_specific_ranking_not_assessed")
     if int((stored_research.get("summary") or {}).get("record_count") or 0) == 0:
         warnings.append("no_stored_reviewed_research:source_review_not_returned")
-    if active_candidates.get("status") == "available" and int((active_candidates.get("summary") or {}).get("candidate_count") or 0) == 0:
-        warnings.append("no_clinvar_candidate_inventory_hits:review_selected_evidence_groups")
+    active_summary = active_candidates.get("summary") or {}
+    if (
+        active_candidates.get("status") == "available"
+        and int(active_summary.get("candidate_count") or 0) == 0
+        and int(active_summary.get("review_group_count") or 0) == 0
+    ):
+        warnings.append("no_clinvar_candidate_review_groups:review_selected_group_contract")
     return warnings
 
 

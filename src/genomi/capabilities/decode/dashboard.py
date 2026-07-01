@@ -9,7 +9,8 @@ dashboard.compiled.*.js`` by ``scripts/build_dashboard.py``. (The only external
 reference left is an optional Google Fonts stylesheet, which falls back to
 system fonts offline and carries no genome data.) Components read evidence from
 ``window.__GENOMI_DASHBOARD__`` and fall back to category-specific unavailable
-states when a panel is missing.
+states when a panel is missing. Shared dashboard presentation helpers live in
+``templates/dashboard_helpers.js`` and are prepended by the build script.
 """
 
 from __future__ import annotations
@@ -569,13 +570,41 @@ _PANEL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "pgx": {
         "kind": "list",
-        "required": ("gene",),
-        "row_fields": ("gene", "diplotype", "phenotype", "impact", "drugs"),
+        "required": (),
+        "row_fields": (
+            "row_id",
+            "row_type",
+            "gene",
+            "rsid",
+            "variant_or_haplotype",
+            "diplotype",
+            "phenotype",
+            "impact",
+            "drugs",
+            "recommendation_text",
+            "sample_relevance_state",
+            "readiness",
+        ),
     },
     "risk": {
         "kind": "list",
         "required": ("trait",),
-        "row_fields": ("trait", "score", "percentile", "overlap", "sources"),
+        "row_fields": (
+            "row_type",
+            "trait",
+            "score",
+            "percentile",
+            "overlap",
+            "sources",
+            "group_id",
+            "group_type",
+            "gene",
+            "condition",
+            "candidate_ids",
+            "clinical_significance_counts",
+            "zygosity_counts",
+            "missing_interpretation_gates",
+        ),
     },
     "nutrigenomics": {
         "kind": "list",

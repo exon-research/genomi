@@ -1,5 +1,138 @@
-// AUTO-GENERATED chunk 2/2 from dashboard.jsx by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 48d7dfa838d59266c82163e5d2187b8c70ba01aff4822bf2be357d3e77db044c
+// AUTO-GENERATED chunk 2/3 from dashboard sources by scripts/build_dashboard.py - do not edit by hand.
+// source-sha256: 4ea0a1b359efa3c0c9deb5689df547ff947205d39259c0feaf0f1176e29dc038
+  });
+  const [search, setSearch] = React.useState('');
+  const [sigFilter, setSigFilter] = React.useState('all');
+  function matchesSearch(v) {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (v.rsid || '').toLowerCase().includes(s) || (v.gene || '').toLowerCase().includes(s) || (v.conditionShort || '').toLowerCase().includes(s) || (v.clinvarSignificance || '').toLowerCase().includes(s);
+  }
+  function matchesSigFilter(v) {
+    if (sigFilter === 'all') return true;
+    const s = (v.clinvarSignificance || '').toLowerCase();
+    if (sigFilter === 'plp') return s.includes('pathogenic');
+    if (sigFilter === 'vus') return s.includes('uncertain');
+    if (sigFilter === 'benign') return s.includes('benign');
+    if (sigFilter === 'other') return !s.includes('pathogenic') && !s.includes('uncertain') && !s.includes('benign');
+    return true;
+  }
+  const plpFiltered = React.useMemo(() => hasPlp ? VARIANTS_DATA.filter(matchesSearch) : [], [search]);
+  const allFiltered = React.useMemo(() => hasAll ? VARIANTS_ALL_DATA.filter(v => matchesSearch(v) && matchesSigFilter(v)) : [], [search, sigFilter]);
+  const totalCount = hasAll ? VARIANTS_ALL_DATA.length : hasPlp ? VARIANTS_DATA.length : 0;
+  const plpCount = hasPlp ? VARIANTS_DATA.length : 0;
+  const SIG_TABS = [['all', 'All'], ['plp', 'P/LP'], ['vus', 'VUS'], ['benign', 'Benign'], ['other', 'Other']];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "view-content"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "view-header"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+    className: "view-title"
+  }, "Variant Explorer"), /*#__PURE__*/React.createElement("p", {
+    className: "view-subtitle"
+  }, "ClinVar-matched variants from your Active Genome Index")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      alignItems: 'center'
+    }
+  }, plpCount > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "badge",
+    style: {
+      background: '#f9731618',
+      color: '#f97316',
+      borderColor: '#f9731630'
+    }
+  }, plpCount, " P/LP"), totalCount > 0 && /*#__PURE__*/React.createElement("span", {
+    className: "badge",
+    style: {
+      background: '#1a1a1a',
+      color: '#666',
+      borderColor: '#282828'
+    }
+  }, totalCount.toLocaleString(), " total"))), /*#__PURE__*/React.createElement("input", {
+    placeholder: "Search rsID, gene, condition, or significance\u2026",
+    value: search,
+    onChange: e => setSearch(e.target.value),
+    style: {
+      width: '100%',
+      padding: '8px 14px',
+      borderRadius: 8,
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      color: 'var(--text)',
+      fontFamily: 'var(--sans)',
+      fontSize: 13,
+      outline: 'none',
+      marginBottom: 20
+    }
+  }), hasPlp && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 28
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: '#f97316',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      marginBottom: 10,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: '50%',
+      background: '#f97316',
+      display: 'inline-block'
+    }
+  }), "Clinically Significant"), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "variant-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Variant"), /*#__PURE__*/React.createElement("th", null, "Gene"), /*#__PURE__*/React.createElement("th", null, "Location"), /*#__PURE__*/React.createElement("th", null, "Genotype"), /*#__PURE__*/React.createElement("th", null, "Significance"), /*#__PURE__*/React.createElement("th", null, "Condition"), /*#__PURE__*/React.createElement("th", null, "Quality"))), /*#__PURE__*/React.createElement("tbody", null, plpFiltered.map((v, i) => {
+    const sc = sigBadgeStyle(v.clinvarSignificance);
+    return /*#__PURE__*/React.createElement("tr", {
+      key: v.rsid || i
+    }, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "mono-text",
+      style: {
+        color: '#e5e5e5'
+      }
+    }, v.rsid)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#3b82f6',
+        fontWeight: 600,
+        fontSize: 13
+      }
+    }, v.gene)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "mono-text"
+    }, "chr", v.chrom, ":", v.pos != null ? Number(v.pos).toLocaleString() : '')), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "genotype-badge"
+    }, v.ref, '>', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#555',
+        fontSize: 10
+      }
+    }, " ", v.zygosity) : null)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "badge",
+      style: {
+        background: sc.bg,
+        color: sc.fg,
+        borderColor: sc.border
+      }
+    }, (v.clinvarSignificance || '').replace(/_/g, ' '))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        color: '#aaa',
+        fontSize: 12
+      }
     }, v.conditionShort), /*#__PURE__*/React.createElement("td", {
       style: {
         color: '#555',
@@ -88,12 +221,14 @@ function PharmacogenomicsView() {
     className: "view-title"
   }, "Pharmacogenomics"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Drug\u2013gene interactions from ClinPGx, FDA labels, and PGxDB"))), /*#__PURE__*/React.createElement("div", {
+  }, "Medication-row PGx evidence from PharmCAT and medication review"))), /*#__PURE__*/React.createElement("div", {
     className: "pgx-grid"
   }, sortedPgx.map((d, i) => {
     const ic = impactColors[d.impact] || '#666';
+    const primaryDrug = Array.isArray(d.drugs) && d.drugs[0] ? typeof d.drugs[0] === 'string' ? d.drugs[0] : d.drugs[0].name : null;
+    const variantContext = d.rsid || d.variant_or_haplotype || d.diplotype || d.phenotype || '';
     return /*#__PURE__*/React.createElement("div", {
-      key: d.gene || i,
+      key: pgxRowKey(d, i),
       className: "pgx-card"
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -111,30 +246,36 @@ function PharmacogenomicsView() {
       style: {
         color: '#f5f5f5',
         fontWeight: 700,
-        fontSize: 15,
-        fontFamily: 'var(--mono)'
+        fontSize: 15
       }
-    }, d.gene), /*#__PURE__*/React.createElement("span", {
+    }, primaryDrug || d.gene || 'PGx row'), d.gene && /*#__PURE__*/React.createElement("span", {
       style: {
-        color: '#666',
+        color: '#3b82f6',
         fontSize: 12,
         fontFamily: 'var(--mono)'
       }
-    }, d.diplotype)), /*#__PURE__*/React.createElement("div", {
+    }, d.gene)), /*#__PURE__*/React.createElement("div", {
       style: {
         color: ic,
         fontSize: 13,
         fontWeight: 600,
         marginTop: 4
       }
-    }, d.phenotype)), /*#__PURE__*/React.createElement("span", {
+    }, variantContext)), (d.readiness || d.impact) && /*#__PURE__*/React.createElement("span", {
       className: "badge",
       style: {
         background: ic + '18',
         color: ic,
         borderColor: ic + '30'
       }
-    }, d.impact)), Array.isArray(d.drugs) && d.drugs.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, reviewTypeLabel(d.readiness || d.impact))), d.recommendation_text && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        color: '#aaa',
+        fontSize: 12,
+        lineHeight: 1.55
+      }
+    }, d.recommendation_text), Array.isArray(d.drugs) && d.drugs.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         flexWrap: 'wrap',
@@ -149,31 +290,131 @@ function PharmacogenomicsView() {
         className: "drug-chip",
         title: rec || ''
       }, name);
-    })));
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        color: '#555',
+        fontSize: 11
+      }
+    }, d.sample_relevance_state && /*#__PURE__*/React.createElement("span", null, reviewTypeLabel(d.sample_relevance_state)), d.row_type && /*#__PURE__*/React.createElement("span", null, reviewTypeLabel(d.row_type))));
   })));
 }
 function RiskScoresView() {
   if (!PRS_DATA) return /*#__PURE__*/React.createElement(EmptyPanel, {
-    title: "Risk Scores",
+    title: "Risk Review",
     panel: "risk"
   });
+  const prsRows = PRS_DATA.filter(isPrsRow);
+  const reviewRows = PRS_DATA.filter(row => !isPrsRow(row));
   return /*#__PURE__*/React.createElement("div", {
     className: "view-content"
   }, /*#__PURE__*/React.createElement("div", {
     className: "view-header"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
     className: "view-title"
-  }, "Polygenic Risk Scores"), /*#__PURE__*/React.createElement("p", {
+  }, "Risk & Condition Review"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Published PGS Catalog scores applied to your genome"))), /*#__PURE__*/React.createElement("div", {
+  }, "PRS scores and ClinVar carrier/condition review targets"))), reviewRows.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 28
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: '#3b82f6',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      marginBottom: 10
+    }
+  }, "Carrier / Condition Review"), /*#__PURE__*/React.createElement("div", {
     className: "risk-grid"
-  }, PRS_DATA.map((d, i) => {
+  }, reviewRows.map((d, i) => {
+    const sig = firstCountLabel(d.clinical_significance_counts);
+    const zygosity = firstCountLabel(d.zygosity_counts);
+    return /*#__PURE__*/React.createElement("div", {
+      key: d.group_id || d.candidate_id || d.trait || i,
+      className: "risk-card"
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: '#e5e5e5',
+        fontWeight: 600,
+        fontSize: 14
+      }
+    }, riskReviewLabel(d)), /*#__PURE__*/React.createElement("span", {
+      className: "badge",
+      style: {
+        background: '#3b82f618',
+        color: '#3b82f6',
+        borderColor: '#3b82f630'
+      }
+    }, reviewTypeLabel(d.group_type || d.row_type))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, sig && /*#__PURE__*/React.createElement("span", {
+      className: "badge",
+      style: {
+        background: '#1a1a1a',
+        color: '#aaa',
+        borderColor: '#282828'
+      }
+    }, sig.replace(/_/g, ' ')), zygosity && /*#__PURE__*/React.createElement("span", {
+      className: "badge",
+      style: {
+        background: '#1a1a1a',
+        color: '#aaa',
+        borderColor: '#282828'
+      }
+    }, zygosity.replace(/_/g, ' ')), Array.isArray(d.missing_interpretation_gates) && d.missing_interpretation_gates.map(gate => /*#__PURE__*/React.createElement("span", {
+      key: gate,
+      className: "badge",
+      style: {
+        background: '#f59e0b18',
+        color: '#f59e0b',
+        borderColor: '#f59e0b30'
+      }
+    }, reviewTypeLabel(gate)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8,
+        display: 'flex',
+        gap: 12,
+        flexWrap: 'wrap',
+        color: '#555',
+        fontSize: 11
+      }
+    }, d.score != null && /*#__PURE__*/React.createElement("span", null, "rank score: ", Number(d.score).toFixed(2)), Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && /*#__PURE__*/React.createElement("span", null, d.candidate_ids.length, " variants")));
+  }))), prsRows.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: 'var(--text4)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      marginBottom: 10
+    }
+  }, "Polygenic Risk Scores"), /*#__PURE__*/React.createElement("div", {
+    className: "risk-grid"
+  }, prsRows.map((d, i) => {
     const level = prsLevel(d.percentile);
     const scoreNum = d.score != null ? Number(d.score) : null;
     const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
     const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
     return /*#__PURE__*/React.createElement("div", {
-      key: d.trait || i,
+      key: d.score_id || d.trait || i,
       className: "risk-card"
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -248,83 +489,8 @@ function RiskScoresView() {
         fontSize: 11
       }
     }, "ancestry-adj: ", String(d.ancestryAdjusted))));
-  })));
+  }))));
 }
-const POP_LABELS = {
-  EUR: 'European',
-  AFR: 'African',
-  AMR: 'Admixed American',
-  EAS: 'East Asian',
-  SAS: 'South Asian',
-  IBS: 'Iberian (Spain)',
-  TSI: 'Toscani (Italy)',
-  GBR: 'British (England)',
-  CEU: 'Utah / NW European',
-  FIN: 'Finnish',
-  NFE: 'Non-Finnish European',
-  PUR: 'Puerto Rican',
-  CLM: 'Colombian',
-  MXL: 'Mexican',
-  PEL: 'Peruvian',
-  YRI: 'Yoruba (Nigeria)',
-  LWK: 'Luhya (Kenya)',
-  GWD: 'Gambian',
-  MSL: 'Mende (Sierra Leone)',
-  ESN: 'Esan (Nigeria)',
-  ASW: 'African American (SW)',
-  ACB: 'African Caribbean',
-  CHB: 'Han Chinese (Beijing)',
-  JPT: 'Japanese (Tokyo)',
-  CHS: 'Han Chinese (S)',
-  CDX: 'Chinese Dai',
-  KHV: 'Kinh Vietnamese',
-  GIH: 'Gujarati Indian',
-  PJL: 'Punjabi (Lahore)',
-  BEB: 'Bengali',
-  STU: 'Sri Lankan Tamil',
-  ITU: 'Indian Telugu'
-};
-const POP_SUPERPOP = {
-  EUR: 'EUR',
-  IBS: 'EUR',
-  TSI: 'EUR',
-  GBR: 'EUR',
-  CEU: 'EUR',
-  FIN: 'EUR',
-  NFE: 'EUR',
-  AFR: 'AFR',
-  YRI: 'AFR',
-  LWK: 'AFR',
-  GWD: 'AFR',
-  MSL: 'AFR',
-  ESN: 'AFR',
-  ASW: 'AFR',
-  ACB: 'AFR',
-  AMR: 'AMR',
-  PUR: 'AMR',
-  CLM: 'AMR',
-  MXL: 'AMR',
-  PEL: 'AMR',
-  EAS: 'EAS',
-  CHB: 'EAS',
-  JPT: 'EAS',
-  CHS: 'EAS',
-  CDX: 'EAS',
-  KHV: 'EAS',
-  SAS: 'SAS',
-  GIH: 'SAS',
-  PJL: 'SAS',
-  BEB: 'SAS',
-  STU: 'SAS',
-  ITU: 'SAS'
-};
-const SUPERPOP_COLORS = {
-  EUR: '#3b82f6',
-  AFR: '#10b981',
-  AMR: '#f97316',
-  EAS: '#f59e0b',
-  SAS: '#8b5cf6'
-};
 function AncestryView() {
   if (!ANCESTRY_DATA) return /*#__PURE__*/React.createElement(EmptyPanel, {
     title: "Ancestry",
@@ -732,51 +898,3 @@ function App() {
   }, /*#__PURE__*/React.createElement("summary", {
     style: {
       cursor: 'pointer'
-    }
-  }, "Genomi Tweaks"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: 8
-    }
-  }, "Accent", /*#__PURE__*/React.createElement("select", {
-    value: tweaks.accentColor,
-    onChange: e => setTweak('accentColor', e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "green"
-  }, "green"), /*#__PURE__*/React.createElement("option", {
-    value: "blue"
-  }, "blue"), /*#__PURE__*/React.createElement("option", {
-    value: "purple"
-  }, "purple"), /*#__PURE__*/React.createElement("option", {
-    value: "amber"
-  }, "amber"))), /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: 8
-    }
-  }, "Show support", /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: !!tweaks.showSupport,
-    onChange: e => setTweak('showSupport', e.target.checked)
-  })), /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: 8
-    }
-  }, "Compact cards", /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: !!tweaks.compactCards,
-    onChange: e => setTweak('compactCards', e.target.checked)
-  }))))));
-}
-ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));

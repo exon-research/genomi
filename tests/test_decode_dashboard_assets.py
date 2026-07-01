@@ -43,7 +43,7 @@ NAV_LABELS = (
     "Overview",
     "Variants",
     "Pharmacogenomics",
-    "Risk Scores",
+    "Risk Review",
     "Ancestry",
     "Nutrigenomics",
 )
@@ -91,17 +91,22 @@ class DashboardOfflineAssetTests(unittest.TestCase):
         self.assertEqual(shell.count("__GENOMI_VENDOR_SCRIPTS__"), 1)
 
     def test_compiled_js_matches_jsx_source(self) -> None:
-        # Drift guard: compiled chunks stamp the sha256 of the dashboard.jsx
-        # it was built from. If someone edits the JSX without re-running
-        # scripts/build_dashboard.py, this fails — no JS toolchain needed here.
+        # Drift guard: compiled chunks stamp the sha256 of the dashboard app
+        # sources they were built from. If someone edits the JSX/helper sources
+        # without re-running scripts/build_dashboard.py, this fails — no JS
+        # toolchain needed here.
         import hashlib
 
-        jsx = (self._TEMPLATES / "dashboard.jsx").read_bytes()
+        sources = [
+            (self._TEMPLATES / "dashboard_helpers.js").read_text(encoding="utf-8"),
+            (self._TEMPLATES / "dashboard.jsx").read_text(encoding="utf-8"),
+        ]
+        source = "\n\n".join(sources).encode("utf-8")
         compiled = "\n".join(path.read_text(encoding="utf-8") for path in self._compiled_chunks())
         match = re.search(r"source-sha256:\s*([0-9a-f]{64})", compiled)
         self.assertIsNotNone(match, "compiled JS is missing its source-sha256 header")
         self.assertEqual(
             match.group(1),
-            hashlib.sha256(jsx).hexdigest(),
-            "dashboard compiled chunks are stale — re-run scripts/build_dashboard.py after editing dashboard.jsx.",
+            hashlib.sha256(source).hexdigest(),
+            "dashboard compiled chunks are stale — re-run scripts/build_dashboard.py after editing dashboard sources.",
         )

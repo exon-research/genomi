@@ -35,26 +35,24 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
             evidence={
                 "pgx": {
                     "status": "completed",
-                    "query": {"drug": "clopidogrel", "gene": "CYP2C19"},
-                    "answer_support": {
-                        "star_diplotype_summaries": [
+                    "medication_review_matrix": {
+                        "policy_id": "pgx_medication_review_matrix_v1",
+                        "row_count": 1,
+                        "rows": [
                             {
-                                "gene": "CYP2C19",
-                                "possible_diplotype": "*1/*2",
-                                "predicted_phenotype": "Intermediate Metabolizer",
-                            }
-                        ],
-                        "source_recommendation_summaries": [
-                            {
-                                "source": "ClinPGx",
-                                "gene": "CYP2C19",
+                                "row_id": "pgxrow_1",
+                                "row_type": "drug_gene_diplotype",
                                 "drug": "clopidogrel",
-                                "summary": "Consider an alternative antiplatelet therapy.",
+                                "gene": "CYP2C19",
+                                "diplotype": "*1/*2",
+                                "phenotype": "Intermediate Metabolizer",
+                                "recommendation_text": "Consider an alternative antiplatelet therapy.",
+                                "evidence_classes": ["clinpgx_drug_label_annotation"],
+                                "sample_relevance": {"state": "sample_target_observed"},
+                                "readiness": "needs_clinical_confirmation",
                             }
                         ],
                     },
-                    "sample_evidence": {"total_sample_evidence_count": 1},
-                    "public_evidence": {"source_evidence_count": 1},
                 },
             },
             mode="full",
@@ -75,31 +73,23 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
             evidence={
                 "pgx": {
                     "status": "completed",
-                    "artifacts": {
-                        "calls_only": {
-                            "available": True,
-                            "rows": [
-                                {
-                                    "Gene": "CYP2C19",
-                                    "Source Diplotype": "*1/*2",
-                                    "Phenotype": "Intermediate Metabolizer",
-                                }
-                            ],
-                        },
-                        "report_json": {
-                            "available": True,
-                            "recommendations": {
-                                "records": [
-                                    {
-                                        "drug": "clopidogrel",
-                                        "genes": ["CYP2C19"],
-                                        "phenotypes": ["Intermediate Metabolizer"],
-                                        "diplotypes": ["CYP2C19 *1/*2"],
-                                        "recommendation": "Consider an alternative antiplatelet therapy.",
-                                    }
-                                ]
-                            },
-                        },
+                    "sample_pgx_matrix": {
+                        "policy_id": "pharmcat_sample_pgx_matrix_v1",
+                        "row_count": 1,
+                        "rows": [
+                            {
+                                "row_id": "samplepgx_1",
+                                "row_type": "drug_gene_diplotype",
+                                "drug": "clopidogrel",
+                                "gene": "CYP2C19",
+                                "diplotype": "*1/*2",
+                                "phenotype": "Intermediate Metabolizer",
+                                "recommendation_text": "Consider an alternative antiplatelet therapy.",
+                                "evidence_classes": ["pharmcat_sample_pgx_recommendation"],
+                                "sample_relevance": {"state": "sample_target_observed"},
+                                "readiness": "needs_clinical_confirmation",
+                            }
+                        ],
                     },
                 },
             },
@@ -111,6 +101,100 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         self.assertEqual(row["diplotype"], "*1/*2")
         self.assertEqual(row["phenotype"], "Intermediate Metabolizer")
         self.assertEqual(row["drugs"][0]["name"], "clopidogrel")
+
+    def test_pgx_matrix_preserves_separate_medication_rows_for_same_gene(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "pgx": {
+                    "status": "completed",
+                    "medication_review_matrix": {
+                        "policy_id": "pgx_medication_review_matrix_v1",
+                        "row_count": 2,
+                        "rows": [
+                            {
+                                "row_id": "pgxrow_clopidogrel",
+                                "row_type": "drug_gene_diplotype",
+                                "drug": "clopidogrel",
+                                "gene": "CYP2C19",
+                                "diplotype": "*1/*2",
+                                "phenotype": "Intermediate Metabolizer",
+                                "recommendation_text": "Consider an alternative antiplatelet therapy.",
+                                "evidence_classes": ["clinpgx_drug_label_annotation"],
+                                "sample_relevance": {"state": "sample_target_observed"},
+                            },
+                            {
+                                "row_id": "pgxrow_voriconazole",
+                                "row_type": "drug_gene_diplotype",
+                                "drug": "voriconazole",
+                                "gene": "CYP2C19",
+                                "diplotype": "*1/*2",
+                                "phenotype": "Intermediate Metabolizer",
+                                "recommendation_text": "Review voriconazole dosing guidance.",
+                                "evidence_classes": ["clinpgx_drug_label_annotation"],
+                                "sample_relevance": {"state": "sample_target_observed"},
+                            },
+                        ],
+                    },
+                },
+            },
+            mode="full",
+            output=out,
+        )
+
+        rows = _extract_evidence(out.read_text(encoding="utf-8"))["pgx"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["drugs"][0]["name"] for row in rows}, {"clopidogrel", "voriconazole"})
+
+    def test_normalizes_mixed_native_pgx_result_list(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "pgx": [
+                    {"status": "requires_library_install", "missing_library": {"library": "pharmcat"}},
+                    {
+                        "status": "completed",
+                        "sample_pgx_matrix": {
+                            "policy_id": "pharmcat_sample_pgx_matrix_v1",
+                            "row_count": 1,
+                            "rows": [
+                                {
+                                    "row_id": "samplepgx_clopidogrel",
+                                    "row_type": "drug_gene_diplotype",
+                                    "drug": "clopidogrel",
+                                    "gene": "CYP2C19",
+                                    "diplotype": "*1/*2",
+                                    "phenotype": "Intermediate Metabolizer",
+                                    "recommendation_text": "Review antiplatelet guidance.",
+                                }
+                            ],
+                        },
+                    },
+                    {
+                        "status": "completed",
+                        "medication_review_matrix": {
+                            "policy_id": "pgx_medication_review_matrix_v1",
+                            "row_count": 1,
+                            "rows": [
+                                {
+                                    "row_id": "pgxrow_warfarin",
+                                    "row_type": "drug_gene_variant",
+                                    "drug": "warfarin",
+                                    "gene": "VKORC1",
+                                    "rsid": "rs9923231",
+                                    "recommendation_text": "Review warfarin dosing evidence.",
+                                }
+                            ],
+                        },
+                    },
+                ],
+            },
+            mode="full",
+            output=out,
+        )
+
+        rows = _extract_evidence(out.read_text(encoding="utf-8"))["pgx"]
+        self.assertEqual({row["drugs"][0]["name"] for row in rows}, {"clopidogrel", "warfarin"})
 
     def test_normalizes_native_prs_calculate_score_results(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -146,9 +230,135 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         row = _extract_evidence(out.read_text(encoding="utf-8"))["risk"][0]
         self.assertEqual(row["trait"], "Synthetic common trait")
         self.assertEqual(row["score"], 2.0)
+        self.assertEqual(row["row_type"], "polygenic_score")
+        self.assertEqual(row["score_id"], "PGS900001")
         self.assertEqual(row["overlap"], "4/4 variants")
         self.assertEqual(row["sources"], ["PGS900001"])
         self.assertIn("raw weighted", row["note"])
+
+    def test_normalizes_mixed_native_risk_result_list(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "risk": [
+                    {"status": "requires_score_import"},
+                    {
+                        "status": "completed",
+                        "target": {"investigation_type": "carrier_review"},
+                        "candidate_matrix": [
+                            {
+                                "candidate_id": "carrier_review:CAPN3",
+                                "candidate_type": "clinvar_review_group",
+                                "score": 1.0,
+                                "supporting_evidence": [
+                                    {
+                                        "group_type": "carrier_relevance",
+                                        "gene": "CAPN3",
+                                        "condition": "limb-girdle muscular dystrophy",
+                                        "interpretation_gates": {
+                                            "inheritance": {"required": True, "state": "needed"}
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            },
+            mode="full",
+            output=out,
+        )
+
+        rows = _extract_evidence(out.read_text(encoding="utf-8"))["risk"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["row_type"], "phenotype_review_target")
+        self.assertEqual(rows[0]["trait"], "CAPN3 / limb-girdle muscular dystrophy")
+        self.assertEqual(rows[0]["group_type"], "carrier_relevance")
+        self.assertEqual(rows[0]["missing_interpretation_gates"], ["inheritance"])
+
+    def test_normalizes_clinvar_review_groups_in_risk_result_list(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "risk": [
+                    {
+                        "status": "completed",
+                        "candidate_review_groups": {
+                            "policy_id": "clinvar_candidate_review_groups_v1",
+                            "group_count": 1,
+                            "groups": [
+                                {
+                                    "group_id": "clinvar_group_brca1",
+                                    "group_type": "carrier_relevance",
+                                    "gene": "BRCA1",
+                                    "condition": "hereditary breast and ovarian cancer",
+                                    "interpretation_gates": {
+                                        "clinical_confirmation": {"required": True, "state": "needed"}
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                    {"status": "requires_score_import"},
+                ],
+            },
+            mode="full",
+            output=out,
+        )
+
+        rows = _extract_evidence(out.read_text(encoding="utf-8"))["risk"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["row_type"], "clinvar_review_group")
+        self.assertEqual(rows[0]["trait"], "BRCA1 / hereditary breast and ovarian cancer")
+        self.assertEqual(rows[0]["group_type"], "carrier_relevance")
+        self.assertEqual(rows[0]["sources"], ["ClinVar"])
+        self.assertEqual(rows[0]["missing_interpretation_gates"], ["clinical_confirmation"])
+
+    def test_clinvar_review_groups_do_not_render_as_variant_rows(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "variants": {
+                    "status": "completed",
+                    "candidate_inventory": [],
+                    "candidate_review_groups": {
+                        "policy_id": "clinvar_candidate_review_groups_v1",
+                        "group_count": 1,
+                        "groups": [
+                            {
+                                "group_id": "clinvar_group_brca1",
+                                "group_type": "carrier_relevance",
+                                "gene": "BRCA1",
+                                "condition": "hereditary breast and ovarian cancer",
+                            }
+                        ],
+                    },
+                },
+                "risk": [
+                    {
+                        "status": "completed",
+                        "candidate_review_groups": {
+                            "policy_id": "clinvar_candidate_review_groups_v1",
+                            "group_count": 1,
+                            "groups": [
+                                {
+                                    "group_id": "clinvar_group_brca1",
+                                    "group_type": "carrier_relevance",
+                                    "gene": "BRCA1",
+                                    "condition": "hereditary breast and ovarian cancer",
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+            mode="full",
+            output=out,
+        )
+
+        parsed = _extract_evidence(out.read_text(encoding="utf-8"))
+        self.assertEqual(_panel_keys(parsed), {"risk"})
+        self.assertEqual(parsed["risk"][0]["row_type"], "clinvar_review_group")
 
     def test_native_empty_results_clear_stale_pgx_and_risk_panels(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -294,21 +504,27 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
                     )
                 self.assertEqual(ctx.exception.code, "panel_schema_mismatch")
 
-    def test_gene_less_native_pgx_review_is_empty_for_dashboard_cards(self) -> None:
+    def test_native_pgx_drug_label_row_renders_for_dashboard_cards(self) -> None:
         out = self.tmpdir / "dash.html"
         result = decode_dashboard.render_dashboard(
             evidence={
                 "overview": {"sampleId": "HG-RSID-PGX", "variantCount": 10},
                 "pgx": {
                     "status": "completed",
-                    "query": {"drug": "example-drug"},
-                    "sample_evidence": {
-                        "total_sample_evidence_count": 1,
-                        "user_provided_sample_evidence": [
-                            {"rsid": "rsSynthetic", "observed_alleles": ["A"]}
+                    "medication_review_matrix": {
+                        "policy_id": "pgx_medication_review_matrix_v1",
+                        "row_count": 1,
+                        "rows": [
+                            {
+                                "row_id": "pgxrow_label",
+                                "row_type": "drug_label",
+                                "drug": "example-drug",
+                                "recommendation_text": "Label contains pharmacogenomic context.",
+                                "evidence_classes": ["fda_pharmacogenomic_biomarker_labeling"],
+                                "sample_relevance": {"state": "public_only"},
+                            }
                         ],
                     },
-                    "public_evidence": {"source_evidence_count": 1},
                 },
             },
             mode="full",
@@ -316,8 +532,9 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
         )
 
         parsed = _extract_evidence(out.read_text(encoding="utf-8"))
-        self.assertEqual(_panel_keys(parsed), {"overview"})
-        self.assertIn("pgx", result["panels_empty"])
+        self.assertEqual(_panel_keys(parsed), {"overview", "pgx"})
+        self.assertEqual(parsed["pgx"][0]["drugs"][0]["name"], "example-drug")
+        self.assertIn("pgx", result["panels_rendered"])
 
     def test_malformed_native_adapter_rows_raise(self) -> None:
         cases = [
@@ -326,15 +543,14 @@ class DecodeDashboardAdapterTests(unittest.TestCase):
                 {
                     "pgx": {
                         "status": "completed",
-                        "artifacts": {
-                            "calls_only": {
-                                "available": True,
-                                "rows": [{"Source Diplotype": "*1/*2"}],
-                            }
+                        "sample_pgx_matrix": {
+                            "policy_id": "pharmcat_sample_pgx_matrix_v1",
+                            "row_count": 1,
+                            "rows": [{"row_id": "bad", "row_type": "sample_only"}],
                         },
                     },
                 },
-                "gene",
+                "sample_pgx_matrix row 0",
             ),
             (
                 "risk",

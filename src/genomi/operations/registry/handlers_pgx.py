@@ -127,6 +127,7 @@ def _pgx_medication_review(params: JsonObject) -> JsonObject:
         known_phenotype=resolved.get("known_phenotype"),
         known_activity_score=resolved.get("known_activity_score"),
         known_pgx_source=resolved.get("known_pgx_source"),
+        source_sample_pgx_row_id=resolved.get("source_sample_pgx_row_id"),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
         db=resolved.get("db"),
         shared_db=resolved.get("shared_db"),

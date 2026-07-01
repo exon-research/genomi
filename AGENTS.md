@@ -116,6 +116,10 @@ Edit this section only with explicit owner approval.
    skill guidance. If a parameter is not reliably available from the current
    request, selected context, previous Genomi result, explicit approval, or an
    explicit override, the host should omit it.
+   Tool descriptions should describe the operation's job, not enumerate every
+   returned field, internal contract detail, or recent patch. Detailed result
+   structure belongs in the schema, `produces`, focused guidance, and the
+   actual typed output.
 
 20. Defaults are evidence-relevant assumptions.
    Any default that affects interpretation must be visible in the tool

@@ -772,7 +772,24 @@ class ActiveGenomeIndexDownstreamContractTests(
             self.assertEqual(dashboard_overview["genomeSource"], contract.expected_format)
             self.assertEqual(dashboard["variants"][0]["rsid"], "rs900000001")
             self.assertEqual(dashboard["variants_all"][0]["rsid"], "rs900000001")
-            self.assertEqual(dashboard["risk"][0]["sources"], ["PGSAGI001"])
+            risk_sources = [row.get("sources") for row in dashboard["risk"]]
+            self.assertIn(["PGSAGI001"], risk_sources)
+            self.assertTrue(
+                any(
+                    row.get("row_type") == "phenotype_review_target"
+                    and "phenotype.plan_risk_investigation" in row.get("sources", [])
+                    and "ClinVar" in row.get("sources", [])
+                    for row in dashboard["risk"]
+                ),
+                dashboard["risk"],
+            )
+            risk_state_operations = [
+                state.get("source_operation")
+                for state in result["evidence_build"]["panel_states"]
+                if state.get("panel") == "risk"
+            ]
+            self.assertIn("clinvar.scan_candidates", risk_state_operations)
+            self.assertIn("prs.calculate_score", risk_state_operations)
             self.assertTrue(dashboard["ancestry"]["neighbors"])
             self.assertEqual(dashboard["nutrigenomics"][0]["rsid"], "rs1801133")
             self.assertEqual(dashboard["nutrigenomics"][0]["gene"], "MTHFR")

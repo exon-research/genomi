@@ -98,7 +98,7 @@ def _readiness(
     sample_match_count: int,
     star_marker_match_count: int,
     stored_sample_evidence_count: int,
-    user_sample_evidence_count: int,
+    known_sample_pgx_evidence_count: int,
     rsid_targets: list[str],
     star_genes: list[str],
     star_allele_calls: list[JsonObject],
@@ -107,7 +107,12 @@ def _readiness(
 ) -> JsonObject:
     requirements = []
     supported_star_marker_coverage = _has_supported_star_marker_coverage(star_allele_calls)
-    sample_evidence_count = sample_match_count + star_marker_match_count + stored_sample_evidence_count + user_sample_evidence_count
+    sample_evidence_count = (
+        sample_match_count
+        + star_marker_match_count
+        + stored_sample_evidence_count
+        + known_sample_pgx_evidence_count
+    )
     personal_support = bool(source_evidence_count) and (
         bool(sample_evidence_count) or (bool(star_genes) and supported_star_marker_coverage)
     )
@@ -115,9 +120,9 @@ def _readiness(
         requirements.append("source-backed PGx guideline, label, clinical annotation, or association evidence")
     if sample_context_requested and (rsid_targets or star_genes) and sample_evidence_count == 0:
         requirements.append("matching Active Genome Index evidence for selected PGx variant or marker targets")
-    if sample_context_requested and star_genes and not star_allele_calls and not user_sample_evidence_count:
+    if sample_context_requested and star_genes and not star_allele_calls and not known_sample_pgx_evidence_count:
         requirements.append("supported pharmacogene star-allele, diplotype, phenotype, or specialized PGx caller evidence")
-    if sample_context_requested and star_allele_calls and not supported_star_marker_coverage and not user_sample_evidence_count:
+    if sample_context_requested and star_allele_calls and not supported_star_marker_coverage and not known_sample_pgx_evidence_count:
         requirements.append("observed marker coverage for supported star-allele interpretation or a validated specialized PGx caller")
     if sample_context_requested and not rsid_targets and not star_genes:
         requirements.append("selected variant, haplotype, diplotype, phenotype, or pharmacogene evidence target")
@@ -152,7 +157,7 @@ def _answer_support(
     *,
     source_evidence_count: int,
     stored_sample_evidence_count: int,
-    user_provided_sample_evidence: list[JsonObject],
+    known_sample_pgx_evidence: list[JsonObject],
     technical_support_count: int,
     sequencing_sample_match_count: int,
     clinpgx_result: JsonObject,
@@ -165,19 +170,27 @@ def _answer_support(
     matched_associations = _matched_pgxdb_associations(pgxdb_result, sample_lookups)
     star_summaries = _star_diplotype_summaries(star_allele_calls)
     stored_sample_summaries = _stored_sample_pgx_summaries(stored_research)
-    user_sample_summaries = _user_provided_sample_pgx_summaries(user_provided_sample_evidence)
+    known_sample_summaries = _known_sample_pgx_summaries(known_sample_pgx_evidence)
+    user_sample_summaries = [
+        item for item in known_sample_summaries if item.get("source_id") == "user_provided"
+    ]
+    pharmcat_sample_summaries = [
+        item for item in known_sample_summaries if item.get("source_id") == "pharmcat_sample_pgx_matrix"
+    ]
     sample_signal_count = (
         len(matched_associations)
         + sum(1 for item in star_summaries if item.get("possible_diplotype") or item.get("called_star_alleles"))
         + stored_sample_evidence_count
-        + len(user_sample_summaries)
+        + len(known_sample_summaries)
     )
     star_sequencing_signal_count = _sequencing_star_marker_count(star_allele_calls)
     technical_status = _answer_technical_status(
         technical_support_count=technical_support_count,
         sequencing_sample_signal_count=sequencing_sample_match_count + star_sequencing_signal_count,
         stored_sample_signal_count=stored_sample_evidence_count,
+        known_sample_signal_count=len(known_sample_summaries),
         user_sample_signal_count=len(user_sample_summaries),
+        pharmcat_sample_signal_count=len(pharmcat_sample_summaries),
         sample_signal_count=sample_signal_count,
     )
     if source_evidence_count and sample_signal_count and technical_status == "needs_genotype_support":
@@ -199,12 +212,16 @@ def _answer_support(
             "technical_support_count": technical_support_count,
             "sequencing_sample_signal_count": sequencing_sample_match_count + star_sequencing_signal_count,
             "stored_sample_signal_count": stored_sample_evidence_count,
+            "known_sample_signal_count": len(known_sample_summaries),
             "user_sample_signal_count": len(user_sample_summaries),
+            "pharmcat_sample_signal_count": len(pharmcat_sample_summaries),
         },
         "matched_variant_associations": matched_associations,
         "star_diplotype_summaries": star_summaries,
         "stored_sample_pgx_summaries": stored_sample_summaries,
+        "known_sample_pgx_summaries": known_sample_summaries,
         "user_provided_sample_pgx_summaries": user_sample_summaries,
+        "pharmcat_sample_pgx_summaries": pharmcat_sample_summaries,
         "source_recommendation_summaries": _source_recommendation_summaries(clinpgx_result, pgxdb_result, fda_result, stored_research),
         "clinical_boundary": "informational_evidence_review",
     }
@@ -215,7 +232,9 @@ def _answer_technical_status(
     technical_support_count: int,
     sequencing_sample_signal_count: int,
     stored_sample_signal_count: int,
+    known_sample_signal_count: int,
     user_sample_signal_count: int,
+    pharmcat_sample_signal_count: int,
     sample_signal_count: int,
 ) -> str:
     if technical_support_count:
@@ -226,6 +245,10 @@ def _answer_technical_status(
         return "stored_sample_pgx_evidence_available"
     if user_sample_signal_count:
         return "user_provided_sample_pgx_evidence_available"
+    if pharmcat_sample_signal_count:
+        return "pharmcat_sample_pgx_matrix_available"
+    if known_sample_signal_count:
+        return "known_sample_pgx_evidence_available"
     if sample_signal_count:
         return "observed_genotype_available"
     return "pending_sample_match"
@@ -396,12 +419,15 @@ def _stored_sample_pgx_summaries(stored_research: JsonObject) -> list[JsonObject
     return summaries
 
 
-def _user_provided_sample_pgx_summaries(user_provided_sample_evidence: list[JsonObject]) -> list[JsonObject]:
+def _known_sample_pgx_summaries(known_sample_pgx_evidence: list[JsonObject]) -> list[JsonObject]:
     summaries = []
-    for evidence in user_provided_sample_evidence:
+    for evidence in known_sample_pgx_evidence:
+        source = evidence.get("source") if isinstance(evidence.get("source"), dict) else {}
         summaries.append(
             {
-                "source": "user_provided",
+                "source_id": source.get("source_id") or "user_provided",
+                "source": source.get("title") or evidence.get("known_pgx_source"),
+                "source_sample_pgx_row_id": source.get("source_sample_pgx_row_id"),
                 "evidence_class": evidence.get("evidence_class"),
                 "status": evidence.get("status"),
                 "gene": evidence.get("gene"),

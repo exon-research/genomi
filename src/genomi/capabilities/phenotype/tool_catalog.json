@@ -32,7 +32,7 @@
     "phenotype.plan_risk_investigation": {
       "capability": "phenotype-gene",
       "namespace": "phenotype",
-      "description": "Plan rare disease or cancer risk investigation from public targets and optionally selected Active Genome Index evidence.",
+      "description": "Plan phenotype risk and ClinVar review targets from public targets and optionally selected Active Genome Index evidence.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -44,7 +44,9 @@
             "enum": [
               "auto",
               "rare_disease",
-              "cancer_risk"
+              "cancer_risk",
+              "carrier_review",
+              "observed_condition_review"
             ],
             "default": "auto"
           },
@@ -122,17 +124,28 @@
             "required": [
               "topic"
             ]
+          },
+          {
+            "required": [
+              "matches"
+            ]
+          },
+          {
+            "required": [
+              "include_active_genome_index"
+            ]
           }
         ]
       },
       "skill": "skills/rare-disease-cancer/SKILL.md",
       "area": "risk",
       "requires": [
-        "public_risk_question_or_target"
+        "public_risk_question_or_target_or_selected_clinvar_materialization"
       ],
       "produces": [
         "risk_investigation_plan",
         "source_review_guidance",
+        "candidate_review_groups",
         "evidence_view",
         "decision_evidence",
         "candidate_matrix",

@@ -65,6 +65,30 @@ class PgxPresentationTests(unittest.TestCase):
                         {"summary": "Use alternate therapy.", "raw_json": {"large": "payload"}}
                     ],
                 },
+                "medication_review_matrix": {
+                    "policy_id": "pgx_medication_review_matrix_v1",
+                    "row_count": 1,
+                    "traceability": {"row_ids": ["pgxrow_1"]},
+                    "rows": [
+                        {
+                            "row_id": "pgxrow_1",
+                            "row_type": "drug_gene_diplotype",
+                            "drug": "clopidogrel",
+                            "gene": "CYP2C19",
+                            "diplotype": "*1/*2",
+                            "phenotype": "Intermediate Metabolizer",
+                            "recommendation_text": "Use alternate therapy.",
+                            "evidence_classes": ["clinpgx_drug_label_annotation"],
+                            "source_counts": {"ClinPGx": 1},
+                            "source_evidence_ids": ["clinpgx_label_1"],
+                            "sample_evidence_ids": ["sample_lookup_1"],
+                            "stored_research_evidence_ids": ["stored_research_1"],
+                            "user_supplied_evidence_ids": ["known_sample_1"],
+                            "sample_relevance": {"state": "sample_target_observed"},
+                            "readiness": "needs_clinical_confirmation",
+                        }
+                    ],
+                },
             },
         )
 
@@ -113,6 +137,17 @@ class PgxPresentationTests(unittest.TestCase):
             presented["answer_support"]["source_recommendation_summaries"],
             [{"summary": "Use alternate therapy."}],
         )
+        self.assertEqual(presented["medication_review_matrix"]["row_count"], 1)
+        self.assertEqual(
+            presented["medication_review_matrix"]["rows"][0]["sample_relevance"],
+            {"state": "sample_target_observed"},
+        )
+        row = presented["medication_review_matrix"]["rows"][0]
+        self.assertEqual(row["source_counts"], {"ClinPGx": 1})
+        self.assertEqual(row["source_evidence_ids"], ["clinpgx_label_1"])
+        self.assertEqual(row["sample_evidence_ids"], ["sample_lookup_1"])
+        self.assertEqual(row["stored_research_evidence_ids"], ["stored_research_1"])
+        self.assertEqual(row["user_supplied_evidence_ids"], ["known_sample_1"])
 
 
 if __name__ == "__main__":

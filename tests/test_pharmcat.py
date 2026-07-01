@@ -45,19 +45,6 @@ class CallsOnlyTsvParsingTests(unittest.TestCase):
         self.assertEqual(parsed["rows"][0]["Source Diplotype"], "*1/*2")
         self.assertEqual(parsed["rows"][0]["Phenotype"], "Intermediate Metabolizer")
 
-    def test_parsed_rows_map_into_decode_pgx_cards(self) -> None:
-        # The parse->adapt seam: real-format calls must shape into dashboard cards.
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "sample.report.tsv"
-            path.write_text(_REAL_CALLS_ONLY_TSV, encoding="utf-8")
-            parsed = _parse_calls_only_tsv(path, max_calls=200)
-        rows = normalize_pgx_panel({"artifacts": {"calls_only": parsed}})
-        self.assertIsNotNone(rows)
-        by_gene = {row["gene"]: row for row in rows}
-        self.assertEqual(by_gene["CYP2C19"]["diplotype"], "*1/*2")
-        self.assertEqual(by_gene["CYP2C19"]["phenotype"], "Intermediate Metabolizer")
-        self.assertEqual(by_gene["CYP3A5"]["phenotype"], "Poor Metabolizer")
-
 
 def _escaped_header_vcf_text() -> str:
     """A GRCh38 VCF carrying a bcftools-style FILTER description with
@@ -997,14 +984,7 @@ class RealPharmCATJarTests(unittest.TestCase):
         self.assertEqual(result["execution"]["returncode"], 0, result)
         self.assertTrue(result["interpretation_readiness"]["has_report_artifact"], result)
 
-        # The genuine jar writes a title line (e.g. "PharmCAT 3.2.0") before the
-        # tab-delimited "Gene" header. Assert the parser saw past it: every parsed
-        # calls row must be keyed by the real columns, and the rows must shape into
-        # decode PGx cards without error. Under the title-line misparse this fixture
-        # produced a single {"PharmCAT <ver>": "Gene"} row with no "Gene" key, which
-        # both fails the key check and makes the adapter raise. (This minimal
-        # single-variant fixture calls no genes, so row content richness is asserted
-        # by CallsOnlyTsvParsingTests; here we guard the real-format parse->adapt seam.)
+        # Guard the real-format calls-only parse and dashboard adaptation path.
         calls = result["artifacts"]["calls_only"]
         for row in calls["rows"]:
             self.assertIn("Gene", row, result)

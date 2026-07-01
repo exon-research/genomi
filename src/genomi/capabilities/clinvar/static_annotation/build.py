@@ -27,6 +27,7 @@ from ....evidence import (
     match_clinvar_variants_from_active_genome_index,
     summarize_clinvar_matches,
 )
+from ....evidence.store.constants import DEFAULT_CANDIDATE_EVIDENCE_GROUPS
 from ....runtime.handoff import attach_evidence_context, evidence_context, workflow_step
 from ....runtime.libraries import manager as library_manager
 from ....runtime.paths import (
@@ -460,13 +461,7 @@ def build_static_annotation(
                     db_path,
                     run_output_path(vcf_path, "clinvar.candidates.json"),
                     genome_build=effective_genome_build,
-                    evidence_groups=[
-                        "clinvar_p_lp",
-                        "clinvar_drug_response",
-                        "clinvar_conflicting",
-                        "clinvar_risk_association_protective",
-                        "clinvar_vus",
-                    ],
+                    evidence_groups=list(DEFAULT_CANDIDATE_EVIDENCE_GROUPS),
                     force=force,
                 ),
                 "research",
@@ -627,13 +622,7 @@ def scan_static_candidates(
             db_path,
             output_path,
             genome_build=genome_build,
-            evidence_groups=[
-                "clinvar_p_lp",
-                "clinvar_drug_response",
-                "clinvar_conflicting",
-                "clinvar_risk_association_protective",
-                "clinvar_vus",
-            ],
+            evidence_groups=list(DEFAULT_CANDIDATE_EVIDENCE_GROUPS),
             force=force,
         ),
         "research",

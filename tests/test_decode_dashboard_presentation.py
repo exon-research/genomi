@@ -42,7 +42,7 @@ NAV_LABELS = (
     "Overview",
     "Variants",
     "Pharmacogenomics",
-    "Risk Scores",
+    "Risk Review",
     "Ancestry",
     "Nutrigenomics",
 )

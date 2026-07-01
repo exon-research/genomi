@@ -167,6 +167,7 @@ def _present_pgx_medication_review(result: JsonObject) -> JsonObject:
         ),
         "public_evidence": _compact_public_evidence(public_evidence),
         "sample_evidence": _compact_sample_evidence(sample_evidence),
+        "medication_review_matrix": _compact_pgx_matrix(result.get("medication_review_matrix")),
         "answer_support": _compact_answer_support(answer_support),
         "unanswered_answer_components": result.get("unanswered_answer_components") or [],
     })
@@ -362,7 +363,82 @@ def _compact_active_risk_evidence(active_evidence: JsonObject) -> JsonObject:
         for candidate in (active_evidence.get("candidate_summaries") or [])[:MAX_LIST_ITEMS]
         if isinstance(candidate, dict)
     ]
+    compact["candidate_review_groups"] = _compact_candidate_review_groups(active_evidence.get("candidate_review_groups"))
     return compact
+
+
+def _compact_pgx_matrix(value: object) -> JsonObject | None:
+    if not isinstance(value, dict):
+        return None
+    return _drop_none(
+        {
+            "policy_id": value.get("policy_id"),
+            "row_count": value.get("row_count"),
+            "traceability": _compact_generic_value(value.get("traceability")),
+            "rows": [
+                _select(
+                    row,
+                    (
+                        "row_id",
+                        "row_type",
+                        "drug",
+                        "gene",
+                        "rsid",
+                        "variant_or_haplotype",
+                        "diplotype",
+                        "phenotype",
+                        "activity_score",
+                        "recommendation_text",
+                        "evidence_classes",
+                        "source_evidence_ids",
+                        "sample_evidence_ids",
+                        "stored_research_evidence_ids",
+                        "user_supplied_evidence_ids",
+                        "source_counts",
+                        "sample_relevance",
+                        "readiness",
+                        "clinical_boundary",
+                    ),
+                )
+                for row in (value.get("rows") or [])[:MAX_LIST_ITEMS]
+                if isinstance(row, dict)
+            ],
+        }
+    )
+
+
+def _compact_candidate_review_groups(value: object) -> JsonObject | None:
+    if not isinstance(value, dict):
+        return None
+    return _drop_none(
+        {
+            "policy_id": value.get("policy_id"),
+            "group_count": value.get("group_count"),
+            "group_counts_by_type": value.get("group_counts_by_type"),
+            "groups": [
+                _select(
+                    group,
+                    (
+                        "group_id",
+                        "group_type",
+                        "gene",
+                        "condition",
+                        "candidate_ids",
+                        "clinical_significance_counts",
+                        "review_status_counts",
+                        "evidence_groups",
+                        "zygosity_counts",
+                        "match_basis_counts",
+                        "population_flags",
+                        "interpretation_gates",
+                        "target_match_status",
+                    ),
+                )
+                for group in (value.get("groups") or [])[:MAX_LIST_ITEMS]
+                if isinstance(group, dict)
+            ],
+        }
+    )
 
 
 def _compact_public_evidence(public_evidence: JsonObject) -> JsonObject:
@@ -418,7 +494,9 @@ def _compact_sample_evidence(sample_evidence: JsonObject) -> JsonObject:
             "lookup_count",
             "sample_match_count",
             "stored_sample_evidence_count",
+            "known_sample_pgx_evidence_count",
             "user_provided_sample_evidence_count",
+            "pharmcat_sample_pgx_matrix_evidence_count",
             "total_sample_evidence_count",
             "technical_support_count",
             "sequencing_sample_match_count",
@@ -430,9 +508,11 @@ def _compact_sample_evidence(sample_evidence: JsonObject) -> JsonObject:
     )
     compact["variant_matches"] = _variant_match_summaries(sample_evidence.get("variant_lookups") or [])
     compact["star_allele_calls"] = _star_call_summaries(sample_evidence.get("star_allele_calls") or [])
-    user_evidence = sample_evidence.get("user_provided_sample_evidence") or []
-    if user_evidence:
-        compact["user_provided_sample_evidence"] = [_truncate_record(item) for item in user_evidence[:MAX_LIST_ITEMS]]
+    known_sample_evidence = sample_evidence.get("known_sample_pgx_evidence") or []
+    if known_sample_evidence:
+        compact["known_sample_pgx_evidence"] = [
+            _truncate_record(item) for item in known_sample_evidence[:MAX_LIST_ITEMS]
+        ]
     return compact
 
 

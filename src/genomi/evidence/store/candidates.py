@@ -44,6 +44,7 @@ from .candidate_scoring import (
     _ordered_bucket_counts,
     _ordered_candidate_evidence_group_counts,
 )
+from .candidate_groups import build_candidate_review_groups
 from .clinvar_match_provenance import (
     MATCH_BASIS_CONSUMER_ARRAY_ALLELE_INFERENCE,
     MATCH_BASIS_EXACT_ALLELE,
@@ -203,6 +204,7 @@ def extract_clinvar_candidates(
         population_source=population_source,
         population=population,
     )
+    candidate_review_groups = build_candidate_review_groups(candidates)
 
     payload = {
         "status": "completed",
@@ -277,6 +279,7 @@ def extract_clinvar_candidates(
             "Missing population evidence means run a population evidence tool if the candidate is worth investigating.",
         ],
         "candidate_inventory": emitted_candidates,
+        "candidate_review_groups": candidate_review_groups,
     }
     apply_evidence_view(
         payload,

@@ -1,21 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from ....evidence.candidate_evidence import (
-    DIRECT_SOURCE_MATCH,
-    EXACT_TRAIT_MATCH,
-    NEARBY_TRAIT_MATCH,
-    SAME_GENE_OR_LOCUS,
-    answerability_for_lane,
-    apply_evidence_view,
-    evidence_support_level_for_score,
-    empty_lanes,
-    evidence_view,
-    lane,
-)
-from ....evidence.task_profiles import PGX_MEDICATION_REVIEW
+from ....evidence.candidate_evidence import apply_evidence_view
 from ....retrieval import semantic as retrieval_semantic
 from ...variant import variant_lookup
 from .. import clinpgx, fda_pgx, pgx_star, pgxdb, pharmcat
@@ -34,6 +21,10 @@ from .evidence_matrix import (
     _evidence_item_role_counts,
     _evidence_matrix,
     _evidence_matrix_traceability,
+)
+from .medication_matrix import (
+    build_medication_review_matrix,
+    medication_review_evidence_view,
 )
 from .record_research import (
     _record_research_payload_role_counts,
@@ -172,6 +163,7 @@ def review_medication_interaction(
     known_phenotype: str | None = None,
     known_activity_score: str | None = None,
     known_pgx_source: str | None = None,
+    source_sample_pgx_row_id: str | None = None,
     genome_build: str = "GRCh38",
     db: str | Path | None = None,
     shared_db: str | Path | None = None,
@@ -270,6 +262,7 @@ def review_medication_interaction(
         known_phenotype=known_phenotype,
         known_activity_score=known_activity_score,
         known_pgx_source=known_pgx_source,
+        source_sample_pgx_row_id=source_sample_pgx_row_id,
     )
     stored_sample_evidence_count = _stored_sample_evidence_count(stored_research)
     active_sample_lookup_requested = bool(include_active_genome_index or has_active_genome_index_context or db)
@@ -315,7 +308,7 @@ def review_medication_interaction(
         current_medications=current_medications,
         allergies_or_contraindications=allergies_or_contraindications,
     )
-    user_provided_sample_evidence = _user_provided_sample_pgx_evidence(
+    known_sample_pgx_evidence = _known_sample_pgx_evidence(
         selected_gene=selected_gene,
         selected_rsid=selected_rsid,
         rsid_targets=rsid_targets,
@@ -325,8 +318,14 @@ def review_medication_interaction(
         known_phenotype=known_phenotype,
         known_activity_score=known_activity_score,
         known_pgx_source=known_pgx_source,
+        source_sample_pgx_row_id=source_sample_pgx_row_id,
     )
-    user_sample_evidence_count = len(user_provided_sample_evidence)
+    known_sample_pgx_evidence_count = len(known_sample_pgx_evidence)
+    user_sample_evidence_count = _known_sample_pgx_source_count(known_sample_pgx_evidence, "user_provided")
+    pharmcat_sample_pgx_evidence_count = _known_sample_pgx_source_count(
+        known_sample_pgx_evidence,
+        "pharmcat_sample_pgx_matrix",
+    )
     public_evidence_count = (
         int(clinpgx_result.get("summary", {}).get("guideline_annotation_count") or 0)
         + int(clinpgx_result.get("summary", {}).get("clinical_annotation_count") or 0)
@@ -338,7 +337,12 @@ def review_medication_interaction(
     )
     stored_source_evidence_count = _stored_source_evidence_count(stored_research)
     total_source_evidence_count = public_evidence_count + stored_source_evidence_count
-    total_sample_evidence_count = sample_match_count + star_marker_match_count + stored_sample_evidence_count + user_sample_evidence_count
+    total_sample_evidence_count = (
+        sample_match_count
+        + star_marker_match_count
+        + stored_sample_evidence_count
+        + known_sample_pgx_evidence_count
+    )
     sample_context_requested = bool(sample_context_requested or total_sample_evidence_count)
     clinical_context_requested = bool(sample_context_requested or clinical_context.get("provided"))
     source_availability = _source_availability(
@@ -358,7 +362,7 @@ def review_medication_interaction(
         sample_match_count=sample_match_count,
         star_marker_match_count=star_marker_match_count,
         stored_sample_evidence_count=stored_sample_evidence_count,
-        user_sample_evidence_count=user_sample_evidence_count,
+        known_sample_pgx_evidence_count=known_sample_pgx_evidence_count,
         rsid_targets=rsid_targets,
         star_genes=star_genes,
         star_allele_calls=star_allele_calls,
@@ -368,7 +372,7 @@ def review_medication_interaction(
     answer_support = _answer_support(
         source_evidence_count=total_source_evidence_count,
         stored_sample_evidence_count=stored_sample_evidence_count,
-        user_provided_sample_evidence=user_provided_sample_evidence,
+        known_sample_pgx_evidence=known_sample_pgx_evidence,
         technical_support_count=technical_support_count,
         sequencing_sample_match_count=sequencing_sample_match_count,
         clinpgx_result=clinpgx_result,
@@ -387,7 +391,9 @@ def review_medication_interaction(
         stored_source_evidence_count=stored_source_evidence_count,
         sample_match_count=sample_match_count,
         stored_sample_evidence_count=stored_sample_evidence_count,
+        known_sample_pgx_evidence_count=known_sample_pgx_evidence_count,
         user_sample_evidence_count=user_sample_evidence_count,
+        pharmcat_sample_pgx_evidence_count=pharmcat_sample_pgx_evidence_count,
         technical_support_count=technical_support_count,
         sequencing_sample_match_count=sequencing_sample_match_count,
         active_genome_index_context_available=active_genome_index_context_available,
@@ -423,7 +429,9 @@ def review_medication_interaction(
         sample_match_count=sample_match_count,
         star_marker_match_count=star_marker_match_count,
         stored_sample_evidence_count=stored_sample_evidence_count,
+        known_sample_pgx_evidence_count=known_sample_pgx_evidence_count,
         user_sample_evidence_count=user_sample_evidence_count,
+        pharmcat_sample_pgx_evidence_count=pharmcat_sample_pgx_evidence_count,
         technical_support_count=technical_support_count,
         sequencing_sample_match_count=sequencing_sample_match_count,
         source_availability=source_availability,
@@ -439,7 +447,7 @@ def review_medication_interaction(
         stored_research=stored_research,
         sample_lookups=sample_lookups,
         star_allele_calls=star_allele_calls,
-        user_provided_sample_evidence=user_provided_sample_evidence,
+        known_sample_pgx_evidence=known_sample_pgx_evidence,
     )
     evidence_matrix_traceability = _evidence_matrix_traceability(evidence_items)
     semantic_usage = _pgx_semantic_usage(
@@ -452,21 +460,23 @@ def review_medication_interaction(
         rsid_targets=rsid_targets,
         star_genes=star_genes,
     )
-    pgx_candidate_evidence = _pgx_candidate_evidence_view(
-        query={
-            "drug": selected_drug,
-            "gene": selected_gene,
-            "rsid": selected_rsid,
-            "atc_code": atc_code,
-            "drugbank_id": drugbank_id,
-            "genome_build": genome_build,
-        },
-        source_evidence_count=total_source_evidence_count,
-        sample_evidence_count=total_sample_evidence_count,
-        public_evidence_count=public_evidence_count,
-        stored_source_evidence_count=stored_source_evidence_count,
-        user_sample_evidence_count=user_sample_evidence_count,
-        technical_support_count=technical_support_count,
+    query = {
+        "drug": selected_drug,
+        "gene": selected_gene,
+        "rsid": selected_rsid,
+        "atc_code": atc_code,
+        "drugbank_id": drugbank_id,
+        "genome_build": genome_build,
+    }
+    medication_review_matrix = build_medication_review_matrix(
+        query=query,
+        evidence_items=evidence_items,
+        sample_context_requested=sample_context_requested,
+        interpretation_readiness=readiness,
+    )
+    pgx_candidate_evidence = medication_review_evidence_view(
+        query=query,
+        medication_review_matrix=medication_review_matrix,
         status=status,
         unanswered_answer_components=unanswered_answer_components,
         source_availability=source_availability,
@@ -501,13 +511,15 @@ def review_medication_interaction(
             "lookup_count": len(sample_lookups),
             "sample_match_count": sample_match_count,
             "stored_sample_evidence_count": stored_sample_evidence_count,
+            "known_sample_pgx_evidence_count": known_sample_pgx_evidence_count,
             "user_provided_sample_evidence_count": user_sample_evidence_count,
+            "pharmcat_sample_pgx_matrix_evidence_count": pharmcat_sample_pgx_evidence_count,
             "total_sample_evidence_count": total_sample_evidence_count,
             "technical_support_count": technical_support_count,
             "sequencing_sample_match_count": sequencing_sample_match_count,
             "active_genome_index_context_available": active_genome_index_context_available,
             "variant_lookups": sample_lookups,
-            "user_provided_sample_evidence": user_provided_sample_evidence,
+            "known_sample_pgx_evidence": known_sample_pgx_evidence,
             "star_gene_targets": star_genes,
             "star_allele_call_count": len(star_allele_calls),
             "star_marker_match_count": star_marker_match_count,
@@ -519,6 +531,7 @@ def review_medication_interaction(
             "traceability": evidence_matrix_traceability,
             "items": evidence_items,
         },
+        "medication_review_matrix": medication_review_matrix,
         "evidence_state": evidence_state,
         "interpretation_readiness": readiness,
         "answer_support": answer_support,
@@ -567,165 +580,6 @@ def review_medication_interaction(
     )
 
 
-def _pgx_candidate_evidence_view(
-    *,
-    query: JsonObject,
-    source_evidence_count: int,
-    sample_evidence_count: int,
-    public_evidence_count: int,
-    stored_source_evidence_count: int,
-    user_sample_evidence_count: int,
-    technical_support_count: int,
-    status: str,
-    unanswered_answer_components: Any,
-    source_availability: JsonObject,
-) -> JsonObject:
-    row = _pgx_candidate_row(
-        query=query,
-        source_evidence_count=source_evidence_count,
-        sample_evidence_count=sample_evidence_count,
-        public_evidence_count=public_evidence_count,
-        stored_source_evidence_count=stored_source_evidence_count,
-        user_sample_evidence_count=user_sample_evidence_count,
-        technical_support_count=technical_support_count,
-        status=status,
-        unanswered_answer_components=unanswered_answer_components,
-        source_availability=source_availability,
-    )
-    matrix = [row]
-    selected = row if row["score"] > 0 else None
-    if selected is not None:
-        selected["rank"] = 1
-    decision_policy = {
-        "policy_id": "pgx_medication_review_candidate_matrix_v1",
-        "ranking_order": [
-            "selected medication target",
-            "traceable public PGx source evidence",
-            "selected sample or user-provided PGx evidence",
-            "technical support and unresolved components",
-        ],
-        "rule": "PGx review exposes a bounded evidence candidate for the selected medication target; it does not make prescribing decisions.",
-    }
-    return evidence_view(
-        task_profile=PGX_MEDICATION_REVIEW,
-        query=query,
-        candidate_matrix=matrix,
-        top_observed_candidate=selected,
-        evidence_policy=decision_policy,
-        warnings=_pgx_candidate_warnings(row, unanswered_answer_components, source_availability),
-    )
-
-
-def _pgx_candidate_row(
-    *,
-    query: JsonObject,
-    source_evidence_count: int,
-    sample_evidence_count: int,
-    public_evidence_count: int,
-    stored_source_evidence_count: int,
-    user_sample_evidence_count: int,
-    technical_support_count: int,
-    status: str,
-    unanswered_answer_components: JsonObject,
-    source_availability: JsonObject,
-) -> JsonObject:
-    candidate_id = _pgx_candidate_id(query)
-    if source_evidence_count and sample_evidence_count:
-        best_lane = DIRECT_SOURCE_MATCH
-        score = 1.0 if status == "completed" and not unanswered_answer_components else 0.85
-        reason = "selected medication target has public PGx source evidence and selected sample-side evidence"
-    elif source_evidence_count:
-        best_lane = EXACT_TRAIT_MATCH
-        score = 0.7
-        reason = "selected medication target has public PGx source evidence without sample-side PGx evidence"
-    elif sample_evidence_count:
-        best_lane = SAME_GENE_OR_LOCUS
-        score = 0.55
-        reason = "selected medication target has sample-side PGx evidence without matching public source evidence"
-    elif public_evidence_count or stored_source_evidence_count:
-        best_lane = NEARBY_TRAIT_MATCH
-        score = 0.35
-        reason = "selected medication target has partial source context"
-    else:
-        best_lane = None
-        score = 0.0
-        reason = "no source-supported PGx evidence was found for the selected target"
-    lanes = empty_lanes()
-    if best_lane:
-        lanes[best_lane] = lane(
-            best_lane,
-            status="present",
-            score=score,
-            source="PGx evidence review",
-            matched_text=reason,
-            source_id=candidate_id,
-            note=reason,
-        )
-    return {
-        "candidate_id": candidate_id,
-        "candidate_type": PGX_MEDICATION_REVIEW.candidate_type,
-        "rank": None,
-        "score": score,
-        "evidence_support_level": evidence_support_level_for_score(score),
-        "answerability": answerability_for_lane(best_lane),
-        "best_evidence_lane": best_lane,
-        "evidence_lanes": lanes,
-        "supporting_evidence": [
-            {
-                "source_evidence_count": source_evidence_count,
-                "public_evidence_count": public_evidence_count,
-                "stored_source_evidence_count": stored_source_evidence_count,
-                "sample_evidence_count": sample_evidence_count,
-                "user_sample_evidence_count": user_sample_evidence_count,
-                "technical_support_count": technical_support_count,
-                "source_availability_status": source_availability.get("status"),
-            }
-        ],
-        "counter_evidence": _pgx_unanswered_counter_evidence(unanswered_answer_components),
-        "why_not_selected": [] if score > 0 else ["No PGx source-supported candidate evidence was available for the selected target."],
-    }
-
-
-def _pgx_candidate_id(query: JsonObject) -> str:
-    parts = [
-        str(query.get("drug") or "drug_unspecified"),
-        str(query.get("gene") or "gene_unspecified"),
-        str(query.get("rsid") or query.get("atc_code") or query.get("drugbank_id") or "variant_unspecified"),
-    ]
-    return "pgx:" + "|".join(parts)
-
-
-def _pgx_unanswered_counter_evidence(unanswered_answer_components: Any) -> list[JsonObject]:
-    if isinstance(unanswered_answer_components, dict):
-        return [
-            {"type": key, "state": value.get("state"), "missing": value.get("missing_inputs")}
-            for key, value in unanswered_answer_components.items()
-            if isinstance(value, dict)
-        ]
-    if isinstance(unanswered_answer_components, list):
-        return [
-            {
-                "type": str(item.get("component") or item.get("type") or "unanswered_component"),
-                "state": item.get("state"),
-                "missing": item.get("missing_inputs") or item.get("missing"),
-            }
-            for item in unanswered_answer_components
-            if isinstance(item, dict)
-        ]
-    return []
-
-
-def _pgx_candidate_warnings(row: JsonObject, unanswered_answer_components: Any, source_availability: JsonObject) -> list[str]:
-    warnings = []
-    if row["score"] <= 0:
-        warnings.append("no_source_supported_pgx_candidate_evidence:review_source_coverage")
-    if unanswered_answer_components:
-        warnings.append("unresolved_pgx_evidence_components:inspect_unanswered_components")
-    if str(source_availability.get("status") or "").startswith("source_unavailable"):
-        warnings.append("live_pgx_public_source_unavailable:report_answerability_gap")
-    return warnings
-
-
 def _clinical_context(
     *,
     indication: str | None,
@@ -747,7 +601,7 @@ def _clinical_context(
     }
 
 
-def _user_provided_sample_pgx_evidence(
+def _known_sample_pgx_evidence(
     *,
     selected_gene: str | None,
     selected_rsid: str | None,
@@ -758,12 +612,14 @@ def _user_provided_sample_pgx_evidence(
     known_phenotype: str | None,
     known_activity_score: str | None,
     known_pgx_source: str | None,
+    source_sample_pgx_row_id: str | None,
 ) -> list[JsonObject]:
     genotype = _clean(known_genotype)
     diplotype = _clean(known_diplotype)
     phenotype = _clean(known_phenotype)
     activity_score = _clean(known_activity_score)
     pgx_source = _clean(known_pgx_source)
+    sample_row_id = _clean(source_sample_pgx_row_id)
     if not any([genotype, diplotype, phenotype, activity_score]):
         return []
 
@@ -775,10 +631,11 @@ def _user_provided_sample_pgx_evidence(
     if not gene_target and not rsid_target:
         return []
 
+    source = _known_sample_pgx_source(pgx_source=pgx_source, sample_row_id=sample_row_id)
     evidence: JsonObject = {
-        "source": "user_provided",
-        "evidence_class": "user_provided_sample_pgx_evidence",
-        "status": "user_provided_unverified",
+        "source": source,
+        "evidence_class": _known_sample_pgx_evidence_class(source),
+        "status": _known_sample_pgx_status(source),
         "clinical_boundary": "informational_evidence_review_requires_independent_confirmation",
     }
     if gene_target:
@@ -801,6 +658,39 @@ def _user_provided_sample_pgx_evidence(
     return [evidence]
 
 
+def _known_sample_pgx_source(*, pgx_source: str | None, sample_row_id: str | None) -> JsonObject:
+    if pgx_source == "pharmcat_sample_pgx_matrix" and sample_row_id:
+        return {
+            "source_id": "pharmcat_sample_pgx_matrix",
+            "title": "PharmCAT sample PGx matrix",
+            "source_sample_pgx_row_id": sample_row_id,
+        }
+    return {
+        "source_id": "user_provided",
+        "title": pgx_source,
+    }
+
+
+def _known_sample_pgx_evidence_class(source: JsonObject) -> str:
+    if source.get("source_id") == "pharmcat_sample_pgx_matrix":
+        return "pharmcat_sample_pgx_matrix_row"
+    return "user_provided_sample_pgx_evidence"
+
+
+def _known_sample_pgx_status(source: JsonObject) -> str:
+    if source.get("source_id") == "pharmcat_sample_pgx_matrix":
+        return "pharmcat_sample_pgx_matrix_observed"
+    return "user_provided_unverified"
+
+
+def _known_sample_pgx_source_count(evidence_items: list[JsonObject], source_id: str) -> int:
+    return sum(
+        1
+        for item in evidence_items
+        if isinstance(item.get("source"), dict) and item["source"].get("source_id") == source_id
+    )
+
+
 def _known_sample_fact_count(
     *,
     known_genotype: str | None,
@@ -808,8 +698,10 @@ def _known_sample_fact_count(
     known_phenotype: str | None,
     known_activity_score: str | None,
     known_pgx_source: str | None,
+    source_sample_pgx_row_id: str | None,
 ) -> int:
     del known_pgx_source
+    del source_sample_pgx_row_id
     return sum(
         1
         for value in [known_genotype, known_diplotype, known_phenotype, known_activity_score]

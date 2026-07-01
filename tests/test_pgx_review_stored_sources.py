@@ -691,7 +691,8 @@ class PGxMedicationReviewStoredSourcesTests(PGxMedicationReviewTestBase):
         self.assertEqual(
             result["evidence_view"]["warnings"],
             [
-                "no_source_supported_pgx_candidate_evidence:review_source_coverage",
+                "no_pgx_medication_review_rows:review_source_coverage",
+                "source_unavailable:inspect_evidence_envelope",
                 "unresolved_pgx_evidence_components:inspect_unanswered_components",
                 "live_pgx_public_source_unavailable:report_answerability_gap",
             ],

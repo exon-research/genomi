@@ -17,6 +17,7 @@ from ._common import (
     sqlite_error_cls,
 )
 from .artifacts import _summarize_outputs
+from .matrix import build_medication_review_targets, build_sample_pgx_matrix
 from .preflight import _input_preflight
 from .record_payloads import (
     _readiness,
@@ -329,6 +330,8 @@ def run_pharmcat(
         *_record_payloads_from_phenotype(artifacts.get("phenotype_json") or {}),
         *_record_payloads_from_report(artifacts.get("report_json") or {}),
     ]
+    sample_pgx_matrix = build_sample_pgx_matrix(artifacts)
+    medication_review_targets = build_medication_review_targets(sample_pgx_matrix)
     return {
         **_base_result(
             status="completed" if completed.returncode == 0 else "failed",
@@ -350,6 +353,8 @@ def run_pharmcat(
             "stderr_tail": _tail(completed.stderr),
         },
         "artifacts": artifacts,
+        "sample_pgx_matrix": sample_pgx_matrix,
+        "medication_review_targets": medication_review_targets,
         "warnings": warnings,
         "record_research_payloads": record_payloads,
         "interpretation_readiness": _readiness(completed.returncode, artifacts),

@@ -52,6 +52,12 @@ from .record_payloads import (  # noqa: F401
     _record_payloads_from_report,
     _report_finding_text,
 )
+from .matrix import (  # noqa: F401
+    MEDICATION_REVIEW_TARGETS_POLICY_ID,
+    SAMPLE_PGX_MATRIX_POLICY_ID,
+    build_medication_review_targets,
+    build_sample_pgx_matrix,
+)
 from .artifacts import (  # noqa: F401
     _artifact_descriptor,
     _artifact_type,

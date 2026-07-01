@@ -20,8 +20,9 @@ response, risk-factor labels, or ClinVar-derived discovery.
 
 ## Goal
 
-Build a candidate landscape from exact ClinVar matches. Use the candidate
-inventory as triage input for focused evidence gathering.
+Build a candidate landscape from exact ClinVar matches. Use
+`candidate_inventory` as variant-level provenance evidence and
+`candidate_review_groups` as the carrier/condition review inventory.
 
 > **Convention:** See `skills/conventions/evidence-quality.md`.
 
@@ -31,10 +32,14 @@ inventory as triage input for focused evidence gathering.
   interpretation.
 - Exact matching requires the optional build-specific library
   `clinvar-grch38` or `clinvar-grch37`.
-- Candidate inventories are triage aids.
+- Candidate inventories are variant-level evidence, not interpretation.
+- Candidate review groups are review targets. A heterozygous P/LP group can be
+  carrier-relevance evidence; it is not a carrier-status conclusion.
 - `clinvar.scan_candidates` returns an evidence view, grouped support,
   warnings, and coverage; use those fields rather than inferring priority from
   prose.
+- By default, `clinvar.scan_candidates` includes P/LP, conflicting, VUS,
+  risk/association/protective, drug-response, and benign ClinVar groups.
 - If ClinVar matches are missing, `clinvar.scan_candidates` materializes them
   from the Active Genome Index before building the candidate inventory.
 - VUS, conflicts, and low-review assertions are downgraded unless reviewed
@@ -61,16 +66,18 @@ Materialize exact ClinVar matches for comparable Active Genome Index variants us
 
 ### clinvar.scan_candidates
 
-Build a deterministic candidate inventory from exact ClinVar matches, materializing those matches from the Active Genome Index when needed.
+Build a deterministic candidate inventory and candidate review groups from exact ClinVar matches, materializing those matches from the Active Genome Index when needed.
 
 **Use when**: Broad Active Genome Index disease or risk triage when exact ClinVar candidate inventory is needed.
 
-**Why necessary**: Broad disease triage needs a bounded ClinVar candidate inventory instead of ad hoc spot checks over a large genome file. It performs missing match materialization internally before candidate scanning.
+**Why necessary**: Broad disease triage needs bounded ClinVar variant provenance plus review groups instead of ad hoc spot checks over a large genome file. It performs missing match materialization internally before candidate scanning.
 
 ## Interpretation Rules
 
 - Pathogenic/likely pathogenic labels need zygosity, inheritance, population
   frequency, gene-disease context, and source quality.
+- Carrier language belongs in `phenotype.plan_risk_investigation` with
+  `investigation_type:"carrier_review"` after reviewing the group gates.
 - VUS and conflicting labels use uncertainty/conflict wording.
 - Drug-response labels require pharmacogenomic guideline context before clinical
   actionability is implied.

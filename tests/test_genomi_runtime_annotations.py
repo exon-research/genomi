@@ -63,11 +63,12 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
                 "externalUnavailableStatus": "source_unavailable",
             },
         )
-        self.assertIn("pgx_evidence_envelope", pgx["produces"])
+        self.assertIn("evidence_envelope", pgx["produces"])
+        self.assertIn("medication_review_matrix", pgx["produces"])
         self.assertIn("evidence_view", pgx["produces"])
         self.assertIn("active_genome_index_when_selected", pgx["dataAccess"])
-        self.assertIn("pgx_evidence_components", pgx["produces"])
-        self.assertIn("pgx_target_inventory", pgx["produces"])
+        self.assertIn("evidence_components", pgx["produces"])
+        self.assertIn("target_inventory", pgx["produces"])
 
         requirements = by_name["pharmacogenomics.describe_gene_requirements"]["annotations"]
         self.assertEqual(requirements["operationScope"], "read")

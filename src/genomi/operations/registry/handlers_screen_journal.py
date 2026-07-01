@@ -21,6 +21,8 @@ from .errors import JsonObject, OperationError
 _DECODE_AGI_PANEL_OPERATIONS = {
     "active_genome_index.summarize",
     "clinvar.scan_candidates",
+    "phenotype.plan_risk_investigation",
+    "pharmacogenomics.review_medication",
     "pharmacogenomics.run_pharmcat",
     "ancestry.estimate_population_context",
     "prs.calculate_score",
@@ -29,6 +31,9 @@ _DECODE_BUILD_PARAM_KEYS = {
     "nutrigenomics_domain_ids",
     "output",
     "panels",
+    "pgx_review_target_limit",
+    "pgx_review_targets",
+    "risk_review_types",
     "risk_score_ids",
     "risk_score_limit",
 }

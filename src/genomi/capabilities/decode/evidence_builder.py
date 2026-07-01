@@ -14,6 +14,8 @@ JsonObject = dict[str, Any]
 OperationRunner = Callable[[str, JsonObject], JsonObject]
 
 DEFAULT_PANELS: tuple[str, ...] = PANEL_KEYS
+DEFAULT_PGX_REVIEW_TARGET_LIMIT = 12
+DEFAULT_RISK_REVIEW_TYPES: tuple[str, ...] = ("carrier_review", "observed_condition_review")
 _BLOCKED_STATUSES = {
     "requires_library_install",
     "requires_score_import",
@@ -86,32 +88,42 @@ def build_dashboard_evidence(
             else:
                 _store_panel(evidence, panel_states, "variants_all", "clinvar.scan_candidates", clinvar_result)
 
+    pharmcat_result: JsonObject | None = None
     if "pgx" in panels:
         if pgx_job is None:
-            result = run("pharmacogenomics.run_pharmcat", {})
-            _store_panel(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", result)
+            pharmcat_result = run("pharmacogenomics.run_pharmcat", {})
+            _append_panel_result(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", pharmcat_result)
         else:
-            result, job_state = _collect_background_panel_job(pgx_job)
-            if result is not None:
-                _store_panel(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", result)
+            pharmcat_result, job_state = _collect_background_panel_job(pgx_job)
+            if pharmcat_result is not None:
+                _append_panel_result(evidence, panel_states, "pgx", "pharmacogenomics.run_pharmcat", pharmcat_result)
             else:
                 panel_states.append(_background_panel_state("pgx", "pharmacogenomics.run_pharmcat", job_state))
+        for target in _pgx_review_targets(
+            explicit_targets=safe_params.get("pgx_review_targets"),
+            pharmcat_result=pharmcat_result,
+            limit=_positive_int(safe_params.get("pgx_review_target_limit"), DEFAULT_PGX_REVIEW_TARGET_LIMIT),
+        ):
+            review_result = run("pharmacogenomics.review_medication", target)
+            _append_panel_result(evidence, panel_states, "pgx", "pharmacogenomics.review_medication", review_result)
 
     if "risk" in panels:
-        risk_results = _build_risk_panel(
+        evidence["risk"] = []
+        risk_review_types = _risk_review_types(safe_params)
+        if clinvar_result is None and risk_review_types:
+            clinvar_result = run("clinvar.scan_candidates", {})
+        if risk_review_types and clinvar_result is not None:
+            _record_panel_result_state(panel_states, "risk", "clinvar.scan_candidates", clinvar_result)
+        _append_risk_score_results(
+            evidence=evidence,
+            panel_states=panel_states,
             run=run,
             risk_score_ids=_string_list(safe_params.get("risk_score_ids")),
-            risk_score_limit=int(safe_params.get("risk_score_limit") or 5),
+            risk_score_limit=_positive_int(safe_params.get("risk_score_limit"), 5),
         )
-        evidence["risk"] = risk_results
-        panel_states.append(
-            _panel_state(
-                "risk",
-                "prs.calculate_score",
-                _list_panel_status("risk", risk_results),
-                row_count=len([item for item in risk_results if not is_native_empty_panel("risk", [item])]),
-            )
-        )
+        for request in _risk_review_requests(review_types=risk_review_types, clinvar_result=clinvar_result):
+            review_result = run("phenotype.plan_risk_investigation", request)
+            _append_panel_result(evidence, panel_states, "risk", "phenotype.plan_risk_investigation", review_result)
 
     if "ancestry" in panels:
         result = run("ancestry.estimate_population_context")
@@ -128,21 +140,21 @@ def build_dashboard_evidence(
     if "variants_all" in panels and render_params.get("variants_all_source") and "variants_all" not in panels_with_evidence:
         panels_with_evidence.append("variants_all")
     panels_empty = [key for key in panels if key not in panels_with_evidence]
-    panels_blocked = [
+    panels_blocked = _unique([
         state["panel"]
         for state in panel_states
         if str(state.get("status") or "") in _BLOCKED_STATUSES
-    ]
-    panels_running = [
+    ])
+    panels_running = _unique([
         state["panel"]
         for state in panel_states
         if str(state.get("status") or "") in _RUNNING_STATUSES
-    ]
-    panels_failed = [
+    ])
+    panels_failed = _unique([
         state["panel"]
         for state in panel_states
         if str(state.get("status") or "") in _FAILED_STATUSES
-    ]
+    ])
     result = {
         "status": "completed",
         "panels_requested": list(panels),
@@ -227,19 +239,146 @@ def _background_panel_state(panel: str, operation: str, job_state: JsonObject) -
     return state
 
 
-def _build_risk_panel(
+def _pgx_review_targets(*, explicit_targets: Any, pharmcat_result: Any, limit: int) -> list[JsonObject]:
+    targets: list[JsonObject] = []
+    targets.extend(_explicit_pgx_review_targets(explicit_targets))
+    targets.extend(_pharmcat_medication_review_targets(pharmcat_result))
+    deduped: list[JsonObject] = []
+    seen: set[tuple[str, ...]] = set()
+    for target in targets:
+        normalized = _normalize_pgx_review_target(target)
+        if not normalized:
+            continue
+        key = _pgx_review_target_key(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+        if len(deduped) >= max(1, int(limit)):
+            break
+    return deduped
+
+
+def _explicit_pgx_review_targets(value: Any) -> list[JsonObject]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _pharmcat_medication_review_targets(result: Any) -> list[JsonObject]:
+    if not isinstance(result, dict):
+        return []
+    block = result.get("medication_review_targets")
+    if not isinstance(block, dict):
+        return []
+    return [dict(item) for item in block.get("targets") or [] if isinstance(item, dict)]
+
+
+def _normalize_pgx_review_target(target: JsonObject) -> JsonObject | None:
+    allowed = {
+        "drug",
+        "gene",
+        "rsid",
+        "atc_code",
+        "drugbank_id",
+        "indication",
+        "dose",
+        "current_medications",
+        "allergies_or_contraindications",
+        "known_genotype",
+        "known_diplotype",
+        "known_phenotype",
+        "known_activity_score",
+        "known_pgx_source",
+        "source_sample_pgx_row_id",
+        "semantic_context",
+        "limit",
+    }
+    normalized = {key: value for key, value in target.items() if key in allowed and value not in (None, "", [])}
+    if not any(normalized.get(key) for key in ("drug", "gene", "rsid", "atc_code", "drugbank_id")):
+        return None
+    normalized.setdefault("include_active_genome_index", True)
+    return normalized
+
+
+def _pgx_review_target_key(target: JsonObject) -> tuple[str, ...]:
+    return tuple(
+        str(target.get(field) or "").casefold()
+        for field in (
+            "drug",
+            "gene",
+            "rsid",
+            "atc_code",
+            "drugbank_id",
+            "known_diplotype",
+            "known_phenotype",
+            "known_activity_score",
+            "source_sample_pgx_row_id",
+        )
+    )
+
+
+def _risk_review_types(params: JsonObject) -> list[str]:
+    if "risk_review_types" not in params or params.get("risk_review_types") in (None, ""):
+        values = list(DEFAULT_RISK_REVIEW_TYPES)
+    elif params.get("risk_review_types") == []:
+        values = []
+    else:
+        raw = params.get("risk_review_types")
+        values = [str(item) for item in (raw if isinstance(raw, list) else [raw]) if item not in (None, "")]
+    allowed = {"carrier_review", "observed_condition_review", "rare_disease", "cancer_risk"}
+    invalid = [value for value in values if value not in allowed]
+    if invalid:
+        raise ValueError(
+            "risk_review_types contains unsupported phenotype review mode(s): "
+            f"{', '.join(invalid)}. Valid values: {', '.join(sorted(allowed))}."
+        )
+    return _unique(values)
+
+
+def _risk_review_requests(*, review_types: list[str], clinvar_result: JsonObject | None) -> list[JsonObject]:
+    if not review_types:
+        return []
+    matches = _clinvar_matches_source(clinvar_result)
+    requests: list[JsonObject] = []
+    for review_type in review_types:
+        params = {
+            "investigation_type": review_type,
+            "include_active_genome_index": True,
+        }
+        if matches:
+            params["matches"] = matches
+        requests.append(params)
+    return requests
+
+
+def _clinvar_matches_source(result: JsonObject | None) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    source = result.get("input") or result.get("matches")
+    if source in (None, ""):
+        return None
+    return str(source)
+
+
+def _append_risk_score_results(
     *,
+    evidence: JsonObject,
+    panel_states: list[JsonObject],
     run: Callable[[str, JsonObject | None], JsonObject],
     risk_score_ids: list[str],
     risk_score_limit: int,
-) -> list[JsonObject]:
+) -> None:
     score_ids = list(risk_score_ids)
     if not score_ids:
         listed = run("prs.list_imported_scores")
         score_ids = _imported_score_ids(listed)[: max(1, risk_score_limit)]
     if not score_ids:
-        return [{"status": "requires_score_import"}]
-    return [run("prs.calculate_score", {"pgs_id": score_id}) for score_id in score_ids]
+        _append_panel_result(evidence, panel_states, "risk", "prs.calculate_score", {"status": "requires_score_import"})
+        return
+    for score_id in score_ids:
+        result = run("prs.calculate_score", {"pgs_id": score_id})
+        _append_panel_result(evidence, panel_states, "risk", "prs.calculate_score", result)
 
 
 def _build_nutrigenomics_panel(
@@ -265,6 +404,43 @@ def _build_nutrigenomics_panel(
         "markers": markers,
         "domain_results": domain_results,
     }
+
+
+def _append_panel_result(
+    evidence: JsonObject,
+    panel_states: list[JsonObject],
+    panel: str,
+    operation: str,
+    result: JsonObject,
+) -> None:
+    evidence.setdefault(panel, [])
+    if not isinstance(evidence[panel], list):
+        evidence[panel] = [evidence[panel]]
+    evidence[panel].append(result)
+    panel_states.append(
+        _panel_state(
+            panel,
+            operation,
+            _panel_status(panel, result),
+            row_count=_row_count(panel, result),
+        )
+    )
+
+
+def _record_panel_result_state(
+    panel_states: list[JsonObject],
+    panel: str,
+    operation: str,
+    result: JsonObject,
+) -> None:
+    panel_states.append(
+        _panel_state(
+            panel,
+            operation,
+            _panel_status(panel, result),
+            row_count=_row_count(panel, result),
+        )
+    )
 
 
 def _store_panel(
@@ -333,18 +509,6 @@ def _panel_status(panel: str, value: Any) -> str:
                 return finding_state
             if status:
                 return status
-        return "in_scope_empty"
-    return "data_returned"
-
-
-def _list_panel_status(panel: str, values: list[JsonObject]) -> str:
-    if not values:
-        return "in_scope_empty"
-    statuses = [str(item.get("status") or "") for item in values if isinstance(item, dict)]
-    for status in statuses:
-        if status in _BLOCKED_STATUSES:
-            return status
-    if all(is_native_empty_panel(panel, [item]) for item in values):
         return "in_scope_empty"
     return "data_returned"
 
@@ -435,6 +599,14 @@ def _nutrigenomics_domain_ids(result: JsonObject) -> list[str]:
         if isinstance(item, dict) and item.get("domain_id"):
             ids.append(str(item["domain_id"]))
     return _unique(ids)
+
+
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _string_list(value: Any) -> list[str]:

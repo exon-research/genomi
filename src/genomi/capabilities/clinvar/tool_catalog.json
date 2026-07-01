@@ -78,7 +78,7 @@
     "clinvar.scan_candidates": {
       "capability": "clinvar",
       "namespace": "clinvar",
-      "description": "Build a deterministic candidate inventory from ClinVar matches materialized from the approved Active Genome Index.",
+      "description": "Build deterministic ClinVar variant evidence inventory and review groups from materialized matches.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -109,6 +109,7 @@
       ],
       "produces": [
         "candidate_inventory",
+        "candidate_review_groups",
         "evidence_view",
         "decision_evidence",
         "candidate_matrix",

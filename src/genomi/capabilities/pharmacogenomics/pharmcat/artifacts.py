@@ -27,6 +27,7 @@ from .record_payloads import (
     _record_payloads_from_phenotype,
     _record_payloads_from_report,
 )
+from .matrix import build_medication_review_targets, build_sample_pgx_matrix
 
 
 def import_pharmcat_artifacts(
@@ -57,6 +58,8 @@ def import_pharmcat_artifacts(
         *_record_payloads_from_report(artifacts.get("report_json") or {}, captured_by="genomi call pharmacogenomics.import_pharmcat_artifacts"),
     ]
     status = "completed" if _has_imported_pharmcat_evidence(artifacts) else "no_pharmcat_artifacts"
+    sample_pgx_matrix = build_sample_pgx_matrix(artifacts)
+    medication_review_targets = build_medication_review_targets(sample_pgx_matrix)
     return {
         "status": status,
         "summary": {
@@ -64,6 +67,8 @@ def import_pharmcat_artifacts(
             "artifact_count": int((artifacts.get("file_count") or 0) if isinstance(artifacts, dict) else 0),
         },
         "artifacts": _hide_private_paths(artifacts),
+        "sample_pgx_matrix": sample_pgx_matrix,
+        "medication_review_targets": medication_review_targets,
         "record_research_payloads": record_payloads,
         "interpretation_readiness": _readiness(0 if status == "completed" else 1, artifacts),
         "traceability": {
