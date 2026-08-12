@@ -152,6 +152,35 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         self.assertEqual(reader.agi_path.resolve(), index.resolve())
         self.assertEqual(reader.genome_build, "GRCh38")
 
+    def test_default_user_reader_requires_and_accepts_session_approval(self) -> None:
+        index = self._set_active()
+        active = runtime_context.active_agi_record()
+        self.assertIsNotNone(active)
+        runtime_context.assign_user_genome(
+            nickname="Default user",
+            agi_id=str(active["agi_id"]),
+            set_default_user=True,
+        )
+
+        status = runtime_context.agi_access_status(active)
+        self.assertFalse(status["approved"])
+        self.assertEqual(status["scope"], "session")
+        with self.assertRaises(OperationError) as raised:
+            agi_access.open_agi(
+                need=ActiveGenomeIndexNeed.REFERENCE,
+                action="testing default-user access",
+                params={},
+            )
+        self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
+
+        runtime_context.approve_agi_access(agi_id=str(active["agi_id"]))
+        reader = agi_access.open_agi(
+            need=ActiveGenomeIndexNeed.REFERENCE,
+            action="testing approved default-user access",
+            params={},
+        )
+        self.assertEqual(reader.agi_path.resolve(), index.resolve())
+
     def test_no_active_and_not_optional_raises_missing_context(self) -> None:
         with self.assertRaises(OperationError) as raised:
             agi_access.open_agi(need=ActiveGenomeIndexNeed.NONE, action="testing", params={})

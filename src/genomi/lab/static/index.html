@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#0b625b">
+    <title>GenomiLab — Local patient research workspace</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workspace.css">
+    <link rel="stylesheet" href="/brief.css">
+    <link rel="stylesheet" href="/responsive.css">
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to the workspace</a>
+
+    <div class="preview-strip" role="note" aria-label="Developer preview notice">
+      <strong>Developer preview</strong>
+      <span>Use synthetic or public data only. Do not enter identifiable patient information.</span>
+    </div>
+
+    <header class="app-header">
+      <div class="header-inner">
+        <div class="brand" aria-label="GenomiLab">
+          <span class="brand-mark" aria-hidden="true">G</span>
+          <span>
+            <span class="brand-name">GenomiLab</span>
+            <span class="brand-tagline">A personal research workspace</span>
+          </span>
+        </div>
+        <div class="local-status" id="local-status" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="local-status-text">Connecting to the local workspace…</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="clinical-boundary" role="note">
+      <div class="boundary-icon" aria-hidden="true">i</div>
+      <p>
+        <strong>Research support, not diagnosis or treatment.</strong>
+        Confirm genetic findings with a qualified clinician or genetic counselor before making health decisions.
+        For urgent or severe symptoms, contact local emergency services.
+      </p>
+    </div>
+
+    <div class="global-alert" id="global-alert" role="alert" hidden>
+      <span id="global-alert-message"></span>
+      <button class="alert-dismiss" id="alert-dismiss" type="button" aria-label="Dismiss message">×</button>
+    </div>
+
+    <main class="app-shell" id="main-content" tabindex="-1">
+      <aside class="sidebar" aria-label="Patient workspace controls">
+        <section class="side-card profile-card" aria-labelledby="profile-heading">
+          <p class="eyebrow">Local workspace</p>
+          <h2 id="profile-heading">Choose a profile</h2>
+          <p class="section-intro">Keep each synthetic case in its own workspace.</p>
+
+          <div class="field-group">
+            <label for="profile-select">Active profile</label>
+            <select id="profile-select" aria-describedby="profile-select-help" disabled>
+              <option value="">No profiles yet</option>
+            </select>
+            <p class="field-help" id="profile-select-help">
+              Switching profiles ends any genome access approval from this session.
+            </p>
+          </div>
+
+          <details class="create-profile-panel" id="create-profile-panel">
+            <summary>Create a new profile</summary>
+            <form id="create-profile-form">
+              <div class="field-group">
+                <label for="profile-name">Workspace label</label>
+                <input
+                  id="profile-name"
+                  name="display_name"
+                  type="text"
+                  maxlength="120"
+                  autocomplete="off"
+                  placeholder="Example: Synthetic case A"
+                  aria-describedby="profile-name-help"
+                  required
+                >
+                <p class="field-help" id="profile-name-help">Use a fictional label, not a real patient name.</p>
+              </div>
+              <button class="button button-secondary button-full" type="submit">Create workspace</button>
+            </form>
+          </details>
+        </section>
+
+        <section class="side-card privacy-card" aria-labelledby="privacy-heading">
+          <div class="privacy-heading-row">
+            <span class="shield" aria-hidden="true">✓</span>
+            <h2 id="privacy-heading">Privacy in this preview</h2>
+          </div>
+          <ul class="plain-list">
+            <li>Processing runs on this device.</li>
+            <li>Genome access requires approval each session.</li>
+            <li>Data is <strong>not encrypted at rest</strong> yet.</li>
+          </ul>
+          <p id="version-label" class="version-label">GenomiLab developer preview</p>
+        </section>
+      </aside>
+
+      <section class="main-column" aria-label="Investigation workspace">
+        <section class="empty-state" id="no-profile-state">
+          <div class="empty-illustration" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <p class="eyebrow">Start a local case workspace</p>
+          <h1>Create a profile to begin</h1>
+          <p>
+            Use a fictional case label, then add only the context needed to investigate one reported genetic finding.
+          </p>
+          <button class="button button-primary" id="empty-create-button" type="button">Create a profile</button>
+        </section>
+
+        <div id="profile-workspace" hidden>
+          <section class="workspace-hero" aria-labelledby="workspace-title">
+            <div>
+              <p class="eyebrow">Active research workspace</p>
+              <h1 id="workspace-title" tabindex="-1">Patient profile</h1>
+              <p id="profile-meta" class="profile-meta">Loading local context…</p>
+            </div>
+            <div class="readiness-summary" aria-label="Workspace readiness">
+              <span class="readiness-pill" id="genome-readiness-pill">Genome not added</span>
+              <span class="readiness-pill" id="consent-readiness-pill">Access not approved</span>
+            </div>
+          </section>
+
+          <nav class="step-tracker" aria-label="Investigation setup progress">
+            <ol>
+              <li id="tracker-context"><span>1</span><small>Health context</small></li>
+              <li id="tracker-genome"><span>2</span><small>Genome</small></li>
+              <li id="tracker-finding"><span>3</span><small>Finding</small></li>
+              <li id="tracker-investigate"><span>4</span><small>Investigate</small></li>
+            </ol>
+          </nav>
+
+          <section class="question-card" aria-labelledby="question-heading">
+            <div class="question-number" aria-hidden="true">?</div>
+            <div class="question-content">
+              <p class="eyebrow">Start with your question</p>
+              <label class="question-label" id="question-heading" for="investigation-question">
+                What are you trying to understand?
+              </label>
+              <textarea
+                id="investigation-question"
+                name="question"
+                form="investigation-form"
+                maxlength="2000"
+                rows="3"
+                placeholder="Could this reported finding help explain the symptoms in this case?"
+                aria-describedby="question-help"
+                required
+              ></textarea>
+              <p class="field-help" id="question-help">
+                The first release investigates one existing rsID finding. It does not scan for a diagnosis.
+              </p>
+            </div>
+          </section>
+
+          <div class="workflow-stack">
+            <details class="step-card" id="context-step" open>
+              <summary>
+                <span class="step-number" aria-hidden="true">1</span>
+                <span class="step-title">
+                  <strong>Add relevant health context</strong>
+                  <small>Enter only what helps answer this question.</small>
+                </span>
+                <span class="step-state" id="context-step-state">Optional</span>
+              </summary>
+              <div class="step-body">
+                <form id="health-fact-form" class="form-grid">
+                  <div class="field-group">
+                    <label for="fact-kind">Type</label>
+                    <select id="fact-kind" name="kind" required>
+                      <option value="condition">Condition or diagnosis</option>
+                      <option value="symptom">Symptom</option>
+                      <option value="medication">Medication</option>
+                      <option value="allergy">Allergy</option>
+                      <option value="measurement">Measurement or lab</option>
+                      <option value="procedure">Procedure</option>
+                      <option value="family_history">Family history</option>
+                      <option value="exposure">Exposure</option>
+                    </select>
+                  </div>
+                  <div class="field-group field-span-2">
+                    <label for="fact-label">Health fact</label>
+                    <input
+                      id="fact-label"
+                      name="label"
+                      type="text"
+                      maxlength="500"
+                      placeholder="Example: Progressive muscle weakness"
+                      required
+                    >
+                  </div>
+                  <div class="field-group">
+                    <label for="fact-status">Status</label>
+                    <select id="fact-status" name="assertion_status" required>
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="unknown">Unknown</option>
+                    </select>
+                  </div>
+                  <div class="field-group field-span-2">
+                    <label for="fact-onset">When did it begin? <span class="optional">Optional</span></label>
+                    <input
+                      id="fact-onset"
+                      name="onset"
+                      type="text"
+                      maxlength="200"
+                      placeholder="Example: Childhood or 2024"
+                    >
+                  </div>
+                  <div class="form-action field-span-all">
+                    <p>Saved as patient-reported and user-confirmed.</p>
+                    <button class="button button-secondary" type="submit">Add health fact</button>
+                  </div>
+                </form>
+
+                <div class="saved-section" aria-labelledby="facts-heading">
+                  <div class="saved-heading">
+                    <h3 id="facts-heading">Added context</h3>
+                    <span id="fact-count">0 facts</span>
+                  </div>
+                  <ul class="record-list" id="health-fact-list">
+                    <li class="list-empty">No health context added yet.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="step-card" id="genome-step" open>
+              <summary>
+                <span class="step-number" aria-hidden="true">2</span>
+                <span class="step-title">
+                  <strong>Import a genome file</strong>
+                  <small>Add an uncompressed, pre-called VCF or gVCF.</small>
+                </span>
+                <span class="step-state" id="genome-step-state">Required</span>
+              </summary>
+              <div class="step-body">
+                <div id="genome-ready-card" class="ready-card" hidden>
+                  <span class="ready-icon" aria-hidden="true">✓</span>
+                  <div>
+                    <strong>Genome is ready for local queries</strong>
+                    <p id="genome-ready-detail">The imported index is available.</p>
+                  </div>
+                </div>
+
+                <form id="genome-upload-form">
+                  <input
+                    class="visually-hidden"
+                    id="genome-file"
+                    name="genome"
+                    type="file"
+                    accept=".vcf,.gvcf"
+                    aria-describedby="file-picker-help upload-limit-label"
+                    required
+                  >
+                  <label class="file-picker" for="genome-file">
+                    <span class="file-picker-icon" aria-hidden="true">↑</span>
+                    <span>
+                      <strong id="file-picker-title">Choose a VCF or gVCF</strong>
+                      <small id="file-picker-help">Uncompressed .vcf, .g.vcf, or .gvcf</small>
+                    </span>
+                    <span class="file-picker-action">Browse</span>
+                  </label>
+                  <div class="upload-meta">
+                    <p id="upload-limit-label">Maximum file size: 64 MiB.</p>
+                    <button class="button button-secondary" id="upload-button" type="submit">Import genome</button>
+                  </div>
+                  <div class="upload-progress" id="upload-progress-wrap" role="status" aria-live="polite" hidden>
+                    <progress id="upload-progress" max="100">Importing</progress>
+                    <p id="upload-status">Preparing the local import…</p>
+                  </div>
+                </form>
+              </div>
+            </details>
+
+            <details class="step-card" id="finding-step" open>
+              <summary>
+                <span class="step-number" aria-hidden="true">3</span>
+                <span class="step-title">
+                  <strong>Enter the reported finding</strong>
+                  <small>Copy the rsID exactly as it appears in the source.</small>
+                </span>
+                <span class="step-state" id="finding-step-state">Required</span>
+              </summary>
+              <div class="step-body">
+                <div class="info-callout">
+                  <strong>This records what was reported; it does not validate the classification.</strong>
+                  <p>A clinical laboratory should confirm the variant and zygosity before medical decisions.</p>
+                </div>
+                <form id="finding-form" class="form-grid">
+                  <div class="field-group">
+                    <label for="finding-rsid">Reported rsID</label>
+                    <input
+                      id="finding-rsid"
+                      name="variant"
+                      type="text"
+                      maxlength="200"
+                      inputmode="text"
+                      autocomplete="off"
+                      pattern="[rR][sS][0-9]+"
+                      placeholder="rs123456"
+                      aria-describedby="finding-rsid-help"
+                      required
+                    >
+                    <p class="field-help" id="finding-rsid-help">An rsID begins with “rs” followed by numbers.</p>
+                  </div>
+                  <div class="field-group">
+                    <label for="finding-gene">Gene <span class="optional">Optional</span></label>
+                    <input id="finding-gene" name="gene" type="text" maxlength="80" placeholder="Example: BRCA1">
+                  </div>
+                  <div class="field-group">
+                    <label for="finding-classification">Reported classification <span class="optional">Optional</span></label>
+                    <select id="finding-classification" name="reported_classification">
+                      <option value="">Not provided</option>
+                      <option value="Pathogenic">Pathogenic</option>
+                      <option value="Likely pathogenic">Likely pathogenic</option>
+                      <option value="Uncertain significance">Uncertain significance</option>
+                      <option value="Likely benign">Likely benign</option>
+                      <option value="Benign">Benign</option>
+                      <option value="Other">Other or conflicting</option>
+                    </select>
+                  </div>
+                  <div class="field-group field-span-2">
+                    <label for="finding-source">Where was it reported? <span class="optional">Optional</span></label>
+                    <input
+                      id="finding-source"
+                      name="source_label"
+                      type="text"
+                      maxlength="200"
+                      placeholder="Example: synthetic lab report"
+                    >
+                  </div>
+                  <div class="form-action field-span-all">
+                    <p>Enter one existing finding at a time.</p>
+                    <button class="button button-secondary" type="submit">Save reported finding</button>
+                  </div>
+                </form>
+
+                <div class="saved-section" aria-labelledby="findings-heading">
+                  <div class="saved-heading">
+                    <h3 id="findings-heading">Reported findings</h3>
+                    <span id="finding-count">0 findings</span>
+                  </div>
+                  <ul class="record-list" id="finding-list">
+                    <li class="list-empty">No reported findings added yet.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+
+            <details class="step-card emphasized-step" id="investigate-step" open>
+              <summary>
+                <span class="step-number" aria-hidden="true">4</span>
+                <span class="step-title">
+                  <strong>Review access and investigate</strong>
+                  <small>Approve the exact local genome use, then run the check.</small>
+                </span>
+                <span class="step-state" id="investigate-step-state">Locked</span>
+              </summary>
+              <div class="step-body">
+                <section class="consent-panel" aria-labelledby="consent-heading">
+                  <div class="consent-copy">
+                    <p class="eyebrow">Just-in-time permission</p>
+                    <h3 id="consent-heading">Allow this local genome check</h3>
+                    <p>
+                      GenomiLab will query this profile’s imported genome for the purpose you state below.
+                      Approval lasts only for this portal session and is revoked when you switch profiles or close the app.
+                    </p>
+                  </div>
+                  <div class="consent-status" id="consent-status" role="status">
+                    <span aria-hidden="true">○</span>
+                    <span>Not approved for this session</span>
+                  </div>
+                  <form id="consent-form">
+                    <div class="field-group">
+                      <div class="label-row">
+                        <label for="consent-purpose">Purpose of access</label>
+                        <button class="text-button" id="copy-question-button" type="button">Use my question</button>
+                      </div>
+                      <textarea
+                        id="consent-purpose"
+                        name="purpose"
+                        maxlength="2000"
+                        rows="2"
+                        placeholder="Investigate whether the reported finding is present in this synthetic genome."
+                        required
+                      ></textarea>
+                    </div>
+                    <label class="check-row" for="consent-approved">
+                      <input id="consent-approved" name="approved" type="checkbox" required>
+                      <span>
+                        I approve local access to this profile’s genome for the purpose above during this session.
+                      </span>
+                    </label>
+                    <button class="button button-secondary" id="consent-button" type="submit">Approve session access</button>
+                  </form>
+                </section>
+
+                <div class="investigation-panel">
+                  <form id="investigation-form">
+                    <div class="field-group">
+                      <label for="investigation-finding">Finding to investigate</label>
+                      <select id="investigation-finding" name="finding_id" required>
+                        <option value="">Add a reported rsID first</option>
+                      </select>
+                    </div>
+                    <div class="run-row">
+                      <div>
+                        <strong id="run-readiness-title">Complete the required steps</strong>
+                        <p id="run-readiness-detail">A ready genome, reported finding, and session approval are required.</p>
+                      </div>
+                      <button class="button button-primary" id="investigation-button" type="submit" disabled>
+                        Run investigation
+                      </button>
+                    </div>
+                    <p class="run-note">
+                      This checks the selected reported finding. It does not perform open-ended genome-wide diagnosis.
+                    </p>
+                  </form>
+                </div>
+
+                <div class="saved-section" aria-labelledby="history-heading">
+                  <div class="saved-heading">
+                    <h3 id="history-heading">Investigation history</h3>
+                    <span id="investigation-count">0 briefs</span>
+                  </div>
+                  <ul class="record-list history-list" id="investigation-list">
+                    <li class="list-empty">No investigations run yet.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <section class="brief" id="brief-section" aria-labelledby="brief-title" tabindex="-1" hidden>
+            <header class="brief-header">
+              <div>
+                <p class="eyebrow">Research observation</p>
+                <h2 id="brief-title">Investigation brief</h2>
+                <p id="brief-question" class="brief-question"></p>
+              </div>
+              <span class="brief-status">Requires confirmation</span>
+            </header>
+
+            <div class="brief-observation">
+              <span aria-hidden="true">i</span>
+              <div>
+                <p class="brief-label">What this check found</p>
+                <p id="brief-observation-text"></p>
+              </div>
+            </div>
+
+            <div class="brief-grid">
+              <section class="brief-section-card" aria-labelledby="brief-finding-heading">
+                <h3 id="brief-finding-heading">Reported finding</h3>
+                <dl class="brief-facts" id="brief-finding"></dl>
+              </section>
+              <section class="brief-section-card" aria-labelledby="brief-context-heading">
+                <h3 id="brief-context-heading">Health context considered</h3>
+                <ul class="brief-list" id="brief-health-context"></ul>
+              </section>
+            </div>
+
+            <section class="confirmation-card" aria-labelledby="confirmation-heading">
+              <div class="confirmation-icon" aria-hidden="true">!</div>
+              <div>
+                <h3 id="confirmation-heading">What needs confirmation</h3>
+                <ul class="brief-list" id="confirmation-list"></ul>
+              </div>
+            </section>
+
+            <section class="do-not-conclude" aria-labelledby="boundary-heading">
+              <h3 id="boundary-heading">What not to conclude</h3>
+              <p id="brief-boundary"></p>
+            </section>
+
+            <details class="evidence-details">
+              <summary>View technical evidence and consulted scope</summary>
+              <p class="evidence-intro">
+                These details show the evidence returned by Genomi. A missing hit is not a broad clinical negative.
+              </p>
+              <div id="brief-evidence" class="evidence-tree"></div>
+            </details>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>
+        GenomiLab runs as a local developer preview. Synthetic/public data only · Research support only · No emergency use.
+      </p>
+      <p id="activity-status" class="activity-status" role="status" aria-live="polite">Ready.</p>
+    </footer>
+  </body>
+</html>

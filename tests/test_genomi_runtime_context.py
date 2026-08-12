@@ -218,7 +218,8 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 # A successful parse always points at the AGI skill.
                 self.assertTrue(reads_agi_skill(call_operation("genomi.parse_source", {"source": str(vcf)})))
 
-                # Active + approved (default): no pointer — downstream tools read it directly.
+                # A source supplied in this session is active + approved, so
+                # downstream tools read it directly without another pointer.
                 self.assertFalse(reads_agi_skill(call_operation("genomi.describe_context")))
 
                 # Revoked: genome data exists but isn't approved → pointer (new session
@@ -516,7 +517,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             finally:
                 os.chdir(previous)
 
-    def test_default_user_auto_selects_active_genome_index_across_sessions(self) -> None:
+    def test_default_user_auto_selects_metadata_but_requires_session_read_approval(self) -> None:
         with tempfile.TemporaryDirectory() as cwd_one, tempfile.TemporaryDirectory() as cwd_two:
             previous = os.getcwd()
             try:
@@ -535,9 +536,27 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertEqual(current["active_agi_id"], agi_id)
                 self.assertTrue(current["default_auto_selected"])
-                self.assertEqual(current["active_genome_index_access"]["scope"], "persistent_default")
+                self.assertFalse(current["active_genome_index_access"]["approved"])
+                self.assertEqual(current["active_genome_index_access"]["scope"], "session")
+                self.assertEqual(
+                    current["context_axes"]["active_genome_index"]["current_state"],
+                    "metadata_only",
+                )
+                with self.assertRaises(OperationError) as raised:
+                    call_operation("active_genome_index.summarize")
+                self.assertEqual(raised.exception.code, "active_genome_index_approval_required")
+
+                approved = call_operation(
+                    "active_genome_index.approve_access",
+                    {"approved_by_user": True, "agi_id": agi_id},
+                )
+                self.assertTrue(approved["active_genome_index_access"]["approved"])
+                self.assertEqual(approved["active_genome_index_access"]["scope"], "session")
+                self.assertIn("outputs", call_operation("active_genome_index.summarize"))
+
                 cleared = call_operation("active_genome_index.clear_default_user")
                 self.assertTrue(cleared["cleared_default"])
+                call_operation("active_genome_index.clear_selection")
                 self.assertFalse(call_operation("genomi.describe_context")["has_active_genome_index"])
             finally:
                 os.chdir(previous)
