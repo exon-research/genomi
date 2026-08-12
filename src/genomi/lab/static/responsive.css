@@ -1,0 +1,272 @@
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .profile-card {
+    padding: 18px;
+  }
+
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-span-2 {
+    grid-column: span 1;
+  }
+
+  .step-tracker li > small {
+    display: none;
+  }
+
+  .step-tracker li:not(:last-child)::after {
+    right: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .preview-strip {
+    align-items: flex-start;
+    gap: 5px;
+    padding: 7px 14px;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .header-inner,
+  .clinical-boundary,
+  .app-shell,
+  .app-footer {
+    width: min(calc(100% - 28px), var(--content-width));
+  }
+
+  .header-inner {
+    min-height: 68px;
+  }
+
+  .brand-tagline {
+    display: none;
+  }
+
+  .local-status {
+    padding: 9px;
+  }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+    margin-top: 18px;
+  }
+
+  .sidebar {
+    position: static;
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .readiness-summary {
+    justify-content: flex-start;
+  }
+
+  .step-tracker {
+    padding: 13px 18px;
+  }
+
+  .step-tracker li {
+    justify-content: flex-start;
+  }
+
+  .step-tracker li:not(:last-child)::after {
+    right: 5px;
+    left: 30px;
+  }
+
+  .question-card {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .question-number {
+    width: 34px;
+    height: 34px;
+  }
+
+  .step-card > summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 15px;
+  }
+
+  .step-card > summary::after {
+    display: none;
+  }
+
+  .step-title small {
+    display: none;
+  }
+
+  .step-state {
+    min-width: auto;
+  }
+
+  .step-body {
+    padding: 18px 15px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .field-span-2,
+  .field-span-all {
+    grid-column: auto;
+  }
+
+  .form-action,
+  .upload-meta,
+  .run-row,
+  .brief-header,
+  .app-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-action .button,
+  .upload-meta .button,
+  .run-row .button {
+    width: 100%;
+  }
+
+  .file-picker {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .file-picker-action {
+    display: none;
+  }
+
+  .brief-header,
+  .brief-observation {
+    padding: 20px;
+  }
+
+  .brief-observation,
+  .brief-grid,
+  .confirmation-card,
+  .do-not-conclude,
+  .evidence-details {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .brief-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-tree dl {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .evidence-tree dd {
+    margin-bottom: 7px;
+  }
+}
+
+@media (max-width: 430px) {
+  .header-inner,
+  .clinical-boundary,
+  .app-shell,
+  .app-footer {
+    width: min(calc(100% - 20px), var(--content-width));
+  }
+
+  .clinical-boundary {
+    margin-top: 10px;
+  }
+
+  .global-alert {
+    width: calc(100% - 20px);
+  }
+
+  .app-shell {
+    margin-bottom: 40px;
+  }
+
+  .step-tracker {
+    overflow-x: auto;
+  }
+
+  .step-tracker ol {
+    min-width: 330px;
+  }
+
+  .step-state {
+    display: none;
+  }
+
+  .step-card > summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .record-list > li:not(.list-empty) {
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .record-badge,
+  .history-list .record-action {
+    align-self: flex-start;
+  }
+
+  .label-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .brief-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .brief-facts dd {
+    margin-bottom: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --line: #8a9b98;
+    --line-strong: #647875;
+    --muted: #3e5154;
+  }
+
+  .button,
+  input,
+  select,
+  textarea,
+  .step-card,
+  .side-card {
+    border-width: 2px;
+  }
+}

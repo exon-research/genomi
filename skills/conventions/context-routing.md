@@ -33,16 +33,18 @@ Start from the current session context:
 5. If the user explicitly names a known `agi_id`, approve that specific Active Genome Index
    with `active_genome_index.approve_access` before using parsed Active Genome Index evidence.
 6. If the user names a profile nickname, select the user with
-   `active_genome_index.select_user`. That is metadata-only unless the selected user is the
-   default user or the session explicitly approves the selected Active Genome
-   Index with `active_genome_index.approve_access`.
+   `active_genome_index.select_user`. That is metadata-only until the session
+   explicitly approves the selected Active Genome Index with
+   `active_genome_index.approve_access`.
 7. If one user is configured as the default user, Genomi auto-selects that
-   user's selected Active Genome Index for every session using this
-   `GENOMI_HOME` without a separate per-session approval step. Other genome
-   records for the same user remain metadata-only until explicitly approved.
+   user's selected Active Genome Index as metadata for every session using this
+   `GENOMI_HOME`. The Active Genome Index remains unreadable until explicitly
+   approved in the current session.
 
-Parsed Active Genome Index records become active when the session names the source path, `agi_id`,
-or default user's selected Active Genome Index.
+Parsed Active Genome Index records become selected when the session names the
+source path, `agi_id`, or default user. Selection and read approval are separate:
+a previously imported Active Genome Index is readable only after current-session
+approval.
 
 ## When to select context
 
@@ -51,7 +53,7 @@ Select or change the Active Genome Index when:
 - The user supplies a genome source path.
 - The user explicitly says to use a known `agi_id`.
 - The user names a user/profile nickname and then approves that user's selected
-  Active Genome Index for sample evidence, unless that user is the default user.
+  Active Genome Index for sample evidence.
 - The user is in a multi-sample environment and names the sample or Active Genome Index for this query.
 - The selected skill or user request requires sample-specific evidence.
 

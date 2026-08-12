@@ -1,0 +1,9 @@
+##fileformat=VCFv4.2
+##source=GenomiLabSyntheticFixture
+##reference=GRCh38
+##contig=<ID=1,length=248956422>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SYNTHETIC_PATIENT_A
+1	100	rs900000001	A	C	99	PASS	.	GT:DP:GQ	0/1:32:99

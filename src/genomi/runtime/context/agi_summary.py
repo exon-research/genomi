@@ -38,7 +38,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
     active_agi_id = context.get("active_agi_id") or (active.get("agi_id") if active else None)
     active_user = _active_user(context, registry)
     active_genome_index = describe_agi_record(active) if active else None
-    active_access = agi_access_status(active_agi_id, context=context, registry=registry, root=root) if active_agi_id else _empty_agi_access_status(None)
+    active_access = agi_access_status(active_agi_id, context=context, root=root) if active_agi_id else _empty_agi_access_status(None)
     return {
         "context_file": _path_str(context_path(root)),
         "context_scope": context_scope(root),
@@ -57,7 +57,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
             "known_agi_count": len(known_agis),
             "known_user_count": len(known_users),
             "default_user": describe_user(default_user, include_genomes=False) if isinstance(default_user, dict) else None,
-            "resume_requires": "Explicitly approve a resolved genomi agi, supply a source path, or select a default user before sample-specific evidence is read.",
+            "resume_requires": "Explicitly approve a resolved genomi agi or supply its source path in this session before sample-specific evidence is read. Selecting a user, including the default user, does not approve access.",
         },
         "users": [describe_user(user, include_genomes=False) for user in sorted(known_users, key=lambda item: str(item.get("updated_at", "")), reverse=True)],
         "session_agis": [describe_agi_record(agi) for agi in sorted(session_agis, key=lambda item: str(item.get("updated_at", "")), reverse=True)],
@@ -75,7 +75,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
                 "livingdna",
             ],
             "active_genome_index_is_primary": True,
-            "rule": "The current chat can select a user or genomi agi. A supplied source path grants scoped access to that source's Active Genome Index for this session; a default user grants persistent access only to that user's selected Active Genome Index.",
+            "rule": "The current chat can select a user or genomi agi as metadata. A supplied source path grants scoped access to that source's Active Genome Index for this session; every previously imported Active Genome Index requires explicit current-session approval before it is read.",
         },
         "context_axes": {
             "active_genome_index": {

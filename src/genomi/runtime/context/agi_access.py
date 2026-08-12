@@ -8,7 +8,6 @@ from .agi_selection import active_agi_record
 from .normalize import (
     AGI_ACCESS_KEY,
     JsonObject,
-    _default_user,
     _empty_agi_access_status,
     _find_user,
     _grant_agi_access,
@@ -46,7 +45,7 @@ def approve_agi_access(
     return {
         "status": "completed",
         "active_agi_id": target_agi_id,
-        "active_genome_index_access": agi_access_status(target_agi_id, context=context, registry=registry, root=root),
+        "active_genome_index_access": agi_access_status(target_agi_id, context=context, root=root),
     }
 
 
@@ -98,7 +97,6 @@ def agi_access_status(
     agi_id: object | None,
     *,
     context: JsonObject | None = None,
-    registry: JsonObject | None = None,
     root: str | Path | None = None,
 ) -> JsonObject:
     state = context if context is not None else load_context(root)
@@ -114,16 +112,6 @@ def agi_access_status(
             "approved_at": grant.get("approved_at"),
             "scope": grant.get("scope") or "session",
             "reason": grant.get("reason"),
-        }
-    reg = registry if registry is not None else load_registry(root)
-    default_user = _default_user(reg)
-    if isinstance(default_user, dict) and str(default_user.get("active_agi_id") or "") == target:
-        return {
-            "agi_id": target,
-            "approved": True,
-            "approved_at": default_user.get("default_set_at") or default_user.get("updated_at") or default_user.get("created_at"),
-            "scope": "persistent_default",
-            "reason": "A default user is configured; access is scoped to that user's selected Active Genome Index.",
         }
     return _empty_agi_access_status(target)
 

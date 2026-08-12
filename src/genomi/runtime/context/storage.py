@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -8,6 +7,11 @@ from ..host_response import host_response_profiles
 from ..paths import (
     genomi_data_root,
     shared_evidence_db_path,
+)
+from ..private_storage import (
+    atomic_write_private_json,
+    private_root_for_path,
+    read_private_json,
 )
 from .normalize import (
     AGI_ACCESS_KEY,
@@ -56,8 +60,8 @@ def load_context(root: str | Path | None = None) -> JsonObject:
     if not path.exists():
         return _empty_context(root)
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        value = read_private_json(path)
+    except (ValueError, OSError):
         return _empty_context(root)
     if not isinstance(value, dict):
         return _empty_context(root)
@@ -72,8 +76,8 @@ def load_registry(root: str | Path | None = None) -> JsonObject:
     if not path.exists():
         return _empty_registry()
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        value = read_private_json(path)
+    except (ValueError, OSError):
         return _empty_registry()
     if not isinstance(value, dict):
         return _empty_registry()
@@ -82,19 +86,25 @@ def load_registry(root: str | Path | None = None) -> JsonObject:
 
 def save_context(context: JsonObject, root: str | Path | None = None) -> JsonObject:
     path = context_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
     context = _normalize_context(context, root)
     context["updated_at"] = _now()
-    path.write_text(json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_private_json(
+        path,
+        context,
+        private_root=private_root_for_path(path, genomi_data_root(root)),
+    )
     return context
 
 
 def save_registry(registry: JsonObject, root: str | Path | None = None) -> JsonObject:
     path = registry_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
     registry = _normalize_registry(registry)
     registry["updated_at"] = _now()
-    path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_private_json(
+        path,
+        registry,
+        private_root=private_root_for_path(path, genomi_data_root(root)),
+    )
     return registry
 
 
@@ -154,6 +164,6 @@ def context_policy() -> JsonObject:
         "default": DEFAULT_CONTEXT_POLICY,
         "env": GENOMI_CONTEXT_POLICY_ENV,
         "implicit_artifact_selection": mode == "auto",
-        "default_user_auto_selection": "A configured default user is auto-selected independent of this policy, but only that user's selected Active Genome Index is readable.",
+        "default_user_auto_selection": "A configured default user is auto-selected as metadata independent of this policy; the selected Active Genome Index still requires current-session approval before it is read.",
         "recommended": "explicit",
     }

@@ -86,6 +86,30 @@ already packaged or otherwise present, the canonical install/update path is
 `genomi install` or the MCP operation `genomi.install`; the source bootstrap is
 only for hosts that do not have Genomi yet.
 
+## GenomiLab Local Portal (Developer Preview)
+
+GenomiLab is the patient-facing workspace built on Genomi. It starts without
+MCP configuration and guides one existing-finding investigation through a
+profile, relevant health context, a pre-called VCF/gVCF, explicit genome
+access, and a research-only Investigation Brief:
+
+```bash
+genomi lab
+```
+
+The portal binds to a random loopback-only address, opens with a one-time
+private launch link, and revokes genome access when the portal stops or the
+active profile changes. It keeps patient profiles separate from Genomi's
+genome-routing registry and routes genotype reads through the existing Active
+Genome Index operations.
+
+This first working slice is a **developer preview for synthetic or public test
+data only**. It does not yet encrypt patient data at rest, is not a diagnostic
+or treatment product, and should not be used with identifiable patient data.
+It accepts uncompressed `.vcf`, `.g.vcf`, and `.gvcf` files up to 64 MiB; large
+whole-genome, compressed, BAM, and FASTQ intake need a later native desktop
+path. Paperclip is not required for this local workflow.
+
 ## Works With Every Agent
 
 Genomi is not tied to one chat app. Any agent host that can use MCP tools,
@@ -334,9 +358,10 @@ Genomi keeps the most sensitive data close to you.
 - Raw genome sources stay on the user's machine.
 - Genomi creates Active Genome Index records for personal genome files locally so agents query only the
   variants needed for the current question.
-- Genomi asks for current-session approval before read operations use existing
-  Active Genome Index artifacts, unless they belong to the configured default
-  user.
+- Genomi asks for current-session approval before read operations use any
+  existing Active Genome Index artifact. A configured default user is
+  auto-selected as metadata, but that selection does not approve a private
+  read.
 - Public lookups use selected targets such as rsIDs, genes, drugs, conditions,
   or guideline questions.
 - Journal entries are agent-authored memory, not evidence.
