@@ -24,6 +24,7 @@ from ..active_genome_index import (
 )
 from .._agi_schema import _upsert_metadata
 from ..canonical import build_canonical_bgzip
+from ..identity import source_content_sha256
 from .agi_store import JsonObject, _init_source_evidence_db
 from .detection import SourceDetection
 from .text_io import open_genomic_binary
@@ -44,6 +45,7 @@ def _parse_vcf_active_genome_index(
 ) -> JsonObject:
     effective_agi_source_format = agi_source_format or detection.source_format
     effective_build = resolve_genome_build(source_path, genome_build)
+    intake_content_sha256 = source_content_sha256(source_path)
     project_dir = run_project_dir_for_source(source_path, source_format=detection.source_format)
     work_dir = run_work_dir_for_source(source_path, source_format=detection.source_format)
     evidence_dir = run_evidence_dir_for_source(source_path, source_format=detection.source_format)
@@ -103,6 +105,8 @@ def _parse_vcf_active_genome_index(
             defer_reference=two_phase,
             source_format=effective_agi_source_format,
             provider=detection.provider,
+            genome_build=effective_build,
+            source_content_sha256=intake_content_sha256,
         )
         # The canonical the index adopted as its source of record
         # (metadata.vcf_path) must outlive this call: a deferred reference pass

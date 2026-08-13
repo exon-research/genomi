@@ -86,29 +86,50 @@ already packaged or otherwise present, the canonical install/update path is
 `genomi install` or the MCP operation `genomi.install`; the source bootstrap is
 only for hosts that do not have Genomi yet.
 
-## GenomiLab Local Portal (Developer Preview)
+## GenomiLab Local Research Workspace (Developer Preview)
 
-GenomiLab is the patient-facing workspace built on Genomi. It starts without
-MCP configuration and guides one existing-finding investigation through a
-profile, relevant health context, a pre-called VCF/gVCF, explicit genome
-access, and a research-only Investigation Brief:
+GenomiLab is the patient-facing disease-investigation application built on
+Genomi. Its web portal opens the current local Genomi user and brings that
+patient's molecular profile, investigation evidence, hypotheses, open gaps,
+and research brief into one workspace:
 
 ```bash
-genomi lab
+genomi lab --harness-processing-destination "remote: OpenAI Codex service"
 ```
 
-The portal binds to a random loopback-only address, opens with a one-time
-private launch link, and revokes genome access when the portal stops or the
-active profile changes. It keeps patient profiles separate from Genomi's
-genome-routing registry and routes genotype reads through the existing Active
-Genome Index operations.
+The destination label is deliberately explicit: it is shown in the exact
+disclosure preview before approved molecular context is sent. Omitting it still
+opens the local workspace, but remote harness work remains unavailable rather
+than silently assuming where reasoning will run.
 
-This first working slice is a **developer preview for synthetic or public test
-data only**. It does not yet encrypt patient data at rest, is not a diagnostic
-or treatment product, and should not be used with identifiable patient data.
-It accepts uncompressed `.vcf`, `.g.vcf`, and `.gvcf` files up to 64 MiB; large
-whole-genome, compressed, BAM, and FASTQ intake need a later native desktop
-path. Paperclip is not required for this local workflow.
+The web portal is the UI; GenomiLab itself owns the application workflow and
+durable patient-research records. The installed agent harness owns dynamic
+planning, agent execution, reasoning, and draft synthesis. A planning task is
+tool-free: accepting its exact plan records the decision but runs nothing. The
+patient then reviews a separate disclosure for a fresh execution task, where
+the harness alone can invoke the exact accepted GenomiLab disease-investigation
+capabilities. Genomi remains the source of truth for the current user, genome
+intake, and the reusable Active Genome Index. GenomiLab never creates a second
+patient selector, copies AGI rows, or asks for a new VCF for each case.
+
+Those GenomiLab capabilities go beyond both base Genomi and a general harness:
+they project an approved Patient Molecular Profile, preserve source-separated
+disease evidence, relate public findings to exact patient observations, and
+maintain hypotheses, counterevidence, gaps, confirmation needs, and versioned
+patient/clinician briefs. GXL Paperclip is used through the gated evidence
+gateway when its source scope and policy allow it. Proto and ESM remain disabled
+unless a narrow, independently validated scientific task makes them appropriate.
+
+The portal binds to a random loopback-only address and opens with a one-time
+private launch link. Each investigation uses an immutable, consented molecular
+profile snapshot, an exact AGI revision, and a bounded genomic scope. Access is
+revoked when the portal stops or the current Genomi user changes. Optional
+external providers and biological models are behind explicit eligibility and
+patient-data disclosure gates; unavailable capabilities fail closed.
+
+This remains a research-support developer preview, not a diagnosis or treatment
+product. Findings and proposed clinical implications require appropriate
+clinical confirmation and review.
 
 ## Works With Every Agent
 

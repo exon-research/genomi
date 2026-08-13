@@ -14,7 +14,11 @@ authors = [
 ]
 dependencies = [
   "biopython>=1.87",
+  # GenomiLab persists its in-memory SQLite state as an authenticated encrypted
+  # container and stores the encryption key in an OS-backed secret store.
+  "cryptography>=42",
   "google-genai>=2.0.1",
+  "keyring>=25",
   "numpy>=1.26",
   "openpyxl>=3.1.5",
   # htslib bindings: parse_source writes a bgzip-compressed canonical VCF

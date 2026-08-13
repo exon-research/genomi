@@ -8,7 +8,9 @@ from unittest import mock
 
 from genomi.interfaces.presentation import present_result
 from genomi.operations import OperationError, call_operation
+from genomi.active_genome_index.identity import derive_agi_snapshot_id
 from genomi.runtime import context as runtime_context
+from genomi.runtime.context import storage as context_storage
 from genomi.runtime.paths import sample_slug_from_source
 
 from tests.support.runtime.genomi import (
@@ -17,6 +19,27 @@ from tests.support.runtime.genomi import (
 
 
 class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
+    def test_context_and_registry_commit_recovers_one_generation(self) -> None:
+        context = runtime_context.load_context()
+        registry = runtime_context.load_registry()
+        context["commit_marker"] = "same-generation"
+        registry["commit_marker"] = "same-generation"
+
+        with mock.patch.object(
+            context_storage,
+            "_save_context_at_path_locked",
+            side_effect=OSError("synthetic interruption"),
+        ):
+            with self.assertRaises(OSError):
+                runtime_context.save_context_and_registry(context, registry)
+
+        # The next authority read completes the private journal before exposing
+        # either document, even though the first process stopped mid-commit.
+        recovered_registry = runtime_context.load_registry()
+        recovered_context = runtime_context.load_context()
+        self.assertEqual(recovered_registry["commit_marker"], "same-generation")
+        self.assertEqual(recovered_context["commit_marker"], "same-generation")
+
     def test_gwas_compare_variants_is_direct_tool_not_runtime_plan(self) -> None:
         with mock.patch(
             "genomi.operations.intent_research.compare_gwas_variant_context",
@@ -89,6 +112,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 "source_format": "vcf",
                 "active_genome_index": {
                     "agi_id": "agi-fixture",
+                    "agi_snapshot_id": "agi-snapshot-sha256-fixture",
                     "sample_slug": "agi-fixture",
                     "status": "parsed",
                     "agi_source_format": "vcf",
@@ -103,6 +127,7 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
             presented["active_genome_index"],
             {
                 "agi_id": "agi-fixture",
+                "agi_snapshot_id": "agi-snapshot-sha256-fixture",
                 "sample_slug": "agi-fixture",
                 "status": "parsed",
                 "agi_source_format": "vcf",
@@ -181,10 +206,55 @@ class GenomiRuntimeContextTests(GenomiRuntimeTestCase):
                 set_result = call_operation("genomi.parse_source", {"source": str(vcf)})
                 self.assertEqual(set_result["status"], "completed")
                 self.assertTrue(set_result["active_genome_index"]["sample_slug"].startswith("vcf-sha256-"))
+                snapshot_id = set_result["active_genome_index"]["agi_snapshot_id"]
+                self.assertRegex(snapshot_id, r"^agi-snapshot-sha256-[0-9a-f]{64}$")
 
                 current = call_operation("genomi.describe_context")
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertEqual(current["active_genome_index"]["sample_slug"], set_result["active_genome_index"]["sample_slug"])
+                self.assertEqual(current["active_agi_snapshot_id"], snapshot_id)
+                self.assertEqual(current["active_genome_index"]["agi_snapshot_id"], snapshot_id)
+                registry_record = runtime_context.load_registry()["agis"][current["active_agi_id"]]
+                self.assertEqual(registry_record["agi_snapshot_id"], snapshot_id)
+                self.assertNotEqual(
+                    registry_record["agi_path"],
+                    registry_record["agi_build_path"],
+                )
+                self.assertTrue(Path(registry_record["agi_path"]).is_file())
+                self.assertEqual(
+                    derive_agi_snapshot_id(
+                        agi_build_revision=registry_record["agi_build_revision"],
+                        agi_snapshot_created_at=registry_record["agi_snapshot_created_at"],
+                        source_content_sha256=registry_record["source_content_sha256"],
+                        genome_build=registry_record["genome_build"],
+                        schema_version=registry_record["agi_schema_version"],
+                    ),
+                    snapshot_id,
+                )
+
+                cached = call_operation("genomi.parse_source", {"source": str(vcf)})
+                self.assertEqual(cached["active_genome_index"]["agi_snapshot_id"], snapshot_id)
+
+                rebuilt = call_operation("genomi.parse_source", {"source": str(vcf), "force": True})
+                self.assertNotEqual(rebuilt["active_genome_index"]["agi_snapshot_id"], snapshot_id)
+                rebuilt_current = call_operation("genomi.describe_context")
+                self.assertEqual(
+                    rebuilt_current["active_agi_snapshot_id"],
+                    rebuilt["active_genome_index"]["agi_snapshot_id"],
+                )
+                rebuilt_registry = runtime_context.load_registry()
+                self.assertEqual(len(rebuilt_registry["agi_revisions"]), 2)
+                self.assertEqual(
+                    rebuilt_current["active_genome_index_registry"][
+                        "known_agi_revision_count"
+                    ],
+                    2,
+                )
+                self.assertTrue(
+                    Path(
+                        rebuilt_registry["agi_revisions"][snapshot_id]["agi_path"]
+                    ).is_file()
+                )
 
                 summary = call_operation("active_genome_index.summarize")
                 self.assertIn("outputs", summary)

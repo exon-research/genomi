@@ -1,318 +1,253 @@
-"""Narrow application service connecting GenomiLab to Genomi operations."""
+"""GenomiLab application boundary for the current Genomi user."""
 
 from __future__ import annotations
 
 import secrets
 import threading
-from typing import BinaryIO, Callable
+from typing import Callable
 
-from .. import __version__
-from ..interfaces.presentation import present_result
 from ..operations import OperationError, call_operation
-from ..runtime import background_jobs
-from ..runtime.private_storage import ensure_private_directory
-from .briefs import build_investigation_brief
-from .intake import (
-    DEFAULT_UPLOAD_LIMIT_BYTES,
-    SUPPORTED_UPLOAD_SUFFIXES,
-    stage_vcf_upload,
+from .agi_authority import (
+    AgiAuthorizationHandle,
+    InvestigationAgiAuthorizationError,
+    execution_context_for_investigation_authorization,
+    revoke_investigation_agi_authorization,
+    revoke_investigation_agi_authorizations_for_session,
 )
+from .models import JsonObject
+from .context_candidate_receipts import ContextCandidateReceiptIssuer
+from .evidence_service import EvidenceApplicationMixin
+from .harness import HarnessAdapter, InstalledCodexAppServerAdapter
+from .harness_service import HarnessApplicationMixin
+from .harness_tool_boundary import HarnessToolBoundary
+from .investigation_capabilities import (
+    InvestigationCapabilityMixin,
+    _HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
+)
+from .portal_context import PortalContextApplicationMixin
+from .profile_context_application import ProfileContextApplication
 from .service_errors import LabError, patient_safe_operation_message
-from .store import GenomiLabStore, JsonObject, lab_root
+from .store import GenomiLabStore
+from .user_authority import CurrentUserAuthorityMixin
+from .workspace_application import WorkspaceApplication, genome_metadata
 
 
-class GenomiLabService:
-    """Portal-owned workflows with no generic operation proxy."""
+class GenomiLabService(
+    CurrentUserAuthorityMixin,
+    PortalContextApplicationMixin,
+    InvestigationCapabilityMixin,
+    EvidenceApplicationMixin,
+    HarnessApplicationMixin,
+):
+    """Current-user application service; the portal never talks to Genomi directly."""
 
     def __init__(
         self,
         *,
         store: GenomiLabStore | None = None,
         session_id: str | None = None,
-        upload_limit_bytes: int = DEFAULT_UPLOAD_LIMIT_BYTES,
-        operation_call: Callable[[str, JsonObject | None], JsonObject] = call_operation,
+        operation_call: Callable[..., JsonObject] = call_operation,
+        harness_adapter: HarnessAdapter | None = None,
     ) -> None:
+        self._initialize_current_user_authority()
         self.store = store or GenomiLabStore()
         self.session_id = session_id or f"genomilab-{secrets.token_urlsafe(18)}"
-        self.upload_limit_bytes = max(1, int(upload_limit_bytes))
         self._call = operation_call
+        self._uses_runtime_context_authority_lock = operation_call is call_operation
         self._operation_lock = threading.RLock()
         self._closed = False
-        self._intake_root = ensure_private_directory(
-            lab_root() / "intake", private_root=lab_root()
+        self._bound_user_id: str | None = None
+        self._agi_authorizations: dict[str, AgiAuthorizationHandle] = {}
+        self._context_candidates = ContextCandidateReceiptIssuer(
+            self.store, self.session_id
         )
+        self.harness_adapter = (
+            harness_adapter or InstalledCodexAppServerAdapter.discover()
+        )
+        self._workspace = WorkspaceApplication(
+            store=self.store,
+            session_id=self.session_id,
+            describe_context=lambda: self._safe_call("genomi.describe_context", {}),
+            current_context=self._current_context,
+            bind_user=self._bind_current_user,
+            unbind_user=self._unbind_current_user,
+            genome_metadata=genome_metadata,
+            active_context_receipt=self._active_context_receipt,
+            harness_manifest=self.harness_capability_manifest,
+            evidence_manifest=self.evidence_capability_manifest,
+        )
+        self._harness_tools = HarnessToolBoundary(
+            store=self.store,
+            session_id=self.session_id,
+            harness_adapter=self.harness_adapter,
+            current_context=self._current_context,
+            accepted_plan=self._accepted_current_plan,
+            active_context_receipt=self._active_context_receipt,
+            execute_request=lambda investigation_id, request: (
+                self._execute_harness_capability_request(
+                    investigation_id,
+                    request,
+                    _authority=_HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
+                )
+            ),
+        )
+        self._profile_context = ProfileContextApplication(
+            store=self.store,
+            session_id=self.session_id,
+            current_context=self._current_context,
+            investigation=self.investigation,
+            accepted_plan=self._accepted_current_plan,
+            active_receipt=self._active_context_receipt,
+            authorized_call=self._safe_authorized_call,
+            safe_call=self._safe_call,
+            candidate_receipts=self._context_candidates,
+            authorizations=self._agi_authorizations,
+        )
+        self.harness_adapter.bind_dynamic_tool_handler(
+            self._execute_guarded_harness_capability
+        )
+
+    def _execute_guarded_harness_capability(self, call: object) -> JsonObject:
+        """Apply the service-wide user epoch to adapter-thread tool callbacks."""
+
+        return self._run_current_user_operation(
+            self._execute_bound_harness_capability, call
+        )
+
+    def _execute_bound_harness_capability(self, call: object) -> JsonObject:
+        """Route app-server tools through the canonical durable plan executor."""
+        return self._harness_tools.execute(call)
+
+    def _accepted_current_plan(self, investigation_id: str) -> JsonObject:
+        return self._workspace.accepted_current_plan(investigation_id)
 
     def bootstrap(self) -> JsonObject:
-        profiles = [self._with_session_state(item) for item in self.store.list_profiles()]
-        return {
-            "status": "ready",
-            "product": "GenomiLab",
-            "version": __version__,
-            "mode": "developer_preview",
-            "active_profile_id": self.store.active_profile_id(),
-            "profiles": profiles,
-            "privacy": {
-                "processing": "local_on_this_device",
-                "network_required": False,
-                "session_consent_required": True,
-                "at_rest_encryption": False,
-                "safe_for_identifiable_patient_data": False,
-            },
-            "intake": {
-                "supported": ["VCF", "gVCF"],
-                "supported_suffixes": list(SUPPORTED_UPLOAD_SUFFIXES),
-                "maximum_bytes": self.upload_limit_bytes,
-                "synthetic_or_public_data_only": True,
-            },
-        }
+        return self.bootstrap_workspace()
 
-    def create_profile(self, display_name: object) -> JsonObject:
-        return self._with_session_state(self.store.create_profile(display_name))
+    def bootstrap_workspace(self) -> JsonObject:
+        return self._workspace.bootstrap()
 
-    def profile(self, profile_id: str) -> JsonObject:
-        try:
-            profile = self.store.get_profile(profile_id)
-        except KeyError as exc:
-            raise LabError("profile_not_found", "Patient profile not found.", http_status=404) from exc
-        return self._with_session_state(profile)
+    def molecular_profile(self) -> JsonObject:
+        return self._workspace.molecular_profile()
 
-    def activate_profile(self, profile_id: str) -> JsonObject:
-        profile = self.profile(profile_id)
-        with self._operation_lock:
-            self._revoke_runtime_access()
-            genomi_user_id = profile.get("genomi_user_id")
-            if genomi_user_id:
-                self._safe_call(
-                    "active_genome_index.select_user", {"user_id": genomi_user_id}
-                )
-            else:
-                self._safe_call("active_genome_index.clear_selection", {})
-            self.store.revoke_session_consents(self.session_id)
-            self.store.set_active_profile(profile_id)
-        return self.profile(profile_id)
+    def add_profile_observation(self, payload: JsonObject) -> JsonObject:
+        return self._workspace.add_profile_observation(payload)
 
-    def add_health_fact(self, profile_id: str, payload: JsonObject) -> JsonObject:
-        try:
-            return self.store.add_health_fact(
-                profile_id,
-                kind=payload.get("kind"),
-                label=payload.get("label"),
-                assertion_status=payload.get("assertion_status", "present"),
-                onset=payload.get("onset"),
-                source_type="patient_reported",
-                verification_state="user_confirmed",
-                supersedes_fact_id=payload.get("supersedes_fact_id"),
-            )
-        except KeyError as exc:
-            raise LabError("profile_not_found", "Patient profile not found.", http_status=404) from exc
-        except ValueError as exc:
-            raise LabError("invalid_health_fact", str(exc)) from exc
-
-    def add_reported_finding(self, profile_id: str, payload: JsonObject) -> JsonObject:
-        try:
-            return self.store.add_reported_finding(
-                profile_id,
-                variant=payload.get("variant"),
-                gene=payload.get("gene"),
-                reported_classification=payload.get("reported_classification"),
-                source_label=payload.get("source_label"),
-            )
-        except KeyError as exc:
-            raise LabError("profile_not_found", "Patient profile not found.", http_status=404) from exc
-        except ValueError as exc:
-            raise LabError("invalid_reported_finding", str(exc)) from exc
-
-    def start_genome_intake(
-        self,
-        profile_id: str,
-        *,
-        filename: str,
-        stream: BinaryIO,
-        content_length: int,
+    def review_or_supersede_observation(
+        self, observation_revision_id: str, payload: JsonObject
     ) -> JsonObject:
-        self.profile(profile_id)
-        final_path, staged_name = stage_vcf_upload(
-            intake_root=self._intake_root,
-            private_root=lab_root(),
-            profile_id=profile_id,
-            filename=filename,
-            stream=stream,
-            content_length=content_length,
-            upload_limit_bytes=self.upload_limit_bytes,
+        return self._workspace.review_or_supersede_observation(
+            observation_revision_id, payload
         )
 
-        job = self.store.create_job(
-            profile_id,
-            operation="genomi.parse_source",
-            status="running",
-            staged_name=staged_name,
+    def add_source_artifact(self, payload: JsonObject) -> JsonObject:
+        return self._workspace.add_source_artifact(payload)
+
+    def add_specimen(self, payload: JsonObject) -> JsonObject:
+        return self._workspace.add_specimen(payload)
+
+    def add_assay(self, payload: JsonObject) -> JsonObject:
+        return self._workspace.add_assay(payload)
+
+    def create_investigation(self, payload: JsonObject) -> JsonObject:
+        return self._workspace.create_investigation(payload)
+
+    def investigation(self, investigation_id: str) -> JsonObject:
+        return self._workspace.investigation(investigation_id)
+
+    def list_investigations(self) -> list[JsonObject]:
+        return self._workspace.list_investigations()
+
+    def accept_current_plan(
+        self, investigation_id: str, payload: JsonObject
+    ) -> JsonObject:
+        return self._workspace.accept_current_plan(investigation_id, payload)
+
+    def investigation_profile(self, investigation_id: str) -> JsonObject:
+        return self._workspace.investigation_profile(investigation_id)
+
+    def _approved_investigation_profile(self, investigation_id: str) -> JsonObject:
+        return self._workspace.approved_investigation_profile(investigation_id)
+
+    def profile_snapshot_candidate(
+        self, investigation_id: str, payload: JsonObject
+    ) -> JsonObject:
+        """Build the exact molecular-profile context proposed for approval."""
+
+        return self._profile_context.profile_snapshot_candidate(
+            investigation_id, payload
         )
-        params: JsonObject = {
-            "source": str(final_path),
-            "user_nickname": self._genomi_nickname(profile_id),
-            "set_default_user": False,
+
+    def compare_investigation_context(
+        self, investigation_id: str, payload: JsonObject
+    ) -> JsonObject:
+        return self.compare_investigation_context_candidate(investigation_id, payload)
+
+    def approve_investigation_context(
+        self, investigation_id: str, payload: JsonObject
+    ) -> JsonObject:
+        return self._profile_context.approve(investigation_id, payload)
+
+    def invoke_investigation_genome(
+        self,
+        investigation_id: str,
+        *,
+        operation: str,
+        params: JsonObject,
+        expected_plan_version_id: str | None = None,
+        expected_consent_receipt_id: str | None = None,
+    ) -> JsonObject:
+        return self._profile_context.invoke_genome(
+            investigation_id,
+            operation=operation,
+            params=params,
+            expected_plan_version_id=expected_plan_version_id,
+            expected_consent_receipt_id=expected_consent_receipt_id,
+        )
+
+    def check_investigation_genome_job(
+        self,
+        investigation_id: str,
+        *,
+        job_id: str,
+        resume_operation: str,
+        expected_plan_version_id: str,
+        expected_consent_receipt_id: str,
+    ) -> JsonObject:
+        return self._profile_context.check_genome_job(
+            investigation_id,
+            job_id=job_id,
+            resume_operation=resume_operation,
+            expected_plan_version_id=expected_plan_version_id,
+            expected_consent_receipt_id=expected_consent_receipt_id,
+        )
+
+    def _require_investigation_genome_context(
+        self, investigation_id: str
+    ) -> tuple[JsonObject, AgiAuthorizationHandle]:
+        return self._profile_context.require_genome_context(investigation_id)
+
+    def revoke_private_context(self, investigation_id: str) -> JsonObject:
+        investigation = self.investigation(investigation_id)
+        snapshot_id = investigation.get("patient_molecular_snapshot_id")
+        revoked_receipt = False
+        if snapshot_id:
+            receipt_id = str(investigation.get("active_consent_receipt_id") or "")
+            if receipt_id:
+                revoked_receipt = self.store.revoke_consent(receipt_id)
+        handle = self._agi_authorizations.pop(investigation_id, None)
+        revoked_handle = (
+            revoke_investigation_agi_authorization(handle)
+            if handle is not None
+            else False
+        )
+        self.store.set_investigation_status(investigation_id, "paused_private_context")
+        return {
+            "status": "revoked",
+            "investigation_id": investigation_id,
+            "consent_revoked": revoked_receipt,
+            "runtime_authorization_revoked": revoked_handle,
         }
-        if background_jobs.background_enabled():
-            try:
-                raw_job = background_jobs.start_operation_job("genomi.parse_source", params)
-            except Exception as exc:
-                self.store.update_job(
-                    job["portal_job_id"], status="failed", error_code="parse_job_start_failed"
-                )
-                raise LabError(
-                    "parse_job_start_failed", "Genome intake could not be started.", http_status=500
-                ) from exc
-            self.store.update_job(
-                job["portal_job_id"],
-                status="in_progress",
-                genomi_job_id=str(raw_job["job_id"]),
-            )
-            return self.store.get_job(job["portal_job_id"])
-
-        try:
-            result = self._safe_call("genomi.parse_source", params)
-            self._finalize_parse(profile_id, result)
-        except LabError as exc:
-            self.store.update_job(
-                job["portal_job_id"], status="failed", error_code=exc.code
-            )
-            raise
-        self.store.update_job(job["portal_job_id"], status="completed")
-        return self.store.get_job(job["portal_job_id"])
-
-    def poll_job(self, portal_job_id: str) -> JsonObject:
-        try:
-            internal = self.store.job_internal(portal_job_id)
-        except KeyError as exc:
-            raise LabError("job_not_found", "Import job not found.", http_status=404) from exc
-        if internal["status"] in {"completed", "failed"}:
-            return self.store.get_job(portal_job_id)
-        genomi_job_id = internal.get("genomi_job_id")
-        if not genomi_job_id:
-            return self.store.get_job(portal_job_id)
-        try:
-            raw_job = background_jobs.read_job(job_id=str(genomi_job_id))
-        except (OSError, ValueError) as exc:
-            self.store.update_job(
-                portal_job_id, status="failed", error_code="parse_job_unavailable"
-            )
-            raise LabError(
-                "parse_job_unavailable", "The genome import job is no longer available.", http_status=500
-            ) from exc
-        status = str(raw_job.get("status") or "in_progress")
-        if status == "completed":
-            result = raw_job.get("result")
-            if not isinstance(result, dict):
-                self.store.update_job(
-                    portal_job_id, status="failed", error_code="invalid_parse_result"
-                )
-                raise LabError(
-                    "invalid_parse_result", "Genome intake returned an invalid result.", http_status=500
-                )
-            try:
-                self._finalize_parse(str(internal["profile_id"]), result)
-            except LabError as exc:
-                self.store.update_job(portal_job_id, status="failed", error_code=exc.code)
-                raise
-            self.store.update_job(portal_job_id, status="completed")
-        elif status == "failed":
-            error = raw_job.get("error") if isinstance(raw_job.get("error"), dict) else {}
-            code = str(error.get("code") or "genome_parse_failed")
-            self.store.update_job(portal_job_id, status="failed", error_code=code)
-        else:
-            self.store.update_job(portal_job_id, status="in_progress")
-        return self.store.get_job(portal_job_id)
-
-    def approve_genome_access(self, profile_id: str, *, purpose: object) -> JsonObject:
-        profile = self.profile(profile_id)
-        genome = profile.get("genome")
-        if not isinstance(genome, dict) or not genome.get("agi_id"):
-            raise LabError("genome_not_ready", "Import a genome before granting access.", http_status=409)
-        purpose_text = str(purpose or "").strip()
-        if not purpose_text:
-            raise LabError("purpose_required", "Describe what this investigation will check.")
-        with self._operation_lock:
-            self._revoke_runtime_access()
-            if profile.get("genomi_user_id"):
-                self._safe_call(
-                    "active_genome_index.select_user",
-                    {"user_id": profile["genomi_user_id"]},
-                )
-            self.store.revoke_session_consents(self.session_id)
-            self._safe_call(
-                "active_genome_index.approve_access",
-                {
-                    "approved_by_user": True,
-                    "agi_id": genome["agi_id"],
-                    "reason": purpose_text,
-                },
-            )
-            receipt = self.store.record_consent(
-                profile_id,
-                agi_id=str(genome["agi_id"]),
-                session_id=self.session_id,
-                purpose=purpose_text,
-            )
-            self.store.set_active_profile(profile_id)
-        return receipt
-
-    def run_investigation(self, profile_id: str, payload: JsonObject) -> JsonObject:
-        profile = self.profile(profile_id)
-        genome = profile.get("genome")
-        if not isinstance(genome, dict) or not genome.get("agi_id"):
-            raise LabError("genome_not_ready", "Import a genome before running this check.", http_status=409)
-        if not self.store.has_session_consent(
-            profile_id, self.session_id, str(genome["agi_id"])
-        ):
-            raise LabError(
-                "consent_required",
-                "Approve this session's genome access before running an investigation.",
-                http_status=403,
-            )
-        try:
-            investigation = self.store.create_investigation(
-                profile_id,
-                question=payload.get("question"),
-                finding_id=payload.get("finding_id"),
-            )
-            finding = self.store.get_finding(str(investigation["finding_id"]))
-        except KeyError as exc:
-            raise LabError("profile_or_finding_not_found", "Profile or finding not found.", http_status=404) from exc
-        except ValueError as exc:
-            raise LabError("invalid_investigation", str(exc)) from exc
-
-        params: JsonObject = {"agi_id": genome["agi_id"]}
-        normalization = finding.get("normalization_state")
-        if normalization == "rsid_ready":
-            params["rsid"] = finding["variant"]
-        elif normalization == "exact_genomic_allele_ready":
-            params["query"] = finding["variant"]
-        else:
-            self.store.fail_investigation(
-                investigation["investigation_id"], "variant_needs_review"
-            )
-            raise LabError(
-                "variant_needs_review",
-                "This first release can investigate an rsID or exact chrom:pos:ref:alt allele. Review this finding before continuing.",
-                http_status=409,
-            )
-
-        try:
-            with self._operation_lock:
-                result = self._safe_call("variant.resolve", params)
-        except LabError as exc:
-            self.store.fail_investigation(investigation["investigation_id"], exc.code)
-            raise
-        presented = present_result("variant.resolve", result)
-        brief = build_investigation_brief(
-            profile=profile,
-            finding=finding,
-            question=str(investigation["question"]),
-            evidence=presented,
-        )
-        return self.store.complete_investigation(
-            investigation["investigation_id"], brief
-        )
 
     def close(self) -> None:
         if self._closed:
@@ -320,91 +255,134 @@ class GenomiLabService:
         with self._operation_lock:
             self._revoke_runtime_access()
             self.store.revoke_session_consents(self.session_id)
+            self.store.revoke_session_disclosures(self.session_id)
+            self._context_candidates.clear()
             self._closed = True
+            self.harness_adapter.close()
 
-    def _with_session_state(self, profile: JsonObject) -> JsonObject:
-        result = dict(profile)
-        genome = result.get("genome")
-        agi_id = str(genome.get("agi_id") or "") if isinstance(genome, dict) else ""
-        result["genome_access"] = {
-            "approved": bool(
-                agi_id
-                and self.store.has_session_consent(result["profile_id"], self.session_id, agi_id)
-            ),
-            "scope": "current_portal_session",
-        }
-        return result
-
-    def _finalize_parse(self, profile_id: str, result: JsonObject) -> None:
-        active = result.get("active_genome_index")
-        if not isinstance(active, dict) or not active.get("agi_id"):
+    def _current_context(self) -> tuple[JsonObject, str]:
+        context = self._safe_call("genomi.describe_context", {})
+        user_id = str(context.get("active_user_id") or "").strip()
+        if not user_id:
+            self._unbind_current_user()
             raise LabError(
-                "genome_parse_incomplete",
-                "Genome intake did not produce a queryable Active Genome Index.",
+                "genomi_user_required",
+                "Create or select the current user in Genomi first.",
                 http_status=409,
             )
-        agi_id = str(active["agi_id"])
-        readiness_value = active.get("active_genome_index_readiness")
-        if isinstance(readiness_value, dict):
-            readiness = str(readiness_value.get("status") or result.get("status") or "unknown")
-        else:
-            readiness = str(result.get("status") or "unknown")
-        inventory = self._safe_call("active_genome_index.list", {})
-        nickname = self._genomi_nickname(profile_id)
-        user = next(
-            (
-                item
-                for item in inventory.get("users", [])
-                if isinstance(item, dict)
-                and (
-                    item.get("nickname") == nickname
-                    or str(item.get("active_agi_id") or "") == agi_id
-                )
-            ),
-            None,
-        )
-        if not isinstance(user, dict) or not user.get("user_id"):
-            raise LabError(
-                "profile_link_failed",
-                "The imported genome could not be linked to this profile.",
-                http_status=500,
-            )
-        self.store.link_genomi_user(profile_id, str(user["user_id"]))
-        self.store.link_genome(
-            profile_id,
-            agi_id=agi_id,
-            genome_build=(str(active.get("genome_build")) if active.get("genome_build") else None),
-            readiness=readiness,
-        )
-        self._safe_call("active_genome_index.revoke_access", {"agi_id": agi_id})
-        self.store.revoke_session_consents(self.session_id)
+        self._bind_current_user(user_id)
+        return context, user_id
 
-    def _safe_call(self, operation: str, params: JsonObject | None = None) -> JsonObject:
+    def _bind_current_user(self, user_id: str) -> None:
+        if self._bound_user_id and self._bound_user_id != user_id:
+            self._revoke_runtime_access()
+            self._context_candidates.clear()
+            self.store.revoke_session_consents(self.session_id)
+            self.store.revoke_session_disclosures(self.session_id)
+        self._bound_user_id = user_id
+
+    def _unbind_current_user(self) -> None:
+        if self._bound_user_id:
+            self._revoke_runtime_access()
+            self._context_candidates.clear()
+            self.store.revoke_session_consents(self.session_id)
+            self.store.revoke_session_disclosures(self.session_id)
+        self._bound_user_id = None
+
+    def _safe_call(
+        self, operation: str, params: JsonObject | None = None
+    ) -> JsonObject:
         try:
             result = self._call(operation, params or {})
         except OperationError as exc:
-            status = 403 if exc.code == "approval_required" else 409
+            status = 403 if exc.code.endswith("approval_required") else 409
             raise LabError(
-                exc.code,
-                patient_safe_operation_message(exc.code),
-                http_status=status,
+                exc.code, patient_safe_operation_message(exc.code), http_status=status
             ) from exc
         except (OSError, ValueError) as exc:
             raise LabError(
-                "operation_failed", "The local Genomi operation could not be completed.", http_status=500
+                "operation_failed",
+                "The local Genomi operation could not be completed.",
+                http_status=500,
             ) from exc
         if not isinstance(result, dict):
             raise LabError(
-                "invalid_operation_result", "Genomi returned an invalid result.", http_status=500
+                "invalid_operation_result",
+                "Genomi returned an invalid result.",
+                http_status=500,
             )
         return result
 
+    def _safe_authorized_call(
+        self,
+        operation: str,
+        params: JsonObject,
+        handle: AgiAuthorizationHandle,
+    ) -> JsonObject:
+        try:
+            execution_context = execution_context_for_investigation_authorization(
+                handle, operation=operation, params=params
+            )
+            result = self._call(
+                operation, params, execution_context=execution_context
+            )
+        except InvestigationAgiAuthorizationError as exc:
+            raise LabError(exc.code, str(exc), http_status=403) from exc
+        except OperationError as exc:
+            raise LabError(
+                exc.code, patient_safe_operation_message(exc.code), http_status=409
+            ) from exc
+        if not isinstance(result, dict):
+            raise LabError(
+                "invalid_operation_result",
+                "Genomi returned an invalid result.",
+                http_status=500,
+            )
+        return result
+
+    def _active_context_receipt(
+        self, investigation: JsonObject, snapshot: JsonObject
+    ) -> JsonObject:
+        receipt_id = str(investigation.get("active_consent_receipt_id") or "")
+        if not receipt_id:
+            raise KeyError("active consent receipt is missing")
+        receipt = self.store.consent_receipt(receipt_id)
+        exact_fields = (
+            "user_id",
+            "investigation_id",
+            "patient_molecular_snapshot_id",
+            "purpose",
+            "observation_revision_ids",
+            "artifact_ids",
+            "specimen_ids",
+            "assay_ids",
+            "agi_id",
+            "agi_snapshot_id",
+            "genomic_scope",
+        )
+        expected = {
+            **snapshot,
+            "investigation_id": investigation.get("investigation_id"),
+            "patient_molecular_snapshot_id": snapshot.get(
+                "patient_molecular_snapshot_id"
+            ),
+        }
+        if any(receipt.get(field) != expected.get(field) for field in exact_fields):
+            raise KeyError("active consent receipt does not match the pinned snapshot")
+        return receipt
+
+    def _issue_context_candidate_receipt(
+        self,
+        candidate: JsonObject,
+        *,
+        action: str,
+    ) -> JsonObject:
+        return self._context_candidates.issue(candidate, action=action)
+
     def _revoke_runtime_access(self) -> None:
+        revoke_investigation_agi_authorizations_for_session(self.session_id)
+        self._agi_authorizations.clear()
         try:
             self._call("active_genome_index.revoke_access", {})
         except Exception:
             pass
-
-    @staticmethod
-    def _genomi_nickname(profile_id: str) -> str:
-        return f"GenomiLab {profile_id.removeprefix('patient-')[:12]}"

@@ -31,6 +31,11 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
     active = active_agi_record(context, root=root)
     session_agis = [agi for agi in context.get("agis", {}).values() if isinstance(agi, dict)]
     known_agis = [agi for agi in registry.get("agis", {}).values() if isinstance(agi, dict)]
+    known_agi_revisions = [
+        revision
+        for revision in registry.get("agi_revisions", {}).values()
+        if isinstance(revision, dict)
+    ]
     known_users = [user for user in registry.get("users", {}).values() if isinstance(user, dict)]
     default_user = _default_user(registry)
     policy = context_policy()
@@ -46,6 +51,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
         "active_genome_index_access": active_access,
         "has_active_genome_index": active is not None,
         "active_agi_id": active_agi_id,
+        "active_agi_snapshot_id": active.get("agi_snapshot_id") if active else None,
         "active_user_id": active_user.get("user_id") if isinstance(active_user, dict) else None,
         "active_user": describe_user(active_user, include_genomes=False) if isinstance(active_user, dict) else None,
         "active_genome_index": active_genome_index,
@@ -55,6 +61,7 @@ def describe_context(root: str | Path | None = None) -> JsonObject:
         "active_genome_index_registry": {
             "registry_file": _path_str(registry_path(root)),
             "known_agi_count": len(known_agis),
+            "known_agi_revision_count": len(known_agi_revisions),
             "known_user_count": len(known_users),
             "default_user": describe_user(default_user, include_genomes=False) if isinstance(default_user, dict) else None,
             "resume_requires": "Explicitly approve a resolved genomi agi or supply its source path in this session before sample-specific evidence is read. Selecting a user, including the default user, does not approve access.",

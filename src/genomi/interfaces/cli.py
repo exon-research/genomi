@@ -150,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the private launch link without opening a browser.",
     )
+    lab_parser.add_argument(
+        "--harness-processing-destination",
+        help=(
+            "Exact user-visible destination for installed-harness reasoning, "
+            "for example 'remote: OpenAI Codex service'. The harness stays "
+            "unavailable when this is omitted."
+        ),
+    )
     lab_parser.set_defaults(func=_cmd_lab)
 
     workflow_parser = subparsers.add_parser("workflow", help="Print the agent runtime and evidence contracts.")
@@ -200,7 +208,12 @@ def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
 def _cmd_lab(args: argparse.Namespace) -> None:
     from ..lab.server import run_lab
 
-    run_lab(host=args.host, port=args.port, open_browser=not args.no_open)
+    run_lab(
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+        harness_processing_destination=args.harness_processing_destination,
+    )
 
 
 def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

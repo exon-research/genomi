@@ -1,423 +1,547 @@
 "use strict";
 
-export const elements = {};
+import {
+  array,
+  collectElements,
+  elements,
+  empty,
+  exactValue,
+  formatTime,
+  friendly,
+  hideAlert,
+  isObject,
+  node,
+  replaceDefinitions,
+  setActivity,
+  setBusy,
+  shortId,
+  showAlert,
+  text,
+} from "./render-dom.js";
+import { renderBriefs } from "./render-brief.js";
+import {
+  contextDisclosureDescription,
+  coverageDescription,
+  evidenceHeadline,
+  evidenceReadiness,
+  evidenceTraceDetails,
+  observationDescription,
+  renderEvidence,
+  renderHypotheses,
+  sourceRecordList,
+} from "./render-evidence.js";
+import {
+  hideObservationEditor,
+  renderCompactRecords,
+  renderObservationEditor,
+  renderProfile,
+} from "./render-profile.js";
 
-export function collectElements() {
-  const ids = [
-    "local-status", "local-status-text", "global-alert", "global-alert-message", "alert-dismiss",
-    "profile-select", "create-profile-panel", "create-profile-form", "profile-name", "empty-create-button",
-    "no-profile-state", "profile-workspace", "workspace-title", "profile-meta", "version-label",
-    "genome-readiness-pill", "consent-readiness-pill", "tracker-context", "tracker-genome",
-    "tracker-finding", "tracker-investigate", "context-step", "genome-step", "finding-step",
-    "investigate-step", "context-step-state", "genome-step-state", "finding-step-state",
-    "investigate-step-state", "investigation-question", "health-fact-form", "fact-count",
-    "health-fact-list", "genome-ready-card", "genome-ready-detail", "genome-upload-form",
-    "genome-file", "file-picker-title", "file-picker-help", "upload-limit-label", "upload-button",
-    "upload-progress-wrap", "upload-progress", "upload-status", "finding-form", "finding-count",
-    "finding-list", "consent-form", "consent-purpose", "consent-approved", "consent-status",
-    "consent-button", "copy-question-button", "investigation-form", "investigation-finding",
-    "investigation-button", "run-readiness-title", "run-readiness-detail", "investigation-count",
-    "investigation-list", "brief-section", "brief-title", "brief-question", "brief-observation-text",
-    "brief-finding", "brief-health-context", "confirmation-list", "brief-boundary", "brief-evidence",
-    "activity-status",
-  ];
-  ids.forEach((id) => {
-    const node = document.getElementById(id);
-    if (!node) throw new Error(`Required portal element is missing: ${id}`);
-    elements[toPropertyName(id)] = node;
-  });
-  elements.createProfileButton = elements.createProfileForm.querySelector("button[type='submit']");
-  elements.healthFactButton = elements.healthFactForm.querySelector("button[type='submit']");
-  elements.findingButton = elements.findingForm.querySelector("button[type='submit']");
+export {
+  collectElements,
+  elements,
+  hideAlert,
+  hideObservationEditor,
+  renderObservationEditor,
+  setActivity,
+  setBusy,
+  showAlert,
+};
+
+export function renderBootstrap(payload, selectedInvestigationId = "") {
+  const ready = payload.status === "ready" && isObject(payload.workspace);
+  elements.setupState.hidden = ready;
+  elements.researchDesk.hidden = !ready;
+  elements.versionLabel.textContent = payload.version ? `GenomiLab ${payload.version}` : "GenomiLab";
+  if (!ready) return;
+  renderWorkspace(payload.workspace, selectedInvestigationId);
 }
 
-export function renderProductMetadata(payload) {
-  const version = stringValue(payload.version);
-  elements.versionLabel.textContent = version
-    ? `GenomiLab ${version} · developer preview`
-    : "GenomiLab developer preview";
-  const intake = isObject(payload.intake) ? payload.intake : {};
-  const maximum = numberValue(intake.maximum_bytes);
-  if (maximum > 0) elements.uploadLimitLabel.textContent = `Maximum file size: ${formatBytes(maximum)}.`;
+export function renderWorkspace(workspace, selectedInvestigationId = "") {
+  const profile = isObject(workspace.profile) ? workspace.profile : {};
+  const genome = isObject(profile.genome) ? profile.genome : null;
+  const observations = array(profile.observations);
+  const investigations = array(workspace.investigations);
+  const genomeReady = Boolean(genome && ["query_ready", "ready", "complete", "completed"].includes(text(genome.readiness)));
+  elements.currentUserName.textContent = text(workspace.display_name) || "Current Genomi user";
+  elements.currentUserId.textContent = text(workspace.user_id);
+  elements.genomeStatus.textContent = genomeReady
+    ? "Active Genome Index ready"
+    : genome ? "Genome setup is not complete" : "Genome setup needed in Genomi";
+  elements.genomeStatus.classList.toggle("is-ready", genomeReady);
+  elements.genomeDetail.textContent = genome
+    ? [text(genome.genome_build), friendly(text(genome.readiness)), shortId(text(genome.agi_snapshot_id))].filter(Boolean).join(" · ")
+    : "GenomiLab uses the genome already linked to this Genomi user. It never asks for another VCF.";
+  elements.profileSummary.textContent = observations.length
+    ? `${observations.length} reviewed profile ${observations.length === 1 ? "observation" : "observations"}`
+    : "Start by adding the health or molecular context relevant to your question.";
+  renderProfile(profile);
+  renderInvestigations(investigations, selectedInvestigationId);
+  renderAttention(workspace.attention);
+  renderEvidenceLibrary(array(workspace.evidence_library));
+  renderPrivacyActivity(workspace.privacy_activity);
 }
 
-export function renderProfileOptions(profiles, currentProfileId, uploading) {
-  const fragment = document.createDocumentFragment();
-  if (!profiles.length) {
-    fragment.append(createOption("", "No profiles yet"));
-  } else {
-    profiles.forEach((profile) => {
-      const id = stringValue(profile.profile_id);
-      if (id) fragment.append(createOption(id, stringValue(profile.display_name) || "Unnamed workspace"));
-    });
-  }
-  elements.profileSelect.replaceChildren(fragment);
-  elements.profileSelect.disabled = profiles.length === 0 || uploading;
-  if (currentProfileId && profileIdInList(currentProfileId, profiles)) {
-    elements.profileSelect.value = currentProfileId;
-  }
+function renderAttention(attentionValue) {
+  const attention = isObject(attentionValue) ? attentionValue : {};
+  elements.attentionPlanReviews.textContent = String(Number(attention.plan_reviews) || 0);
+  elements.attentionProviderApprovals.textContent = String(Number(attention.provider_approvals) || 0);
+  elements.attentionRunningJobs.textContent = String(Number(attention.running_jobs) || 0);
+  elements.attentionNewEvidence.textContent = String(Number(attention.new_evidence_records) || 0);
+  elements.attentionCompletedBriefs.textContent = String(Number(attention.completed_briefs) || 0);
 }
 
-export function renderReadiness(
-  profile,
-  facts,
-  findings,
-  investigations,
-  genomeReady,
-  accessApproved,
-  uploadBusy
-) {
-  elements.genomeReadinessPill.textContent = genomeReady ? "Genome ready" : "Genome not added";
-  elements.genomeReadinessPill.classList.toggle("is-ready", genomeReady);
-  elements.consentReadinessPill.textContent = accessApproved ? "Session access approved" : "Access not approved";
-  elements.consentReadinessPill.classList.toggle("is-ready", accessApproved);
-
-  setStepState(elements.contextStep, elements.trackerContext, facts.length > 0);
-  elements.contextStepState.textContent = facts.length ? `${facts.length} added` : "Optional";
-  setStepState(elements.genomeStep, elements.trackerGenome, genomeReady);
-  elements.genomeStepState.textContent = genomeReady ? "Ready" : "Required";
-  setStepState(elements.findingStep, elements.trackerFinding, findings.length > 0);
-  elements.findingStepState.textContent = findings.length ? `${findings.length} saved` : "Required";
-  const completed = investigations.some((item) => isObject(item) && item.status === "completed");
-  setStepState(elements.investigateStep, elements.trackerInvestigate, completed);
-  elements.investigateStepState.textContent = completed ? "Complete" : accessApproved ? "Ready" : "Locked";
-
-  elements.genomeReadyCard.hidden = !genomeReady;
-  const uploadLabel = genomeReady ? "Replace genome" : "Import genome";
-  elements.uploadButton.dataset.defaultLabel = uploadLabel;
-  if (!uploadBusy) elements.uploadButton.textContent = uploadLabel;
-  if (genomeReady) {
-    const build = stringValue(profile.genome.genome_build);
-    const readiness = formatIdentifier(profile.genome.readiness || "ready");
-    elements.genomeReadyDetail.textContent = build
-      ? `${build} · ${readiness} · imported ${formatDate(profile.genome.imported_at)}`
-      : `${readiness} · imported ${formatDate(profile.genome.imported_at)}`;
-  }
-
-  const statusParts = elements.consentStatus.querySelectorAll("span");
-  elements.consentStatus.classList.toggle("is-approved", accessApproved);
-  if (statusParts.length >= 2) {
-    statusParts[0].textContent = accessApproved ? "✓" : "○";
-    statusParts[1].textContent = accessApproved ? "Approved for this session" : "Not approved for this session";
-  }
-}
-
-export function renderHealthFacts(facts) {
-  elements.factCount.textContent = pluralize(facts.length, "fact");
-  if (!facts.length) {
-    elements.healthFactList.replaceChildren(createListEmpty("No health context added yet."));
+function renderEvidenceLibrary(records) {
+  elements.evidenceLibraryCount.textContent = String(records.length);
+  if (!records.length) {
+    elements.evidenceLibraryList.replaceChildren(node("p", "No evidence has been saved yet.", "empty-row"));
     return;
   }
-  const rows = facts.map((fact) => {
-    const item = document.createElement("li");
-    const text = createElement("div", "record-copy");
-    text.append(
-      createElement("span", "record-primary", stringValue(fact.label) || "Unnamed health fact"),
-      createElement(
-        "span", "record-secondary",
-        [formatIdentifier(fact.kind), formatIdentifier(fact.assertion_status), onsetLabel(fact.onset)]
-          .filter(Boolean).join(" · ")
-      )
-    );
-    item.append(text, createElement("span", "record-badge", "User confirmed"));
-    return item;
+  const bySource = new Map();
+  records.forEach((record) => {
+    const source = friendly(text(record.source_family)) || "Other source";
+    if (!bySource.has(source)) bySource.set(source, []);
+    bySource.get(source).push(record);
   });
-  elements.healthFactList.replaceChildren(...rows);
+  elements.evidenceLibraryList.replaceChildren(...[...bySource].map(([source, sourceRecords]) => {
+    const group = node("section", "", "evidence-library-group");
+    group.append(node("h3", `${source} (${sourceRecords.length})`));
+    const list = node("ul", "", "record-list");
+    list.append(...sourceRecords.map((record) => {
+      const evidence = isObject(record.evidence) ? record.evidence : {};
+      const envelope = isObject(record.evidence_envelope) ? record.evidence_envelope : {};
+      const item = node("li", "", "record compact-record");
+      const copy = document.createElement("div");
+      copy.append(
+        node("strong", evidenceHeadline(envelope, record)),
+        node("span", `${text(record.investigation_question) || "Investigation"} · ${evidenceReadiness(envelope)}`),
+        sourceRecordList(evidence),
+        evidenceTraceDetails(record, evidence)
+      );
+      item.append(copy);
+      return item;
+    }));
+    group.append(list);
+    return group;
+  }));
 }
 
-export function renderFindings(findings, preferredFindingId = "") {
-  elements.findingCount.textContent = pluralize(findings.length, "finding");
-  if (!findings.length) {
-    elements.findingList.replaceChildren(createListEmpty("No reported findings added yet."));
-    elements.investigationFinding.replaceChildren(createOption("", "Add a reported rsID first"));
-    return;
-  }
-  const rows = [];
-  const options = [];
-  findings.forEach((finding) => {
-    const variant = stringValue(finding.variant) || "Unspecified variant";
-    const gene = stringValue(finding.gene);
-    const classification = stringValue(finding.reported_classification) || "Classification not provided";
-    const source = stringValue(finding.source_label);
-    const item = document.createElement("li");
-    const text = createElement("div", "record-copy");
-    text.append(
-      createElement("span", "record-primary", gene ? `${variant} · ${gene}` : variant),
-      createElement("span", "record-secondary", [classification, source].filter(Boolean).join(" · "))
-    );
-    item.append(text, createElement("span", "record-badge", formatNormalization(finding.normalization_state)));
-    rows.push(item);
-    const id = stringValue(finding.finding_id);
-    if (id) options.push(createOption(id, gene ? `${variant} — ${gene}` : variant));
-  });
-  elements.findingList.replaceChildren(...rows);
-  const previous = preferredFindingId || elements.investigationFinding.value;
-  elements.investigationFinding.replaceChildren(...options);
-  if (previous && options.some((option) => option.value === previous)) {
-    elements.investigationFinding.value = previous;
-  }
+function renderPrivacyActivity(activityValue) {
+  const activity = isObject(activityValue) ? activityValue : {};
+  renderCompactRecords(
+    elements.contextActivityList,
+    array(activity.context_approvals),
+    "No private context approvals yet.",
+    (item) => [
+      item.revoked_at ? "Private context revoked" : "Private context approved",
+      [formatTime(text(item.approved_at)), item.agi_snapshot_id ? "Targeted genome context included" : "Profile context only"].filter(Boolean).join(" · "),
+    ]
+  );
+  renderCompactRecords(
+    elements.disclosureActivityList,
+    array(activity.outbound_disclosures),
+    "No outbound disclosures yet.",
+    (item) => [
+      `${friendly(text(item.recipient_kind)) || "Recipient"}: ${text(item.recipient_id) || "not named"}`,
+      [friendly(text(item.destination)), array(item.data_categories).map((value) => friendly(text(value))).join(", "), item.revoked_at ? "Revoked" : "Approved"].filter(Boolean).join(" · "),
+    ]
+  );
+  renderCompactRecords(
+    elements.planActivityList,
+    array(activity.plan_acceptances),
+    "No accepted plans yet.",
+    (item) => [
+      "Investigation plan accepted",
+      `${formatTime(text(item.accepted_at))} · ${shortId(text(item.plan_version_id))}`,
+    ]
+  );
 }
 
-export function renderInvestigations(investigations) {
-  const completed = investigations.filter((item) => isObject(item) && item.status === "completed");
-  elements.investigationCount.textContent = pluralize(completed.length, "brief");
+export function renderInvestigations(investigations, selectedInvestigationId = "") {
+  elements.investigationCount.textContent = String(investigations.length);
   if (!investigations.length) {
-    elements.investigationList.replaceChildren(createListEmpty("No investigations run yet."));
+    elements.investigationList.replaceChildren(empty("No disease investigations yet."));
     return;
   }
   const rows = investigations.map((investigation) => {
-    const item = document.createElement("li");
-    const text = createElement("div", "record-copy");
-    text.append(
-      createElement("span", "record-primary", stringValue(investigation.question) || "Investigation"),
-      createElement(
-        "span", "record-secondary",
-        `${formatIdentifier(investigation.status)} · ${formatDate(investigation.updated_at)}`
-      )
+    const item = node("li", "", "investigation-row");
+    const button = node("button", "", "investigation-open");
+    button.type = "button";
+    button.dataset.investigationId = text(investigation.investigation_id);
+    button.setAttribute("aria-current", text(investigation.investigation_id) === selectedInvestigationId ? "true" : "false");
+    const copy = document.createElement("span");
+    copy.className = "investigation-copy";
+    copy.append(
+      node("strong", text(investigation.question) || "Disease investigation"),
+      node("span", [text(investigation.disease_scope), friendly(text(investigation.status))].filter(Boolean).join(" · "))
     );
-    item.append(text);
-    if (isObject(investigation.brief) && investigation.brief.status === "research_observation") {
-      const button = createElement("button", "record-action", "View brief");
-      button.type = "button";
-      button.addEventListener("click", () => {
-        renderBrief(investigation.brief);
-        elements.briefSection.focus();
-      });
-      item.append(button);
-    } else {
-      item.append(createElement("span", "record-badge", formatIdentifier(investigation.status)));
-    }
+    button.append(copy, node("span", "Open →", "open-label"));
+    item.append(button);
     return item;
   });
   elements.investigationList.replaceChildren(...rows);
 }
 
-export function renderBrief(brief) {
-  if (!isObject(brief)) {
-    elements.briefSection.hidden = true;
+export function renderInvestigation(investigation, harnessManifest = {}, observations = []) {
+  elements.investigationDetail.hidden = false;
+  elements.detailTitle.textContent = text(investigation.question) || "Disease investigation";
+  elements.detailScope.textContent = text(investigation.disease_scope) || "No narrower disease scope was supplied.";
+  elements.detailStatus.textContent = friendly(text(investigation.status)) || "Created";
+
+  const bindings = array(investigation.harness_bindings);
+  const binding = [...bindings].reverse().find((item) => item.binding_state === "active") || null;
+  renderHarnessIdentity(harnessManifest, binding);
+  renderPlan(investigation.current_plan_version, array(investigation.harness_events));
+  renderContextState(investigation);
+  renderContextObservationSelection(investigation, observations);
+  renderHarnessState(binding, harnessManifest);
+  renderEvents({events: array(investigation.harness_events)});
+  renderEvidence(
+    array(investigation.evidence_records),
+    text(investigation.patient_molecular_snapshot_id)
+  );
+  renderCapabilityApprovals(array(investigation.current_capability_executions));
+  renderHypotheses(
+    array(investigation.hypotheses),
+    text(investigation.patient_molecular_snapshot_id)
+  );
+  renderBriefs(array(investigation.brief_versions), investigation);
+  hideContextCandidate();
+  hideOutboundPreview();
+}
+
+function renderContextObservationSelection(investigation, observations) {
+  const investigationId = text(investigation.investigation_id);
+  const previousInvestigationId = text(
+    elements.contextObservationList.dataset.investigationId
+  );
+  const previousInputs = [...elements.contextObservationList.querySelectorAll(
+    "input[name='context_observation_revision_id']"
+  )];
+  const preserveSelection = previousInvestigationId === investigationId
+    && previousInputs.length > 0;
+  const previousSelection = new Set(
+    previousInputs.filter((input) => input.checked).map((input) => text(input.value))
+  );
+  const activeSnapshotId = text(investigation.patient_molecular_snapshot_id);
+  const pinnedSnapshot = array(investigation.profile_snapshot_history).find(
+    (item) => text(item.patient_molecular_snapshot_id) === activeSnapshotId
+  );
+  const pinnedIds = new Set(array(pinnedSnapshot && pinnedSnapshot.observation_revision_ids).map(text));
+  elements.contextSelectionHelp.textContent = pinnedSnapshot
+    ? "Checked observations are the starting selection for Compare latest profile. Review and renew keeps the exact pinned selection."
+    : "Select at least one current observation. Only checked observations can enter this investigation's approved profile context.";
+  if (!observations.length) {
+    elements.contextObservationList.dataset.investigationId = investigationId;
+    elements.contextObservationList.replaceChildren(
+      empty("Add a profile observation before approving private context.")
+    );
     return;
   }
-  elements.briefTitle.textContent = stringValue(brief.title) || "Investigation brief";
-  elements.briefQuestion.textContent = stringValue(brief.question);
-  elements.briefObservationText.textContent = stringValue(brief.observation) || "No research observation was returned.";
-
-  const finding = isObject(brief.reported_finding) ? brief.reported_finding : {};
-  const definitionRows = [
-    ["Variant", finding.variant], ["Gene", finding.gene],
-    ["Reported classification", finding.reported_classification], ["Reported source", finding.source_label],
-    ["Normalization", formatNormalization(finding.normalization_state)],
-  ];
-  const definitions = [];
-  definitionRows.forEach(([label, value]) => {
-    definitions.push(createElement("dt", "", label));
-    definitions.push(createElement("dd", "", stringValue(value) || "Not provided"));
+  const rows = observations.map((observation) => {
+    const revisionId = text(observation.observation_revision_id);
+    const item = node("li", "", "context-observation-option");
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.name = "context_observation_revision_id";
+    input.value = revisionId;
+    input.checked = preserveSelection
+      ? previousSelection.has(revisionId)
+      : Boolean(pinnedSnapshot && pinnedIds.has(revisionId));
+    const copy = document.createElement("span");
+    copy.append(
+      node("strong", text(observation.label) || "Untitled observation"),
+      node(
+        "small",
+        [
+          friendly(text(observation.modality)),
+          friendly(text(observation.assertion_status)),
+          friendly(text(observation.verification_state)),
+          pinnedIds.has(revisionId) ? "Pinned now" : "Current profile",
+        ].filter(Boolean).join(" · ")
+      )
+    );
+    label.append(input, copy);
+    item.append(label);
+    return item;
   });
-  elements.briefFinding.replaceChildren(...definitions);
-
-  const healthContext = Array.isArray(brief.health_context) ? brief.health_context : [];
-  const healthRows = healthContext.length
-    ? healthContext.map((fact) => createElement(
-        "li", "",
-        `${stringValue(fact.label) || "Health fact"} — ${formatIdentifier(fact.kind)}, ${formatIdentifier(fact.assertion_status)}`
-      ))
-    : [createElement("li", "evidence-empty", "No health facts were included in this brief.")];
-  elements.briefHealthContext.replaceChildren(...healthRows);
-
-  const confirmation = Array.isArray(brief.confirmation_needed) ? brief.confirmation_needed : [];
-  elements.confirmationList.replaceChildren(...(confirmation.length
-    ? confirmation.map((item) => createElement("li", "", stringValue(item)))
-    : [createElement("li", "", "Clinical confirmation is required before health decisions.")]));
-  elements.briefBoundary.textContent = stringValue(brief.clinical_boundary)
-    || "Research support only. This brief is not a diagnosis or treatment recommendation.";
-  elements.briefEvidence.replaceChildren(renderStructuredValue(brief.evidence, 0));
-  elements.briefSection.hidden = false;
+  elements.contextObservationList.dataset.investigationId = investigationId;
+  elements.contextObservationList.replaceChildren(...rows);
 }
 
-function renderStructuredValue(value, depth) {
-  if (depth > 7) return createElement("span", "evidence-empty", "Additional nested detail omitted.");
-  if (value === null || value === undefined || value === "") {
-    return createElement("span", "evidence-empty", "Not available");
+export function closeInvestigation() {
+  elements.investigationDetail.hidden = true;
+  elements.contextObservationList.dataset.investigationId = "";
+  hideContextCandidate();
+  hideOutboundPreview();
+}
+
+export function renderContextCandidate(candidate, observations = []) {
+  elements.contextPreview.hidden = false;
+  elements.contextPreviewPurpose.textContent = `Purpose: ${text(candidate.purpose) || "Use this context only for this disease investigation."}`;
+  const definitions = [];
+  const selectedIds = array(candidate.observation_revision_ids).map(text);
+  const observationsById = new Map(observations.map((item) => [text(item.observation_revision_id), item]));
+  const selectedObservations = selectedIds.map((id) => observationsById.get(id)).filter(Boolean);
+  definitions.push([
+    "Profile observations",
+    selectedObservations.length
+      ? selectedObservations.map(observationDescription).join("; ")
+      : selectedIds.length ? selectedIds.join(", ") : "None",
+  ]);
+  definitions.push(["Source records", countDescription(candidate.artifact_ids, "record")]);
+  definitions.push(["Specimens", countDescription(candidate.specimen_ids, "specimen")]);
+  definitions.push(["Assays", countDescription(candidate.assay_ids, "assay")]);
+  definitions.push([
+    "Genome",
+    candidate.agi_snapshot_id
+      ? `Active Genome Index revision ${text(candidate.agi_snapshot_id)} (reference only; no copied genome rows)`
+      : "Not included",
+  ]);
+  definitions.push(["Allowed genome scope", candidate.genomic_scope ? exactValue(candidate.genomic_scope) : "Not included"]);
+  definitions.push(["Profile coverage", coverageDescription(candidate.modality_coverage)]);
+  replaceDefinitions(elements.contextPreviewList, definitions);
+  elements.contextApproveButton.disabled = false;
+}
+
+export function hideContextCandidate() {
+  elements.contextPreview.hidden = true;
+  elements.contextPreviewList.replaceChildren();
+}
+
+export function renderOutboundPreview(candidate) {
+  const payload = isObject(candidate.payload) ? candidate.payload : {};
+  const manifest = isObject(candidate.capability_manifest) ? candidate.capability_manifest : {};
+  elements.harnessOutboundPreview.hidden = false;
+  elements.harnessOutboundDestination.textContent = [
+    `Recipient: ${text(manifest.host_kind) || text(candidate.recipient_id) || "installed harness"}`,
+    `Execution location: ${friendly(text(candidate.destination) || text(manifest.execution_location)) || "not disclosed"}`,
+  ].join(" · ");
+  const definitions = [
+    ["Action", friendly(text(payload.operation)) || "Harness work"],
+    ["Instruction", text(payload.instruction) || "None"],
+    ["Requested output", friendly(text(payload.artifact_kind)) || "Not specified"],
+    ["Data categories", array(candidate.data_categories).map((value) => friendly(text(value))).join(", ") || "None"],
+    ["Private context", contextDisclosureDescription(payload.approved_context)],
+    ["Exact outbound contents", exactValue(payload), "exact"],
+  ];
+  replaceDefinitions(elements.harnessOutboundDetails, definitions);
+  const operation = text(payload.operation);
+  elements.harnessApproveButton.textContent = {
+    start_task_run: "Approve and start harness",
+    resume_task_run: "Approve and resume harness",
+    send_task_message: "Approve and send message",
+    replace_task_binding: "Approve and replace harness task",
+    cancel_task_work: "Approve and cancel harness work",
+  }[operation] || "Approve this disclosure";
+  elements.harnessApproveButton.disabled = false;
+}
+
+export function hideOutboundPreview() {
+  elements.harnessOutboundPreview.hidden = true;
+  elements.harnessOutboundDetails.replaceChildren();
+}
+
+export function renderEvents(payload) {
+  const events = array(payload.events);
+  elements.eventStatus.textContent = events.length
+    ? `${events.length} ${events.length === 1 ? "event" : "events"} connected`
+    : "Connected · no events yet";
+  if (!events.length) {
+    elements.eventList.replaceChildren(empty("No harness events yet."));
+    return;
   }
-  if (Array.isArray(value)) {
-    if (!value.length) return createElement("span", "evidence-empty", "None returned");
-    const list = document.createElement("ul");
-    value.slice(0, 100).forEach((item) => {
-      const row = document.createElement("li");
-      row.append(renderStructuredValue(item, depth + 1));
-      list.append(row);
-    });
-    if (value.length > 100) {
-      list.append(createElement("li", "evidence-empty", `${value.length - 100} additional items omitted.`));
-    }
-    return list;
+  const rows = events.map((event) => {
+    const transport = isObject(event.payload) ? event.payload : {};
+    const details = isObject(transport.payload) ? transport.payload : {};
+    const description = text(details.progress)
+      || text(details.message)
+      || text(details.role)
+      || friendly(text(transport.status))
+      || "Harness activity recorded";
+    const item = node("li", "", "event-row");
+    const marker = node("span", "", "event-marker");
+    marker.setAttribute("aria-hidden", "true");
+    const copy = document.createElement("div");
+    copy.append(
+      node("strong", friendly(text(event.event_type) || text(transport.kind)) || "Harness event"),
+      node("p", description),
+      node("time", formatTime(text(transport.timestamp) || text(event.created_at)))
+    );
+    item.append(marker, copy);
+    return item;
+  });
+  elements.eventList.replaceChildren(...rows);
+}
+
+function renderHarnessIdentity(manifest, binding) {
+  const hostKind = friendly(text(manifest.host_kind)) || "Installed agent harness";
+  elements.harnessName.textContent = hostKind;
+  elements.harnessLocation.textContent = manifest.execution_location
+    ? `Agents and reasoning run at: ${friendly(text(manifest.execution_location))}. GenomiLab remains the domain workspace.`
+    : "The harness has not disclosed its execution location.";
+  const available = manifest.available === true;
+  elements.harnessCapability.textContent = available ? "Available" : "Unavailable";
+  elements.harnessCapability.dataset.available = available ? "true" : "false";
+  elements.harnessDisclosure.textContent = binding
+    ? `This investigation is connected to task ${shortId(text(binding.task_id)) || "in the installed harness"}. The web portal displays state and approvals; the harness owns agents and reasoning.`
+    : "This web portal displays and approves work. GenomiLab manages the investigation; the disclosed installed harness owns the agents, planning, and reasoning.";
+}
+
+function renderPlan(planVersionValue, events) {
+  const planVersion = isObject(planVersionValue) ? planVersionValue : null;
+  const plan = planVersion && isObject(planVersion.plan) ? planVersion.plan : null;
+  const steps = plan ? array(plan.steps) : [];
+  const accepted = Boolean(planVersion && text(planVersion.review_status) === "accepted");
+  elements.planReviewStatus.textContent = plan
+    ? accepted ? "Accepted" : "Your review needed"
+    : "No plan to review";
+  elements.planReviewStatus.dataset.state = accepted ? "accepted" : plan ? "proposed" : "none";
+  elements.planReviewActions.hidden = !plan || accepted;
+  elements.planAcceptButton.disabled = !plan || accepted;
+  elements.planSummary.textContent = plan
+    ? text(plan.summary) || "Current plan"
+    : "The installed harness has not proposed a plan yet.";
+  if (!steps.length) {
+    elements.planList.replaceChildren(empty("No plan steps yet."));
+    elements.progressSummary.textContent = "Waiting for a plan";
+    return;
   }
-  if (isObject(value)) {
-    const entries = Object.entries(value);
-    if (!entries.length) return createElement("span", "evidence-empty", "No details returned");
-    const list = document.createElement("dl");
-    entries.slice(0, 100).forEach(([key, item]) => {
-      list.append(createElement("dt", "", friendlyKey(key)), appendToElement("dd", renderStructuredValue(item, depth + 1)));
-    });
-    if (entries.length > 100) {
-      list.append(
-        createElement("dt", "", "Additional fields"),
-        createElement("dd", "evidence-empty", `${entries.length - 100} fields omitted.`)
-      );
-    }
-    return list;
+  const progressByStep = new Map();
+  events.forEach((event) => {
+    const transport = isObject(event.payload) ? event.payload : {};
+    const progress = isObject(transport.payload) ? transport.payload : {};
+    const stepId = text(progress.assigned_step_id);
+    if (stepId) progressByStep.set(stepId, text(progress.progress) || friendly(text(transport.status)));
+  });
+  const rows = steps.map((step, index) => {
+    const item = node("li", "", "plan-step");
+    const number = node("span", String(index + 1), "plan-number");
+    const copy = document.createElement("div");
+    const stepId = text(step.id);
+    const progress = progressByStep.get(stepId) || friendly(text(step.status)) || "Planned";
+    copy.append(
+      node("strong", text(step.title) || `Step ${index + 1}`),
+      node("p", array(step.capabilities).map((value) => friendly(text(value))).join(" · ") || "Research step"),
+      node("span", progress, "step-progress")
+    );
+    item.append(number, copy);
+    return item;
+  });
+  elements.planList.replaceChildren(...rows);
+  elements.progressSummary.textContent = accepted
+    ? `${steps.length} accepted ${steps.length === 1 ? "step" : "steps"}`
+    : `${steps.length} proposed ${steps.length === 1 ? "step" : "steps"}`;
+}
+
+function renderContextState(investigation) {
+  const status = text(investigation.private_context_status) || "not_approved";
+  const approved = status === "approved_for_session";
+  const pinned = Boolean(investigation.patient_molecular_snapshot_id);
+  const lifecycle = isObject(investigation.refresh_lifecycle)
+    ? friendly(text(investigation.refresh_lifecycle.state))
+    : "";
+  elements.contextState.textContent = approved
+    ? ["Approved for this session", lifecycle].filter(Boolean).join(" · ")
+    : pinned ? "Pinned history · approval renewal required" : "Not approved";
+  elements.contextPreviewButton.textContent = pinned ? "Review and renew private context" : "Preview private context";
+  elements.contextRefreshPreviewButton.hidden = !pinned;
+  elements.contextRevokeButton.hidden = !approved;
+}
+
+function renderCapabilityApprovals(executions) {
+  const pendingApprovals = executions.filter((execution) => {
+    const result = isObject(execution.result) ? execution.result : {};
+    return text(execution.status) === "approval_required" || text(result.status) === "approval_required";
+  });
+  const running = executions.filter((execution) => {
+    const result = isObject(execution.result) ? execution.result : {};
+    return text(execution.status) === "in_progress"
+      && text(result.resume_operation) !== "genomilab.capability.execute";
+  });
+  if (!pendingApprovals.length && !running.length) {
+    elements.capabilityApprovalList.replaceChildren();
+    return;
   }
-  if (typeof value === "boolean") return document.createTextNode(value ? "Yes" : "No");
-  return document.createTextNode(String(value));
+  const heading = node("h4", "Agent-requested capability work");
+  const intro = node(
+    "p",
+    "Review exact evidence egress before approval, and reconnect only to the job already recorded for work that is still running.",
+    "section-summary"
+  );
+  const list = node("ul", "", "approval-request-list");
+  pendingApprovals.forEach((execution) => {
+    const result = isObject(execution.result) ? execution.result : {};
+    const candidate = isObject(result.candidate) ? result.candidate : {};
+    const routes = array(candidate.routes);
+    const selected = text(candidate.selected_provider);
+    const route = routes.find((item) => isObject(item) && text(item.provider) === selected) || {};
+    const item = node("li", "", "approval-request-row");
+    const copy = document.createElement("div");
+    const payload = isObject(candidate.payload) && isObject(candidate.payload.request)
+      ? candidate.payload.request
+      : {};
+    copy.append(
+      node("strong", `Evidence request: ${friendly(text(payload.source_family)) || "public evidence"}`),
+      node("p", text(payload.query) || "The exact query is unavailable."),
+      node(
+        "span",
+        selected
+          ? `Provider: ${friendly(selected)} · Destination: ${friendly(text(route.destination)) || "not disclosed"}`
+          : "No eligible provider route is currently configured.",
+        "record-trace-line"
+      )
+    );
+    const button = node("button", selected ? "Approve exact evidence request" : "Provider unavailable", "secondary-button");
+    button.type = "button";
+    button.disabled = !selected;
+    button.dataset.capabilityAction = "approve";
+    button.dataset.capabilityRequestId = text(execution.request_id);
+    button.dataset.planVersionId = text(execution.plan_version_id);
+    button.dataset.recipientProvider = selected;
+    button.dataset.payloadSha256 = text(candidate.payload_sha256);
+    item.append(copy, button);
+    list.append(item);
+  });
+  running.forEach((execution) => {
+    const result = isObject(execution.result) ? execution.result : {};
+    const item = node("li", "", "approval-request-row");
+    const copy = document.createElement("div");
+    copy.append(
+      node("strong", `Background work: ${friendly(text(execution.capability))}`),
+      node("p", "The original request will not be submitted again."),
+      node(
+        "span",
+        `Job: ${text(result.job_id)} · Check: ${friendly(text(result.resume_operation))}`,
+        "record-trace-line"
+      )
+    );
+    const button = node("button", "Check recorded job", "secondary-button");
+    button.type = "button";
+    button.dataset.capabilityAction = "check";
+    button.dataset.capabilityRequestId = text(execution.request_id);
+    button.dataset.planVersionId = text(execution.plan_version_id);
+    button.dataset.jobId = text(result.job_id);
+    button.dataset.resumeOperation = text(result.resume_operation);
+    item.append(copy, button);
+    list.append(item);
+  });
+  elements.capabilityApprovalList.replaceChildren(heading, intro, list);
 }
 
-export function resetFilePicker() {
-  elements.genomeFile.setCustomValidity("");
-  elements.filePickerTitle.textContent = "Choose a VCF or gVCF";
-  elements.filePickerHelp.textContent = "Uncompressed .vcf, .g.vcf, or .gvcf";
-}
-
-export function showUploadProgress(message, complete) {
-  elements.uploadProgressWrap.hidden = false;
-  elements.uploadStatus.textContent = message;
-  if (complete) elements.uploadProgress.value = 100;
-  else elements.uploadProgress.removeAttribute("value");
-}
-
-export function setLocalStatus(message, status) {
-  elements.localStatusText.textContent = message;
-  elements.localStatus.classList.toggle("is-ready", status === "ready");
-  elements.localStatus.classList.toggle("is-error", status === "error");
-}
-
-export function setActivity(message) {
-  elements.activityStatus.textContent = message;
-}
-
-export function showAlert(message, kind) {
-  elements.globalAlertMessage.textContent = message;
-  elements.globalAlert.classList.toggle("is-success", kind === "success");
-  elements.globalAlert.classList.toggle("is-error", kind === "error");
-  elements.globalAlert.hidden = false;
-}
-
-export function hideAlert() {
-  elements.globalAlert.hidden = true;
-  elements.globalAlert.classList.remove("is-success", "is-error");
-  elements.globalAlertMessage.textContent = "";
-}
-
-export function showError(error, prefix) {
-  const message = error instanceof Error ? error.message : "An unexpected local error occurred.";
-  showAlert(`${prefix}: ${message}`, "error");
-}
-
-export function profileIdInList(candidate, profiles) {
-  const id = stringValue(candidate);
-  return profiles.some((profile) => isObject(profile) && profile.profile_id === id) ? id : "";
-}
-
-export function formatDate(value) {
-  const raw = stringValue(value);
-  if (!raw) return "date unavailable";
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return "date unavailable";
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-  }).format(date);
-}
-
-export function formatBytes(value) {
-  const bytes = numberValue(value);
-  if (bytes < 1024) return `${bytes} bytes`;
-  const units = ["KiB", "MiB", "GiB"];
-  let amount = bytes;
-  let unit = "bytes";
-  for (let index = 0; index < units.length && amount >= 1024; index += 1) {
-    amount /= 1024;
-    unit = units[index];
-  }
-  return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${unit}`;
-}
-
-export function stringValue(value) {
-  return typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
-}
-
-export function numberValue(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
-
-export function isObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function setStepState(card, tracker, complete) {
-  card.classList.toggle("is-complete", complete);
-  tracker.classList.toggle("is-complete", complete);
-  const number = tracker.querySelector("span");
-  if (!number) return;
-  if (!number.dataset.stepNumber) number.dataset.stepNumber = number.textContent;
-  number.textContent = complete ? "✓" : number.dataset.stepNumber;
-}
-
-function createElement(tagName, className = "", text = "") {
-  const node = document.createElement(tagName);
-  if (className) node.className = className;
-  if (text !== "") node.textContent = String(text);
-  return node;
-}
-
-function appendToElement(tagName, child) {
-  const node = document.createElement(tagName);
-  node.append(child);
-  return node;
-}
-
-function createOption(value, label) {
-  const option = document.createElement("option");
-  option.value = value;
-  option.textContent = label;
-  return option;
-}
-
-function createListEmpty(message) {
-  return createElement("li", "list-empty", message);
-}
-
-function formatIdentifier(value) {
-  const text = stringValue(value).replaceAll("_", " ").trim();
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "Unknown";
-}
-
-function formatNormalization(value) {
-  const labels = {
-    rsid_ready: "rsID ready",
-    exact_genomic_allele_ready: "Allele ready",
-    needs_review: "Needs review",
-  };
-  return labels[stringValue(value)] || formatIdentifier(value);
-}
-
-function friendlyKey(key) {
-  const labels = {
-    answer_readiness: "Answer readiness", defaults_applied: "Defaults applied",
-    evidence_envelope: "Evidence envelope", finding_state: "Finding state",
-    negative_inference: "Negative-inference boundary", public_context: "Public context",
-    query_scope: "Query scope", sample_context: "Personal genome context",
-  };
-  return labels[key] || formatIdentifier(key);
-}
-
-function onsetLabel(value) {
-  const onset = stringValue(value);
-  return onset ? `Onset: ${onset}` : "";
-}
-
-function pluralize(count, singular) {
-  return `${count} ${count === 1 ? singular : `${singular}s`}`;
-}
-
-function toPropertyName(id) {
-  return id.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
+function renderHarnessState(binding, manifest) {
+  const available = manifest.available === true;
+  const operations = new Set(array(manifest.supported_operations).map(text));
+  const started = Boolean(binding);
+  elements.harnessBindingState.textContent = started
+    ? friendly(text(binding.harness_status)) || "Connected"
+    : "Not started";
+  elements.harnessPreviewButton.hidden = started;
+  elements.harnessPreviewButton.disabled = !available || !operations.has("start_task_run");
+  elements.resumePreviewButton.hidden = !started || !operations.has("resume_task_run");
+  elements.resumePreviewButton.textContent = "Replan with approved context";
+  elements.replaceHarnessButton.hidden = !started || !operations.has("replace_task_binding");
+  elements.cancelHarnessButton.hidden = !started || !operations.has("cancel_task_work");
+  elements.harnessMessageForm.hidden = !started || !operations.has("send_task_message");
 }

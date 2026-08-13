@@ -147,9 +147,9 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
         index = self._set_active()
         runtime_context.approve_agi_access()
         reader = agi_access.open_agi(need=ActiveGenomeIndexNeed.REFERENCE, action="testing", params={})
-        # Compare resolved paths: the stored run path is symlink-resolved, and
-        # GENOMI_HOME lives under /tmp (a /private/tmp symlink on macOS).
-        self.assertEqual(reader.agi_path.resolve(), index.resolve())
+        active = runtime_context.active_agi_record()
+        self.assertEqual(reader.agi_path.resolve(), Path(str(active["agi_path"])).resolve())
+        self.assertNotEqual(reader.agi_path.resolve(), index.resolve())
         self.assertEqual(reader.genome_build, "GRCh38")
 
     def test_default_user_reader_requires_and_accepts_session_approval(self) -> None:
@@ -179,7 +179,9 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
             action="testing approved default-user access",
             params={},
         )
-        self.assertEqual(reader.agi_path.resolve(), index.resolve())
+        active = runtime_context.active_agi_record()
+        self.assertEqual(reader.agi_path.resolve(), Path(str(active["agi_path"])).resolve())
+        self.assertNotEqual(reader.agi_path.resolve(), index.resolve())
 
     def test_no_active_and_not_optional_raises_missing_context(self) -> None:
         with self.assertRaises(OperationError) as raised:
@@ -233,7 +235,9 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
             action="testing",
             params={"agi_path": str(index)},
         )
-        self.assertEqual(reader.agi_path.resolve(), index.resolve())
+        active = runtime_context.active_agi_record()
+        self.assertEqual(reader.agi_path.resolve(), Path(str(active["agi_path"])).resolve())
+        self.assertNotEqual(reader.agi_path.resolve(), index.resolve())
         self.assertEqual(reader.genome_build, "GRCh37")
 
     def test_defaults_applied_use_explicit_approved_agi_path_build(self) -> None:
@@ -299,7 +303,7 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
                 call_operation(operation, params)
             self.assertEqual(raised.exception.code, "active_genome_index_incomplete")
 
-    def test_variant_lookup_rejects_too_new_selected_index(self) -> None:
+    def test_variant_lookup_uses_pinned_revision_after_build_path_changes(self) -> None:
         index = self._set_active(stem="too_new_schema")
         with connect_sqlite(index) as connection:
             connection.execute(
@@ -309,10 +313,9 @@ class OpenAgiAuthTests(GenomiRuntimeTestCase):
             connection.commit()
         runtime_context.approve_agi_access()
 
-        with self.assertRaises(OperationError) as raised:
-            call_operation("variant.resolve", {"rsid": "rs500"})
+        result = call_operation("variant.resolve", {"rsid": "rs500"})
 
-        self.assertEqual(raised.exception.code, "active_genome_index_schema_too_new")
+        self.assertEqual(result["sample_context"]["count"], 1)
 
 
 if __name__ == "__main__":

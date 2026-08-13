@@ -12,7 +12,7 @@ from .normalize import (
     _find_user,
     _grant_agi_access,
 )
-from .storage import load_context, load_registry, save_context
+from .storage import context_authority_lock, load_context, load_registry, save_context
 
 
 def approve_agi_access(
@@ -24,48 +24,50 @@ def approve_agi_access(
     reason: str | None = None,
     root: str | Path | None = None,
 ) -> JsonObject:
-    context = load_context(root)
-    registry = load_registry(root)
-    run = _resolve_access_target(
-        registry,
-        context,
-        agi_id=agi_id,
-        source=source,
-        user_id=user_id,
-        nickname=nickname,
-        root=root,
-    )
-    if not isinstance(run, dict):
-        raise KeyError(str(agi_id or source or user_id or nickname or context.get("active_agi_id") or "active_agi_id"))
-    target_agi_id = str(run.get("agi_id") or "")
-    context.setdefault("agis", {})[target_agi_id] = run
-    context["active_agi_id"] = target_agi_id
-    _grant_agi_access(context, target_agi_id, reason=reason or "User approved Active Genome Index access for this session.")
-    save_context(context, root)
-    return {
-        "status": "completed",
-        "active_agi_id": target_agi_id,
-        "active_genome_index_access": agi_access_status(target_agi_id, context=context, root=root),
-    }
+    with context_authority_lock(root):
+        context = load_context(root)
+        registry = load_registry(root)
+        run = _resolve_access_target(
+            registry,
+            context,
+            agi_id=agi_id,
+            source=source,
+            user_id=user_id,
+            nickname=nickname,
+            root=root,
+        )
+        if not isinstance(run, dict):
+            raise KeyError(str(agi_id or source or user_id or nickname or context.get("active_agi_id") or "active_agi_id"))
+        target_agi_id = str(run.get("agi_id") or "")
+        context.setdefault("agis", {})[target_agi_id] = run
+        context["active_agi_id"] = target_agi_id
+        _grant_agi_access(context, target_agi_id, reason=reason or "User approved Active Genome Index access for this session.")
+        save_context(context, root)
+        return {
+            "status": "completed",
+            "active_agi_id": target_agi_id,
+            "active_genome_index_access": agi_access_status(target_agi_id, context=context, root=root),
+        }
 
 
 def revoke_agi_access(*, agi_id: str | None = None, root: str | Path | None = None) -> JsonObject:
-    context = load_context(root)
-    grants = context.setdefault(AGI_ACCESS_KEY, {})
-    if not isinstance(grants, dict):
-        grants = {}
-        context[AGI_ACCESS_KEY] = grants
-    if agi_id:
-        grants.pop(str(agi_id), None)
-    else:
-        grants.clear()
-    save_context(context, root)
-    return {
-        "status": "completed",
-        "revoked_agi_id": str(agi_id) if agi_id else None,
-        "revoked_all": not bool(agi_id),
-        "active_genome_index_access": agi_access_status(context.get("active_agi_id"), context=context, root=root),
-    }
+    with context_authority_lock(root):
+        context = load_context(root)
+        grants = context.setdefault(AGI_ACCESS_KEY, {})
+        if not isinstance(grants, dict):
+            grants = {}
+            context[AGI_ACCESS_KEY] = grants
+        if agi_id:
+            grants.pop(str(agi_id), None)
+        else:
+            grants.clear()
+        save_context(context, root)
+        return {
+            "status": "completed",
+            "revoked_agi_id": str(agi_id) if agi_id else None,
+            "revoked_all": not bool(agi_id),
+            "active_genome_index_access": agi_access_status(context.get("active_agi_id"), context=context, root=root),
+        }
 
 
 def agi_access_approved(

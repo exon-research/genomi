@@ -1,796 +1,1311 @@
-# GenomiLab Product Definition
+# GenomiLab Overall System Requirements
 
-- **Status:** product decision document with implemented developer-preview slice
-- **Evidence snapshot:** 2026-08-08
-- **Genomi baseline:** `master` at
-  `47e0d0585073450a810d78a5235428b91b5d746d` (the checkout matched
-  `origin/master` after `git pull --ff-only`)
-- **Current package version:** 0.1.0
+- **Status:** goal-ready normative system specification
+- **Requirements snapshot:** 2026-08-12
+- **Supersedes:** the earlier GenomiLab product definition and its developer-preview assumptions
+- **Normative terms:** **SHALL**, **SHALL NOT**, **SHOULD**, and **MAY** have their usual requirements meanings
 
-This document answers four questions:
+## 0. Goal objective
 
-1. What is GenomiLab, what does it do, and how do patients use it?
-2. What can the current Genomi release already do?
-3. What must be developed?
-4. Who is the end user, what is the end-to-end experience, and how will we
-   test whether it is genuinely the easiest good experience for that user?
+Build **GenomiLab**, an open-source, patient-facing personal research lab that
+investigates disease in the context of the current Genomi user's longitudinal
+**Patient Molecular Profile**: their existing Genomi-managed genome, reviewed
+phenotypes and health history, reported molecular and pathology findings,
+measurements, specimens and assays. GenomiLab SHALL investigate that patient
+context against current scientific evidence, which belongs in each
+investigation's evidence ledger rather than in the Patient Molecular Profile.
 
-### Implementation snapshot
+GenomiLab SHALL be a real application and domain system, not merely a UI. It
+SHALL provide the molecular-profile, disease-investigation, evidence-ledger,
+hypothesis/gap, policy, versioned-brief, and collaboration functionality that
+neither base Genomi nor a general agent harness provides. Only the **GenomiLab
+web portal** is presentation-only.
 
-The repository now includes a first executable vertical slice launched with
-`genomi lab`. It provides local patient-profile workspaces, append-only health
-facts, manual reported findings, bounded uncompressed VCF/gVCF intake, explicit
-current-session genome approval, and a source-preserving known-variant
-Investigation Brief. Two disjoint synthetic patient genomes exercise profile
-isolation end to end.
+The installed harness SHALL own question decomposition, dynamic planning,
+agent delegation, tool choice, execution, scientific reasoning, and synthesis
+drafts. The GenomiLab domain layer SHALL provide the durable patient-research
+objects and typed scientific capabilities the harness reasons over, validate
+and commit its artifacts, and retain the investigation independently of any one
+harness task. Genomi SHALL remain authoritative for current user identity,
+genome intake, the Active Genome Index (AGI), AGI reads/grants, genome-derived
+primitive evidence, libraries/jobs, and canonical Genomi evidence envelopes.
 
-This is deliberately labeled a developer preview for synthetic/public data.
-It is not the complete patient MVP defined below: at-rest encryption, native
-large-genome intake, transcript-HGVS normalization, broader public/literature
-evidence, export/deletion UX, clinician packets, and independent patient and
-security validation remain release gates. Paperclip is not needed for the
-working local slice and no API key is requested.
+The completed system SHALL give one patient an enduring **Research Desk** and
+Patient Molecular Profile with many resumable disease investigations over one
+reusable, local AGI. It SHALL use **GXL Paperclip** through GenomiLab's evidence
+gateway whenever an investigation needs evidence within Paperclip's scope and
+the request passes the contractual, privacy, consent, and source-quality gates
+in this specification. It SHALL use **Proto** and **Biohub ESM** only for the
+narrow analytical or experimental tasks for which those systems are suited,
+never as generic patient-interpretation or treatment engines.
 
-The supplied comparison URL, `https://omanta.com/`, was verified directly on
-2026-08-08. Its public site describes a concierge “research lab for one” for
-complex patients: a disease-specific PhD case team, organization of records and
-molecular data, diagnostic-gap analysis, evidence synthesis, physician
-collaboration, and a living therapeutic roadmap. GenomiLab can learn from that
-continuity and case-research model, but it is an open-source software product,
-not a clone of a human scientific service and not a substitute for its clinical
-or wet-lab collaboration.
+The system succeeds when a nontechnical patient can ask or resume a question,
+understand what the agents are doing, inspect source-linked evidence and gaps,
+and prepare useful questions for a qualified professional without creating a
+second patient profile, uploading their genome again, learning genomic file
+formats, or interacting with agent/tool internals.
 
-### Decisions at a glance
+## 1. Product definition
 
-| Question | First decision |
+### 1.1 One-paragraph blurb
+
+GenomiLab is an open-source personal research lab that builds a longitudinal,
+source-linked molecular profile for the current Genomi user and helps
+investigate how that profile relates to disease. It combines reviewed health,
+laboratory, molecular, pathology, specimen and assay observations with targeted
+reads from the user's existing Genomi Active Genome Index and current public
+evidence. The installed agent harness plans and reasons; GenomiLab supplies the
+domain capabilities, persists the evidence and investigation, tracks hypotheses
+and gaps, and produces versioned patient and clinician views. It supports
+research and professional collaboration; it does not diagnose, validate a
+laboratory test, or decide treatment.
+
+### 1.2 Product promise
+
+> Help me investigate a disease against my molecular profile, understand which
+> personal observations and public evidence support or contradict possible
+> mechanisms, see what has not been measured or confirmed, and prepare the best
+> next questions for qualified professionals.
+
+The universal output is an **Investigation Brief**. A candidate molecular
+mechanism appears only when the evidence supports that shape. “Molecular
+driver” SHALL NOT be promised as a routine output from a germline genome and
+health history.
+
+### 1.3 Non-negotiable decisions
+
+| Decision | Requirement |
 | --- | --- |
-| What is the product? | A local-first, open-source case-research workspace that turns one patient question into an auditable Investigation Brief. |
-| Who is first? | An adult with a rare, undiagnosed, or strongly heritable condition, an existing clinical finding or candidate gene/variant, and access to a clinician or genetic counselor. |
-| What does the patient get? | An Investigation Brief with evidence and counterevidence kept separate by source, missing-data and confirmation needs, and a selective clinician packet—not a diagnosis or treatment plan. A candidate-mechanism section appears only when the evidence supports that shape. |
-| What is reused? | Genomi's genome intake, Active Genome Index, source-specific evidence capabilities, evidence envelope, background jobs, libraries, journal, and dashboard components. |
-| What is built first? | A one-click local app, Personal Health Context, consent/disclosure gateway, investigation state, provider-neutral literature adapter, Investigation Brief, security controls, and patient-product evaluations. |
-| Which external systems enter the MVP? | BenchFlow for public/synthetic development evaluation. Paperclip is an internal public-evidence pilot only until commercial/privacy terms clear; Omanta is a UX comparator; Proto, Biohub ESM, and Benchling are deferred research-lab options. |
+| Patient identity | The patient is the **current Genomi user**. GenomiLab SHALL NOT create a parallel patient, profile, or case identity. |
+| Genome lifecycle | A genome is supplied to Genomi once and represented by a Genomi-owned AGI. GenomiLab SHALL NOT request a VCF or other genome upload per investigation. |
+| Molecular profile | GenomiLab SHALL own one longitudinal Patient Molecular Profile aggregate keyed exclusively to Genomi `user_id`. It is scientific context, not a second identity, and references rather than copies the AGI. |
+| Investigation model | GenomiLab SHALL own the durable disease investigation and its versions. One investigation MAY bind to multiple harness tasks/runs over time and pins exact molecular-profile and AGI snapshots. |
+| Portal role | The **GenomiLab web portal** is UI. It SHALL NOT directly access domain storage, the harness, Genomi, providers, files, or contain its own planner, tool selector, reasoning engine, or synthesizer. |
+| GenomiLab domain role | GenomiLab SHALL own patient molecular observations, approved context/profile snapshots, disease investigations, evidence ledgers, hypothesis/gap registers, brief/review versions, consent/egress policy, provider mediation, and collaboration records. |
+| Harness role | The installed harness owns conversation/run state, dynamic planning, agents/subagents, capability choice, reasoning, synthesis drafts, and execution traces. It SHALL NOT be the sole durable owner of the patient research record. |
+| Genomi role | Genomi owns current-user and AGI state, genome intake and readiness, AGI reads/grants, genome-derived primitive evidence, genomics capabilities, public libraries, background jobs, and canonical Genomi evidence envelopes. |
+| Paperclip role | GXL Paperclip is a first-class, preferred public-evidence provider when it covers the evidence need and its use is allowed. It is not the orchestrator, source of clinical truth, or sole evidence path. |
+| Proto/ESM role | Proto and ESM are conditional scientific-computation tools. They SHALL be invoked only after a concrete task demonstrates why the model or design framework is relevant. |
+| Clinical boundary | Agents produce research observations, candidate hypotheses, gaps, and professional questions. Qualified clinicians and laboratories own clinical confirmation, diagnosis, and treatment decisions. |
+| Omanta relationship | GenomiLab borrows the continuity, depth, evidence organization, gap analysis, and collaboration pattern of a “research lab for one.” It SHALL NOT claim parity with a human scientific or clinical service unless independently demonstrated. |
 
-## 1. Product decision
+### 1.4 Explicit non-goals
 
-GenomiLab is a **local-first personal research workspace for patients and care
-partners**. It combines a person's genome, the health context they choose to
-provide, and versioned public scientific evidence to produce auditable
-**Investigation Briefs**. When the evidence supports a directional biological
-explanation, the brief may include candidate molecular mechanisms.
+GenomiLab is not:
 
-Its promise is:
+- a cosmetic portal around Genomi or a general chat harness;
+- a second genome uploader or genome repository;
+- a replacement agent harness;
+- a fixed medical workflow encoded in the portal;
+- an autonomous diagnostic, tumor-board, prescribing, or treatment-selection
+  system;
+- a clinical laboratory or a substitute for validated pathology, sequencing,
+  or other biomarker testing;
+- a system that converts a no-hit, unavailable source, uncertain variant, model
+  prediction, or sparse genome region into a clinical negative;
+- a single flattened “molecular driver,” pathogenicity, actionability, or
+  treatment score over heterogeneous evidence;
+- a patient-facing protein, antibody, vector, CRISPR, or therapeutic sequence
+  generator; or
+- a claim that all computation is local when the selected harness, model, or
+  evidence provider uses a hosted service.
 
-> Help me investigate one health question, see what my personal and public
-> evidence supports or contradicts, identify a candidate mechanism when the
-> evidence is ready for one, understand what is missing, and know what to ask a
-> qualified professional to confirm.
+## 2. Users and jobs to be done
 
-GenomiLab is not a diagnostic system, a treatment recommender, or an autonomous
-drug-design service. It must not turn an association, model prediction, absent
-database hit, or unconfirmed raw-genome observation into a clinical conclusion.
+### 2.1 Primary user
 
-The product should be built as a patient-facing application **on top of Genomi**,
-not as a rewrite of Genomi's evidence engine:
+The primary user is an adult patient investigator who:
 
-- **Genomi remains the capability library.** It owns genome intake, the Active
-  Genome Index, public-source retrieval, source-specific evidence operations,
-  evidence envelopes, and local research memory.
-- **GenomiLab becomes the host and product.** It owns onboarding, health-context
-  capture, question decomposition, just-in-time consent, investigation state,
-  patient presentation, and sharing.
-- **The host synthesizes; tools do not choose a universal best gene.** Different
-  source priors remain visible and separate.
+- has a complex, rare, undiagnosed, strongly heritable, medication-related, or
+  molecularly characterized condition;
+- is already represented by a local Genomi user and may have a ready AGI;
+- has health information distributed across memory, reports, patient portals,
+  and medication lists;
+- is motivated to investigate but is not expected to understand VCFs, genome
+  builds, HPO IDs, model names, MCP, or agent architecture;
+- wants traceable research and a better professional conversation, not a
+  black-box diagnosis; and
+- values control over genomic and health information.
 
-This division preserves Genomi's core design while making it usable without an
-MCP client, command line, or knowledge of genomic file formats.
+The primary job is:
 
-## 2. What GenomiLab is
+> Turn my genome, relevant health history, and the scientific record into a
+> defensible set of observations, hypotheses, gaps, and questions that I can
+> understand and take to the right professional.
 
-### 2.1 The product's core objects
+### 2.2 Secondary users
 
-| Object | Purpose |
-| --- | --- |
-| Person profile | Identifies whose data is active and records consent, proxy/caregiver authority, preferences, and sharing choices. |
-| Active Genome Index | Genomi's local, queryable representation of the person's genome and its callability limits. |
-| Personal Health Context | A local, longitudinal set of source-anchored conditions, symptoms/phenotypes, medications, allergies, measurements, procedures, family history, and relevant exposures. It is separate from the Active Genome Index. |
-| Investigation | One patient question, its declared scope, the personal facts approved for use, the sources consulted, defaults applied, and resumable work state. |
-| Evidence record | A source-specific observation with provenance, date/version, coverage state, and limitations. |
-| Investigation Brief | The patient-facing synthesis: what was asked, evidence and counterevidence by source family, scope and missing evidence, confirmation needs, and next questions. It contains candidate mechanisms only when the evidence supports a directional biological hypothesis. |
-| Clinician packet | A concise, user-approved export of relevant observations, citations, unresolved questions, and confirmation requests. |
+- A caregiver or family member acting under explicit, recorded authority.
+- A genetics-literate patient who wants full technical provenance.
+- A clinician, genetic counselor, pathologist, pharmacist, or molecular tumor
+  board member reviewing a patient-selected packet.
+- A researcher receiving an explicitly separated, nonclinical experimental
+  handoff.
 
-“Personal Health Context” is a product/domain model, not an alias for the
-genome. Genome reads must continue to cross the Active Genome Index reader
-boundary. Health-history facts need their own narrow reader and access contract.
+### 2.3 Initial product wedge
 
-### 2.2 What “molecular driver” means
+The first complete patient lane SHOULD answer:
 
-GenomiLab should not publicly promise to find “the molecular drivers of your
-disease.” Germline sequence plus health history cannot generally establish that
-level of causality. Common disease reflects multiple genetic and nongenetic
-factors, while cancer treatment questions often require tumor/somatic and other
-molecular measurements rather than inherited DNA alone.
+> Could an existing reported genetic finding or candidate help explain this
+> condition, what evidence supports or contradicts it, and what remains to be
+> confirmed?
 
-The universal product output is an **Investigation Brief**, not a diagnosis.
-Only when the consulted evidence supports a directional biological explanation
-does it include a **candidate molecular-mechanism hypothesis**, which is not
-necessarily a single gene. The word “driver” should be used only when a cited
-source establishes that term in the relevant biological context. A mechanism
-hypothesis may involve a variant, gene, regulatory element, pathway, cell type,
-drug-response mechanism, or a combination of these.
+Pharmacogenomics, common-disease/polygenic risk, oncology/somatic analysis, and
+experimental sequence design are separate lanes with different prerequisites
+and safety contracts. They SHALL NOT be hidden behind one generic “health
+risk” workflow.
 
-Every mechanism hypothesis must show:
+## 3. System ownership and architecture
 
-- the personal observations used, including genotype and callability support;
-- the relevant health-context facts and their sources/dates;
-- separate evidence streams such as ClinVar, gene–disease validity, HPO match,
-  GWAS, PRS, population frequency, functional perturbation, pathway/cell-type,
-  pharmacogenomic, and literature evidence;
-- supporting evidence, counterevidence, conflicts, and missing coverage;
-- whether the evidence supports an answer, only a scoped hypothesis, or no
-  answer yet;
-- what would materially strengthen or weaken the hypothesis;
-- clinical or laboratory confirmation needed before health decisions; and
-- citations and an “evidence current as of” timestamp.
+### 3.1 Component ownership
 
-There is no single cross-source “mechanism score.” Source-specific rankings can be
-shown side by side, while the GenomiLab host explains why it gives one
-hypothesis more attention in this investigation.
-
-### 2.3 Patient-facing features
-
-#### A. Question-first start
-
-The first screen asks, “What are you trying to understand?” The user can start
-with a diagnosed condition, a symptom cluster, a medication, a known variant,
-or a previous finding. A public-evidence preview is available before private
-data is required.
-
-The first release should be deliberately narrower: “Could this existing
-genetic finding or candidate help explain my condition, and what remains to be
-confirmed?” for an adult who has a clinical report or candidate gene/variant
-and can involve a clinician or genetic counselor. It is not an open-ended
-genome-wide diagnostic scan.
-Pharmacogenomics, common-disease/PRS, and cancer are separate investigation
-lanes with different evidence and confirmation rules; they must not be hidden
-behind one generic “health risk” workflow. Cancer treatment matching is not a
-germline-genome feature and requires tumor/somatic and other disease-specific
-molecular evidence.
-
-#### B. Private data workspace
-
-- For the first slice, accept manual entry of a reported finding and pre-called
-  VCF/gVCF. The existing Genomi engine can also ingest consumer arrays, BAM,
-  FASTQ, and genome bundles, but those become advanced product paths only after
-  their setup, storage, coverage, and interpretation UX is validated.
-- Show plain-language readiness: variants ready, full reference coverage still
-  processing, source too sparse for a requested claim, or evidence library
-  missing.
-- Capture only the health context relevant to the current question first; do
-  not require a complete medical-history upload before the user sees value.
-- Later, import structured FHIR/US Core and GA4GH Phenopacket data, with a review
-  step before imported facts become usable evidence.
-- Keep source, event date, recorded date, status, and confidence for every
-  health-context fact. Patient-reported, record-derived, clinician-entered, and
-  inferred facts must remain distinguishable.
-
-#### C. Guided investigation
-
-- Translate the user's wording into explicit targets while preserving the
-  original question.
-- Explain which private facts would help and request access only when needed.
-- Run the smallest useful source-specific Genomi operations first, then add
-  orthogonal evidence when the first stream cannot answer the question.
-- Search current literature, regulatory documents, and trials through a
-  traceable external evidence adapter.
-- Resume background genome and evidence jobs rather than starting duplicate
-  work.
-
-#### D. Evidence workspace
-
-- An evidence map that shows source-specific connections among the condition,
-  phenotypes, variants, genes, pathways, cells/tissues, medications, and
-  publications.
-- An evidence ledger with exact source records, versions, retrieval dates,
-  defaults, and conflicts.
-- Clear states: observed in this sample, supported by a public source,
-  association only, model prediction, not assessed, blocked, and not observed
-  in the consulted scope.
-- A research notebook that records decisions and questions while keeping agent
-  notes distinct from source evidence.
-
-#### E. Results patients can use
-
-The top layer of an Investigation Brief contains only:
-
-1. what the investigation found;
-2. what that could mean;
-3. what remains uncertain or untested;
-4. what not to conclude; and
-5. the next useful questions or confirmation steps.
-
-Technical identifiers, source records, methods, and full provenance remain one
-click away. High-impact genetic findings and medication-response findings
-always carry confirmation language. The product never tells a patient to start,
-stop, or change a medication.
-
-#### F. Continuity and updates
-
-- Save the investigation, evidence snapshot, source versions, and unresolved
-  questions locally.
-- Allow a user to refresh an investigation and see only what changed.
-- Report source freshness honestly. “Latest evidence” means current within the
-  enumerated, successfully consulted sources and their update schedules—not all
-  scientific knowledge everywhere.
-- Offer user-controlled monitoring later; do not send private queries to a
-  hosted service silently.
-
-#### G. Collaboration and control
-
-- Export a one- or two-page clinician-facing front section, a technical
-  appendix, and a machine-readable evidence bundle.
-- Let the user preview and remove facts before sharing.
-- Show an access and disclosure log.
-- Support export and deletion of profiles, health context, investigations, and
-  Genomi-owned artifacts.
-
-## 3. What the current Genomi baseline already supports
-
-The inspected baseline registers **92 operations** across its runtime and
-capability catalogs; that number includes internal and support operations, so it
-is not a count of patient-visible features. The durable capability inventory is
-below.
-
-| Area | Current support | Reuse in GenomiLab | Important boundary |
-| --- | --- | --- | --- |
-| Local genome intake | Content-based detection and intake for VCF/gVCF, BAM, paired FASTQ, major consumer-array exports, compressed/archive forms, and `.genome/1.0` bundles. | Reuse directly. | Some formats require aligners/reference assets; long jobs can run in the background. |
-| Active Genome Index | Local indexed alleles, zygosity, quality/depth/filter fields, reference blocks, region queries, exact-allele support, QC, and callability classification. | Core personal-genome substrate. | It is a technical evidence index, not a medical record or diagnosis. |
-| Profile and access context | User nicknames, genome assignment/selection, default user, session approval/revocation, rename, list, and removal. | Starting point for person selection and consent. | It is not yet a patient identity, proxy-consent, or granular disclosure system. |
-| Variant and ClinVar evidence | Variant resolution, allele/gene context, exact build-specific ClinVar matching, candidate review groups, and gnomAD frequency lookup. | Core rare/inherited-risk stream. | Empty or unmatched scope is not a clinical negative; optional libraries may be missing. The current resolver does not accept transcript-level coding/protein HGVS commonly printed on clinical reports. |
-| Phenotype and disease evidence | Phenotype/HPO normalization and comparison; GenCC gene–disease retrieval; disease comparison; Open Targets disease/drug-target evidence; trait-to-gene records; risk-investigation planning. | Core condition and rare-disease streams. | The tools compare evidence and plan review; they do not select a diagnosis. |
-| Pharmacogenomics | Medication review; ClinPGx, FDA, and PGxDB retrieval; PharmCAT preflight/run/import; specialized-call handling; pharmacogene requirement reporting. | Core medication workflow. | Current health context is passed per call; genotype/phenotype limitations and clinical confirmation remain material. |
-| Polygenic scores | PGS Catalog search/metadata/import, overlap QC, raw weighted score calculation, and calibration boundaries. | Optional common-disease context. | A raw score without validated population calibration is not an individual risk percentile. |
-| Ancestry context | 1000 Genomes panel inventory, overlap, PCA projection, nearest reference neighbors, and qualitative population-context explanation. | Quality/context input when relevant. | It is reference-panel similarity, not race or ethnicity prediction. |
-| Nutrigenomics | Declared domains, curated marker retrieval, variant lookup, evidence tiers, and non-prescription boundaries. | Secondary research stream. | It must not become personalized diet or supplement prescribing. |
-| GWAS | Source-specific gene and variant association comparison against GWAS Catalog records. | Association stream. | Association is not causality and must not override stronger source priors. |
-| Functional genomics | BioGRID ORCS and DepMap retrieval, GEO discovery, local perturbation-table import, and source-specific candidate comparison. | Mechanistic support stream. | Experimental context and assay relevance must remain visible. |
-| Pathway/cell/region grounding | Reactome/KEGG-style pathway members, cell-marker retrieval, and GENCODE/ENCODE region features. | Mechanism and tissue-context layer. | These are grounding records, not patient-specific proof. |
-| Sequence utilities | Deterministic sequence analysis, reference matching, translation, ORFs, restriction sites, Kozak context, and primer checks. | Advanced evidence support. | Not a variant-effect or therapeutic-design engine. |
-| Research and memory | Target packets, source catalog, reviewed-research store/search, evidence-scoped journal, journal summaries, and memory export. | Foundation for investigation provenance. | Journal entries are agent notes, not evidence; literature retrieval is not yet a full current-evidence pipeline. |
-| Evidence contract | Canonical `evidence_envelope` with finding state, answer readiness, coverage, observations, negative-inference rules, guidance, and next actions. | Preserve as the contract behind every result card. | GenomiLab must not invent a second readiness or confidence contract. |
-| Dashboard | Local, self-contained HTML dashboard across overview, variants, PGx, risk, ancestry, and nutrigenomics, with ready/empty/blocked/running states. | Reuse components and panel adapters. | It is a generated genome dashboard, not an interactive longitudinal patient workspace. |
-| Installation and libraries | Apache-2.0 Python package; agent-guided install/update; managed public-library registry; idempotent refresh; missing-library states; and host response profiles. | Reuse runtime and library lifecycle. | The current install/MCP flow is still too technical for the primary patient user, and a full library profile can consume several gigabytes. |
-
-Repository evidence for this inventory:
-
-- Product and source support: [`README.md`](README.md),
-  [`RELEASE_NOTES.md`](RELEASE_NOTES.md), and [`SKILL.md`](SKILL.md)
-- Runtime and privacy surface:
-  [`src/genomi/runtime/tool_catalog.json`](src/genomi/runtime/tool_catalog.json),
-  [`src/genomi/active_genome_index/tool_catalog.json`](src/genomi/active_genome_index/tool_catalog.json), and
-  [`src/genomi/evidence/envelope.py`](src/genomi/evidence/envelope.py)
-- Capability definitions: the `tool_catalog.json` files under
-  [`src/genomi/capabilities/`](src/genomi/capabilities/)
-- Current patient-facing artifact:
-  [`src/genomi/capabilities/decode/`](src/genomi/capabilities/decode/)
-
-### 3.1 Present but not yet product-complete
-
-The current runtime can accept phenotype terms, medication context, indication,
-dose, current medications, and contraindication text in focused calls. The
-README also recognizes optional phenotype, medications, and family history as
-personal context. It does **not** yet provide a canonical longitudinal health
-context with source reconciliation, dates, consent, provenance, and reusable
-read operations.
-
-The current user registry is sufficient to associate a nickname with one or
-more genome artifacts. It is not sufficient for patient/caregiver relationships,
-source-level permissions, or safe outbound-query approval.
-
-The earlier release-blocking access mismatch is resolved in the developer
-preview: a default user can still auto-select profile metadata, but that never
-authorizes a genome read. Existing Active Genome Index data requires explicit
-current-session approval, and switching GenomiLab profiles revokes the prior
-grant. See the [governance rule](AGENTS.md),
-[implementation](src/genomi/runtime/context/agi_access.py), and
-[documented behavior](README.md).
-
-The decode dashboard is a useful technical starting point, but the primary
-experience still requires an agent host and Genomi-specific commands. It does
-not begin with a patient question, collect/reconcile health history, maintain an
-investigation, or create a clinician-ready Investigation Brief.
-
-Current genome evidence is also not a full clinical interpretation pipeline.
-There is no supported genome-wide consequence-annotation workflow, ACMG
-classification, de novo/segregation analysis, or general CNV/SV, repeat,
-mitochondrial, or HLA interpretation. The existing public/synthetic test matrix
-validates software contracts, not clinical performance on real whole genomes.
-
-## 4. What must be developed
-
-### 4.1 P0: required for a credible patient MVP
-
-| Capability | Required behavior | Why it is new |
+| Component | Owns | SHALL NOT own |
 | --- | --- | --- |
-| Local GenomiLab application | A signed desktop shell over a local web service, with one-click setup, question entry, imports, progress, findings, evidence detail, settings, export, and deletion. MCP and direct localhost access remain advanced interfaces. | Genomi currently exposes CLI/MCP plus a generated dashboard, not a complete patient app. |
-| Setup and library planner | Start with the small public-only path; explain disk, compute, network, and expected time before genome or library work; install only what the chosen investigation needs; resume interrupted setup. | The current installer and library profiles are capable but expose technical choices and a full installation can be several gigabytes. |
-| Guided report/finding entry and normalization | Capture the lab's exact gene/variant text, transcript and coding/protein HGVS when present, classification, test scope, laboratory, report date, and confirmation status. Resolve transcript/HGVS, assembly, alleles, and VRS identity with explicit ambiguous/unresolved/review states; never silently choose a transcript, build, or allele. Retain an optional local report attachment without automatically extracting facts. | Genomi can resolve rsIDs and genomic coordinates/alleles but has no patient report/finding object or transcript-HGVS resolver. Automated document extraction belongs in P1 after a human-review contract exists. |
-| Personal Health Context | Typed, temporal, source-aware facts for conditions, symptoms/HPO, medications, allergies, measurements/labs, procedures, family history, and exposures. Include review/reconciliation and narrow reader methods. | Today these facts are transient request parameters or agent notes. |
-| Consent and disclosure gateway | Separate permission for local genome reads, local health-context reads, and each class of outbound query. Preview exactly what will leave the machine. | Current approval is centered on Active Genome Index reads, not health records or network disclosures. |
-| Local identity boundary | Bind the workspace to an OS user or app unlock, isolate each person's data and sessions, expire sensitive access, and require reauthentication for export or deletion. | Current nicknames and selected-user state are routing context, not authentication or authorization. |
-| Investigation state | Persist the original question, targets, approved context, plan, calls, background jobs, defaults, source coverage, evidence snapshot, and unresolved questions. | Journal and research storage provide pieces, but no patient investigation object/workflow exists. |
-| Provider-neutral literature adapter | Search/read primary literature, regulatory documents, trials, and protein/drug databases through public APIs or an approved commercial provider; normalize claims, citations, corrections/retractions, source dates, source type, peer-review state, and retrieval coverage into the evidence contract. | Genomi has reviewed-source storage and targeted public adapters, not broad verified literature retrieval. No hosted provider may become the only path to evidence. |
-| Investigation Brief composer | Patient summary, source-separated evidence views, conflicts, gaps, conditional mechanism hypotheses, confirmation needs, change history, and clinician export. | The decode dashboard is genome-panel-centric and does not synthesize a condition-specific investigation brief. |
-| Patient-safe language layer | Progressive disclosure, plain-language definitions, teach-back checks for consequential findings, distress-aware presentation, and non-prescriptive medication language. | Response profiles exist, but patient workflow and comprehension verification do not. |
-| Data protection controls | Encrypt personal data at rest by default with keys held in the OS credential store, use least-privilege file permissions, keep secrets outside reports/logs, disable sensitive telemetry, record disclosures, and implement tested export, backup, recovery, and deletion semantics. | Local-first storage alone is not a complete application security or breach-response design. |
-| Product evaluation suite | Reproducible public/synthetic scenarios that score evidence use, source-prior separation, negative inference, privacy, comprehension, clinical-confirmation language, cost, and task completion. | Genomi has extensive capability tests, but not end-to-end patient-product evaluations. |
+| **GenomiLab web portal** | Navigation, forms, accessible presentation, collection of user decisions, progress rendering, molecular-profile exploration, and brief/review views | Domain records, authorization, direct harness/Genomi/provider/filesystem access, agent orchestration, tool selection, scientific synthesis, or clinical decisions |
+| **GenomiLab application/domain services** | Research Desk; Patient Molecular Profile; health facts and reported findings; source artifacts, specimens and assays; approved context/profile snapshots; canonical disease investigations; harness-task/run bindings; evidence ledger; hypothesis/gap register; brief/review versions; consent, egress, collaboration, export/deletion receipts; and public-evidence/model gateways | Raw genome/AGI storage or reads, a fallback LLM/agent loop, dynamic question routing, dynamic tool/agent selection, unsupported clinical confirmation, or treatment decisions |
+| **GenomiLab domain store** | Durable versioned domain objects keyed to canonical Genomi `user_id`, including investigation artifacts and policy receipts | Raw genome sources, AGI databases/paths/rows, provider credentials in records, or hidden agent traces |
+| **Stateless harness adapter** | Host discovery, capability negotiation, GenomiLab-to-task transport, typed event streaming/replay, and ephemeral correlations/cursors | Canonical investigations, durable mappings or artifacts, authorization, reasoning, duplicate patient/genome state, or evidence policy |
+| **Installed agent harness** | Task/run/conversation state, dynamic planning, agent/subagent coordination, capability and tool invocation, scientific reasoning, synthesis drafts, checkpoints, internal messages, and execution traces | Canonical patient identity/profile, canonical investigation/ledger/brief records, Genomi AGI implementation, GenomiLab policy, or direct unapproved provider access |
+| **Genomi** | Current user; user-to-genome relationship; source intake; AGI lifecycle, immutable AGI revisions, reader and grants; genome-derived primitive evidence; genomics capabilities; libraries; background jobs; and original Genomi evidence envelopes | Patient Molecular Profile, longitudinal health history, disease investigations, hypotheses, briefs, collaboration, or whole-question routing |
+| **External evidence/model providers** | Their declared public corpus, source records, or model outputs | Patient identity, authorization, durable canonical memory, final synthesis, clinical validation, or treatment decisions |
 
-### 4.2 P1: needed after the thin vertical slice works
+The Patient Molecular Profile SHALL be a GenomiLab domain aggregate keyed to
+the Genomi `user_id`; it SHALL NOT create an independently selectable identity.
+The harness receives approved immutable profile slices and writes proposed
+domain artifacts through GenomiLab capabilities. It does not receive direct
+write access to the domain store.
 
-- FHIR R4/US Core patient-access import for conditions, observations/labs,
-  medications, allergies, procedures, diagnostic reports, family history, and
-  provenance.
-- GA4GH Phenopacket v2 import/export for phenotypes, measurements, diseases,
-  interpretations, medical actions, and linked genome files.
-- PDF/CSV clinical-document import with extraction provenance and a mandatory
-  human confirmation queue. Unreviewed extracted facts must not drive answers.
-- Family/pedigree and caregiver/proxy workflows with explicit authority and
-  relationship-aware privacy.
-- Investigation refresh and source-change diffing.
-- Secure, selective clinician collaboration rather than sharing an entire
-  genome or health record.
-- Separate, explicitly validated workflows for pharmacogenomics and calibrated
-  common-disease risk; neither inherits rare-disease interpretation rules.
-- A genome-wide rare-disease candidate pipeline only after supported consequence
-  annotation, CNV/SV/repeat/mitochondrial handling, phase and segregation, test
-  scope/callability, phenotype integration, and appropriately validated
-  interpretation contracts exist. The MVP must not simulate this with a gene
-  list or universal score.
-- Multilingual content validated with native speakers, not direct machine
-  translation alone.
-
-### 4.3 P2: research-lab expansion, not default patient workflow
-
-- Advanced variant-effect and protein-mechanism analyses after a candidate is
-  established by source evidence.
-- Optional Proto/proto-tools execution for researcher-approved computational
-  experiments.
-- Optional Biohub ESM inference for protein representation or structure
-  hypotheses, with model/version/license and compute provenance.
-- Optional Benchling export/connector for a collaborating wet lab or research
-  organization.
-- Somatic-variant, tumor, RNA, protein, pathology, and tissue-context contracts
-  if GenomiLab later expands into cancer or multi-omics research. These data
-  must not be treated as interchangeable with a germline Active Genome Index.
-- Design-of-experiment and sequence-design campaigns in an explicitly separate
-  researcher mode. Synthetic designs must never appear as patient treatment
-  recommendations.
-
-### 4.4 Proposed health-context contract
-
-Each Personal Health Context fact should minimally carry:
-
-- typed fact kind and normalized term/code when available;
-- the user's original wording;
-- value, units, explicit present/absent/unknown status, onset/event time,
-  progression, and recorded time as applicable;
-- source type and source identifier/document hash;
-- biological relationship, affected status, and inheritance/segregation
-  evidence when a family fact is relevant;
-- assertion author: patient, caregiver, clinician, imported record, or model;
-- verification state: unreviewed, user-confirmed, record-confirmed, or
-  clinician-confirmed;
-- supersession/reconciliation links rather than destructive overwrite;
-- access scope and disclosure history; and
-- the exact investigation(s) in which it was used.
-
-No health-context importer should infer a diagnosis from a symptom or a
-medication from an OCR fragment. Inference may create a review candidate, never
-an accepted fact. “Clinician-confirmed” requires authenticated clinician input
-or provenance from an appropriate signed clinical report; a patient or agent
-cannot promote a fact to that state by selecting a label.
-
-### 4.5 Safety-stage contract
-
-Every patient-facing statement must occupy exactly one of four stages:
-
-1. **Research observation** — a fact in a personal or public source, with
-   provenance and coverage limits.
-2. **Candidate hypothesis** — GenomiLab's source-linked synthesis of relevant
-   observations and counterevidence.
-3. **Clinically confirmed result** — a result confirmed through an appropriate
-   clinical test or qualified professional and recorded with that provenance.
-4. **Diagnosis or treatment decision** — a decision made in clinical care.
-
-GenomiLab creates stages 1 and 2 and can record or prepare questions for stage
-3. It does not make stage-4 decisions. A variant of uncertain significance is
-never actionable by itself; a research or raw-data observation never silently
-becomes “clinically confirmed”; and secondary findings require a separate
-opt-in before analysis or display. Every screen must keep an urgent-care route
-available for symptoms that cannot safely wait for research.
-
-## 5. End-user profile
-
-### 5.1 Primary user: the patient investigator
-
-For the first release, an adult living with a rare, undiagnosed, or strongly
-heritable condition who:
-
-- already has a clinical report, known finding, or candidate gene/variant, and
-  may also have a genome, exome, or VCF;
-- has health information distributed across memory, reports, portals, and
-  medication lists;
-- is motivated to investigate but is not a bioinformatician;
-- wants evidence and a better conversation with a clinician, not a black-box
-  diagnosis;
-- has access to a clinician or genetic counselor for confirmation and medical
-  decisions;
-- may be anxious, fatigued, visually impaired, cognitively overloaded, or using
-  the product during a stressful period; and
-- values local control over genomic and health data.
-
-The primary job is: **“Help me turn my scattered personal data and the research
-literature into a defensible set of hypotheses and questions I can take to the
-right professional.”**
-
-### 5.2 Secondary users
-
-- A parent, spouse, or other care partner acting with explicit permission.
-- A rare-disease caregiver coordinating phenotype and family evidence.
-- A genetics-literate patient who wants full methods and source records.
-- A genetic counselor, clinician, or researcher receiving a patient-approved
-  packet. These experts are collaborators, not the primary owner of the local
-  workspace.
-
-### 5.3 Not the first target
-
-- Emergency or acute-care decisions.
-- Autonomous diagnosis, treatment selection, or medication dosing.
-- Prenatal, embryo, or pediatric use without a separately designed consent and
-  safeguarding model.
-- Population/cohort research or biobank management.
-- Wet-lab automation and therapeutic sequence design.
-- General wellness optimization as the product's main promise.
-- Cancer diagnosis or treatment matching from germline data alone.
-
-## 6. End-to-end user experience
-
-### 6.1 Recommended flow
-
-| Step | What the patient experiences | What GenomiLab does |
-| --- | --- | --- |
-| 1. Ask | “What are you trying to understand?” plus examples. No file is required. | Preserves the original wording, proposes explicit entities/terms, and offers a public-only start. |
-| 2. Set expectations | A short explanation of research vs clinical use and what kinds of results may be sensitive. | Records acknowledgment without using a blanket consent to cover later disclosures. |
-| 3. See a public baseline | A brief overview of known evidence and which personal inputs could make the investigation more specific. If online retrieval is needed, the user first sees and approves the exact terms to be sent. | Starts with installed/cached public sources and does not search for old private context. A condition, symptom cluster, or rare variant remains sensitive even when the destination is a public database. |
-| 4. Add only useful context | The user can import a genome, enter a few relevant symptoms/diagnoses/medications, or skip. | Requests the minimum evidence needed, shows source/readiness, and records provenance. |
-| 5. Approve private access | A plain preview of the local data needed for the investigation. Any earlier or later network request has its own just-in-time egress preview. | Records one intelligible session/investigation-scoped grant; asks again only if the data class, purpose, or destination expands. Raw genome and full health history remain local. |
-| 6. Investigate | A progress view says which evidence streams are complete, running, blocked, empty, or unavailable. | Runs source-specific tools, resumes jobs, records defaults, and keeps source priors separate. |
-| 7. Review the brief | A layered Investigation Brief leads with findings, uncertainty, and next questions; it says “no supported mechanism yet” when appropriate. | Synthesizes only from evidence records; every answer-shaped statement links back to evidence. |
-| 8. Confirm understanding | For consequential findings, the user answers a short “what this does and does not mean” check. | Uses health-literacy universal precautions and corrects misunderstandings before sharing. |
-| 9. Take the next step | Save, refresh later, or create a clinician packet after removing anything they do not want to share. | Produces a scoped export and records the disclosure. |
-
-### 6.2 Is this the best and easiest experience?
-
-It is the strongest current product hypothesis, but it cannot honestly be
-called “best” until representative patients use it.
-
-The recommended first distribution is the signed desktop shell defined above:
-it keeps the genome and health context local while hiding Python, MCP, Docker,
-library names, and localhost lifecycle from the patient. A browser-accessible
-local service can remain underneath for portability and expert access.
-
-It is likely easier than the current Genomi flow because it is:
-
-- **question-first, not installation-first;**
-- **public-first, not upload-everything-first;**
-- **progressive, not a wall of genomic panels;**
-- **just-in-time about consent and missing data;**
-- **layered for plain language and expert detail;** and
-- **oriented toward a clinician conversation, not false certainty.**
-
-The design deliberately does not start with “upload your whole genome and
-medical record.” That creates delay, privacy anxiety, and cognitive burden
-before the user knows whether the product can help.
-
-### 6.3 Usability and safety launch gates
-
-Test with patients/caregivers across genetics literacy, age, disability,
-language, and diagnostic experience. Before a public patient release:
-
-- at least 80% of representative participants should complete a first
-  public-only investigation without facilitator help;
-- median time to a useful public brief should be no more than five minutes;
-- at least 80% should complete the supported end-to-end path—reported finding
-  or pre-called VCF, minimum health context, investigation, and clinician
-  packet—without facilitator intervention;
-- completion, abandonment, elapsed time, error recovery, and support requests
-  must be compared with both current Genomi and a realistic manual source-search
-  workflow; the new path must improve completion or workload without weakening
-  comprehension, privacy, or evidence fidelity;
-- at least 90% should correctly distinguish “observed in my data,” “public
-  association,” “research hypothesis,” and “requires clinical confirmation”;
-- consequential-result teach-back errors must trigger clarification, not allow
-  silent progression to sharing;
-- all patient-facing paths should meet WCAG 2.2 AA;
-- every answer-shaped claim in evaluation must have accessible evidence and
-  source coverage;
-- medication scenarios must never recommend an unsupervised dose or therapy
-  change;
-- uncertain variants must never be presented as actionable, and secondary
-  findings must remain hidden until the user has explicitly opted in;
-- source-unavailable, missing-library, low-overlap, and no-hit cases must never
-  be scored as a broad clinical negative; and
-- privacy tests must show that raw genome records and full health context are
-  never sent to external evidence services; and
-- blinded genetic-counselor or clinician review must find every front-section
-  claim traceable and every material limitation retained, and must measure
-  whether the packet is useful within a realistic review window.
-
-Targets should be revised after formative studies; they are launch gates, not
-claims about the current product.
-
-## 7. External-system decisions
-
-| System | Decision | Product role | Reason and boundary |
-| --- | --- | --- | --- |
-| Paperclip | **Use only for an internal public-evidence pilot now; gate any shipped dependency.** | Evaluate current literature, regulatory, trial, UniProt/PDB/ChEMBL search; full-text reading; claim/citation verification; and reproducible literature collections. | It directly addresses Genomi's broad current-evidence gap, but the public terms reviewed on 2026-08-08 do not fit an open-source patient product: they restrict commercial use/output sharing and allow service interactions to improve models unless the user opts out. No patient data or patient-derived query should be sent. Shipped use requires written commercial/output rights, a DPA, no-training terms, security review, incident/SLA terms, and a clean provider fallback. |
-| BenchFlow | **Adopt as development/evaluation infrastructure, not a user feature.** | Run reproducible patient scenarios against agents, sandboxes, and verifiers; score evidence correctness, privacy, safety, cost, and task completion. | It addresses the explicit Genomi principle that tools must improve outcomes. Use public or synthetic fixtures only in CI. |
-| Proto language | **Defer to researcher mode.** | Multi-objective DNA/RNA/protein design campaigns after a research target and experimental goal are explicitly defined. | It is strong open-source generative-biology infrastructure, but sequence design is not needed to develop a patient's candidate-mechanism hypotheses and would blur the product's safety boundary. |
-| proto-tools | **Evaluate selectively after the MVP.** | Isolated optional tools for variant effect, splicing, sequence/structure, or protein analysis. | A narrow adapter may add mechanistic evidence without adopting the full generative loop. Each tool/model still needs scope, license, provenance, and evidence-status review. |
-| Biohub ESM | **Defer; local execution only for patient-derived inputs.** | Protein embeddings and structure/mechanism hypotheses after a candidate protein is established. | Useful for mechanistic research, not clinical causality. Code is MIT-licensed, but weights and hosted terms vary and the hosted privacy notice permits submission storage. Start with local ESMC, consider ESMFold2 when structure materially helps, and isolate any later ESM3 use in expert mode. |
-| Benchling | **No patient-data dependency; optional non-patient collaborator connector later.** | Export an approved, minimal experimental handoff to a research organization or wet lab. | It does not solve the patient's intake or interpretation problem, and Benchling's standard agreement treats identifiable health and genetic information as prohibited data. Under standard terms, send no patient sequence or health context; any broader use needs a negotiated agreement and security/privacy review. |
-| Omanta | **Use as a service/UX comparator, not an integration.** | Learn from its persistent case team, organized record/molecular-data review, diagnostic-gap analysis, physician collaboration, and living research roadmap. | Its public site was active and reviewed on 2026-08-08. GenomiLab should borrow the continuity and “research lab for one” pattern while remaining transparent software; pricing, outcome evidence, API/licensing, and security terms were not public enough to support parity claims. |
-
-### 7.1 Literature-provider integration contract
-
-The adapter should expose small evidence verbs, not a second agent router or a
-provider-shaped evidence model:
-
-- search public sources using approved condition/gene/variant/mechanism terms;
-- read exact records and sections;
-- capture claim-level support or contradiction with line/section provenance;
-- preserve peer-reviewed, preprint, regulatory, trial, and database source types;
-- return source coverage, misses, unavailability, retrieval time, and query terms
-  through the Genomi evidence envelope;
-- materialize normalized evidence locally with source URLs and immutable
-  identifiers; and
-- provide primary-source API and manual reviewed-source paths that work without
-  any commercial provider.
-
-Retrieved publications and imported documents are untrusted evidence content,
-never host instructions. The adapter must isolate them from system/tool control
-and preserve quoted claims as source-authored content.
-
-If Paperclip later clears the commercial, privacy, and security gates, its own
-AI verification is useful process evidence, not independent scientific
-replication. GenomiLab remains responsible for showing the underlying source
-and uncertainty. Its Apache-licensed repository is a client for the hosted
-service, not a self-hosted copy of the indexed backend, so it does not satisfy
-the local/open-source data-plane requirement by itself.
-
-### 7.2 BenchFlow evaluation tracks
-
-Build patient-product evaluations around durable behaviors rather than UI
-snapshots:
-
-1. exact pathogenic-variant observation with and without clinical confirmation;
-2. consumer-array no-call and sparse-coverage cases;
-3. phenotype-driven rare-disease comparison with conflicting candidates;
-4. PGx review with a missing specialized call or contraindication;
-5. PRS with low overlap or no calibrated population context;
-6. missing library and unavailable external source;
-7. literature disagreement, retraction/preprint status, and stale evidence;
-8. proxy/caregiver access and unauthorized health-context use;
-9. external-query redaction;
-10. prompt injection in imported/retrieved content; and
-11. patient comprehension and clinician-packet fidelity.
-
-Use the existing public sample-derived fixtures and synthetic health context.
-Never mount private genomes into shared or cloud evaluation environments.
-
-## 8. Product architecture and privacy boundary
+### 3.2 Required topology
 
 ```mermaid
 flowchart LR
-    P["Patient or care partner"] --> UI["Local GenomiLab app"]
-    UI --> H["GenomiLab host: question, consent, investigation"]
-    H --> HC["Personal Health Context reader"]
-    H --> G["Genomi capability layer"]
-    G --> AGI["Active Genome Index reader"]
-    G --> SRC["Genomi source and literature capabilities"]
-    SRC --> PUB["Installed public sources"]
-    SRC --> EXT["Approved public APIs or literature provider"]
-    H --> DG["Outbound disclosure gateway"]
-    DG -. "approved egress policy" .-> SRC
-    HC --> SYN["Source-separated evidence synthesis"]
-    G --> SYN
-    SYN --> B["Investigation Brief and clinician packet"]
+    P["Patient or care partner"] --> UI["GenomiLab web portal\nUI only"]
+    UI <--> D["GenomiLab application API and domain services"]
+    D <--> DS["GenomiLab domain store\nmolecular profile, investigations, evidence, briefs"]
+    D <--> B["Stateless harness adapter"]
+    B <--> H["Installed agent harness\nplans, delegates, reasons, drafts"]
+    H <--> DT["Exact accepted GenomiLab dynamic tools\nprofile slices, disease evidence, artifact submission"]
+    DT <--> D
+    D <--> G["Authorized Genomi MCP capabilities\nuser, AGI, genomic evidence"]
+    G <--> AGI["Genomi-owned Active Genome Index"]
+    D --> EG["GenomiLab policy and evidence gateway"]
+    EG --> PC["GXL Paperclip or primary sources\nwhen approved"]
+    D --> MG["GenomiLab model gateway"]
+    MG --> M["Allowlisted Proto / ESM\nonly when relevant"]
 ```
 
-The provider-neutral adapter belongs in Genomi as an evidence capability, so it
-uses the same evidence envelope and the runtime library manager for managed
-assets. The GenomiLab host owns consent, egress policy, and orchestration; it
-does not invent a parallel retrieval store. Provider-generated claim checks are
-process metadata. The underlying source record—not the provider's verdict—is
-the evidence.
+### 3.3 Architecture requirements
 
-| Data class | Default boundary |
-| --- | --- |
-| Raw genome source | Local intake only; downstream code reads the Active Genome Index, not the original source. |
-| Active Genome Index | Local and person-bound. Identity and index selection may persist, but read authorization is explicit and limited to the current session/investigation; a default selection never grants access. |
-| Personal Health Context | Local and separately authorized from genome data. |
-| External evidence query | Only the previewed, approved public target terms leave the machine; no raw records or full history. |
-| Public evidence and citations | May be cached locally with source/version/retrieval metadata. |
-| Investigation journal | Local agent/user memory; never promoted to evidence without a linked source record. |
-| Reports | Local by default; sharing is an explicit export with a disclosure receipt. |
-| Logs and telemetry | Local, minimized, and redacted by default; never contain raw variants, health-history text, or secrets. |
+- **ARCH-001:** GenomiLab SHALL comprise its application/domain services,
+  domain store, web portal, policy/evidence gateways, and adapter to the harness
+  in which Genomi is installed. It SHALL NOT silently start an unrelated
+  embedded agent.
+- **ARCH-002:** The portal SHALL call only the GenomiLab application API. The
+  domain layer SHALL bind approved work to the harness and expose committed
+  events and artifacts back to the portal.
+- **ARCH-003:** Question classification, plan construction, agent delegation,
+  dynamic tool selection, and scientific synthesis SHALL be absent from portal
+  and GenomiLab domain business logic. The domain MAY validate required
+  artifact structure, provenance, consent, and safety invariants.
+- **ARCH-004:** Genomi SHALL remain authoritative for current `user_id`, AGI
+  identity, readiness, selection, and access state.
+- **ARCH-005:** The bridge SHALL use host adapters and capability negotiation;
+  it SHALL NOT claim a host feature that the installed harness cannot provide.
+- **ARCH-006:** A supported-host adapter SHALL be replaceable without changing
+  Genomi's capability contracts or the patient-facing information architecture.
+- **ARCH-007:** GenomiLab domain services SHALL be authoritative for Patient
+  Molecular Profile and disease-investigation records. No durable patient or
+  investigation state SHALL live solely in a browser or harness task.
+- **ARCH-008:** The portal SHALL display whether the harness and each invoked
+  provider execute locally or remotely. “Local-first” SHALL describe the actual
+  data path, not the location of the UI.
+- **ARCH-009:** The harness adapter SHALL be stateless apart from ephemeral
+  transport state. Rebuilding it SHALL recover canonical mappings and artifacts
+  from GenomiLab, execution state from the harness, and genome state from
+  Genomi.
+- **ARCH-010:** The harness and portal SHALL have no provider credentials or
+  direct provider route for GenomiLab investigations. External evidence/model
+  calls SHALL traverse a GenomiLab gateway that enforces deployment policy,
+  consent, egress, provenance, and result normalization.
+- **ARCH-011:** GenomiLab domain capabilities SHALL be exposed to every
+  supported installed harness through typed host-compatible tools and focused
+  guidance. Switching harness adapters SHALL not change the molecular-profile,
+  evidence, investigation or brief contracts.
+- **ARCH-012:** Planning and execution SHALL be separate harness-owned tasks.
+  The planning task is tool-free. Accepting its exact plan SHALL only persist
+  acceptance. A separately previewed and approved execution-task disclosure
+  SHALL bind the exact plan version/hash, request IDs, profile snapshot, consent,
+  user, investigation and workspace session; only that execution task may invoke
+  those requests. GenomiLab SHALL NOT execute an accepted plan through a domain
+  bulk loop or a portal-initiated capability endpoint.
 
-The legal/privacy program needs jurisdiction-specific review before distribution.
-In the United States, a consumer health app may fall under the FTC Health
-Breach Notification Rule even when it is not covered by HIPAA. “Local-first”
-must not be marketed as a substitute for a security and breach-response plan.
-Onboarding should also explain that genomic data is inherently identifying and
-that U.S. GINA protections do not extend to life, disability, or long-term-care
-insurance. There must be no advertising, data brokerage, silent model training,
-or sensitive content in notifications.
+## 4. Canonical data model
 
-Regulatory status is determined function by function and by intended use, not
-by an “informational only” disclaimer. The January 2026 FDA clinical-decision-
-support guidance specifically includes patient/caregiver software in its
-analysis, while general-wellness policy applies to functions unrelated to the
-diagnosis or treatment of disease. GenomiLab therefore needs specialist
-regulatory review before a patient release and whenever a lane adds risk,
-diagnosis, biomarker matching, or treatment-oriented behavior.
+### 4.1 Core objects
 
-## 9. Delivery sequence
+| Object | Owner | Canonical identity and purpose |
+| --- | --- | --- |
+| Current Genomi user | Genomi | `user_id`; the only patient identity whose workspace is open |
+| Active Genome Index | Genomi | `agi_id`; logical genome/index identity associated with a user |
+| AGI snapshot | Genomi | `agi_snapshot_id`; immutable AGI revision containing source/content and artifact hashes, build, schema, readiness, and creation time |
+| Research workspace | GenomiLab | One patient-research workspace keyed one-to-one to `user_id`; not a separate identity |
+| Patient Molecular Profile | GenomiLab | Longitudinal aggregate of typed, source-linked patient observations and modality coverage keyed to `user_id`; references but does not copy AGI data |
+| Molecular observation revision | GenomiLab | `observation_revision_id`; immutable reviewed or review-pending phenotype, measurement, reported finding, pathology/molecular result, medication/exposure, or specimen/assay fact |
+| Source artifact | GenomiLab | `artifact_id`; local report/document reference, hash, source metadata, and precise locator without promoting extracted text to fact |
+| Specimen and assay | GenomiLab | `specimen_id` and `assay_id`; subject/site/time, tumor-normal relationship, lab/platform/pipeline, scope, QC and detection limits |
+| Molecular Profile Snapshot | GenomiLab | `patient_molecular_snapshot_id`; immutable, approved, purpose-scoped manifest of exact observation revisions, artifact/specimen/assay references, modality coverage, consent receipt, and optional exact `agi_id`/`agi_snapshot_id` |
+| Disease investigation | GenomiLab | `investigation_id`; canonical question, disease scope, status, pinned profile/evidence/brief versions, and 0..N harness task/run bindings |
+| Harness task/run | Harness | `task_id` and `run_id`; execution, conversation, plan, agents, reasoning, checkpoints and drafts for an investigation |
+| Evidence record | GenomiLab | Immutable ledger record that references/snapshots Genomi or provider results, preserves source/version/scope/limitations, and embeds the original Genomi envelope unchanged when applicable |
+| Disease-mechanism relation | GenomiLab | Typed local record linking one public, non-model source prior to the exact pinned patient observation revisions and disease scope, with relation kind/direction, source-reported strength, population/tissue/specimen context, conflicts and uncertainty |
+| Hypothesis and gap | GenomiLab | Versioned candidate mechanism or unresolved evidence need linked to exact patient observations, supporting/counterevidence, uncertainty and confirmation requirements |
+| Brief version | GenomiLab | Immutable accepted synthesis drafted by the harness and committed only after provenance, policy and safety validation; later updates create a new version and change summary |
+| Review packet | GenomiLab | Patient-selected brief content, citations, questions and disclosure receipt for a named recipient or review room |
 
-### Phase 0: contracts and tested thin slice
+```text
+Genomi user 1 ─── 0..N AGIs
+AGI 1 ─── 1..N immutable AGI snapshots
+Genomi user 1 ─── 1 GenomiLab research workspace
+Research workspace 1 ─── 1 Patient Molecular Profile
+Patient Molecular Profile 1 ─── 0..N observation revisions
+Patient Molecular Profile 1 ─── 0..N immutable profile snapshots
+Research workspace 1 ─── 0..N disease investigations
+Disease investigation 1 ─── 1 pinned patient_molecular_snapshot_id
+Disease investigation 1 ─── 0..N harness tasks/runs
+Disease investigation 1 ─── 0..N evidence, hypothesis, gap and brief versions
+```
 
-- Freeze this product boundary and threat model.
-- Define Personal Health Context and investigation contracts.
-- Add a question-first local application shell.
-- Add reported-variant normalization for transcript/coding/protein HGVS,
-  assembly, allele, and VRS identity, with an explicit human review path for
+There is no parallel patient identity, selectable patient/case profile,
+investigation-owned genome, or `profile_id -> agi_id` assignment. The required
+Patient Molecular Profile is a scientific aggregate addressed only by the
+canonical Genomi `user_id`; deleting it SHALL NOT implicitly delete the Genomi
+user or AGI.
+
+### 4.2 Patient Molecular Profile
+
+The Patient Molecular Profile SHALL contain patient observations, not public
+literature, agent notes, unaccepted mechanism hypotheses, model-inferred
+diagnoses, or treatment recommendations. A professionally issued conclusion MAY
+be recorded as an attributed source observation.
+
+Every observation SHALL declare a modality and whether it applies to the
+patient generally or to an exact `specimen_id`. Supported modality contracts
+SHALL include:
+
+- **Germline genome context:** only `agi_id`, `agi_snapshot_id`, build,
+  readiness and QC references—never reader-returned findings, a copied VCF,
+  bulk variant table, source path, AGI row, or full sequence. Targeted Genomi
+  reader results belong once in the investigation evidence ledger.
+- **Phenotype and clinical context:** symptoms/HPO terms, diagnoses as reported,
+  onset/course, family history/pedigree assertions, medications, exposures,
+  procedures, and outcomes.
+- **Quantitative measurements:** routine labs and biomarkers with values,
+  units, reference intervals, method and collection time.
+- **Issued molecular/pathology records:** exact reported germline or somatic
+  variants, CNV/SV/fusion, expression/protein biomarkers, cytogenetics,
+  pathology and staging assertions, with their assay scope and limitations.
+  “The report states X” is distinct from validating X.
+- **Specimen and assay context:** specimen type/site/time/disease state,
+  tumor-normal relationship, accession, laboratory, platform, pipeline,
+  reference build, coverage, limit of detection, QC and validation/accreditation
+  metadata.
+- **Future raw/derived multi-omics:** tumor genomics, RNA
+  expression/splicing/fusions, proteomics/phosphoproteomics, metabolomics,
+  epigenomics/methylation, HLA and immune data through separate modality-owned
+  stores/readers and grants—not the germline AGI.
+
+Modality coverage SHALL distinguish `observed`,
+`explicitly_not_detected_within_declared_assay_scope`, `not_measured`,
+`not_provided`, `unavailable`, and `out_of_scope`. Missing profile data SHALL
+never appear as a biological negative.
+
+Each observation revision SHALL minimally preserve:
+
+- type and normalized code/term when available;
+- the patient's original wording;
+- value, units, present/absent/unknown status, onset/event time, and recorded
+  time as applicable;
+- source class/author, source identifier or local artifact hash, and exact
+  page/table/field locator when applicable;
+- assertion author: patient, caregiver, clinician, imported record, or model;
+- subject/specimen and assay identifiers, units/reference range, method,
+  genome build/transcript and QC where applicable;
+- extraction/import/normalization software and versions;
+- verification state: unreviewed, user-confirmed, record-confirmed, or
+  clinician-confirmed, independently of evidence modality and clinical stage;
+- supersession/reconciliation links instead of destructive overwrite;
+- approved investigation uses and disclosure history; and
+- provenance for any normalization or extraction.
+
+`record-confirmed` means the normalized observation faithfully matches its
+source record; it does not validate the underlying diagnosis, assay,
+pathogenicity or actionability. Model/document extraction MAY create a review
+candidate. It SHALL NOT create an accepted diagnosis, medication, pathology
+stage, or clinically confirmed finding without the required human/provenance
+step. A patient confirmation cannot promote a result to clinically confirmed,
+and an explicit negative requires declared assay scope and detection limits.
+
+### 4.3 Molecular Profile Snapshots
+
+A `patient_molecular_snapshot_id` SHALL be an immutable manifest containing:
+
+- `user_id`, creation time and manifest hash;
+- exact observation revision IDs;
+- source-artifact, specimen and assay references;
+- modality coverage;
+- exact `agi_id` and `agi_snapshot_id` when germline context is included;
+- declared purpose and investigation scope; and
+- the consent receipt authorizing the selected private slices.
+
+It is a reproducible view, not an identity, authorization token, diagnosis, or
+flattened feature vector. Possession of its ID grants nothing. Before approval,
+GenomiLab MAY assemble a mutable candidate selection from the current profile
+state, but it SHALL NOT silently default that candidate to the whole current
+profile. For a first context or refresh, the patient SHALL explicitly select a
+non-empty set of current observation revisions in the portal; renewal preserves
+the exact pinned selection. That selection is not a snapshot and authorizes no read. A snapshot
+is minted only after its purpose, investigation scope, exact contents and
+consent receipt are approved. Updating a fact, adding a report or making a
+newer AGI revision available marks affected candidate selections or refresh
+offers as changed; it SHALL NOT automatically mint a purpose-scoped snapshot
+or alter an existing investigation. A changed scope or explicit refresh
+requires a new approval and snapshot. Old investigations remain reproducible,
+and comparison or rerun is explicit.
+
+### 4.4 Investigation invariants
+
+- A GenomiLab investigation belongs to exactly one canonical `user_id` and
+  exactly one pinned `patient_molecular_snapshot_id` per committed context
+  version.
+- A harness task/run is an execution binding, not the canonical investigation.
+  Replacing or losing it SHALL NOT delete the investigation, ledger or briefs.
+- Personal genome evidence and every AGI-reading invocation SHALL bind to the
+  exact `agi_id` and immutable `agi_snapshot_id` used.
+- When a pinned Molecular Profile Snapshot includes germline context, the
+  investigation's AGI revision SHALL equal the `agi_id` and `agi_snapshot_id`
+  in that snapshot. The investigation SHALL NOT independently select a second
+  AGI revision.
+- Targeted AGI reader results SHALL be committed once as investigation evidence
+  records with their original Genomi provenance and envelope. They SHALL NOT be
+  copied into the Patient Molecular Profile or its pinned snapshot.
+- Changing the current AGI SHALL NOT silently alter an existing investigation.
+- Reparsing or rebuilding the same logical AGI SHALL create a new
+  `agi_snapshot_id`; it SHALL NOT mutate the revision used by an old
+  investigation.
+- A refresh SHALL create a new evidence snapshot and brief version; it SHALL NOT
+  rewrite history.
+- Every accepted hypothesis SHALL link to exact patient observation revisions
+  and exact supporting/counterevidence records. No personal overlap, association
+  or model output alone may promote answer-readiness.
+- Deleting or revoking one investigation SHALL NOT delete the user's AGI.
+- Deleting a genome or user SHALL route through explicit Genomi operations,
+  with impact preview for dependent investigations.
+
+## 5. User experience and information architecture
+
+### 5.1 Research Desk
+
+The home screen SHALL show:
+
+- the current Genomi user;
+- active AGI, genome build, readiness, and current access state;
+- Patient Molecular Profile coverage, latest reviewed changes, and material
+  gaps for active investigations;
+- a prominent **Ask or continue** input;
+- active and recent investigations;
+- new evidence, completed briefs, and items needing attention;
+- pending approvals or questions from agents; and
+- upcoming clinician or review-room activity.
+
+The primary action SHALL be **Ask or continue**, never **Upload a genome**.
+
+### 5.2 Primary navigation
+
+1. **Research Desk** — questions, updates, active investigations, and attention
+   items.
+2. **Investigations** — brief, plan/progress, evidence ledger, unresolved
+   questions, review room, and version history for each task.
+3. **My Molecular Profile** — reviewed health/phenotype observations, labs,
+   reports/findings, specimens/assays, modality coverage, version history, and
+   the Genomi-owned genome panel with **Manage genome in Genomi**.
+4. **Evidence Library** — reusable citations and source records, separated by
+   source family and version.
+5. **Collaborate** — selective clinician/genetic-counselor/tumor-board packets,
+   questions, decisions, and follow-up items.
+6. **Privacy & Activity** — AGI grants, provider disclosures, access history,
+   exports, revocation, and owner-routed deletion.
+
+### 5.3 End-to-end walkthrough
+
+1. **Open the Research Desk.** The GenomiLab application resolves the current
+   Genomi user, opens that user's molecular-profile aggregate, reads
+   non-sensitive AGI metadata from Genomi, and attaches its stateless adapter to
+   the installed harness. The portal does not ask the patient to create another
+   identity.
+2. **Resolve genome readiness once.** If no query-ready AGI exists, the portal
+   presents a Genomi-managed setup handoff and Genomi job progress. Intake is a
+   user-level action, not part of an investigation.
+3. **Ask or resume.** The patient enters a natural-language disease question or
+   opens an existing investigation. GenomiLab creates/resumes the canonical
+   investigation and asks the patient to select the current profile observations
+   needed for this question; it does not create another patient, default to the
+   whole profile, or ask for another genome upload.
+4. **Approve scoped profile access.** GenomiLab records approval for the exact
+   molecular observation revisions, mints the purpose-scoped Molecular Profile
+   Snapshot, and compiles the versioned investigation context. Genomi separately
+   enforces a matching exact-AGI authorization bound to that investigation,
+   snapshot and consent receipt. The snapshot pins what this investigation may
+   use.
+5. **Review and accept a tool-free plan.** In a separately approved harness
+   planning task, the installed harness proposes the questions it will pursue,
+   specialist agents, exact typed capability requests, potential outbound
+   destinations, and material missing information. Accepting the plan records
+   acceptance of that exact version and hash; it does not execute capabilities.
+6. **Approve harness-owned execution.** The portal previews a fresh harness-task
+   disclosure bound to the accepted plan, profile snapshot, consent receipt,
+   current user, investigation and session. Only after the patient approves that
+   exact payload does the adapter create the execution task and expose the exact
+   accepted capability requests as tools. GenomiLab has no alternate bulk
+   executor for the plan.
+7. **Investigate the disease against the profile.** The harness invokes only the
+   exact accepted GenomiLab dynamic tools. At that domain boundary, GenomiLab
+   validates each call and, when required, performs an authorized targeted
+   Genomi capability through Genomi MCP to relate phenotype, measurements,
+   reported molecular findings, targeted AGI observations, tissues/pathways,
+   functional evidence, literature, trials and regulatory evidence. GenomiLab
+   commits source-separated evidence, hypotheses and gaps. A provider request
+   that needs separate egress approval pauses at a reviewable disclosure; the
+   portal may approve only that recorded continuation, never initiate an
+   unrequested capability. The harness has no direct unrestricted Genomi or AGI
+   route.
+8. **Follow work.** The portal renders completed, running, waiting, blocked,
+   in-scope-empty, out-of-scope, and source-unavailable states without exposing
+   raw agent chatter by default.
+9. **Inspect the living brief.** The patient sees observations, possible meaning,
+   support, counterevidence, uncertainties, what not to conclude, confirmation
+   needs, and professional questions. Technical detail is one level deeper.
+10. **Collaborate (P1).** Once the collaboration capability is enabled, the
+   patient selects what to share and prepares a concise review packet.
+   Professional decisions are attributed to the professional, not the agents.
+   P0 exposes this action as unavailable rather than simulating delivery.
+11. **Continue over time.** Follow-ups stay in the same investigation. New
+   evidence creates a dated change summary. New questions can create separate
+   investigations over the same AGI.
+12. **Handle a new profile or genome version.** Existing investigations retain
+   their pinned Molecular Profile and AGI snapshots. GenomiLab offers an
+   explicit profile diff and compare/rerun action rather than silently changing
+   the evidence basis.
+
+## 6. Functional requirements
+
+### 6.1 GenomiLab application, portal and harness contracts
+
+The portal SHALL call only a versioned GenomiLab application API. It SHALL
+expose operations equivalent to:
+
+- `bootstrap_workspace`
+- `read_molecular_profile`
+- `add_profile_observation`
+- `review_or_supersede_observation`
+- `create_or_compare_profile_snapshot`
+- `list_investigations`
+- `create_investigation`
+- `resume_investigation`
+- `send_investigation_message`
+- `approve_private_context`
+- `approve_outbound_disclosure`
+- `revoke_private_context`
+- `close_workspace_session`
+- `refresh_investigation`
+- `cancel_background_work`
+- `prepare_review_packet` *(P1; P0 returns typed `capability_unavailable`)*
+
+The GenomiLab domain service SHALL persist the canonical command result and
+domain event before exposing it to the portal. Direct portal access to harness,
+Genomi, providers, domain-store tables or the filesystem is prohibited.
+
+The internal stateless harness adapter SHALL implement a separate versioned,
+host-neutral protocol with operations equivalent to `start_task_run`,
+`resume_task_run`, `send_task_message`, `cancel_task_work`, and
+`replace_task_binding`. Every command SHALL carry `protocol_version`,
+`workspace_session_id`, globally unique `command_id`, applicable `user_id`,
+GenomiLab `investigation_id`, harness `task_id`/`run_id` when assigned, an
+expected domain/task revision when mutating state, and a typed payload.
+`command_id` SHALL be the idempotency key. Responses SHALL return the
+accepted/current revision and a typed result or typed error; stale expected
+revisions SHALL fail as conflicts rather than overwrite newer state.
+
+The adapter SHALL transport harness events equivalent to:
+
+- `plan_proposed`
+- `approval_required`
+- `agent_started`
+- `agent_progress`
+- `evidence_returned`
+- `source_unavailable`
+- `job_in_progress`
+- `needs_user_input`
+- `brief_completed`
+- `brief_updated`
+- `cancelled`
+- `failed`
+
+Every harness event SHALL include `protocol_version`, globally unique `event_id`,
+`workspace_session_id`, host/task identity, `investigation_id`, `user_id`, a
+monotonic per-investigation sequence/cursor, correlation ID, optional job ID,
+status, timestamp, safe transport payload, and proposed artifact references.
+GenomiLab SHALL validate and commit accepted events/artifacts, assign their
+domain versions, and emit separate safe portal events. The harness protocol
+SHALL support replay from a cursor, deduplication by `event_id`,
+and an explicit snapshot-required response when the replay window has expired.
+Cancellation SHALL report `cancelled`, `already_completed`, `not_cancellable`,
+or `failed`; it SHALL never imply that an external job stopped unless confirmed.
+Genomi results SHALL retain their original `evidence_envelope`; neither adapter
+nor GenomiLab SHALL reinterpret an empty or blocked state.
+
+The negotiated capability manifest SHALL minimally declare supported protocol
+versions; task create/resume; event streaming and replay; artifact kinds;
+background-job attach/cancel behavior; approved-context delivery; and
+workspace-session persistence. GenomiLab's separate capability manifest SHALL
+declare domain, collaboration, evidence-provider and model availability. An
+operation scheduled for a later phase SHALL return a typed
+`capability_unavailable` result until enabled. The conformance suite SHALL run
+the same state, idempotency, ordering, replay, conflict, cancellation, and error
+cases against every host adapter.
+
+### 6.2 Genomi user and AGI requirements
+
+- **GEN-001:** Startup SHALL resolve the current Genomi user. No portal-created
+  substitute is allowed.
+- **GEN-002:** The portal MAY display AGI identity/readiness metadata without
+  reading AGI records.
+- **GEN-003:** Genome source selection, upload/path intake, parsing, assignment,
+  readiness, reparse, selection, and deletion SHALL use existing or extended
+  Genomi lifecycle operations.
+- **GEN-004:** Investigation forms and APIs SHALL NOT accept a VCF, gVCF, BAM,
+  FASTQ, consumer genotype file, genome bundle, or genome source path.
+- **GEN-005:** Multiple investigations SHALL reuse a ready AGI without another
+  parse.
+- **GEN-006:** All AGI reads SHALL pass through the AGI reader boundary and an
+  explicit valid Genomi-enforced grant bound to the immutable
+  `agi_snapshot_id`.
+- **GEN-007:** Genomi SHALL own and enforce an AGI access authorization keyed by
+  `workspace_session_id`, `user_id`, `investigation_id`,
+  `patient_molecular_snapshot_id`, GenomiLab consent-receipt ID, `agi_id`,
+  `agi_snapshot_id`, purpose, and declared genomic data scope. Every private
+  Genomi call SHALL present a Genomi-validated authorization for that exact
+  tuple. A grant SHALL NOT authorize another investigation, snapshot, purpose,
+  task outside the session, user, AGI revision, expanded scope, or outbound
+  disclosure.
+- **GEN-008:** A host that cannot safely carry the exact investigation-bound
+  authorization across a replacement task binding SHALL request approval again
+  rather than simulate reuse.
+- **GEN-009:** Long-running parse and evidence work SHALL resume by job ID and
+  SHALL NOT be duplicated.
+- **GEN-010:** GenomiLab SHALL own and enforce molecular-profile/context
+  approvals scoped to an `investigation_id`, exact observation revisions,
+  purpose, duration and an immutable manifest. The harness receives the
+  approved snapshot through narrow GenomiLab reads, not unrestricted store
+  access.
+- **GEN-011:** The portal collects an approval decision through the GenomiLab
+  API; GenomiLab records/enforces it and requests a matching Genomi grant when
+  AGI access is included. Neither the portal, adapter nor harness may mint,
+  widen, or persist an authorization independently.
+- **GEN-012:** GenomiLab SHALL own outbound approvals and disclosure receipts
+  keyed to exact provider, destination, purpose and payload manifest, subject to
+  the independent deployment contract policy. Changing any of them requires a
+  new decision. The harness chooses a useful evidence capability but has no
+  provider credentials or bypass route.
+- **GEN-013:** A browser reconnect while the workspace session remains alive
+  MAY resume its event cursor and valid grant. A full harness/app restart MAY
+  restore tasks and jobs, but the prior AGI grant is revoked; further private
+  reads wait for renewed approval.
+- **GEN-014:** Local Genomi capabilities MAY be invoked through Genomi MCP only
+  with the authorization in GEN-007. Any Genomi capability that would send a
+  patient-influenced query or payload to a network source SHALL additionally
+  cross the GenomiLab outbound-egress gateway and satisfy its provider policy
+  and disclosure receipt; a direct harness-to-Genomi network path is
+  prohibited.
+
+### 6.3 GenomiLab molecular-profile and disease-investigation capabilities
+
+GenomiLab SHALL expose typed domain capabilities to the harness. These
+capabilities structure and retrieve declared data; they SHALL NOT contain an
+embedded agent loop, infer user intent, dynamically select other tools, or
+return a universal “interpret this profile” answer.
+
+Required capability groups are:
+
+1. **Molecular Profile service** — create, review, supersede and read typed
+   observations; manage source artifacts, specimens, assays and modality
+   coverage; create and compare immutable profile snapshots.
+2. **Investigation Context Compiler** — bind the original question, disease
+   scope, exact profile snapshot, exact AGI revision, approvals and policy into
+   a versioned harness task specification.
+3. **Investigation Profile Projector** — derive the disease-relevant projection
+   of approved observations from the pinned snapshot, including coverage and
+   missing-data states. It MAY link to targeted Genomi reader results already
+   committed in the evidence ledger, but SHALL NOT insert those results into
+   the Patient Molecular Profile or snapshot or duplicate their domain record.
+4. **Disease-mechanism evidence capabilities** — retrieve typed, cited,
+   source-specific relations among patient anchors, phenotype, disease, variant,
+   transcript/protein consequence, inheritance/segregation, gene, tissue/cell
+   expression, eQTL/sQTL, pathway, perturbation/screen, protein function,
+   biomarker, drug target, regulatory status and trial evidence.
+5. **Evidence ledger** — commit immutable source-separated records, source
+   versions, defaults, conflicts, corrections/retractions, coverage and typed
+   unavailable/empty/out-of-scope states.
+6. **Hypothesis and gap register** — store harness-proposed candidate mechanisms,
+   counterevidence, uncertainty, status, missing measurements and confirmation
+   requirements as versioned domain artifacts.
+7. **Brief/version service** — validate that every harness draft claim is linked
+   to ledger evidence and the pinned profile snapshot, then commit immutable
+   brief versions and refresh diffs. Validation MAY reject or request repair of
+   a malformed draft; it SHALL NOT replace the harness's scientific reasoning
+   with hidden GenomiLab synthesis.
+8. **Policy and collaboration services** — enforce private-context use,
+   provider egress and sharing; create review packets, professional attribution,
+   access/disclosure history and owner-routed export/deletion receipts.
+
+Each disease-mechanism evidence result SHALL preserve patient-observation
+anchors, source family/prior, direction, source-supplied quality/strength,
+population/tissue/specimen context, date/version, consulted coverage, conflicts,
+negative-inference limits and the canonical evidence envelope. These functions
+are substantive GenomiLab functionality beyond base Genomi and the harness.
+The harness decides which functions are relevant and performs cross-source
+reasoning; GenomiLab enforces the domain and evidence contracts.
+
+The public evidence provider SHALL receive only the approved biomedical query;
+it SHALL NOT receive profile revisions, profile-snapshot identifiers, AGI
+identifiers, patient specimen identifiers or genotype data. GenomiLab SHALL
+create the patient-specific relation locally after public evidence is committed.
+A candidate mechanism and a candidate-hypothesis brief claim SHALL cite at
+least one supportive, non-personal, non-model typed relation whose disease
+scope and patient-observation anchor set exactly match the cited claim. A
+personal-genome overlap, model result, generic public document, wrong-disease
+relation, refuting relation or union of partial relations SHALL NOT pass this
+gate.
+
+#### Investigation requirements
+
+- **INV-001:** Every new question SHALL create or deliberately continue a
+  canonical GenomiLab investigation and bind a harness task/run. The portal
+  SHALL not execute a fixed tool call as a substitute.
+- **INV-002:** The original patient wording SHALL be retained beside normalized
+  entities and search terms.
+- **INV-003:** The harness SHALL propose a visible, editable plan before broad
+  private-data or external-provider use.
+- **INV-004:** The plan SHALL use the smallest relevant capability first and add
+  orthogonal evidence when needed.
+- **INV-005:** Source priors SHALL remain separate. ClinVar, gene–disease,
+  phenotype, GWAS, functional, pathway, pharmacogenomic, literature, trial,
+  regulatory, and model evidence SHALL NOT collapse into one universal score.
+- **INV-006:** Agent notes, proposed hypotheses and accepted hypotheses SHALL
+  remain distinct from source evidence and from one another.
+- **INV-007:** Resuming the portal SHALL load the canonical GenomiLab
+  investigation and resume or replace its harness binding and active jobs rather
+  than replaying completed work. Harness loss SHALL not lose domain artifacts.
+- **INV-008:** The patient SHALL be able to stop work, answer a request, revise
+  scope, refresh evidence, or branch a separate question without losing the
+  prior record.
+
+### 6.4 Molecular Profile Snapshot and genome boundary requirements
+
+- **MOL-001:** GenomiLab SHALL key its molecular-profile aggregate only by the
+  current Genomi `user_id`; no independent profile selector or identity is
+  allowed.
+- **MOL-002:** Profile schemas and persistence SHALL reject genome source files,
+  paths, AGI database paths, bulk AGI rows and full patient-derived sequences.
+- **MOL-003:** Every genome-derived evidence record SHALL originate from a
+  Genomi reader result under a valid exact-snapshot grant and retain its AGI
+  query, coverage and evidence-envelope provenance. Reader results SHALL reside
+  once in the investigation evidence ledger, not in the Patient Molecular
+  Profile.
+- **MOL-004:** The harness SHALL receive only the approved profile slice and
+  minimal targeted genome evidence required for the investigation, never direct
+  domain-store or AGI access.
+- **MOL-005:** Updating/reviewing a fact or making a new AGI revision available
+  SHALL mark affected candidate selections or refresh offers as changed. It
+  SHALL create a new profile snapshot only after explicit purpose, scope and
+  consent approval, and SHALL NOT change the evidence basis of an existing
+  investigation.
+- **MOL-006:** A revoked profile-context receipt or Genomi grant SHALL block
+  subsequent reads without deleting the pinned historical manifest.
+- **MOL-007:** A disease investigation SHALL be able to use the same AGI
+  revision as another investigation while selecting a different subset of
+  health/molecular observations and producing a different profile snapshot.
+- **MOL-008:** Explicit negative molecular observations require declared assay
+  scope, coverage and detection limits; `not_measured`, `not_provided`,
+  `unavailable` and `out_of_scope` cannot be converted to absence.
+- **MOL-009:** If germline context is included, an investigation and its pinned
+  profile snapshot SHALL name the same `agi_id` and `agi_snapshot_id`. A
+  mismatch SHALL fail validation rather than create an implicit second genome
+  context.
+
+### 6.5 Evidence and GXL Paperclip requirements
+
+GXL Paperclip SHALL be implemented as a first-class provider behind GenomiLab's
+provider-neutral public-evidence gateway. When Paperclip is installed,
+authorized, covers the requested source family, and passes the gates below, the
+harness SHOULD select the GenomiLab public-evidence capability and the gateway
+SHALL prefer Paperclip for broad literature, regulatory, trial, UniProt, PDB,
+and ChEMBL discovery and full-text inspection. Direct primary-source adapters
+SHALL remain available for validation, gaps, and provider failure.
+
+An appropriate Paperclip use is one in which:
+
+1. the task is public scientific evidence retrieval, document inspection,
+   figure inspection, source collection, or textual-support checking;
+2. the necessary source type is within Paperclip's declared coverage;
+3. the proposed query and any document sent are permitted under the active
+   privacy, consent, contract, and egress policy;
+4. provider output can be traced back to an original source; and
+5. the harness—not Paperclip—will judge relevance, reconcile other evidence,
+   and synthesize the brief.
+
+While the patient-data gate is closed, Paperclip SHALL NOT receive any query,
+document, entity, paraphrase, or derived term influenced by an AGI, Personal
+Molecular Profile, patient report, or private investigation. This prohibition does
+not depend on whether a developer believes the payload is identifiable.
+
+As of this requirements snapshot, GXL's standard public terms do not by
+themselves authorize the required product-development, commercial integration,
+local retention, transformation, display, export, or third-party sharing. Live
+Paperclip use—including public or synthetic development/evaluation use—SHALL
+therefore fail closed unless GenomiLab has written GXL authorization or a
+documented legal determination covering that exact use. Without that approval,
+the adapter SHALL be developed and tested with contract fixtures/mocks and
+direct-primary-source paths, and the live provider SHALL remain disabled.
+
+Patient-facing use requires a separately approved agreement that expressly
+authorizes automated API integration; permitted data classes and purposes;
+commercial use; local caching and audit retention; normalized/derivative
+records; patient and clinician display; report export and third-party sharing;
+and portability. It SHALL also include an appropriate DPA and processing role,
+contractual no-training/no-secondary-use terms, retention/deletion including
+backups, subprocessors and international transfers, security and incident
+notification, service expectations, and a BAA where applicable. These provider
+rights do not override copyright or license restrictions on an underlying
+paper, figure, database, or regulatory document.
+
+Two independent gates SHALL pass before any future patient-derived request:
+
+1. a deployment-owner-controlled, fail-closed contract policy for the exact
+   provider, feature, data classes, purposes, and terms; and
+2. just-in-time patient approval of the exact provider, payload/query, purpose,
+   data categories, destination, and disclosed retention/training state.
+
+The receipt SHALL record the contract, privacy-notice, and acceptable-use-policy
+versions. Patient consent SHALL NOT override a missing organizational contract.
+Expiry, revocation, or a material provider-policy change SHALL automatically
+close the gate until it is reviewed; any expansion of provider, payload,
+purpose, data class, or policy requires renewed approval.
+
+The Paperclip adapter SHALL:
+
+- expose typed, allowlisted search, lookup, read/extract, figure-inspection, and
+  provenance operations;
+- exclude arbitrary remote shell, generic `execute`, and equivalent escape
+  hatches from every production capability surface. Developer experiments, if
+  retained, require a separate sandbox and credential;
+- receive credentials explicitly from the approved secret store and SHALL NOT
+  fall back to a user's saved `~/.paperclip` credentials;
+- distinguish full text, abstract-only, preprint, peer-reviewed publication,
+  regulatory document, trial registry, and structured database record;
+- retain DOI/PMID/PMCID/registry/database identifiers, original URL, source
+  type, title, version/publication date, retrieval time, query terms, filters,
+  consulted coverage, misses, and failures;
+- retain exact supporting spans or figure references when available;
+- default durable storage and display to source identifiers, metadata, links,
+  and short excerpts permitted by the original source license. Full text and
+  figures SHALL NOT be persisted or redistributed unless that source's license
+  expressly permits it;
+- record Paperclip search/result/repository/commit/model metadata as process
+  provenance, never as the only durable source identity;
+- treat `map`, `reduce`, figure answers, and claim-verification commits as
+  model-assisted extraction/checking rather than independent scientific
+  replication;
+- validate consequential patient-visible claims against the current original
+  source record and retain index/retrieval date, license, corrections,
+  retractions, superseded regulatory versions, trial-record changes,
+  preprint-to-publication transitions, and conflicts;
+- normalize provider results into the GenomiLab evidence ledger and the
+  canonical evidence-envelope shape while preserving provider/source
+  provenance;
+- treat retrieved documents as untrusted content that cannot change system
+  instructions, consent, tools, or agent permissions;
+- return typed authentication, quota, rate-limit, timeout, network, server,
+  unavailable-source, and not-found states; and
+- be removable without losing the local investigation, citations, or brief.
+
+A trial-registry entry SHALL NOT be presented as a trial result. A Paperclip
+no-hit SHALL describe only Paperclip's successfully consulted scope and SHALL
+NOT imply absence from the wider literature.
+
+Paperclip's documented source and repo capabilities are described in the
+[official documentation](https://paperclip.gxl.ai/docs). Its current public
+[terms](https://gxl.ai/terms-of-service/) and
+[privacy notice](https://gxl.ai/privacy-notice/) are the basis for the shipping
+gate above. The Apache-2.0 client license does not grant rights to the hosted
+corpus, service, or output.
+
+### 6.6 Investigation Brief and evidence presentation
+
+Every brief SHALL present, in this order:
+
+1. the question and scope;
+2. what was observed;
+3. what the observations could mean;
+4. supporting evidence and counterevidence by source family;
+5. conflicts, missing evidence, untested assumptions, and unavailable sources;
+6. what the patient should not conclude;
+7. clinical or laboratory confirmation needed;
+8. questions for the next professional conversation; and
+9. evidence currency and change history.
+
+Every answer-shaped claim SHALL link to its evidence record. The UI SHALL
+preserve Genomi's distinctions among `data_returned`, `in_scope_empty`,
+`out_of_scope_for_input`, blocked/missing library, source unavailable, and work
+in progress. No-hit or unavailable evidence SHALL NOT appear as a broad
+negative.
+
+Patient-visible statements SHALL be labeled as exactly one of:
+
+1. **Research observation**
+2. **Candidate hypothesis**
+3. **Clinically confirmed result**
+4. **Clinical decision**
+
+Agents may create stages 1 and 2. Stage 3 requires appropriate authenticated
+clinical/laboratory provenance. Stage 4 belongs to clinical care and may only
+be recorded with attribution.
+
+Evidence-origin and modality badges—such as **personal genome**, **public
+source**, **reported record**, or **computational model prediction**—are an
+orthogonal axis, not a fifth stage and not a replacement for Genomi's
+`evidence_envelope`. A raw model output is a research observation with a model
+badge; any interpretation of it is a candidate hypothesis with that same badge.
+A model badge SHALL NOT promote answer-readiness or clinical stage by itself.
+
+### 6.7 Collaboration requirements
+
+The following are P1 requirements. Until the collaboration capability is
+enabled, P0 SHALL advertise it as unavailable and SHALL NOT create, deliver or
+claim to revoke a review packet.
+
+- The patient SHALL preview and select every fact included in a review packet.
+- A packet SHALL include a short front section, technical appendix, citations,
+  unresolved questions, and confirmation requests.
+- The system SHALL record recipient, contents, time, method, and revocation or
+  supersession state in a disclosure receipt.
+- “AI-generated; not clinically reviewed” SHALL remain visible unless an
+  identifiable professional completed a recorded review.
+- Agents SHALL NOT use titles or personas that imply medical or scientific
+  credentials they do not possess.
+- A professional review room MAY record decisions, tasks, and sign-off, but the
+  AI SHALL NOT impersonate a molecular tumor board or mark its own output as
+  professional review.
+
+### 6.8 Oncology and molecular-tumor lane
+
+GenomiLab MAY support the following workflow, with these exact boundaries:
+
+| Need | Supported software function | Required human/laboratory function |
+| --- | --- | --- |
+| Pathology, stage, and standard options | Import or record source documents, reconcile stated facts, retrieve dated guideline/regulatory literature, identify conflicts, and draft questions | Pathologist/oncologist confirms pathology and stage and determines applicable standard care |
+| Tumor profiling | Record and interpret outputs from validated tumor testing; track missing modalities and tissue/specimen metadata | Accredited laboratory orders/performs/validates tumor panel, tumor/normal WGS, RNA, CNV/SV, or other assays |
+| Molecular tumor board | Prepare a source-linked case packet, evidence categories, uncertainty, and questions; host a review room | Qualified board reviews the actual case and owns conclusions |
+| Result categories | Draft evidence into approved-treatment evidence, potential off-label evidence, trial possibilities, hereditary implications, and currently non-actionable findings, each dated and jurisdiction/source-qualified | Clinician confirms applicability, contraindications, treatment, and trial eligibility |
+| Personalized immunotherapy investigation | Identify why HLA, RNA, protein, pathology, and immune-function evidence may be missing; record validated results; perform separately validated research analyses | Specialists select tests, validate biomarkers, assess feasibility/safety, and make treatment decisions |
+
+The germline AGI SHALL NOT be treated as a tumor genome. A production oncology
+lane requires separate somatic, tumor/normal, RNA, protein, pathology, specimen,
+HLA, and assay-quality contracts. Software can confirm that a report says a
+fact; it cannot clinically confirm the underlying pathology, stage, or assay.
+
+### 6.9 Proto and Biohub ESM requirements
+
+The system SHALL use these tools only when the task passes the following
+fitness test:
+
+| Task | Appropriate system | Requirement |
+| --- | --- | --- |
+| Public literature, trials, regulatory or protein/drug records | GXL Paperclip | Use when source, contract, and disclosure gates pass |
+| Personal genome observation and established genetics evidence | Genomi | Use Genomi capabilities and AGI reader |
+| Analytical representation or predicted-structure artifact for an exact, already established candidate protein/isoform | Local ESMC or ESMFold2 | Optional model-prediction modality; an interpretation requires a named downstream readout and exact-task validation |
+| Generation or optimization of DNA/RNA/protein sequences for a defined experimental program | Proto, optionally with ESM models | Separate expert/researcher mode only |
+| Diagnosis, pathogenicity classification, treatment choice, dose, or trial eligibility | None of Proto/ESM | Qualified clinical process required |
+
+#### ESM
+
+- ESMC or ESMFold2 MAY be invoked only to refine a concrete mechanistic question
+  already grounded by source evidence and tied to an exact protein
+  sequence/isoform. It SHALL NOT be invoked merely because source evidence is
+  missing.
+- An ESMC embedding, distance, logit, or generic head is an analytical artifact,
+  not a biological conclusion. Any patient-facing interpretation requires a
+  named downstream estimator/readout validated for that exact endpoint;
+  otherwise the system SHALL return the artifact without answer-shaped prose.
+- Patient-derived sequence inference SHALL run locally with network access
+  disabled. Under this requirements snapshot there is no hosted patient-data
+  exception and no silent cloud fallback. A future hosted path requires a
+  revised specification plus an appropriate DPA, explicit no-training and
+  no-service-improvement terms, retention/deletion and backup commitments,
+  subprocessors, incident terms, jurisdiction/security review, and explicit
+  destination consent.
+- Model code, weights, and dependencies SHALL be installed through Genomi's
+  library manager with user-approved disk, GPU, network, time, and license
+  preview; exact revisions and checksums are required. No model adapter may
+  silently download weights, create an unmanaged cache, enable telemetry, or
+  fall back to hosted inference.
+- Each result SHALL preserve a reference and hash for the encrypted local input
+  sequence artifact, model and weight revision, code revision, settings, seed,
+  hardware/runtime, output artifact hash, citations, license, and limitations.
+  It SHALL NOT duplicate a full patient-derived sequence in result cards, logs,
+  or caches.
+- pLDDT, pTM, ipTM, embedding distance, logits, and similar values SHALL be
+  presented as model metrics, not clinical probabilities.
+- ESM results SHALL be labeled **computational model prediction** and SHALL NOT
+  establish causality, pathogenicity, actionability, druggability, safety,
+  efficacy, or treatment response.
+- An ESM result SHALL NOT raise answer-readiness without orthogonal source or
+  experimental evidence.
+- Before patient display, the exact downstream task SHALL have a predeclared
+  endpoint, held-out or time-split public/synthetic benchmark, baseline
+  comparator, reproducibility tolerance, calibration and out-of-distribution
+  criteria, failure thresholds, and independent review. Validation on a
+  different task does not transfer.
+- Generative ESM3 and inverse-folding, binder, or antibody design SHALL remain
+  in the separate P3 expert/researcher mode.
+
+#### Proto
+
+- The default patient workspace SHALL NOT expose a general Proto design
+  surface.
+- The system SHALL NOT integrate the entire Proto/proto-tools catalog as a
+  trusted capability. It MAY wrap a specific allowlisted operation only after
+  scope, license, data path, model provenance, validation, and failure behavior
+  are reviewed. Every Proto or proto-tools operation—analytical or
+  generative—belongs to P3 or a later explicitly approved phase.
+- Proto's local stdio/MCP interface SHALL NOT be assumed to mean local compute.
+  Patient-derived inputs require an explicitly local backend, networking
+  disabled during inference, `deploy_tool` and `run_on=modal` unavailable, and
+  an egress manifest for every dependency.
+- Proto code, models, tools, caches, and dependencies SHALL use the Genomi
+  library-manager lifecycle with explicit revision/checksum, disk/GPU/network,
+  time, license, and egress preview. No independent `PROTO_HOME` or unmanaged
+  patient-data cache is allowed.
+- Full Proto sequence generation/optimization belongs to a separate expert
+  research mode after a target, experimental objective, constraints, and
+  validation plan are defined.
+- Every design run requires compute/egress preview, qualified expert approval,
+  biosafety screening, immutable provenance, and wet-lab validation.
+- Generated designs SHALL remain separate from the patient's AGI, clinical
+  findings, and clinician packet and SHALL NOT be presented as a treatment.
+
+Proto's purpose and design primitives are documented by the
+[official project](https://proto.evodesign.org/about) and its
+[preprint](https://www.biorxiv.org/content/10.64898/2026.06.22.733870v1).
+Biohub documents local ESM execution and model capabilities in the
+[official ESM repository](https://github.com/Biohub/esm); its own
+[limitations](https://biohub.ai/resources/limitations),
+[terms](https://biohub.org/terms-of-use/), and
+[privacy policy](https://biohub.org/privacy-policy/) govern hosted use.
+
+## 7. Current Genomi support to retain
+
+The current repository already provides the following foundations. The goal
+SHALL reuse and extend them rather than build portal-specific substitutes.
+
+| Area | Current Genomi support | GenomiLab use |
+| --- | --- | --- |
+| Host integration | MCP server, focused skills, tool discovery, and `genomi.invoke` | Keep the installed harness in control |
+| Genome intake | VCF/gVCF, BAM, paired FASTQ, major consumer arrays, compressed/archive inputs, and `.genome/1.0` bundles | Use once through Genomi-managed setup |
+| AGI | Local indexed genome, readiness, callability, exact allele/region queries, QC, lifecycle and background jobs | Shared personal-genome substrate across investigations; immutable `agi_snapshot_id` revision identity is new P0 work |
+| User context | User nicknames, assignment/selection, default user, and explicit AGI access approval/revocation | Canonical patient identity and genome selection; extend rather than duplicate |
+| Variant/clinical sources | Variant resolution, ClinVar matching, candidate scanning, gene and frequency context | Existing-finding and hereditary evidence streams |
+| Phenotype/disease | HPO normalization/comparison, GenCC, Open Targets, trait/gene and risk-investigation operations | Condition and rare-disease streams |
+| Pharmacogenomics | Medication review, ClinPGx/FDA/PGxDB, PharmCAT workflows and requirement reporting | Separate medication lane |
+| PRS/ancestry | PGS search/calculation boundaries and 1000 Genomes reference-panel context | Optional, explicitly bounded common-disease context |
+| GWAS/functional evidence | GWAS Catalog, perturbation screens, pathway, cell-type, and region grounding | Source-separated mechanism evidence |
+| Sequence utilities | Deterministic sequence checks and translation | Supporting analysis, not design or clinical classification |
+| Research memory | Target packets, source records, evidence-scoped journal and export | Retain original Genomi records and source-linked notes; GenomiLab owns the disease ledger/brief versions while harness agent notes remain non-evidence |
+| Evidence envelope | Canonical answer-readiness, scope, observations, guidance, negative-inference rules, defaults and next actions | Required behind every Genomi-derived evidence card |
+| Libraries/jobs | Managed public libraries, install states, source-unavailable states, and resumable jobs | Transparent dependency and progress UX |
+| Dashboard components | Local visual panels and adapters | Reuse presentation patterns where appropriate, not the old portal workflow |
+
+Current Genomi does **not** yet provide the GenomiLab Patient Molecular Profile,
+disease-investigation dossier, source-artifact/specimen/assay contracts,
+immutable `patient_molecular_snapshot_id`, hypothesis/gap register, versioned
+brief/collaboration services, host-neutral application/harness contract, broad
+verified-literature gateway, validated genome-wide clinical interpretation, or
+full somatic/multi-omic oncology model. These are substantive GenomiLab
+application capabilities to be developed, not responsibilities delegated to a
+generic harness.
+
+## 8. New development and migration requirements
+
+### 8.1 P0 — architectural correction and vertical slice
+
+1. Replace the legacy selectable GenomiLab patient/profile and per-profile
+   genome-upload model with one GenomiLab research workspace and Patient
+   Molecular Profile keyed exclusively to the current Genomi `user_id`.
+2. Remove portal profile creation/selection and all per-investigation genome
+   intake APIs/UI. Do not retain backward-compatible aliases or shims.
+3. Implement the GenomiLab application/domain layer and store for molecular
+   observations, source artifacts, specimen/assay context, profile snapshots,
+   canonical investigations, evidence ledgers, hypothesis/gap registers, brief
+   versions, approvals and receipts.
+4. Implement reviewed phenotype/condition, family-history, medication and one
+   existing reported germline-finding workflow, plus references to the existing
+   Genomi AGI. Extraction remains review-pending until explicitly reviewed.
+5. Add immutable `agi_snapshot_id` revisions in Genomi and immutable
+   `patient_molecular_snapshot_id` manifests in GenomiLab; require every
+   personal-genome invocation and investigation to name the exact revisions.
+6. Implement typed profile operations for create, review, supersede, read
+   approved slice, create snapshot and compare snapshots, with coverage and
+   provenance contracts.
+7. Define the GenomiLab application API, stateless harness-adapter protocol and
+   domain capability tools; implement one real installed-harness adapter end to
+   end and a conformance kit for other hosts.
+8. Map one canonical GenomiLab investigation to 0..N replaceable harness
+   tasks/runs and prove that domain artifacts survive harness loss.
+9. Build the Research Desk, My Molecular Profile, investigation progress,
+   source-separated evidence ledger, hypothesis/gap view and first versioned
+   Investigation Brief.
+10. Implement the first existing-finding/rare-condition disease investigation
+    across a pinned molecular-profile/AGI snapshot using source-specific Genomi
+    and GenomiLab mechanism-evidence capabilities.
+11. Implement the GXL Paperclip provider adapter inside the GenomiLab evidence
+   gateway and exercise its full contract
+   with mocks/fixtures and direct-source fallbacks, including provenance,
+   provider failures, licensing, and prompt-injection tests. Run a live public
+   or synthetic evaluation only if the exact development use has written GXL
+   authorization or a documented legal determination; otherwise prove the live
+   provider is hard-disabled.
+12. Add baseline application/portal/adapter security: loopback-only binding,
+    workspace-session authentication, CSRF protection, path and user isolation,
+    at-rest encryption with tested key handling, OS credential storage, explicit
+    secret injection, and sensitive log/event redaction.
+13. Add public/synthetic end-to-end evaluations for profile/AGI isolation,
+    disease-investigation behavior, privacy, evidence fidelity,
+    resumption, safe presentation semantics, and failure recovery.
+
+### 8.2 P1 — patient MVP
+
+- Add reviewed longitudinal entry/import for symptoms, routine labs/biomarkers,
+  medications/exposures and issued genetic, molecular and pathology reports,
+  including unresolved transcript/coding/protein HGVS, build and assay
   ambiguity.
-- Implement one existing-finding rare or unresolved heritable-condition
-  investigation:
-  public evidence → optional relevant health context → optional genome evidence
-  → source-separated Investigation Brief.
-- Build the provider-neutral literature adapter with primary-source and manual
-  paths; evaluate Paperclip only on public, nonpatient topics until its product
-  gates are cleared.
-- Create BenchFlow tasks for the thin slice and its failure states.
+- Add source-artifact preview/correction, conflicts/supersession, verification,
+  modality coverage and profile/evidence change diffs.
+- Support selective context approval, outbound disclosure preview, access
+  history, export, deletion, and recovery.
+- Add a GenomiLab deletion coordinator that inventories patient-data copies in
+  the domain store, harness conversations/checkpoints/attachments, temporary
+  and model artifacts, provider retention, exports and backups; previews
+  dependencies; invokes each owner's deletion interface; leaves the separately
+  controlled Genomi AGI untouched unless explicitly selected; and receipts
+  deleted, retained-by-choice-or-law, pending and unreachable copies.
+- Add clinician/genetic-counselor review packets and review rooms.
+- Add refresh-on-demand and evidence/source change diffs.
+- Add a second real harness adapter and pass the same conformance tests.
+- Add signed local distribution, local-authentication recovery, backup/restore
+  controls and independent security review.
+- Validate accessibility and comprehension with representative nontechnical
+  users.
 
-### Phase 1: patient MVP
+### 8.3 P2 — additional clinical-research lanes
 
-- Guided genome import/readiness and resumable progress.
-- Manual structured health-context entry and reconciliation.
-- Existing-finding rare/undiagnosed inherited-condition investigations, with a
-  separate secondary-findings opt-in and persistent urgent-care route. Do not
-  expose open-ended genome-wide candidate discovery until its P1 interpretation
-  contracts and validation are complete.
-- Evidence ledger, conditional mechanism section, clinician packet, export,
-  deletion, access log,
-  and refresh-on-demand.
-- Patient comprehension testing, WCAG 2.2 AA validation, security review, and
-  public/synthetic end-to-end evaluations.
+- FHIR/US Core and GA4GH Phenopacket import/export with mandatory fact review.
+- Reviewed PDF/CSV extraction, caregiver/proxy workflows, and family context.
+- Separate pharmacogenomics and calibrated common-disease/PRS workflows.
+- A somatic/multi-omic oncology data model and research workflow that does not
+  conflate tumor data with the germline AGI.
+- Professional molecular tumor-board packet and sign-off workflow.
+- Patient-facing GXL Paperclip use only after the shipping gate is satisfied.
 
-### Phase 2: connected health context
+### 8.4 P3 — mechanism and experimental lab
 
-- FHIR/US Core and Phenopacket import/export.
-- Reviewed PDF/CSV ingestion.
-- Caregiver/proxy and family context.
-- Evidence change monitoring and selective collaboration.
+- Allowlisted, locally executed ESMC/ESMFold2 model-prediction streams after
+  measurable exact-task validation.
+- All Proto/proto-tools operations, including an explicitly separate expert
+  research mode for defined sequence-design experiments with biosafety and
+  wet-lab gates.
+- Generative ESM3, inverse-folding, binder, and antibody design only inside the
+  same expert/researcher boundary.
+- Optional non-patient experimental handoff to a research data/lab platform.
+- No Proto or ESM function graduates into the patient path merely because the
+  integration runs; it must improve a validated task without weakening safety,
+  privacy, or evidence fidelity.
 
-### Phase 3: researcher lab
+## 9. Privacy, security, and clinical-safety requirements
 
-- Advanced variant-effect/protein-mechanism tools.
-- Proto/proto-tools and Biohub ESM under a separate experimental-computation
-  contract.
-- Optional Benchling connection and wet-lab handoff.
+- Raw genome sources and AGI storage SHALL remain local to Genomi.
+- The portal, GenomiLab application, adapter, harness, Genomi, model provider,
+  and evidence provider SHALL each declare their actual data path. Hosted
+  harness/model processing is external processing and SHALL be disclosed as
+  such.
+- The harness SHALL receive only the minimum personal evidence needed for the
+  active investigation through approved GenomiLab/Genomi capabilities; direct
+  domain-store access, raw AGI export and full-history prompts are prohibited by
+  default.
+- Genome reads, molecular-profile reads, harness/model egress, Paperclip
+  queries, other provider queries, sharing, monitoring, secondary findings, and
+  research/model-improvement use SHALL have separable consent scopes.
+- Secrets SHALL use the OS credential store or equivalent, never URLs, command
+  arguments, browser storage, logs, reports, or evidence records.
+- Personal data SHALL be encrypted at rest, protected by least-privilege file
+  permissions, and excluded from telemetry by default.
+- Every external disclosure SHALL be previewable and recorded.
+- Every private Genomi invocation SHALL be authorized for the exact
+  investigation, profile snapshot, consent receipt, AGI snapshot, purpose and
+  scope. Network-backed Genomi work with patient-influenced input SHALL pass the
+  same GenomiLab egress gate as any other provider call.
+- The harness SHALL NOT bypass the GenomiLab policy/evidence/model gateways with
+  its own network, shell, plugin, MCP, or ambient credential for a
+  patient-influenced external request.
+- Retrieved documents and uploaded reports SHALL be treated as untrusted data,
+  not instructions.
+- Secondary/incidental findings SHALL default off and require category-specific
+  opt-in.
+- A variant of uncertain significance SHALL NOT be presented as actionable.
+- Medication and treatment content SHALL be informational and SHALL NOT tell a
+  patient to start, stop, change, or dose a treatment.
+- The interface SHALL retain an urgent-care route for symptoms that should not
+  wait for research.
+- Legal, privacy, and regulatory status SHALL be assessed function by function
+  before public patient distribution; a disclaimer is not a substitute.
+- Before P1 patient release, deletion SHALL be coordinated across every system
+  that can retain a copy and report deleted, retained, pending and unreachable
+  states; deletion of GenomiLab data SHALL NOT silently delete the Genomi user
+  or AGI.
 
-## 10. MVP definition of done
+## 10. Non-functional requirements
 
-The first GenomiLab release is done when a nontechnical patient can:
+| Area | Requirement |
+| --- | --- |
+| Accessibility | All primary workflows SHALL meet WCAG 2.2 AA and work with keyboard and screen reader. |
+| Resilience | Long work SHALL be asynchronous, resumable, idempotent, and visibly cancellable. Provider or model failure SHALL preserve the investigation. |
+| Auditability | Every claim SHALL be traceable to inputs, source records, versions, defaults, tools/models, and brief version. |
+| Reproducibility | The system SHALL pin relevant library, provider-client, model, weight, and code revisions for material outputs. |
+| Portability | The GenomiLab harness-adapter contract SHALL support multiple installed harnesses. Unsupported hosts SHALL receive an honest unsupported/read-only state, never a hidden embedded substitute. |
+| Performance | The local portal SHALL remain interactive while agents, genome jobs, evidence retrieval, or models run. Progress SHALL stream without polling the entire workspace. |
+| Data minimization | UI caches, events, logs, and notifications SHALL contain only the minimum safe display data. |
+| Evolvability | New evidence or model systems SHALL enter through typed, scoped capabilities and SHALL NOT add whole-question routing or hidden reasoning to Genomi, GenomiLab domain services, or the portal. |
+| Testing | Public and synthetic fixtures SHALL cover success, empty, blocked, unavailable, interrupted, privacy, and adversarial-content states. Private genome files SHALL not enter shared tests. |
 
-1. install/open the local application without configuring MCP;
-2. ask a public question and, after any required egress consent, receive a
-   sourced brief before uploading data;
-3. enter a known reported finding or optionally import a pre-called VCF/gVCF
-   and understand its readiness/limits;
-4. add and verify the minimum health context needed for that question;
-5. understand and approve a session/investigation-scoped private-data grant and
-   each external destination, with re-consent whenever data class, purpose, or
-   destination expands;
-6. receive an Investigation Brief that separates personal observation,
-   source-specific public evidence, hypotheses, conflicts, missing evidence,
-   and confirmation needs;
-7. inspect every source and “as of” date;
-8. resume interrupted work without duplicated parsing/retrieval;
-9. create a selective clinician packet;
-10. export or delete all GenomiLab-owned personal data; and
-11. use private mode only after the threat model, at-rest encryption and key
-    handling, signed distribution/update path, local user boundary, backup and
-    recovery behavior, log/cache redaction, and deletion semantics have passed
-    independent security review. Until then, the release remains public-only.
+## 11. Definition of done and acceptance criteria
 
-The release is not done if the primary path still requires the user to know an
-rsID, HPO ID, genome build, command-line argument, MCP operation, evidence
-envelope field, or optional-library name.
+The initial implementation goal is complete only when all P0 requirements and
+all **P0** rows below pass. P1–P3 rows are future release gates; they become
+part of the active goal only when that phase is explicitly brought into scope.
 
-## 11. Open product decisions
+| ID | Phase | Acceptance criterion |
+| --- | --- | --- |
+| **AC-01** | P0 | Opening GenomiLab creates/opens exactly one Patient Molecular Profile aggregate keyed to Genomi's current `user_id`; there is no independent patient identity or profile selector. |
+| **AC-02** | P0 | With no current Genomi user, private work is blocked and the UI offers Genomi-managed setup; it does not create a substitute identity. |
+| **AC-03** | P0 | Portal network/call traces contain only GenomiLab application API calls. Profile/investigation schemas reject genome files, source/AGI paths and raw AGI rows; genome intake succeeds only through Genomi lifecycle operations. |
+| **AC-04** | P0 | Genome intake uses Genomi's existing lifecycle and creates/selects a Genomi-owned AGI and immutable `agi_snapshot_id` independently of the profile and investigations; all AGI reads go through Genomi's reader under an exact grant. |
+| **AC-05** | P0 | A Molecular Profile Snapshot is created only after purpose, investigation scope, exact contents and consent are approved; it round-trips to exact observation, artifact, specimen/assay and AGI revisions, coverage and consent receipt without containing raw genome data. Two investigations can reuse the same AGI revision with different approved profile snapshots and no reparse, and each investigation's AGI revision equals the revision in its pinned snapshot. |
+| **AC-06** | P0 | Revising a profile observation or rebuilding the same logical AGI makes a changed candidate selection or refresh available but does not mint a snapshot without explicit approval; an approved refresh creates a new immutable snapshot, while existing investigations remain unchanged and compare/rerun is explicit. Extracted facts cannot self-verify, and explicit negative findings require assay scope and detection limits. |
+| **AC-07** | P0 | GenomiLab receipts enforce exact profile slices and external payloads; every private Genomi call presents an independently validated authorization bound to workspace session, user, investigation, profile snapshot, consent receipt, AGI snapshot, purpose and scope. Revocation or expansion of any bound field, provider, destination or payload fails closed until reapproved, and network-backed Genomi work also crosses the GenomiLab egress gate. |
+| **AC-08** | P0 | Creating an investigation creates one canonical GenomiLab `investigation_id` and at most one active harness-task binding per idempotent command. Browser reconnect resumes events; harness loss/replacement preserves the dossier, ledger and briefs and can resume through a new task, while a full restart pauses private reads pending renewed grants. |
+| **AC-09** | P0 | Harness traces demonstrate tool-free dynamic planning, agent delegation, accepted-plan capability invocation and synthesis drafts. Plan acceptance causes no capability side effect; execution begins only in a separately approved harness execution task exposing the exact accepted requests. GenomiLab supplies/validates domain contracts but contains no fallback LLM, agent loop or plan bulk-execution path; the harness cannot directly mutate profile facts, consent, source evidence, clinical stage or committed brief history. |
+| **AC-10** | P0 | At least one real harness adapter and a simulated second adapter pass the same factory-driven host-adapter conformance suite for manifest, identity, idempotency, revision conflict, event ordering/deduplication/replay, cancellation and typed failure behavior. |
+| **AC-11** | P0 | With a synthetic user, reviewed phenotype/condition context, reported germline finding and AGI snapshot, one end-to-end disease investigation executed through the installed harness produces an approved pinned Molecular Profile Snapshot, targeted profile projection, source-separated evidence ledger containing each targeted Genomi result exactly once, hypothesis/gap register and versioned Investigation Brief. |
+| **AC-12** | P0 | Every molecular-profile observation and brief/hypothesis claim resolves to immutable evidence and profile revisions; every Genomi record retains its original envelope and returned, empty, out-of-scope, blocked, unavailable and running states remain distinct. |
+| **AC-13** | P0 | The Paperclip adapter passes its provider contract with fixtures/mocks, direct-source fallback, local evidence retention, and a verified hard-disabled live state. If the exact evaluation use is authorized, a representative live public/synthetic call must additionally retain provenance and survive provider loss; lack of that authorization does not fail P0. |
+| **AC-14** | P0 | Call audits prove the portal and harness have no provider credentials/direct route and all provider traffic crosses the GenomiLab gateway. Data-flow tests prove no query, entity, paraphrase, document or derived term influenced by patient data reaches Paperclip while its patient gate is closed. |
+| **AC-15** | P0 | Fixture tests prove that abstract-only, preprint, trial-registration, unavailable, no-hit, and model-verification states cannot independently become answer-ready clinical claims. |
+| **AC-16** | P0 | Retrieved prompt-injection content cannot change consent, tools, agent policy, or system instructions; a static capability manifest exposes only typed allowlisted provider operations and no arbitrary shell/execute path or ambient credential fallback. |
+| **AC-17** | P0 | A patient-workflow sequence-design request is refused or explicitly routed to unavailable expert mode, and any synthetic design artifact is ineligible for AGI ingestion, patient evidence, treatment content, or clinician export. |
+| **AC-18** | P0 | ESM is disabled by default; the eligibility gate rejects ungrounded tasks and every remote patient-sequence path, and tests prove no Biohub API client can receive a patient-derived sequence. |
+| **AC-19** | P0 | The brief preserves both axes: exactly one clinical stage and any applicable evidence-modality badges. Neither an uncertain variant nor model output can become actionable or raise answer-readiness by itself. |
+| **AC-20** | P1 | A nontechnical participant can ask, follow, resume, inspect, and selectively export the supported investigation without knowing genomic file formats, identifiers, MCP, optional libraries, Paperclip, Proto, ESM, or the harness architecture. |
+| **AC-21** | P1 | Keyboard-only and screen-reader testing passes the Research Desk, investigation, consent, evidence, and sharing workflows at WCAG 2.2 AA. |
+| **AC-22** | P0 | Automated security tests cover loopback-only binding, workspace-session authentication, CSRF, cross-user/path/profile isolation, at-rest encryption and key handling, OS credential storage, explicit secret injection and log/event redaction; switching Genomi users exposes no prior user's profile, snapshots, investigations or artifacts. |
+| **AC-23** | P1 | Future patient-provider use requires both a valid deployment contract policy and just-in-time payload approval; policy expiry/change closes access, consent cannot override a missing contract, and receipts pin the applicable contract/privacy/AUP versions. |
+| **AC-24** | P1 | Every consequential provider-derived claim is rechecked against the current primary record with index/retrieval dates, source license, corrections/retractions, regulatory/trial versions, preprint-publication linkage, and conflicts retained. |
+| **AC-25** | P1 | A patient can preview and selectively export/share or request deletion of GenomiLab-owned profile/investigation artifacts without deleting the Genomi user or AGI. The deletion coordinator inventories and routes deletion across the domain store, harness conversations/checkpoints/attachments, provider retention, temporary/model artifacts, exports and backups, and receipts deleted, retained-by-choice-or-law, pending and unreachable copies. Genome export/deletion uses separate explicit Genomi operations with dependent-investigation impact preview. |
+| **AC-26** | P3 | An enabled ESM task has a predeclared endpoint, named readout, held-out/time-split benchmark, baseline, reproducibility tolerance, calibration/OOD/failure thresholds, and independent review; inference is local and provenance-complete, and a negative control proves it cannot create pathogenicity, actionability, or answer-readiness without orthogonal evidence. |
+| **AC-27** | P3 | An enabled Proto/proto-tools task is allowlisted, Genomi-library-managed, local for patient-derived data, egress-tested, provenance-complete, expert-approved, biosafety-reviewed when generative, and segregated from the AGI, patient findings, treatment content, and clinician packet. |
+| **AC-28** | P1 | Independent security tests additionally cover local-authentication recovery, coordinated deletion, backup/restore, disclosure controls, key recovery/rotation and cross-user isolation under realistic deployment. |
 
-These questions should be resolved through user research and technical spikes,
-not silently assumed during implementation. The initial existing-finding,
-rare/undiagnosed inherited-disease wedge is a product decision, not an open
-question.
+Patient-release gates beyond P0:
 
-- Which health-context facts are mandatory for that wedge, and which can remain
-  question-specific?
-- What encrypted storage and key-recovery model is acceptable without making
-  local setup harder than the current Genomi flow?
-- What written commercial, output-use, privacy, security, and service terms must
-  a hosted literature provider satisfy before it can enter the shipped product?
-- What evidence refresh interval is useful without creating alarm fatigue?
-- What export format will clinicians actually review in practice?
-- Which evidence and UX contracts must differ across rare disease,
-  pharmacogenomics, common-disease/PRS, and cancer/somatic lanes?
-- Which jurisdictions and age groups are explicitly supported at launch?
+- at least 80% of representative participants complete the supported workflow
+  without facilitator intervention;
+- at least 90% correctly distinguish personal observation, public association,
+  model prediction/hypothesis, and clinical confirmation;
+- consequential misunderstandings trigger clarification before sharing;
+- blinded professional review finds every front-section claim traceable and
+  every material limitation retained; and
+- independent security, privacy, accessibility, clinical-safety, and regulatory
+  reviews are complete for the functions being released.
 
-## 12. External evidence and standards consulted
+## 12. Goal execution sequence
 
-- [Paperclip documentation](https://paperclip.gxl.ai/docs) and
-  [client repository](https://github.com/GXL-ai/paperclip) — current search,
-  reading, MCP/SDK/CLI, source coverage, literature-repo, claim-verification,
-  and hosted-client boundaries.
-- [GXL terms of service](https://gxl.ai/terms-of-service/) and
-  [privacy notice](https://gxl.ai/privacy-notice/) — current Paperclip use,
-  output, content-license, training, collection, and retention boundaries.
-- [Omanta](https://omanta.com/) and its
-  [clinician workflow](https://omanta.com/clinicians.html) — current public
-  description of its case-team, data-review, physician-collaboration, and
-  living-roadmap service pattern.
-- [Proto documentation](https://proto.evodesign.org/docs/introduction),
-  [Proto language repository](https://github.com/evo-design/proto-language),
-  [proto-tools repository](https://github.com/evo-design/proto-tools), and the
-  [Proto preprint](https://www.biorxiv.org/content/10.64898/2026.06.22.733870v1).
-- [Biohub ESM repository](https://github.com/Biohub/esm) — ESMC, ESMFold2,
-  local/Hugging Face and hosted inference, tutorials, and code license.
-- [Biohub privacy policy](https://biohub.org/privacy-policy/) — collection and
-  storage of user submissions and the instruction not to submit patient or
-  regulated data without express permission.
-- [BenchFlow repository](https://github.com/benchflow-ai/benchflow) — agent
-  environments, verifiers, scored trajectories, sandboxes, and Apache-2.0
-  license.
-- [Benchling AI](https://www.benchling.com/ai) and
-  [Benchling Developer Platform](https://www.benchling.com/developer-platform)
-  — structured R&D data, notebooks, models, APIs, events, App Canvas, and MCP.
-- [Benchling Main Services Agreement](https://www.benchling.com/main-services-agreement)
-  — the reviewed standard prohibited-data boundary for identifiable health and
-  genetic information.
-- [HL7 FHIR R4 resources](https://hl7.org/fhir/R4/resourcelist.html),
-  [FHIR Provenance](https://hl7.org/fhir/R4/provenance.html), and
-  [ONC patient-access developer guidance](https://healthit.gov/patient-access-to-health-records/developers/).
-- [GA4GH Phenopacket v2](https://phenopacket-schema.readthedocs.io/en/latest/phenopacket.html).
-- [GA4GH Variation Representation Specification](https://vrs.ga4gh.org/en/stable/)
-  and [Machine Readable Consent Guidance](https://www.ga4gh.org/product/machine-readable-consent-guidance/).
-- [NHGRI complex-disease definition](https://www.genome.gov/genetics-glossary/Complex-Disease)
-  and [NCI cancer biomarker-testing guidance](https://www.cancer.gov/about-cancer/treatment/types/biomarker-testing-cancer-treatment)
-  — why common disease and cancer cannot be reduced to a germline single-driver
-  workflow.
-- [ACMG/AMP sequence-variant interpretation standard](https://pmc.ncbi.nlm.nih.gov/articles/PMC4544753/)
-  — including the boundary that a variant of uncertain significance should not
-  drive clinical decisions.
-- [NHGRI direct-to-consumer genetic testing FAQ](https://www.genome.gov/For-Health-Professionals/Provider-Genomics-Education-Resources/Healthcare-Provider-Direct-to-Consumer-Genetic-Testing-FAQ)
-  — coverage limits, counseling, false positives, and clinical confirmation.
-- [AHRQ Health Literacy Universal Precautions Toolkit](https://www.ahrq.gov/health-literacy/improve/precautions/index.html)
-  — plain communication and confirming understanding.
-- [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/) — accessibility target.
-- [FTC Health Breach Notification Rule guidance](https://www.ftc.gov/business-guidance/resources/complying-ftcs-health-breach-notification-rule-0)
-  — consumer health-app privacy and breach-notification considerations.
-- [HHS health-app/API privacy guidance](https://www.hhs.gov/hipaa/for-professionals/privacy/guidance/access-right-health-apps-apis/index.html)
-  and [NHGRI genetic-discrimination guidance](https://www.genome.gov/about-genomics/policy-issues/Genetic-Discrimination)
-  — limits of HIPAA and GINA protections for a consumer product.
-- [FDA Clinical Decision Support Software guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/clinical-decision-support-software)
-  and [General Wellness guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/general-wellness-policy-low-risk-devices)
-  — current U.S. regulatory framing for patient/caregiver software functions.
+1. Inspect and preserve the latest Genomi contracts and unrelated user changes.
+2. Remove the superseded profile/upload/fixed-tool portal architecture without
+   compatibility shims.
+3. Freeze the GenomiLab domain objects, Patient Molecular Profile, snapshot,
+   application API and harness-adapter contracts with positive behavioral tests.
+4. Implement the GenomiLab domain/application layer and store over the current
+   Genomi user and existing AGI, then put the Research Desk portal on that API.
+5. Implement molecular observations, artifact/specimen/assay provenance,
+   profile snapshots, canonical investigations, harness bindings, typed events,
+   evidence ledgers, hypothesis/gap registers and versioned briefs.
+6. Implement and test the first existing-finding disease investigation using a
+   pinned Patient Molecular Profile, a tool-free installed-harness planning
+   task, a separately approved installed-harness execution task, and exact
+   Genomi/GenomiLab source-specific capabilities. The final vertical-slice test
+   SHALL run through the real installed harness rather than substituting the
+   simulated adapter or calling the capability executor directly.
+7. Add GXL Paperclip through the GenomiLab evidence gateway as the preferred
+   gated provider contract for covered public evidence, with primary-source
+   normalization and fallback. Keep live calls disabled unless the exact use is
+   authorized under Section 6.5.
+8. Implement privacy, disclosure, provider mediation, prompt-injection,
+   resumption, accessibility and patient-comprehension evaluations.
+9. Run independent functionality reviews for molecular-profile behavior, AGI
+   access, GenomiLab/harness ownership, evidence fidelity/Paperclip, patient
+   isolation/security and UX.
+10. Do not enable Proto, ESM, oncology, or other later lanes until their stated
+    prerequisites and task-specific acceptance criteria are met.
+
+## 13. External systems selected
+
+| System | Decision |
+| --- | --- |
+| **GXL Paperclip** | Build inside GenomiLab's evidence gateway as the preferred, first-class public-evidence provider contract. Live public/synthetic development use is conditional on authorization for that exact use; patient-facing use has the additional contract and consent gates in Section 6.5. |
+| **Proto / proto-tools** | Use only in P3 for allowlisted analysis or a separate expert experimental-design mode. Not part of the default patient investigation. |
+| **Biohub ESM** | Use local ESMC/ESMFold2 only for a validated candidate-protein question in P3. Keep ESM3 and generative ESM/Proto design in expert mode. No hosted patient data under this specification. |
+| **BenchFlow** | Suitable as development/evaluation infrastructure for agent trajectories, privacy, evidence correctness, recovery, and task completion using public/synthetic fixtures. It is not a patient feature. |
+| **Benchling** | Not a patient-data dependency. Consider only a future, explicitly approved non-patient experimental handoff under suitable contractual terms. |
+| **Omanta** | UX and service-model comparator only; no integration or unverified equivalence claim. |
+
+## 14. Source basis
+
+- [GXL Paperclip documentation](https://paperclip.gxl.ai/docs) and
+  [official client repository](https://github.com/GXL-ai/paperclip)
+- [GXL Terms of Service](https://gxl.ai/terms-of-service/) and
+  [Privacy Notice](https://gxl.ai/privacy-notice/)
+- [Proto overview](https://proto.evodesign.org/about),
+  [documentation](https://proto.evodesign.org/docs/introduction),
+  [MCP/backend documentation](https://proto.evodesign.org/docs/mcp/introduction),
+  [language repository](https://github.com/evo-design/proto-language),
+  [tools repository](https://github.com/evo-design/proto-tools), and
+  [preprint](https://www.biorxiv.org/content/10.64898/2026.06.22.733870v1)
+- [Biohub ESM repository](https://github.com/Biohub/esm),
+  [ESMC model card](https://huggingface.co/biohub/ESMC-6B),
+  [ESMFold2 model card](https://huggingface.co/biohub/ESMFold2),
+  [limitations](https://biohub.ai/resources/limitations),
+  [terms](https://biohub.org/terms-of-use/),
+  [privacy policy](https://biohub.org/privacy-policy/), and
+  [acceptable use policy](https://biohub.org/acceptable-use-policy/)
+- [Omanta patient experience](https://omanta.com/) and
+  [clinician workflow](https://omanta.com/clinicians.html)
+- [BenchFlow repository](https://github.com/benchflow-ai/benchflow)
+- Repository contracts in `AGENTS.md`, `SKILL.md`, `README.md`, Genomi tool
+  catalogs, the AGI reader/access implementation, and evidence-envelope code.

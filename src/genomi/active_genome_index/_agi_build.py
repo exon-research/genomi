@@ -13,8 +13,10 @@ import json
 import os
 import sqlite3
 from ._agi_readiness import ActiveGenomeIndexSchemaTooNew, _active_genome_index_readiness_from_connection
-from ._agi_schema import ActiveGenomeIndexStats, SCHEMA_VERSION, _ReferenceRunCoalescer, _ROW_GENOTYPE, _ROW_IS_VARIANT, _active_genome_index_build_lock, _byte_ranges, _create_query_indexes, _insert_metadata, _insert_record_batch, _insert_stat_rows, _is_plain_vcf, _mark_active_genome_index_build_completed, _mark_active_genome_index_variants_ready, _multiprocessing_context, _record_row, _reset_schema, _shard_path, connect, connect_existing, default_agi_path
+from ._agi_schema import ActiveGenomeIndexStats, SCHEMA_VERSION, _ReferenceRunCoalescer, _ROW_GENOTYPE, _ROW_IS_VARIANT, _active_genome_index_build_lock, _byte_ranges, _create_query_indexes, _insert_metadata, _insert_record_batch, _insert_stat_rows, _is_plain_vcf, _mark_active_genome_index_build_completed, _mark_active_genome_index_variants_ready, _multiprocessing_context, _record_row, _reset_schema, _shard_path, _upsert_metadata, connect, connect_existing, default_agi_path
+from .identity import agi_snapshot_identity_from_metadata, mint_agi_snapshot_identity, source_content_sha256 as _source_content_sha256
 from .record_kinds import _is_no_call_genotype
+from .revisions import require_mutable_agi_build_path
 from ..runtime.sqlite_support import enable_wal
 
 
@@ -32,9 +34,14 @@ def create_active_genome_index(
     defer_reference: bool = False,
     source_format: str | None = None,
     provider: str | None = None,
+    genome_build: str = "auto",
+    source_content_sha256: str | None = None,
 ) -> dict[str, Any]:
     vcf_path = Path(vcf_path)
-    agi_path = Path(agi_path) if agi_path is not None else default_agi_path(vcf_path)
+    effective_source_content_sha256 = source_content_sha256 or _source_content_sha256(vcf_path)
+    agi_path = require_mutable_agi_build_path(
+        Path(agi_path) if agi_path is not None else default_agi_path(vcf_path)
+    )
     agi_path.parent.mkdir(parents=True, exist_ok=True)
     effective_source_format = source_format or ("gvcf" if include_reference else "vcf")
     # Schema v3 contract: the Active Genome Index must always carry a
@@ -91,6 +98,8 @@ def create_active_genome_index(
             max_records=max_records,
             source_format=effective_source_format,
             provider=provider,
+            genome_build=genome_build,
+            source_content_sha256=effective_source_content_sha256,
         )
         if cached is not None:
             return cached
@@ -110,6 +119,8 @@ def create_active_genome_index(
                 max_records=max_records,
                 source_format=effective_source_format,
                 provider=provider,
+                genome_build=genome_build,
+                source_content_sha256=effective_source_content_sha256,
             )
             if cached is not None:
                 return cached
@@ -127,6 +138,8 @@ def create_active_genome_index(
                 defer_reference=defer_reference,
                 source_format=effective_source_format,
                 provider=provider,
+                genome_build=genome_build,
+                source_content_sha256=effective_source_content_sha256,
             )
         # Phase A defers the reference tail exactly like the parallel path: store
         # only variants now (mark variants_ready), let append_reference_pass fill
@@ -139,7 +152,7 @@ def create_active_genome_index(
         connection = connect(agi_path)
         try:
             _reset_schema(connection)
-            _insert_metadata(
+            snapshot_identity = _insert_metadata(
                 connection,
                 vcf_path,
                 header,
@@ -147,6 +160,8 @@ def create_active_genome_index(
                 max_records=max_records,
                 source_format=effective_source_format,
                 provider=provider,
+                genome_build=genome_build,
+                source_content_sha256=effective_source_content_sha256,
             )
             stats = _populate_records(
                 connection,
@@ -166,6 +181,7 @@ def create_active_genome_index(
             connection.commit()
             enable_wal(connection)
             return {
+                **snapshot_identity,
                 "status": "variants_ready" if defer_now else "completed",
                 "active_genome_index_complete": not defer_now,
                 "variants_ready": True,
@@ -189,6 +205,8 @@ def _cached_active_genome_index_if_usable(
     max_records: int | None,
     source_format: str | None,
     provider: str | None = None,
+    genome_build: str = "auto",
+    source_content_sha256: str | None = None,
 ) -> dict[str, Any] | None:
     if not agi_path.exists():
         return None
@@ -222,6 +240,10 @@ def _cached_active_genome_index_if_usable(
         return None
     if provider is not None and metadata.get("provider") != provider:
         return None
+    if metadata.get("genome_build") != genome_build:
+        return None
+    if source_content_sha256 is not None and metadata.get("source_content_sha256") != source_content_sha256:
+        return None
     if int(metadata.get("vcf_size_bytes") or -1) != stat.st_size:
         return None
     if bool(metadata.get("include_reference")) != include_reference:
@@ -231,6 +253,7 @@ def _cached_active_genome_index_if_usable(
     if not stats:
         return None
     return {
+        **agi_snapshot_identity_from_metadata(metadata),
         "status": "cached",
         "active_genome_index_complete": True,
         "vcf_path": str(vcf_path),
@@ -264,6 +287,8 @@ def _create_active_genome_index_parallel(
     defer_reference: bool = False,
     source_format: str = "vcf",
     provider: str | None = None,
+    genome_build: str = "auto",
+    source_content_sha256: str,
 ) -> dict[str, Any]:
     # `mode` drives which rows each shard stores:
     # - include_reference=False  → "variants" forever (a complete variant-only
@@ -285,7 +310,7 @@ def _create_active_genome_index_parallel(
     shard_paths: list[Path] = []
     try:
         _reset_schema(connection)
-        _insert_metadata(
+        snapshot_identity = _insert_metadata(
             connection,
             vcf_path,
             header,
@@ -293,6 +318,8 @@ def _create_active_genome_index_parallel(
             max_records=max_records,
             source_format=source_format,
             provider=provider,
+            genome_build=genome_build,
+            source_content_sha256=source_content_sha256,
         )
         ranges, shard_worker = _shard_ranges_and_worker(vcf_path, workers)
         shard_paths = [_shard_path(agi_path, shard_index) for shard_index in range(len(ranges))]
@@ -325,6 +352,7 @@ def _create_active_genome_index_parallel(
         connection.commit()
         enable_wal(connection)
         return {
+            **snapshot_identity,
             "status": "variants_ready" if defer_reference else "completed",
             "active_genome_index_complete": not defer_reference,
             "variants_ready": True,
@@ -374,7 +402,7 @@ def append_reference_pass(
     metadata.vcf_path (the per-index canonical bgzip that survives parse for
     exactly this kind of follow-up read).
     """
-    agi_path = Path(agi_path)
+    agi_path = require_mutable_agi_build_path(agi_path)
     readiness = _active_genome_index_readiness_from_path(agi_path)
     if readiness.get("complete"):
         return {
@@ -417,6 +445,7 @@ def append_reference_pass(
             with context.Pool(processes=len(tasks)) as pool:
                 shard_results = pool.map(shard_worker, tasks)
             _merge_active_genome_index_shards(connection, shard_results)
+            _rotate_agi_snapshot_identity(connection)
             _mark_active_genome_index_build_completed(connection)
             connection.commit()
         finally:
@@ -441,6 +470,24 @@ def append_reference_pass(
         "vcf_path": str(vcf_path),
         "parallel_workers": len(tasks),
     }
+
+
+def _rotate_agi_snapshot_identity(connection: sqlite3.Connection) -> None:
+    """Give the completed reference pass its own immutable revision identity."""
+
+    metadata = {
+        str(row["key"]): json.loads(row["value"])
+        for row in connection.execute(
+            "select key, value from metadata where key in ('source_content_sha256', 'genome_build', 'schema_version')"
+        )
+    }
+    identity = mint_agi_snapshot_identity(
+        source_content_sha256=str(metadata["source_content_sha256"]),
+        genome_build=str(metadata.get("genome_build") or "auto"),
+        schema_version=int(metadata["schema_version"]),
+    )
+    for key, value in identity.items():
+        _upsert_metadata(connection, key, value)
 
 def _active_genome_index_readiness_from_path(agi_path: Path) -> dict[str, Any]:
     if not agi_path.exists():
