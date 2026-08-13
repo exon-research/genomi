@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -142,7 +143,7 @@ class ActiveGenomeIndexRevisionIntegrityTests(GenomiRuntimeTestCase):
         shutil.copyfile(self.revision_path, tampered_path)
         os.chmod(tampered_path, 0o600)
         try:
-            with sqlite3.connect(tampered_path) as connection:
+            with contextlib.closing(sqlite3.connect(tampered_path)) as connection:
                 connection.execute("pragma journal_mode = delete")
                 connection.execute(
                     "update records set genotype = '1/1' where rsid = 'rs900000001'"
