@@ -18,6 +18,7 @@ def describe_agi_record(run: JsonObject | None) -> JsonObject | None:
         "evidence_db",
         "shared_evidence_db",
         "agi_path",
+        "agi_build_path",
         "matches",
         "candidate_inventory",
         "agi_comparable_variant_export",

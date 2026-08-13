@@ -22,6 +22,7 @@ from ...runtime.paths import (
 from ..array_genotypes import ARRAY_NO_CALLS, SUPPORTED_ARRAY_BASES
 from ..active_genome_index import SCHEMA_VERSION, _chrom_sort
 from ..active_genome_index import connect as connect_active_genome_index
+from ..revisions import require_mutable_agi_build_path
 from .agi_store import (
     JsonObject,
     _array_record_row,
@@ -270,6 +271,7 @@ def _build_consumer_array_active_genome_index(
     force: bool,
     max_records: int | None,
 ) -> JsonObject:
+    agi_path = require_mutable_agi_build_path(agi_path)
     if agi_path.exists() and not force:
         cached = _cached_array_active_genome_index_if_usable(
             source_path,
@@ -284,7 +286,13 @@ def _build_consumer_array_active_genome_index(
     agi_path.parent.mkdir(parents=True, exist_ok=True)
     with connect_active_genome_index(agi_path) as connection:
         _reset_source_active_genome_index_schema(connection)
-        _insert_source_active_genome_index_metadata(connection, source_path, detection=detection, genome_build=genome_build, max_records=max_records)
+        snapshot_identity = _insert_source_active_genome_index_metadata(
+            connection,
+            source_path,
+            detection=detection,
+            genome_build=genome_build,
+            max_records=max_records,
+        )
         stats, chromosome_counts = _populate_consumer_array_records(
             connection,
             source_path,
@@ -298,6 +306,7 @@ def _build_consumer_array_active_genome_index(
         _mark_source_active_genome_index_completed(connection)
         connection.commit()
     return {
+        **snapshot_identity,
         "status": "completed",
         "source": str(source_path),
         "source_format": source_format,

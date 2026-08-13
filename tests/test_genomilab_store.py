@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import stat
 import tempfile
 import unittest
@@ -10,6 +9,7 @@ from unittest import mock
 
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
+from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
 
 
 class GenomiLabStoreTests(unittest.TestCase):
@@ -30,179 +30,144 @@ class GenomiLabStoreTests(unittest.TestCase):
         self._environment.start()
         self.addCleanup(self._environment.stop)
 
-    def test_profile_without_genome_is_a_persisted_first_class_record(self) -> None:
-        store = GenomiLabStore()
-
-        created = store.create_profile("  Synthetic patient  ")
-
-        self.assertEqual(created["display_name"], "Synthetic patient")
-        self.assertIsNone(created["genome"])
-        self.assertEqual(created["health_facts"], [])
-        self.assertEqual(created["reported_findings"], [])
-        self.assertEqual(created["investigations"], [])
-
-        reopened = GenomiLabStore()
-        persisted = reopened.get_profile(created["profile_id"])
-        self.assertEqual(persisted["profile_id"], created["profile_id"])
-        self.assertIsNone(persisted["genome"])
-        self.assertEqual(reopened.list_profiles()[0]["health_fact_count"], 0)
-        self.assertEqual(reopened.list_profiles()[0]["finding_count"], 0)
-
-        with self.assertRaisesRegex(ValueError, "display_name is required"):
-            store.create_profile("   ")
-
-    def test_health_facts_and_findings_validate_modes_and_persist_by_profile(self) -> None:
-        store = GenomiLabStore()
-        patient = store.create_profile("Synthetic patient A")
-        other = store.create_profile("Synthetic patient B")
-        patient_id = str(patient["profile_id"])
-        other_id = str(other["profile_id"])
-
-        health_fact_kinds = {
-            "condition",
-            "symptom",
-            "medication",
-            "allergy",
-            "measurement",
-            "procedure",
-            "family_history",
-            "exposure",
-        }
-        assertion_statuses = {"present", "absent", "unknown"}
-        verification_states = {
-            "unreviewed",
-            "user_confirmed",
-            "record_confirmed",
-            "clinician_confirmed",
-        }
-
-        accepted_kinds = {
-            store.add_health_fact(
-                patient_id,
-                kind=kind,
-                label=f"Accepted {kind}",
-            )["kind"]
-            for kind in health_fact_kinds
-        }
-        self.assertEqual(accepted_kinds, health_fact_kinds)
-
-        accepted_assertions = {
-            store.add_health_fact(
-                patient_id,
-                kind="condition",
-                label=f"Assertion {assertion}",
-                assertion_status=assertion,
-            )["assertion_status"]
-            for assertion in assertion_statuses
-        }
-        self.assertEqual(accepted_assertions, assertion_statuses)
-
-        accepted_verifications = {
-            store.add_health_fact(
-                patient_id,
-                kind="symptom",
-                label=f"Verification {verification}",
-                verification_state=verification,
-            )["verification_state"]
-            for verification in verification_states
-        }
-        self.assertEqual(accepted_verifications, verification_states)
-
-        original = store.add_health_fact(
-            patient_id,
-            kind="medication",
-            label="Synthetic medication",
-            onset="2026-01",
-            source_type="patient_reported",
+    def test_workspace_is_stable_and_keyed_only_to_genomi_user(self) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        created = store.open_workspace("user-a", "Synthetic user A")
+        reopened = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER).open_workspace(
+            "user-a", "Renamed display"
         )
-        replacement = store.add_health_fact(
-            patient_id,
-            kind="medication",
-            label="Synthetic medication, corrected",
-            supersedes_fact_id=original["fact_id"],
-        )
-        self.assertEqual(replacement["supersedes_fact_id"], original["fact_id"])
 
-        other_fact = store.add_health_fact(
-            other_id,
-            kind="condition",
-            label="Other profile condition",
-        )
-        with self.assertRaisesRegex(ValueError, "must name a fact in this profile"):
-            store.add_health_fact(
-                patient_id,
-                kind="condition",
-                label="Invalid cross-profile replacement",
-                supersedes_fact_id=other_fact["fact_id"],
-            )
+        self.assertEqual(created["workspace_id"], reopened["workspace_id"])
+        self.assertEqual(reopened["user_id"], "user-a")
+        self.assertEqual(store.list_workspace_user_ids(), ["user-a"])
+        self.assertFalse(hasattr(store, "create_profile"))
+        self.assertFalse(hasattr(store, "list_profiles"))
 
-        invalid_health_values = (
-            {"kind": "unsupported", "label": "Label"},
-            {"kind": "condition", "label": "", "assertion_status": "present"},
-            {"kind": "condition", "label": "Label", "assertion_status": "maybe"},
-            {"kind": "condition", "label": "Label", "verification_state": "guessed"},
+    def test_observation_revisions_preserve_history_and_current_view(self) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store.open_workspace("user-a", "Synthetic user A")
+        original = store.add_profile_observation(
+            "user-a",
+            {
+                "modality": "phenotype",
+                "label": "Intermittent weakness",
+                "original_wording": "Sometimes my muscles feel weak",
+                "verification_state": "user_confirmed",
+                "source_class": "patient_reported",
+            },
         )
-        for payload in invalid_health_values:
-            with self.subTest(payload=payload), self.assertRaises(ValueError):
-                store.add_health_fact(patient_id, **payload)
+        revision = store.add_profile_observation(
+            "user-a",
+            {
+                "modality": "phenotype",
+                "label": "Progressive muscle weakness",
+                "original_wording": "Weakness has become progressive",
+                "verification_state": "user_confirmed",
+                "source_class": "patient_reported",
+                "supersedes_revision_id": original["observation_revision_id"],
+            },
+        )
 
-        rsid = store.add_reported_finding(
-            patient_id,
-            variant="RS900000001",
-            gene="SYNTH1",
-            reported_classification="research finding",
-            source_label="synthetic fixture",
-        )
-        exact = store.add_reported_finding(
-            patient_id,
-            variant="chr1:100:A:C",
-        )
-        review = store.add_reported_finding(
-            patient_id,
-            variant="c.123A>G",
-        )
-        self.assertEqual((rsid["variant"], rsid["normalization_state"]), ("rs900000001", "rsid_ready"))
-        self.assertEqual(exact["normalization_state"], "exact_genomic_allele_ready")
-        self.assertEqual(review["normalization_state"], "needs_review")
-        with self.assertRaisesRegex(ValueError, "variant is required"):
-            store.add_reported_finding(patient_id, variant=" ")
-
-        reopened = GenomiLabStore()
-        persisted = reopened.get_profile(patient_id)
         self.assertEqual(
-            {item["finding_id"] for item in persisted["reported_findings"]},
-            {rsid["finding_id"], exact["finding_id"], review["finding_id"]},
+            original["logical_observation_id"], revision["logical_observation_id"]
         )
-        self.assertNotIn(other_fact["fact_id"], {item["fact_id"] for item in persisted["health_facts"]})
-        summaries = {item["profile_id"]: item for item in reopened.list_profiles()}
-        self.assertEqual(summaries[patient_id]["finding_count"], 3)
-        self.assertEqual(summaries[other_id]["health_fact_count"], 1)
+        self.assertEqual(len(store.list_profile_observations("user-a")), 2)
+        self.assertEqual(
+            [
+                row["observation_revision_id"]
+                for row in store.list_profile_observations("user-a", current_only=True)
+            ],
+            [revision["observation_revision_id"]],
+        )
 
-    def test_store_uses_private_wal_storage_and_declared_query_indexes(self) -> None:
-        store = GenomiLabStore()
-        store.create_profile("Synthetic patient")
+        with self.assertRaisesRegex(ValueError, "must remain unreviewed"):
+            store.add_profile_observation(
+                "user-a",
+                {
+                    "modality": "condition",
+                    "label": "Extracted diagnosis",
+                    "source_class": "model_extracted",
+                    "verification_state": "record_confirmed",
+                },
+            )
+        with self.assertRaisesRegex(ValueError, "explicit negative requires"):
+            store.add_profile_observation(
+                "user-a",
+                {
+                    "modality": "biomarker",
+                    "label": "Marker not detected",
+                    "assertion_status": "absent",
+                    "source_identifier": "synthetic-report-negative",
+                    "source_class": "issued_record",
+                    "verification_state": "record_confirmed",
+                    "coverage_state": "explicitly_not_detected_within_declared_assay_scope",
+                },
+            )
+        for coverage_state in ("observed", "not_measured"):
+            with (
+                self.subTest(coverage_state=coverage_state),
+                self.assertRaisesRegex(
+                    ValueError, "requires explicit within-scope coverage"
+                ),
+            ):
+                store.add_profile_observation(
+                    "user-a",
+                    {
+                        "modality": "reported_germline_finding",
+                        "label": "Reported variant absent",
+                        "assertion_status": "absent",
+                        "source_identifier": "synthetic-report-negative",
+                        "source_class": "issued_record",
+                        "verification_state": "record_confirmed",
+                        "coverage_state": coverage_state,
+                    },
+                )
+
+    def test_store_uses_encrypted_private_storage_and_declared_indexes(self) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store.open_workspace("user-a", "Synthetic user")
 
         self.assertEqual(store.path, self.genomi_home / "lab" / "genomilab.sqlite3")
-        with sqlite3.connect(store.path) as connection:
-            journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
-        self.assertEqual(str(journal_mode).lower(), "wal")
-
-        expected_indexes = {
-            "health_facts": "health_facts_profile_created",
-            "reported_findings": "reported_findings_profile_created",
-            "portal_jobs": "portal_jobs_profile_created",
-            "consent_receipts": "consent_profile_session",
-            "investigations": "investigations_profile_created",
+        ciphertext = store.path.read_bytes()
+        self.assertFalse(ciphertext.startswith(b"SQLite format 3\x00"))
+        self.assertNotIn(b"Synthetic user", ciphertext)
+        self.assertFalse(store.path.with_name(f"{store.path.name}-wal").exists())
+        self.assertFalse(store.path.with_name(f"{store.path.name}-shm").exists())
+        expected = {
+            "molecular_observations": "idx_observations_user_created",
+            "profile_snapshots": "idx_snapshots_user_created",
+            "consent_receipts": "idx_consents_session_user",
+            "investigations": "idx_investigations_user_created",
+            "evidence_records": "idx_evidence_investigation_created",
         }
-        for table, expected in expected_indexes.items():
+        for table, index in expected.items():
             with self.subTest(table=table):
-                self.assertIn(expected, store.indexes_for(table))
-        with self.assertRaisesRegex(ValueError, "unsupported table"):
-            store.indexes_for("profiles")
-
+                self.assertIn(index, store.indexes_for(table))
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(store.path.stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE(store.path.parent.stat().st_mode), 0o700)
+
+    def test_atomic_write_rolls_back_the_complete_multi_repository_transition(
+        self,
+    ) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store.open_workspace("user-a", "Synthetic user A")
+
+        with self.assertRaisesRegex(RuntimeError, "late transition failure"):
+            with store.atomic_write():
+                store.open_workspace("user-b", "Synthetic user B")
+                store.add_profile_observation(
+                    "user-b",
+                    {
+                        "modality": "phenotype",
+                        "label": "Transient observation",
+                        "source_class": "patient_reported",
+                        "verification_state": "user_confirmed",
+                    },
+                )
+                raise RuntimeError("late transition failure")
+
+        self.assertEqual(store.list_workspace_user_ids(), ["user-a"])
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -126,6 +127,7 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
             raise
     finally:
         log_handle.close()
+    _reap_detached_process(process)
 
     current = _read_job_file(job_path)
     if current.get("status") == "queued":
@@ -134,6 +136,23 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
         return current
     current.setdefault("pid", process.pid)
     return current
+
+
+def _reap_detached_process(process: subprocess.Popen[bytes]) -> None:
+    """Retain and reap a detached worker without blocking its caller.
+
+    ``start_new_session`` detaches the worker from terminal control, but the
+    parent still owns its process handle. A daemon waiter keeps that handle
+    alive until exit and records the return code, avoiding zombies and Python's
+    unclosed-subprocess warning while the durable job file remains the public
+    status boundary.
+    """
+
+    threading.Thread(
+        target=process.wait,
+        name=f"genomi-job-reaper-{process.pid}",
+        daemon=True,
+    ).start()
 
 
 def wait_for_job(job_id: str, *, timeout_seconds: float | None = None) -> JsonObject:
@@ -292,6 +311,7 @@ def operation_context_fingerprint(operation: str, params: JsonObject) -> JsonObj
     return {
         "context_scope": runtime_context.context_scope(),
         "active_agi_id": run.get("agi_id"),
+        "agi_snapshot_id": run.get("agi_snapshot_id"),
         "sample_slug": run.get("sample_slug"),
         "agi_path": run.get("agi_path"),
     }

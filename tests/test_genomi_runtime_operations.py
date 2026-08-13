@@ -133,7 +133,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                     "1\t10257\trsRisk\tA\tC\t50\tPASS\t.\tGT\t0/1\n",
                     encoding="utf-8",
                 )
-                index.write_text("placeholder Active Genome Index", encoding="utf-8")
+                create_active_genome_index(vcf, index, genome_build="GRCh38")
                 init_evidence_db(evidence_db)
                 runtime_context.set_active_agi_from_source(
                     vcf,
@@ -281,7 +281,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                     "10\t94761900\trs4244285\tG\tA\t50\tPASS\t.\tGT:DP:GQ\t0/1:31:99\n",
                     encoding="utf-8",
                 )
-                index.write_text("placeholder Active Genome Index", encoding="utf-8")
+                create_active_genome_index(vcf, index, genome_build="GRCh38")
                 init_evidence_db(evidence_db)
                 runtime_context.set_active_agi_from_source(
                     vcf,
@@ -311,7 +311,12 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
                 self.assertEqual(result["status"], "completed")
                 materialize.assert_called_once()
                 reader = materialize.call_args.args[0]
-                self.assertEqual(reader.agi_path.resolve(), index.resolve())
+                active = runtime_context.active_agi_record()
+                self.assertEqual(
+                    reader.agi_path.resolve(),
+                    Path(str(active["agi_path"])).resolve(),
+                )
+                self.assertNotEqual(reader.agi_path.resolve(), index.resolve())
                 self.assertEqual(Path(materialize.call_args.kwargs["evidence_db"]).resolve(), evidence_db.resolve())
                 self.assertEqual(Path(materialize.call_args.kwargs["output"]).resolve(), matches.resolve())
                 scan.assert_called_once()

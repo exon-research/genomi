@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import http.cookies
 import json
 import os
 import re
@@ -13,10 +12,13 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import PurePosixPath
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import quote, urlsplit
 
+from ..operations import call_operation
 from ..runtime.context.normalize import GENOMI_SESSION_ENV
+from .harness import InstalledCodexAppServerAdapter
 from .service import GenomiLabService, LabError
 
 JsonObject = dict[str, Any]
@@ -24,14 +26,21 @@ JsonObject = dict[str, Any]
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 0
 MAX_JSON_BYTES = 64 * 1024
-_PROFILE_ROUTE = re.compile(r"^/api/v1/profiles/(patient-[a-f0-9]+)$")
-_PROFILE_ACTION_ROUTE = re.compile(
-    r"^/api/v1/profiles/(patient-[a-f0-9]+)/(activate|health-facts|reported-findings|genomes|consents/agi|investigations)$"
+_INVESTIGATION_ROUTE = re.compile(r"^/api/v1/investigations/(investigation-[a-f0-9]+)$")
+_INVESTIGATION_VIEW_ROUTE = re.compile(
+    r"^/api/v1/investigations/(investigation-[a-f0-9]+)/(profile|events|event-stream)$"
 )
-_JOB_ROUTE = re.compile(r"^/api/v1/jobs/(job-[a-f0-9]+)$")
-_INVESTIGATION_ROUTE = re.compile(
-    r"^/api/v1/investigations/(investigation-[a-f0-9]+)$"
+_INVESTIGATION_ACTION_ROUTE = re.compile(
+    r"^/api/v1/investigations/(investigation-[a-f0-9]+)/"
+    r"(context-candidate|context-approval|context-compare|harness-preview|start|resume|messages|"
+    r"replace-harness|cancel|revoke-context|review-packet|plan-accept|"
+    r"capability-execute|capability-check)$"
 )
+_OBSERVATION_REVISION_ROUTE = re.compile(
+    r"^/api/v1/molecular-profile/observations/"
+    r"(observation-revision-[a-f0-9]+)/supersede$"
+)
+_JAVASCRIPT_MODULE_ROUTE = re.compile(r"^/[a-z][a-z0-9_-]*(?:/[a-z][a-z0-9_-]*)*\.js$")
 
 
 class GenomiLabHTTPServer(ThreadingHTTPServer):
@@ -50,12 +59,14 @@ class GenomiLabHTTPServer(ThreadingHTTPServer):
         self.launch_token = launch_token or secrets.token_urlsafe(32)
         self.launch_token_consumed = False
         self.launch_token_lock = threading.Lock()
-        self.session_cookie = secrets.token_urlsafe(32)
+        self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         super().__init__(address, GenomiLabRequestHandler)
         port = int(self.server_address[1])
         self.base_url = f"http://{LOOPBACK_HOST}:{port}"
-        self.launch_url = f"{self.base_url}/?token={self.launch_token}"
+        # The fragment is consumed by portal JavaScript and is never included in
+        # the HTTP request target, Referer header, or server access log.
+        self.launch_url = f"{self.base_url}/#token={quote(self.launch_token, safe='')}"
         self.allowed_hosts = {f"{LOOPBACK_HOST}:{port}", f"localhost:{port}"}
         self.allowed_origins = {
             f"http://{LOOPBACK_HOST}:{port}",
@@ -82,12 +93,21 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         except Exception:
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": {"code": "internal_error", "message": "The local portal encountered an error."}},
+                {
+                    "error": {
+                        "code": "internal_error",
+                        "message": "The local portal encountered an error.",
+                    }
+                },
             )
 
     def do_POST(self) -> None:  # noqa: N802
         try:
             self._require_host()
+            if urlsplit(self.path).path == "/api/v1/session":
+                self._require_origin()
+                self._handle_session_exchange()
+                return
             self._require_session()
             self._require_origin_and_csrf()
             self._handle_post()
@@ -96,13 +116,23 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         except Exception:
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": {"code": "internal_error", "message": "The local portal encountered an error."}},
+                {
+                    "error": {
+                        "code": "internal_error",
+                        "message": "The local portal encountered an error.",
+                    }
+                },
             )
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self._send_json(
             HTTPStatus.METHOD_NOT_ALLOWED,
-            {"error": {"code": "method_not_allowed", "message": "Cross-origin requests are not allowed."}},
+            {
+                "error": {
+                    "code": "method_not_allowed",
+                    "message": "Cross-origin requests are not allowed.",
+                }
+            },
         )
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -116,40 +146,22 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
     def _handle_get(self) -> None:
         self._require_host()
         parsed = urlsplit(self.path)
+        if parsed.query:
+            raise LabError(
+                "invalid_request", "Unexpected query parameters.", http_status=400
+            )
         if parsed.path == "/healthz":
             self._send_json(HTTPStatus.OK, {"status": "ok"})
             return
-        token = parse_qs(parsed.query).get("token", [None])[0]
-        if parsed.path == "/" and token is not None:
-            with self.server.launch_token_lock:
-                valid = not self.server.launch_token_consumed and secrets.compare_digest(
-                    str(token), self.server.launch_token
-                )
-                if valid:
-                    self.server.launch_token_consumed = True
-            if not valid:
-                raise LabError(
-                    "invalid_launch_token",
-                    "This launch link is not valid.",
-                    http_status=401,
-                )
-            self.send_response(HTTPStatus.SEE_OTHER)
-            self._security_headers(content_type="text/plain; charset=utf-8", content_length=0)
-            self.send_header("Location", "/")
-            self.send_header(
-                "Set-Cookie",
-                f"genomilab_session={self.server.session_cookie}; HttpOnly; SameSite=Strict; Path=/",
-            )
-            self.end_headers()
-            return
-        self._require_session()
-        if parsed.query:
-            raise LabError("invalid_request", "Unexpected query parameters.", http_status=400)
+        # The shell and its same-origin assets contain no patient data and must
+        # load before the fragment-delivered launch token can be exchanged.
         if parsed.path == "/":
             self._send_asset("index.html", "text/html; charset=utf-8")
             return
-        if parsed.path in {"/app.js", "/api.js", "/render.js"}:
-            self._send_asset(parsed.path.removeprefix("/"), "text/javascript; charset=utf-8")
+        if _JAVASCRIPT_MODULE_ROUTE.fullmatch(parsed.path):
+            self._send_asset(
+                parsed.path.removeprefix("/"), "text/javascript; charset=utf-8"
+            )
             return
         if parsed.path in {
             "/styles.css",
@@ -159,119 +171,241 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         }:
             self._send_asset(parsed.path.removeprefix("/"), "text/css; charset=utf-8")
             return
+        self._require_session()
         if parsed.path == "/api/v1/bootstrap":
             payload = self.server.service.bootstrap()
-            payload["csrf_token"] = self.server.csrf_token
             self._send_json(HTTPStatus.OK, payload)
             return
-        if parsed.path == "/api/v1/profiles":
+        if parsed.path == "/api/v1/workspace":
+            payload = self.server.service.bootstrap_workspace()
+            self._send_json(HTTPStatus.OK, payload)
+            return
+        if parsed.path == "/api/v1/molecular-profile":
+            self._send_json(HTTPStatus.OK, self.server.service.molecular_profile())
+            return
+        if parsed.path == "/api/v1/investigations":
             self._send_json(
                 HTTPStatus.OK,
-                {"profiles": self.server.service.bootstrap()["profiles"]},
-            )
-            return
-        profile_match = _PROFILE_ROUTE.fullmatch(parsed.path)
-        if profile_match:
-            self._send_json(
-                HTTPStatus.OK, self.server.service.profile(profile_match.group(1))
-            )
-            return
-        job_match = _JOB_ROUTE.fullmatch(parsed.path)
-        if job_match:
-            self._send_json(
-                HTTPStatus.OK, self.server.service.poll_job(job_match.group(1))
+                {"investigations": self.server.service.list_investigations()},
             )
             return
         investigation_match = _INVESTIGATION_ROUTE.fullmatch(parsed.path)
         if investigation_match:
-            try:
-                result = self.server.service.store.get_investigation(
-                    investigation_match.group(1)
+            self._send_json(
+                HTTPStatus.OK,
+                self.server.service.investigation(investigation_match.group(1)),
+            )
+            return
+        view_match = _INVESTIGATION_VIEW_ROUTE.fullmatch(parsed.path)
+        if view_match:
+            investigation_id, view = view_match.groups()
+            if view == "profile":
+                payload = self.server.service.investigation_profile(investigation_id)
+            elif view == "events":
+                payload = self.server.service.replay_investigation_events(
+                    investigation_id
                 )
-            except KeyError as exc:
-                raise LabError(
-                    "investigation_not_found", "Investigation not found.", http_status=404
-                ) from exc
-            self._send_json(HTTPStatus.OK, result)
+            else:
+                after_header = self.headers.get("Last-Event-ID", "0")
+                try:
+                    after_sequence = int(after_header or "0")
+                except ValueError as exc:
+                    raise LabError(
+                        "invalid_event_cursor",
+                        "The event cursor must be an integer.",
+                    ) from exc
+                payload = self.server.service.stream_investigation_events(
+                    investigation_id,
+                    after_sequence=after_sequence,
+                )
+            self._send_json(HTTPStatus.OK, payload)
             return
         raise LabError("not_found", "Route not found.", http_status=404)
+
+    def _handle_session_exchange(self) -> None:
+        parsed = urlsplit(self.path)
+        if parsed.path != "/api/v1/session" or parsed.query:
+            raise LabError(
+                "invalid_request", "Unexpected session request.", http_status=400
+            )
+        launch_token = self.headers.get("X-GenomiLab-Launch-Token", "")
+        with self.server.launch_token_lock:
+            valid = (
+                not self.server.launch_token_consumed
+                and bool(launch_token)
+                and secrets.compare_digest(launch_token, self.server.launch_token)
+            )
+            if valid:
+                self.server.launch_token_consumed = True
+        if not valid:
+            raise LabError(
+                "invalid_launch_token",
+                "This launch link is not valid.",
+                http_status=401,
+            )
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "session_token": self.server.session_token,
+                "csrf_token": self.server.csrf_token,
+            },
+        )
 
     def _handle_post(self) -> None:
         parsed = urlsplit(self.path)
         if parsed.query:
             raise LabError("invalid_request", "Unexpected query parameters.")
-        if parsed.path == "/api/v1/profiles":
+        if parsed.path == "/api/v1/molecular-profile/observations":
             payload = self._read_json()
-            profile = self.server.service.create_profile(payload.get("display_name"))
-            self._send_json(HTTPStatus.CREATED, profile)
+            observation = self.server.service.add_profile_observation(payload)
+            self._send_json(HTTPStatus.CREATED, observation)
             return
-        match = _PROFILE_ACTION_ROUTE.fullmatch(parsed.path)
-        if not match:
-            raise LabError("not_found", "Route not found.", http_status=404)
-        profile_id, action = match.groups()
-        if action == "genomes":
-            content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-            if content_type not in {
-                "application/octet-stream",
-                "application/vnd.genomilab.vcf",
-            }:
-                raise LabError(
-                    "unsupported_media_type",
-                    "Genome intake requires a VCF upload body.",
-                    http_status=415,
-                )
-            length = self._content_length()
-            filename = self.headers.get("X-GenomiLab-Filename", "")
-            result = self.server.service.start_genome_intake(
-                profile_id,
-                filename=filename,
-                stream=self.rfile,
-                content_length=length,
+        observation_match = _OBSERVATION_REVISION_ROUTE.fullmatch(parsed.path)
+        if observation_match:
+            (observation_id,) = observation_match.groups()
+            payload = self._read_json()
+            observation = self.server.service.review_or_supersede_observation(
+                observation_id, payload
             )
-            status = (
-                HTTPStatus.ACCEPTED
-                if result.get("status") == "in_progress"
-                else HTTPStatus.CREATED
-            )
-            self._send_json(status, result)
+            self._send_json(HTTPStatus.CREATED, observation)
             return
-        payload = self._read_json()
-        if action == "activate":
-            result = self.server.service.activate_profile(profile_id)
-        elif action == "health-facts":
-            result = self.server.service.add_health_fact(profile_id, payload)
-        elif action == "reported-findings":
-            result = self.server.service.add_reported_finding(profile_id, payload)
-        elif action == "consents/agi":
-            if payload.get("approved") is not True:
-                raise LabError(
-                    "approval_required", "Check the approval box before granting access."
-                )
-            result = self.server.service.approve_genome_access(
-                profile_id, purpose=payload.get("purpose")
+        if parsed.path == "/api/v1/molecular-profile/source-artifacts":
+            payload = self._read_json()
+            self._send_json(
+                HTTPStatus.CREATED, self.server.service.add_source_artifact(payload)
             )
-        elif action == "investigations":
-            result = self.server.service.run_investigation(profile_id, payload)
-        else:  # pragma: no cover - regex action set makes this unreachable.
-            raise LabError("not_found", "Route not found.", http_status=404)
-        self._send_json(HTTPStatus.CREATED, result)
+            return
+        if parsed.path == "/api/v1/molecular-profile/specimens":
+            payload = self._read_json()
+            self._send_json(
+                HTTPStatus.CREATED, self.server.service.add_specimen(payload)
+            )
+            return
+        if parsed.path == "/api/v1/molecular-profile/assays":
+            payload = self._read_json()
+            self._send_json(HTTPStatus.CREATED, self.server.service.add_assay(payload))
+            return
+        if parsed.path == "/api/v1/investigations":
+            payload = self._read_json()
+            investigation = self.server.service.create_investigation(payload)
+            self._send_json(HTTPStatus.CREATED, investigation)
+            return
+        match = _INVESTIGATION_ACTION_ROUTE.fullmatch(parsed.path)
+        if match:
+            investigation_id, action = match.groups()
+            payload = self._read_json()
+            if action == "context-candidate":
+                result = self.server.service.investigation_context_candidate(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "context-approval":
+                result = self.server.service.approve_investigation_context(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.CREATED, result)
+                return
+            if action == "context-compare":
+                result = self.server.service.compare_investigation_context_candidate(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "harness-preview":
+                result = self.server.service.harness_disclosure_candidate(
+                    investigation_id,
+                    operation=payload.get("operation", "start_task_run"),
+                    instruction=payload.get("instruction") or payload.get("message"),
+                    artifact_kind=payload.get("artifact_kind", "plan"),
+                    reason=payload.get("reason"),
+                    command_id=payload.get("command_id"),
+                    expected_revision=payload.get("expected_revision"),
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "plan-accept":
+                result = self.server.service.accept_current_plan(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "capability-execute":
+                result = self.server.service.continue_harness_capability_after_approval(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "capability-check":
+                result = self.server.service.resume_harness_capability_job(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "start":
+                result = self.server.service.start_investigation(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "resume":
+                result = self.server.service.resume_investigation(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "messages":
+                result = self.server.service.send_investigation_message(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "replace-harness":
+                result = self.server.service.replace_harness_binding(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "cancel":
+                result = self.server.service.cancel_background_work(
+                    investigation_id, payload
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "revoke-context":
+                result = self.server.service.revoke_private_context(investigation_id)
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if action == "review-packet":
+                raise LabError(
+                    "capability_unavailable",
+                    "Review packets are planned for the patient MVP and are not enabled yet.",
+                    http_status=409,
+                )
+        raise LabError("not_found", "Route not found.", http_status=404)
 
     def _read_json(self) -> JsonObject:
-        content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        content_type = (
+            self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        )
         if content_type != "application/json":
             raise LabError(
                 "unsupported_media_type", "This route requires JSON.", http_status=415
             )
         length = self._content_length()
         if length > MAX_JSON_BYTES:
-            raise LabError("request_too_large", "The JSON request is too large.", http_status=413)
+            raise LabError(
+                "request_too_large", "The JSON request is too large.", http_status=413
+            )
         raw = self.rfile.read(length)
         if len(raw) != length:
             raise LabError("incomplete_request", "The request body was incomplete.")
         try:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise LabError("invalid_json", "The request body is not valid JSON.") from exc
+            raise LabError(
+                "invalid_json", "The request body is not valid JSON."
+            ) from exc
         if not isinstance(payload, dict):
             raise LabError("invalid_json", "The JSON body must be an object.")
         return payload
@@ -279,11 +413,17 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
     def _content_length(self) -> int:
         raw = self.headers.get("Content-Length")
         if raw is None:
-            raise LabError("content_length_required", "Content-Length is required.", http_status=411)
+            raise LabError(
+                "content_length_required",
+                "Content-Length is required.",
+                http_status=411,
+            )
         try:
             length = int(raw)
         except ValueError as exc:
-            raise LabError("invalid_content_length", "Content-Length is invalid.") from exc
+            raise LabError(
+                "invalid_content_length", "Content-Length is invalid."
+            ) from exc
         if length < 0:
             raise LabError("invalid_content_length", "Content-Length is invalid.")
         return length
@@ -291,31 +431,58 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
     def _require_host(self) -> None:
         host = self.headers.get("Host", "")
         if host not in self.server.allowed_hosts:
-            raise LabError("invalid_host", "The request host is not allowed.", http_status=403)
+            raise LabError(
+                "invalid_host", "The request host is not allowed.", http_status=403
+            )
 
     def _require_session(self) -> None:
-        cookie = http.cookies.SimpleCookie()
-        try:
-            cookie.load(self.headers.get("Cookie", ""))
-        except http.cookies.CookieError as exc:
-            raise LabError("authentication_required", "Open GenomiLab from its launch link.", http_status=401) from exc
-        value = cookie.get("genomilab_session")
-        if value is None or not secrets.compare_digest(value.value, self.server.session_cookie):
-            raise LabError("authentication_required", "Open GenomiLab from its launch link.", http_status=401)
+        value = self.headers.get("X-GenomiLab-Session", "")
+        if not value or not secrets.compare_digest(value, self.server.session_token):
+            raise LabError(
+                "authentication_required",
+                "Open GenomiLab from its launch link.",
+                http_status=401,
+            )
 
-    def _require_origin_and_csrf(self) -> None:
+    def _require_origin(self) -> None:
         origin = self.headers.get("Origin", "")
         if origin not in self.server.allowed_origins:
-            raise LabError("invalid_origin", "Cross-origin requests are not allowed.", http_status=403)
+            raise LabError(
+                "invalid_origin",
+                "Cross-origin requests are not allowed.",
+                http_status=403,
+            )
+
+    def _require_origin_and_csrf(self) -> None:
+        self._require_origin()
         token = self.headers.get("X-GenomiLab-CSRF", "")
         if not secrets.compare_digest(token, self.server.csrf_token):
-            raise LabError("invalid_csrf_token", "Refresh GenomiLab and try again.", http_status=403)
+            raise LabError(
+                "invalid_csrf_token",
+                "Refresh GenomiLab and try again.",
+                http_status=403,
+            )
 
     def _send_asset(self, name: str, content_type: str) -> None:
+        relative = PurePosixPath(name)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise LabError(
+                "asset_not_found", "Portal asset not found.", http_status=404
+            )
         try:
-            body = resources.files("genomi.lab").joinpath("static", name).read_bytes()
+            body = (
+                resources.files("genomi.lab")
+                .joinpath("static", *relative.parts)
+                .read_bytes()
+            )
         except (FileNotFoundError, OSError) as exc:
-            raise LabError("asset_not_found", "Portal asset not found.", http_status=404) from exc
+            raise LabError(
+                "asset_not_found", "Portal asset not found.", http_status=404
+            ) from exc
         self.send_response(HTTPStatus.OK)
         self._security_headers(content_type=content_type, content_length=len(body))
         self.end_headers()
@@ -373,16 +540,45 @@ def run_lab(
     host: str = LOOPBACK_HOST,
     port: int = DEFAULT_PORT,
     open_browser: bool = True,
+    harness_processing_destination: str | None = None,
 ) -> None:
     previous_umask = os.umask(0o077)
     previous_session = os.environ.get(GENOMI_SESSION_ENV)
-    os.environ[GENOMI_SESSION_ENV] = f"genomilab-{secrets.token_urlsafe(18)}"
     server: GenomiLabHTTPServer | None = None
     try:
-        server = create_lab_server(host=host, port=port)
+        # Resolve identity in the caller's current Genomi context before the
+        # portal creates its isolated session.  Only the opaque user id crosses
+        # this boundary; no AGI access grant, context payload, or patient data
+        # is copied into the new session.
+        prior_context = call_operation("genomi.describe_context", {})
+        prior_user_id = str(prior_context.get("active_user_id") or "").strip()
+        os.environ[GENOMI_SESSION_ENV] = f"genomilab-{secrets.token_urlsafe(18)}"
+        if prior_user_id:
+            selected = call_operation(
+                "active_genome_index.select_user", {"user_id": prior_user_id}
+            )
+            selected_user = selected.get("user")
+            selected_user_id = (
+                str(selected_user.get("user_id") or "").strip()
+                if isinstance(selected_user, dict)
+                else ""
+            )
+            if selected_user_id != prior_user_id:
+                raise RuntimeError(
+                    "GenomiLab could not bind the exact current Genomi user."
+                )
+        service = GenomiLabService(
+            harness_adapter=InstalledCodexAppServerAdapter.discover(
+                processing_destination=harness_processing_destination
+            )
+        )
+        server = create_lab_server(host=host, port=port, service=service)
         print("GenomiLab is running locally.", file=sys.stderr)
         print(f"Open: {server.launch_url}", file=sys.stderr)
-        print("Press Ctrl-C to stop and revoke this session's genome access.", file=sys.stderr)
+        print(
+            "Press Ctrl-C to stop and revoke this session's genome access.",
+            file=sys.stderr,
+        )
         if open_browser:
             webbrowser.open(server.launch_url)
         server.serve_forever(poll_interval=0.25)
