@@ -68,5 +68,11 @@ where = ["src"]
 "genomi.capabilities.variant" = ["tool_catalog.json"]
 "genomi.lab" = ["static/*.html", "static/*.css", "static/*.js"]
 
+[tool.ruff]
+required-version = "==0.16.2"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = ["F401"]
