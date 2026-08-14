@@ -539,18 +539,44 @@ command, model name, tool name, or executable operation. Credential records
 SHALL be complete, atomically replaced, stored only in the OS credential store,
 and absent from the GenomiLab domain database, browser storage, harness
 messages, environment, URLs, logs, errors, and API responses. Connection
-listing SHALL be network-free. Only an explicit verify action MAY make a fixed
-public connection probe. A Paperclip verification SHALL use a fixed, public,
-non-patient search and SHALL be labeled before invocation as potentially using
-API credits. Saving any provider credential SHALL NOT run a network or compute
-probe. Credential presence and validity SHALL be displayed separately from
-deployment, contract, patient-data, task-validation, expert-mode, and
-per-request disclosure eligibility. No setup route SHALL perform user-directed
-scientific research or use patient data. Biohub ESM and Proto verification SHALL
-remain unavailable until Genomi manages a reviewed, versioned runtime and pins
-every credential-bearing transport and response-decoding path. Credits or an
-ambiently importable SDK/runtime alone SHALL NOT establish readiness, and this
-release SHALL NOT send credentials or sequences to either service.
+listing SHALL be network-free. Only an explicit verify action MAY make one of
+the fixed connection probes below:
+
+- Paperclip SHALL use a fixed, public, non-patient search and SHALL be labeled
+  before invocation as potentially using API credits.
+- Biohub ESM MAY call the exact pinned JSON `/api/v1/encode` route with
+  GenomiLab's fixed synthetic 20-residue amino-acid alphabet and compare the
+  response with the exact pinned token sequence. Redirects, alternate response
+  shapes other than the top-level payload or the pinned SDK's exact
+  `{"data": <payload>}` Next.js wrapper, caller sequences, patient-derived
+  sequences, and binary/pickle model responses are prohibited. The action SHALL
+  be labeled as potentially using API credits and SHALL enable no scientific
+  operation.
+- Proto MAY use the pinned Modal client with only the credentials supplied from
+  the OS credential store to authenticate and confirm the exact saved Modal
+  environment. The check SHALL run in a disposable isolated child process with
+  a fixed official Modal endpoint, a nonexistent temporary Modal configuration
+  path, no inherited Modal, proxy, custom-CA, or credential environment, and a
+  hard 15-second total timeout that terminates the child. Credentials SHALL be
+  passed only through the child's private standard input. It SHALL NOT import
+  the Proto catalog, create an environment, discover arbitrary tools, deploy,
+  start, or execute a Proto operation, and SHALL enable no scientific
+  operation.
+
+Saving any provider credential SHALL NOT run a network or compute probe.
+Credential presence and validity SHALL be displayed separately from deployment,
+contract, patient-data, task-validation, expert-mode, and per-request disclosure
+eligibility. No setup route SHALL perform user-directed scientific research or
+use patient data. Credits or an ambiently importable SDK/runtime alone SHALL NOT
+establish operation readiness. ESM and Proto scientific operations remain
+unavailable until their P3 gates are met.
+
+For a ready Paperclip connection, the portal SHALL display the exact eligible
+`source_family -> operations` routes and the purposes shared by deployment and
+patient-data policy. It SHALL NOT flatten a restricted route into a generic
+operation or use static copy that implies unapproved literature, regulatory, or
+trial coverage. Reconciliation or any non-ready state SHALL advertise no route
+or purpose.
 
 The internal stateless harness adapter SHALL implement a separate versioned,
 host-neutral protocol with operations equivalent to `start_task_run`,
@@ -1305,16 +1331,18 @@ Patient-release gates beyond P0:
 9. Run independent functionality reviews for molecular-profile behavior, AGI
    access, GenomiLab/harness ownership, evidence fidelity/Paperclip, patient
    isolation/security and UX.
-10. Do not enable Proto, ESM, oncology, or other later lanes until their stated
-    prerequisites and task-specific acceptance criteria are met.
+10. Do not enable Proto, ESM, oncology, or other later scientific-operation
+    lanes until their stated prerequisites and task-specific acceptance criteria
+    are met. The fixed synthetic/connection-only checks in Section 6.1 do not
+    enable those lanes.
 
 ## 13. External systems selected
 
 | System | Decision |
 | --- | --- |
 | **GXL Paperclip** | Build inside GenomiLab's evidence gateway as the preferred, first-class public-evidence provider contract. Live public/synthetic development use is conditional on authorization for that exact use; patient-facing use has the additional contract and consent gates in Section 6.5. |
-| **Proto / proto-tools** | Use only in P3 for allowlisted analysis or a separate expert experimental-design mode. Not part of the default patient investigation. |
-| **Biohub ESM** | Use local ESMC/ESMFold2 only for a validated candidate-protein question in P3. Keep ESM3 and generative ESM/Proto design in expert mode. No hosted patient data under this specification. |
+| **Proto / proto-tools** | Permit only an explicit-credential Modal account/environment check during onboarding; it runs no Proto tool. Use scientific operations only in P3 through a reviewed allowlist or a separate expert experimental-design mode. Not part of the default patient investigation. |
+| **Biohub ESM** | Permit only the fixed synthetic JSON encode check during onboarding. Use local ESMC/ESMFold2 for a validated candidate-protein question in P3. Keep ESM3 and generative ESM/Proto design in expert mode. No hosted patient data under this specification. |
 | **BenchFlow** | Suitable as development/evaluation infrastructure for agent trajectories, privacy, evidence correctness, recovery, and task completion using public/synthetic fixtures. It is not a patient feature. |
 | **Benchling** | Not a patient-data dependency. Consider only a future, explicitly approved non-patient experimental handoff under suitable contractual terms. |
 | **Omanta** | UX and service-model comparator only; no integration or unverified equivalence claim. |

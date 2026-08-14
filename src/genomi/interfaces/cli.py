@@ -158,6 +158,15 @@ def build_parser() -> argparse.ArgumentParser:
             "unavailable when this is omitted."
         ),
     )
+    lab_parser.add_argument(
+        "--paperclip-authorization-config",
+        type=Path,
+        help=(
+            "Owner-controlled JSON policy file recording written Paperclip "
+            "deployment authorization and, when applicable, a separate "
+            "patient-data contract. API keys do not belong in this file."
+        ),
+    )
     lab_parser.set_defaults(func=_cmd_lab)
 
     workflow_parser = subparsers.add_parser("workflow", help="Print the agent runtime and evidence contracts.")
@@ -213,6 +222,7 @@ def _cmd_lab(args: argparse.Namespace) -> None:
         port=args.port,
         open_browser=not args.no_open,
         harness_processing_destination=args.harness_processing_destination,
+        paperclip_authorization_config=args.paperclip_authorization_config,
     )
 
 

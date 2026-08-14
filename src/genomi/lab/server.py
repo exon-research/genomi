@@ -12,13 +12,14 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote, urlsplit
 
 from ..operations import call_operation
 from ..runtime.context.normalize import GENOMI_SESSION_ENV
 from .harness import InstalledCodexAppServerAdapter
+from .paperclip_authorization_config import load_paperclip_authorization_config
 from .service import GenomiLabService, LabError
 
 JsonObject = dict[str, Any]
@@ -45,6 +46,12 @@ _INTEGRATION_ACTION_ROUTE = re.compile(
     r"(connect|verify|disconnect)$"
 )
 _JAVASCRIPT_MODULE_ROUTE = re.compile(r"^/[a-z][a-z0-9_-]*(?:/[a-z][a-z0-9_-]*)*\.js$")
+_OFFICIAL_RESOURCE_REDIRECTS = {
+    "/official/biohub-api-keys": "https://biohub.ai/developer-console/api-keys",
+    "/official/biohub-terms": "https://biohub.org/terms-of-use/",
+    "/official/biohub-privacy": "https://biohub.org/privacy-policy/",
+    "/official/biohub-limitations": "https://biohub.ai/limitations",
+}
 
 
 class GenomiLabHTTPServer(ThreadingHTTPServer):
@@ -174,6 +181,10 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
             "/responsive.css",
         }:
             self._send_asset(parsed.path.removeprefix("/"), "text/css; charset=utf-8")
+            return
+        official_resource = _OFFICIAL_RESOURCE_REDIRECTS.get(parsed.path)
+        if official_resource is not None:
+            self._send_external_redirect(official_resource)
             return
         self._require_session()
         if parsed.path == "/api/v1/bootstrap":
@@ -528,6 +539,14 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_external_redirect(self, location: str) -> None:
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        self._security_headers(
+            content_type="text/plain; charset=utf-8", content_length=0
+        )
+        self.end_headers()
+
     def _security_headers(self, *, content_type: str, content_length: int) -> None:
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(content_length))
@@ -572,7 +591,13 @@ def run_lab(
     port: int = DEFAULT_PORT,
     open_browser: bool = True,
     harness_processing_destination: str | None = None,
+    paperclip_authorization_config: str | Path | None = None,
 ) -> None:
+    paperclip_policy = (
+        load_paperclip_authorization_config(paperclip_authorization_config)
+        if paperclip_authorization_config is not None
+        else None
+    )
     previous_umask = os.umask(0o077)
     previous_session = os.environ.get(GENOMI_SESSION_ENV)
     server: GenomiLabHTTPServer | None = None
@@ -601,7 +626,17 @@ def run_lab(
         service = GenomiLabService(
             harness_adapter=InstalledCodexAppServerAdapter.discover(
                 processing_destination=harness_processing_destination
-            )
+            ),
+            paperclip_deployment_authorization=(
+                paperclip_policy.deployment_authorization
+                if paperclip_policy is not None
+                else None
+            ),
+            paperclip_patient_data_contract=(
+                paperclip_policy.patient_data_contract
+                if paperclip_policy is not None
+                else None
+            ),
         )
         server = create_lab_server(host=host, port=port, service=service)
         print("GenomiLab is running locally.", file=sys.stderr)

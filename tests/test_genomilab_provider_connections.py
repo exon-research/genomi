@@ -44,6 +44,11 @@ CONNECTION_PURPOSES = frozenset(
         PAPERCLIP_CONNECTION_PROBE_PURPOSE,
     }
 )
+ALL_PAPERCLIP_ROUTES = [
+    {"source_family": "literature", "operations": ["search", "lookup"]},
+    {"source_family": "regulatory", "operations": ["search"]},
+    {"source_family": "trial_registry", "operations": ["search"]},
+]
 
 
 class _Keyring:
@@ -174,7 +179,7 @@ class ProviderConnectionsTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertNotIn("gxl-secret", repr(result))
 
-    def test_authorized_paperclip_verifies_while_biohub_stays_unavailable(
+    def test_authorized_paperclip_and_fixed_synthetic_biohub_checks_are_explicit(
         self,
     ) -> None:
         authorized = ProviderConnections(
@@ -193,23 +198,27 @@ class ProviderConnectionsTests(unittest.TestCase):
         self.assertEqual(saved_biohub["connection_state"], "configured_unverified")
         self.assertTrue(saved_paperclip["verification_may_consume_credits"])
         self.assertTrue(saved_paperclip["verification_available"])
-        self.assertFalse(saved_biohub["verification_may_consume_credits"])
-        self.assertFalse(saved_biohub["verification_available"])
+        self.assertTrue(saved_biohub["verification_may_consume_credits"])
+        self.assertTrue(saved_biohub["verification_available"])
         self.assertEqual(self.calls, [])
         paperclip = authorized.verify("paperclip")
         biohub = authorized.verify("biohub-esm")
 
         self.assertEqual(paperclip["connection_state"], "ready")
         self.assertEqual(paperclip["available_operations"], ["search", "lookup"])
-        self.assertEqual(biohub["connection_state"], "verification_unavailable")
+        self.assertEqual(paperclip["available_routes"], ALL_PAPERCLIP_ROUTES)
+        self.assertEqual(paperclip["available_purposes"], sorted(CONNECTION_PURPOSES))
+        self.assertEqual(biohub["connection_state"], "ready")
         self.assertEqual(biohub["available_operations"], [])
-        self.assertEqual(biohub["policy_state"], "requires_pinned_safe_esm_runtime")
+        self.assertEqual(biohub["available_routes"], [])
+        self.assertEqual(biohub["available_purposes"], [])
+        self.assertEqual(biohub["policy_state"], "connection_only_no_product_operation")
         self.assertEqual(
             self.calls,
-            [("paperclip", "gxl-secret")],
+            [("paperclip", "gxl-secret"), ("biohub-esm", "esm-secret")],
         )
         self.assertEqual(paperclip["last_verified_at"], "2026-08-14T12:30:00Z")
-        self.assertIsNone(biohub["last_verified_at"])
+        self.assertEqual(biohub["last_verified_at"], "2026-08-14T12:30:00Z")
         self.assertNotIn("gxl-secret", repr(paperclip))
         self.assertNotIn("esm-secret", repr(biohub))
 
@@ -235,6 +244,8 @@ class ProviderConnectionsTests(unittest.TestCase):
             result["policy_state"], "blocked_missing_patient_data_contract"
         )
         self.assertEqual(result["available_operations"], [])
+        self.assertEqual(result["available_routes"], [])
+        self.assertEqual(result["available_purposes"], [])
         self.assertEqual(self.calls, [("paperclip", "gxl-secret")])
 
     def test_paperclip_probe_requires_literature_deployment_scope(self) -> None:
@@ -329,6 +340,11 @@ class ProviderConnectionsTests(unittest.TestCase):
 
         self.assertEqual(result["policy_state"], "authorized")
         self.assertEqual(result["available_operations"], ["search"])
+        self.assertEqual(
+            result["available_routes"],
+            [{"source_family": "regulatory", "operations": ["search"]}],
+        )
+        self.assertEqual(result["available_purposes"], sorted(CONNECTION_PURPOSES))
 
     def test_paperclip_operations_intersect_exact_operation_scopes(self) -> None:
         search_only = frozenset({"search"})
@@ -351,6 +367,13 @@ class ProviderConnectionsTests(unittest.TestCase):
 
         self.assertEqual(result["policy_state"], "authorized")
         self.assertEqual(result["available_operations"], ["search"])
+        self.assertEqual(
+            result["available_routes"],
+            [
+                {"source_family": route["source_family"], "operations": ["search"]}
+                for route in ALL_PAPERCLIP_ROUTES
+            ],
+        )
 
     def test_paperclip_without_explicit_routes_advertises_no_operations(self) -> None:
         connections = ProviderConnections(
@@ -367,8 +390,10 @@ class ProviderConnectionsTests(unittest.TestCase):
 
         self.assertEqual(result["policy_state"], "authorized_unavailable")
         self.assertEqual(result["available_operations"], [])
+        self.assertEqual(result["available_routes"], [])
+        self.assertEqual(result["available_purposes"], [])
 
-    def test_proto_verify_is_network_free_and_has_no_checked_timestamp(
+    def test_proto_verify_calls_only_the_explicit_modal_prerequisite_probe(
         self,
     ) -> None:
         saved = self.connections.connect(
@@ -382,14 +407,15 @@ class ProviderConnectionsTests(unittest.TestCase):
         self.assertEqual(saved["connection_state"], "configured_unverified")
         self.assertEqual(self.calls, [])
         result = self.connections.verify("proto")
-        self.assertEqual(result["connection_state"], "verification_unavailable")
-        self.assertEqual(
-            result["policy_state"], "requires_proto_runtime_and_expert_mode"
-        )
-        self.assertFalse(result["verification_available"])
+        self.assertEqual(result["connection_state"], "ready")
+        self.assertEqual(result["policy_state"], "connection_only_no_product_operation")
+        self.assertTrue(result["verification_available"])
         self.assertEqual(result["available_operations"], [])
-        self.assertIsNone(result["last_verified_at"])
-        self.assertEqual(self.calls, [])
+        self.assertEqual(result["last_verified_at"], "2026-08-14T12:30:00Z")
+        self.assertEqual(
+            self.calls,
+            [("proto", "modal-id", "modal-secret", "genomilab-research")],
+        )
         self.assertNotIn("genomilab-research", repr(result))
 
     def test_ready_state_and_secret_are_bound_to_the_exact_credential_revision(
@@ -411,7 +437,7 @@ class ProviderConnectionsTests(unittest.TestCase):
         )
         first.connect("paperclip", {"api_key": "first-key"})
         self.assertEqual(first.verify("paperclip")["connection_state"], "ready")
-        self.assertEqual(first.verified_secret("paperclip", "api_key"), "first-key")
+        self.assertEqual(first.verified_paperclip_api_key(), "first-key")
 
         second.connect("paperclip", {"api_key": "replacement-key"})
 
@@ -419,7 +445,7 @@ class ProviderConnectionsTests(unittest.TestCase):
             first.integration("paperclip")["connection_state"],
             "configured_unverified",
         )
-        self.assertEqual(first.verified_secret("paperclip", "api_key"), "")
+        self.assertEqual(first.verified_paperclip_api_key(), "")
 
     def test_credential_replaced_during_probe_cannot_become_ready(self) -> None:
         def replace_during_probe(_secret: str) -> None:
@@ -437,7 +463,7 @@ class ProviderConnectionsTests(unittest.TestCase):
         result = connections.verify("paperclip")
 
         self.assertEqual(result["connection_state"], "configured_unverified")
-        self.assertEqual(connections.verified_secret("paperclip", "api_key"), "")
+        self.assertEqual(connections.verified_paperclip_api_key(), "")
 
     def test_probe_failure_is_typed_and_never_echoes_provider_error(self) -> None:
         def fail(_secret: str) -> None:
@@ -456,7 +482,7 @@ class ProviderConnectionsTests(unittest.TestCase):
         self.assertEqual(result["credential_state"], "stored")
         self.assertNotIn("paperclip-secret", repr(result))
 
-    def test_missing_provider_runtime_is_distinct_from_network_failure(self) -> None:
+    def test_unavailable_provider_source_is_distinct_from_network_failure(self) -> None:
         def missing(_secret: str) -> None:
             raise ProviderTransportError(EvidenceStatus.SOURCE_UNAVAILABLE)
 
@@ -469,7 +495,7 @@ class ProviderConnectionsTests(unittest.TestCase):
         )
         connections.connect("paperclip", {"api_key": "paperclip-secret"})
         result = connections.verify("paperclip")
-        self.assertEqual(result["connection_state"], "runtime_unavailable")
+        self.assertEqual(result["connection_state"], "source_unavailable")
 
     def test_disconnect_requires_confirmation_and_removes_keyring_record(self) -> None:
         self.connections.connect("biohub-esm", {"api_token": "esm-secret"})
@@ -865,11 +891,11 @@ class ProviderConnectionsTests(unittest.TestCase):
                     paperclip["connection_state"], "reconciliation_required"
                 )
                 self.assertEqual(paperclip["available_operations"], [])
+                self.assertEqual(paperclip["available_routes"], [])
+                self.assertEqual(paperclip["available_purposes"], [])
                 self.assertTrue(paperclip["verification_available"])
                 self.assertEqual(
-                    service.provider_connections.verified_secret(
-                        "paperclip", "api_key"
-                    ),
+                    service.provider_connections.verified_paperclip_api_key(),
                     "",
                 )
                 command = lab_store.list_provider_connection_commands(
@@ -969,7 +995,7 @@ class ProviderConnectionsTests(unittest.TestCase):
                 )
                 self.assertEqual(before["connection_state"], "reconciliation_required")
                 self.assertEqual(before["available_operations"], [])
-                self.assertFalse(before["verification_available"])
+                self.assertTrue(before["verification_available"])
 
                 service.connect_integration(
                     "biohub-esm", {"api_token": "replacement-secret"}

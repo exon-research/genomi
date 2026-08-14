@@ -10,6 +10,9 @@ from unittest import mock
 
 from genomi.interfaces import cli
 from genomi.lab import server as lab_server
+from genomi.lab.paperclip_authorization_config import (
+    PaperclipAuthorizationConfigError,
+)
 from genomi.operations import call_operation
 from genomi.runtime import context as runtime_context
 
@@ -22,6 +25,7 @@ class GenomiLabCLITests(unittest.TestCase):
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 0)
         self.assertFalse(args.no_open)
+        self.assertIsNone(args.paperclip_authorization_config)
         self.assertIs(args.func, cli._cmd_lab)
 
     def test_lab_parser_accepts_only_explicit_loopback_hosts(self) -> None:
@@ -55,6 +59,7 @@ class GenomiLabCLITests(unittest.TestCase):
             port=4321,
             open_browser=False,
             harness_processing_destination=None,
+            paperclip_authorization_config=None,
         )
 
     def test_lab_command_carries_the_explicit_harness_destination(self) -> None:
@@ -74,7 +79,111 @@ class GenomiLabCLITests(unittest.TestCase):
             port=0,
             open_browser=False,
             harness_processing_destination="remote: OpenAI Codex service",
+            paperclip_authorization_config=None,
         )
+
+    def test_lab_command_carries_explicit_owner_paperclip_policy_path(self) -> None:
+        path = Path("/owner-controlled/paperclip-authorization.json")
+        with mock.patch("genomi.lab.server.run_lab") as run_lab:
+            status = cli.main(
+                [
+                    "lab",
+                    "--no-open",
+                    "--paperclip-authorization-config",
+                    str(path),
+                ]
+            )
+
+        self.assertEqual(status, 0)
+        run_lab.assert_called_once_with(
+            host="127.0.0.1",
+            port=0,
+            open_browser=False,
+            harness_processing_destination=None,
+            paperclip_authorization_config=path,
+        )
+
+    def test_launcher_loads_and_injects_owner_paperclip_policy(self) -> None:
+        path = Path("/owner-controlled/paperclip-authorization.json")
+        deployment_authorization = object()
+        patient_data_contract = object()
+        policy = mock.Mock(
+            deployment_authorization=deployment_authorization,
+            patient_data_contract=patient_data_contract,
+        )
+        harness_adapter = object()
+        service = object()
+
+        class _StoppingServer:
+            launch_url = "http://127.0.0.1:1/#token=synthetic"
+
+            def serve_forever(self, *, poll_interval: float) -> None:
+                self.poll_interval = poll_interval
+
+            def server_close(self) -> None:
+                return None
+
+        stopping_server = _StoppingServer()
+        with (
+            mock.patch(
+                "genomi.lab.server.load_paperclip_authorization_config",
+                return_value=policy,
+            ) as load_policy,
+            mock.patch(
+                "genomi.lab.server.call_operation",
+                return_value={"active_user_id": None},
+            ),
+            mock.patch.object(
+                lab_server.InstalledCodexAppServerAdapter,
+                "discover",
+                return_value=harness_adapter,
+            ),
+            mock.patch(
+                "genomi.lab.server.GenomiLabService", return_value=service
+            ) as service_factory,
+            mock.patch(
+                "genomi.lab.server.create_lab_server",
+                return_value=stopping_server,
+            ) as create_server,
+            redirect_stderr(io.StringIO()),
+        ):
+            lab_server.run_lab(
+                open_browser=False,
+                paperclip_authorization_config=path,
+            )
+
+        load_policy.assert_called_once_with(path)
+        service_factory.assert_called_once_with(
+            harness_adapter=harness_adapter,
+            paperclip_deployment_authorization=deployment_authorization,
+            paperclip_patient_data_contract=patient_data_contract,
+        )
+        create_server.assert_called_once_with(host="127.0.0.1", port=0, service=service)
+        self.assertEqual(stopping_server.poll_interval, 0.25)
+
+    def test_launcher_rejects_invalid_paperclip_policy_before_patient_context(
+        self,
+    ) -> None:
+        path = Path("/owner-controlled/invalid-paperclip-authorization.json")
+        with (
+            mock.patch(
+                "genomi.lab.server.load_paperclip_authorization_config",
+                side_effect=PaperclipAuthorizationConfigError(
+                    "Paperclip authorization configuration is invalid."
+                ),
+            ),
+            mock.patch("genomi.lab.server.call_operation") as call_operation_mock,
+            self.assertRaisesRegex(
+                PaperclipAuthorizationConfigError,
+                "authorization configuration is invalid",
+            ),
+        ):
+            lab_server.run_lab(
+                open_browser=False,
+                paperclip_authorization_config=path,
+            )
+
+        call_operation_mock.assert_not_called()
 
     def test_launcher_hands_off_exact_user_without_reusing_agi_access(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -153,9 +262,7 @@ class GenomiLabCLITests(unittest.TestCase):
                     launched["active_user"]["nickname"],
                     "Explicit non-default patient",
                 )
-                self.assertFalse(
-                    launched["active_genome_index_access"]["approved"]
-                )
+                self.assertFalse(launched["active_genome_index_access"]["approved"])
                 # The caller's explicit session and its private grant are
                 # restored unchanged after the portal stops.
                 restored = call_operation("genomi.describe_context", {})

@@ -112,7 +112,15 @@ export function createConnectionsController() {
 function announceConnectionResult(integration) {
   const state = String(integration && integration.connection_state || "");
   if (state === "ready") {
-    showAlert("Connection checked. Enabled operations and use limits are shown below.", "success");
+    const operations = Array.isArray(integration && integration.available_operations)
+      ? integration.available_operations
+      : [];
+    showAlert(
+      operations.length
+        ? "Connection checked. Enabled operations and use limits are shown below."
+        : "Credential and connection checked. No GenomiLab research operation was enabled.",
+      "success"
+    );
     setActivity("Research-tool connection checked.");
     return;
   }
@@ -126,21 +134,31 @@ function announceConnectionResult(integration) {
   if (state === "configured_unverified") {
     const provider = String(integration && integration.provider || "");
     const message = provider === "biohub-esm"
-      ? "Credential saved securely. Biohub ESM verification and use remain unavailable until a reviewed runtime is installed."
+      ? "Credential saved securely. Run the disclosed fixed synthetic encode check when ready; it may use credits and never sends a patient sequence."
       : provider === "paperclip"
         ? integration && integration.verification_available === true
           ? "Credential saved securely. Run the disclosed public API check when you are ready; it may use credits."
           : "Credential saved securely. Product authorization is required before Paperclip can be checked or used."
-        : "Credential saved securely. This Proto prerequisite cannot be checked or used yet.";
+        : "Credential saved securely. Check the Modal account and exact environment when ready; no Proto tool will run.";
     showAlert(message, "success");
     setActivity("Research-tool credential saved; use is not enabled.");
     return;
   }
   const message = state === "authentication_failed"
     ? "Credential saved, but the provider did not accept it."
-    : state === "runtime_unavailable"
-      ? "Credential saved, but this provider runtime is not installed."
-      : "Credential saved, but the provider connection could not be verified.";
+    : state === "environment_not_found"
+      ? "Modal accepted the credential, but the named environment was not found."
+      : state === "quota_exceeded"
+        ? "Credential accepted, but the provider reports insufficient credits or quota."
+        : state === "rate_limited"
+          ? "Credential accepted, but the provider rate limit prevented this check."
+          : state === "timeout"
+            ? "The provider did not finish the connection check in time."
+            : state === "source_unavailable"
+              ? "Credential saved, but the provider service or its response contract is unavailable."
+              : state === "runtime_unavailable"
+                ? "Credential saved, but this provider runtime is not installed."
+                : "Credential saved, but the provider connection could not be verified.";
   showAlert(message);
   setActivity("Research-tool connection needs attention.");
 }
