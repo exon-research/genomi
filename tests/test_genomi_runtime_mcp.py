@@ -103,6 +103,81 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         # debug-raw bypasses present_result entirely.
         self.assertNotIn("disclosure", payload)
 
+    def test_cli_serve_app_uses_http_workspace_and_opens_browser(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve", "--app", "--port", "9876"])
+
+        with mock.patch("genomi.interfaces.cli.mcp.serve_http", return_value=0) as serve_http:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_http.assert_called_once_with(host="127.0.0.1", port=9876, open_browser=True)
+
+    def test_cli_serve_auto_opens_workspace_from_terminal(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve"])
+
+        with mock.patch("genomi.interfaces.cli._serve_auto_opens_app", return_value=True), mock.patch(
+            "genomi.interfaces.cli.mcp.serve_http",
+            return_value=0,
+        ) as serve_http:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_http.assert_called_once_with(host="127.0.0.1", port=8768, open_browser=True)
+
+    def test_cli_serve_auto_keeps_stdio_for_host_agent_pipes(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve"])
+
+        with mock.patch("genomi.interfaces.cli._serve_auto_opens_app", return_value=False), mock.patch(
+            "genomi.interfaces.cli.mcp.serve_stdio",
+            return_value=0,
+        ) as serve_stdio:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_stdio.assert_called_once_with()
+
+    def test_cli_serve_auto_no_browser_keeps_workspace_headless(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve", "--no-browser"])
+
+        with mock.patch("genomi.interfaces.cli._serve_auto_opens_app", return_value=True), mock.patch(
+            "genomi.interfaces.cli.mcp.serve_http",
+            return_value=0,
+        ) as serve_http:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_http.assert_called_once_with(host="127.0.0.1", port=8768, open_browser=False)
+
+    def test_cli_serve_app_no_browser_keeps_http_workspace_headless(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve", "--app", "--no-browser"])
+
+        with mock.patch("genomi.interfaces.cli.mcp.serve_http", return_value=0) as serve_http:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_http.assert_called_once_with(host="127.0.0.1", port=8768, open_browser=False)
+
+    def test_cli_serve_transport_http_preserves_non_browser_mcp_mode(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["serve", "--transport", "http"])
+
+        with mock.patch("genomi.interfaces.cli.mcp.serve_http", return_value=0) as serve_http:
+            with self.assertRaises(SystemExit) as raised:
+                args.func(args)
+
+        self.assertEqual(raised.exception.code, 0)
+        serve_http.assert_called_once_with(host="127.0.0.1", port=8768, open_browser=False)
+
     def test_mcp_tool_call_returns_in_progress_background_job_after_timeout(self) -> None:
         running_job = {
             "job_id": "runtime-list-resources-test",
@@ -138,6 +213,37 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         self.assertEqual(payload["evidence_envelope"]["finding_state"], "materialization_incomplete")
         self.assertIn("in_progress:poll_runtime_check_background_job", payload["evidence_envelope"]["guidance"])
         self.assertEqual(payload["evidence_envelope"]["next_actions"][0]["operation"], "genomi.check_background_job")
+
+    def test_mcp_start_portal_run_executes_inline_when_background_enabled(self) -> None:
+        inline_result = {
+            "schema": "genomi_portal_run_start",
+            "status": "running",
+            "terminal": False,
+            "run_id": "portal-run-inline",
+            "run": {"id": "portal-run-inline", "status": "running", "terminal": False},
+        }
+        with (
+            mock.patch.dict(os.environ, {"GENOMI_MCP_BACKGROUND": "1"}),
+            mock.patch("genomi.interfaces.mcp.background_jobs.start_operation_job") as start_job,
+            mock.patch("genomi.interfaces.mcp.call_operation", return_value=inline_result) as call_inline,
+        ):
+            response = handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 56,
+                    "method": "tools/call",
+                    "params": {"name": "genomi.start_portal_run", "arguments": {"message": "Build an APOE report"}},
+                }
+            )
+
+        start_job.assert_not_called()
+        call_inline.assert_called_once_with("genomi.start_portal_run", {"message": "Build an APOE report"})
+        self.assertIsNotNone(response)
+        assert response is not None
+        payload = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(payload["status"], "running")
+        self.assertEqual(payload["run_id"], "portal-run-inline")
+        self.assertEqual(payload["run"]["id"], "portal-run-inline")
 
     def test_operation_error_json_uses_evidence_envelope_contract(self) -> None:
         payload = OperationError("invalid_params", "missing required input").to_json(operation="genomi.list_resources")

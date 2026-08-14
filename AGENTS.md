@@ -233,6 +233,113 @@ Edit this section only with explicit owner approval.
    paths; install/update code should use `install` or `refresh`. Add a registry
    spec and transform when a new shared asset family is needed.
 
+32. End-user portal surfaces must earn their place.
+   The portal should expose objects users naturally understand in a research
+   workspace: conversations, files, generated artifacts, evidence maps, work
+   trails, genome state, and explicit privacy or approval boundaries.
+   Do not expose implementation machinery, intermediate routing concepts,
+   context packet mechanics, or panels whose job is only to mirror internal
+   state. Selectable UI elements are part of the product contract: every item
+   users can select, use, open, or inspect must have a clear user-facing
+   reason grounded in either the established research-workspace pattern or a
+   Genomi-specific need such as genomics evidence, reproducibility, provenance,
+   or genome privacy. Expert tool request builders belong behind a secondary
+   surface and must route back through the assistant chat, not become the
+   default workflow. When adapting an external product pattern,
+   reproduce the underlying user mental model, not the exact visuals or labels;
+   if Genomi cannot provide an equivalent capability yet, record the gap rather
+   than inventing a weak substitute.
+
+33. Reference portals are pattern evidence, not product vocabulary.
+   When using an external research portal as a comparison point, translate each
+   observed affordance into the Genomi object it would serve: conversation,
+   file, artifact, evidence map, work trail, genome state, approval
+   boundary, reproducibility state, or review state. Do not copy labels or
+   expose a surface unless Genomi implements the same user-facing object. If
+   Genomi only has partial state, use the precise Genomi label and record the
+   missing capability in backlog docs instead of exposing raw context packets,
+   route ids, selected-evidence payloads, tool schemas, or debug JSON.
+
+## Portal UX Alignment
+
+The Genomi portal is a local research workspace, not a developer console and
+not a separate LLM client. The browser owns the visible conversation and
+interaction surface; the local server owns project state, selected-material
+sanitization, prompt/context composition, run creation, event replay, artifact
+materialization, and host-agent invocation; the host agent reasons and uses
+Genomi tools behind that server boundary.
+
+Every normal portal surface must map to a user-facing research object:
+conversation, file, artifact or artifact version, evidence or source lane,
+work step, provenance node, genome readiness or privacy boundary, review
+finding, rebuild or environment state, selected material, or local download.
+If a panel, tab, chip, filter, or action mainly exposes context packets,
+operation choice, schema shape, route state, ids, adapter output, raw JSON, or
+debug payloads, keep it behind technical disclosure or in developer docs, not
+in the default workspace.
+
+Default portal copy must name the user's object, not the implementation
+mechanism. Use scoped labels such as `Current evidence` for the current
+conversation ledger, `Evidence sources` for secondary source preparation,
+`Evidence & sources` or `Coverage and limits` for evidence boundaries, and
+`Source limits` or `Environment details` for partial environment state. Do not expose
+assistant/runtime selection as a primary workflow; keep it in a settings,
+runtime, or troubleshooting disclosure unless choosing the host agent is the
+user's actual task.
+
+Selected material is a visible attachment to a research object, not a product
+packet. Users should select evidence, sources, artifacts, files, readable work
+steps, genome summaries, provenance, or review findings. Transport fields,
+operation ids, frame/run/artifact ids, `context_kind`, `source_operation`, and
+raw selected payloads stay typed and hidden unless the user explicitly opens
+technical state.
+
+Evidence sources are secondary. They may collect friendly inputs and attach
+a chat-routed source lookup, but they must read as evidence/source preparation,
+not a tool console or operation catalog. Show source purpose, required user
+inputs, coverage, and privacy boundary first; raw schemas, defaults,
+dependency contracts, output shapes, operation ids, and parameter JSON belong
+in expert disclosure.
+
+Artifact tabs must be backed by real artifact state. Preview, origin chat, work
+trail, provenance/evidence, local downloads, and version identity are normal
+artifact objects. Review, rebuild, execution, environment, export, side-chat,
+or handoff surfaces must appear only when Genomi has the backing records for
+that user-facing capability. If Genomi has only partial state, label the slice
+precisely and record the missing product capability in the research backlog
+instead of filling the gap with packet fields, ids, static summaries, or raw
+logs.
+
+Work history labels must be honest. Use `Work trail` for compact work steps.
+Use `Origin chat` for bounded transcript slices and `Rebuild recipe` for
+bounded reproducibility instructions. Do not label a surface as an execution
+log until normalized execution-cell records back that claim. Host-agent
+stdout, stderr, setup chatter, and adapter diagnostics belong in collapsed
+work-trail diagnostics, not assistant answer prose.
+
+Genomics evidence guardrails are part of the UI, not just answer prose. Do not
+let panels imply calibrated PRS absolute risk without calibration, ancestry
+identity or percentages from weak reference context, diagnosis or carrier
+conclusions from raw variant inventory, causal gene claims from GWAS mapped
+genes alone, or medication actionability from genotype alone. Render these as
+coverage, source, review, or answer-boundary limits whenever the evidence
+object touches that domain.
+
+Portal architecture should converge on one run contract. Browser chat, future
+side chats, CLI commands, MCP sidecars, and frame forks should delegate into
+the same server-owned run creation, event stream, artifact materialization,
+and result-package path. Do not create parallel web, CLI, or MCP chat
+backends. Detailed comparison notes, product rationale, and backlog items
+belong in research docs, not in this file.
+
+Workspace ownership is part of that contract. When work is opened from the
+browser portal, Genomi owns a project workspace under
+`$GENOMI_HOME/workspace/*` and the UI presents only user-facing project files,
+artifacts, and relative paths. When Genomi is used from an agent outside a
+portal project, the host agent owns its current working directory; Genomi may
+describe or package explicit outputs, but it must not imply that arbitrary
+agent cwd files are Genomi-owned portal workspace files.
+
 ## Connect
 
 Prefer MCP:

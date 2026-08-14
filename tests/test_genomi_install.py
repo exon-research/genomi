@@ -79,6 +79,16 @@ class GenomiInstallTests(GenomiRuntimeTestCase):
         self.assertEqual(result["install"]["status"], "completed")
         self.assertEqual(result["active_response_profile"]["id"], "expert")
         self.assertEqual(result["install_scope"]["updates"][0], "genomi_home_setup")
+        self.assertIn("portal_onboarding_handoff", result["install_scope"]["updates"])
+        self.assertEqual(result["portal_onboarding"]["launch_command"], "genomi serve")
+        self.assertEqual(result["portal_onboarding"]["headless_launch_command"], "genomi serve --app --no-browser")
+        self.assertEqual(result["portal_onboarding"]["mcp_launch_command"], "genomi serve --transport stdio")
+        self.assertEqual(result["portal_onboarding"]["default_url"], "http://127.0.0.1:8768/")
+        self.assertEqual(result["portal_onboarding"]["fallback_port_behavior"], "none_port_must_be_available")
+        self.assertEqual(set(result["portal_onboarding"]["runtime_routes"]), {"portal", "mcp", "health"})
+        self.assertEqual(result["portal_onboarding"]["runtime_routes"]["portal"], "/")
+        self.assertEqual(result["portal_onboarding"]["runtime_routes"]["mcp"], "/mcp")
+        self.assertEqual(result["portal_onboarding"]["host_agent_bridge"]["transport"], "local_cli_process")
         # The operation always attempts the runtime pull; here the runtime is
         # not a git checkout (base test default), so it reports "unmanaged".
         self.assertEqual(result["runtime_update"]["status"], "unmanaged")

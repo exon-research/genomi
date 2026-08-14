@@ -7,6 +7,7 @@ from .agi_registry import _find_agi, _find_agi_by_intake_source
 from .agi_selection import active_agi_record
 from .normalize import (
     AGI_ACCESS_KEY,
+    DEFAULT_USER_AUTO_SELECTION_KEY,
     JsonObject,
     _default_user,
     _empty_agi_access_status,
@@ -116,7 +117,7 @@ def agi_access_status(
             "reason": grant.get("reason"),
         }
     reg = registry if registry is not None else load_registry(root)
-    default_user = _default_user(reg)
+    default_user = _default_user(reg) if state.get(DEFAULT_USER_AUTO_SELECTION_KEY) is not False else None
     if isinstance(default_user, dict) and str(default_user.get("active_agi_id") or "") == target:
         return {
             "agi_id": target,

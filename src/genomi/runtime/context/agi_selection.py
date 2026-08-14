@@ -7,6 +7,7 @@ from .agi_inference import infer_agi_record
 from .agi_registry import _find_agi, save_agi_to_registry
 from .normalize import (
     AGI_ACCESS_KEY,
+    DEFAULT_USER_AUTO_SELECTION_KEY,
     JsonObject,
     _attach_agi_to_user,
     _default_user,
@@ -33,6 +34,8 @@ def active_agi_record(context: JsonObject | None = None, root: str | Path | None
         agi = state.get("agis", {}).get(str(active_id))
         if isinstance(agi, dict):
             return agi
+    if state.get(DEFAULT_USER_AUTO_SELECTION_KEY) is False:
+        return None
     return _default_selected_agi(registry=registry)
 
 

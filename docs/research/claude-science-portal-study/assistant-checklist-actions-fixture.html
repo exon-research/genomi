@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Genomi assistant prose boundary fixture</title>
+  <link rel="stylesheet" href="/src/genomi/interfaces/templates/portal.css">
+  <style>
+    body {
+      margin: 0;
+      background: #050606;
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    .fixture-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 14px;
+      min-height: 100vh;
+      padding: 18px;
+    }
+    .fixture-main, .fixture-side {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .fixture-head {
+      border-bottom: 1px solid var(--line);
+      padding: 14px;
+    }
+    .fixture-head span {
+      display: block;
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .fixture-head h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .fixture-messages {
+      max-height: none;
+      padding: 14px;
+    }
+    .fixture-side {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+    }
+    .fixture-output {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+    }
+    .fixture-output textarea {
+      width: 100%;
+      min-height: 170px;
+      box-sizing: border-box;
+    }
+    .fixture-log {
+      margin: 0;
+      white-space: pre-wrap;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    @media (max-width: 960px) {
+      .fixture-shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="fixture-shell">
+    <main class="fixture-main">
+      <div class="fixture-head">
+        <span>Assistant prose boundary fixture</span>
+        <h1>Assistant evidence prose stays plain until the server emits typed state</h1>
+      </div>
+      <div id="fixture-messages" class="messages fixture-messages"></div>
+    </main>
+    <aside class="fixture-side">
+      <div class="fixture-head">
+        <span>No browser-made selection</span>
+        <h1>Action output</h1>
+      </div>
+      <div class="fixture-output">
+        <textarea id="fixture-prompt" readonly placeholder="No draft is generated from assistant prose alone."></textarea>
+        <pre id="fixture-log" class="fixture-log">The assistant text includes an evidence-list heading, but the browser should not convert it into selectable portal state.</pre>
+      </div>
+    </aside>
+  </div>
+  <script type="module">
+    import { createMessageSurface } from '/src/genomi/interfaces/templates/portal_messages.js';
+
+    const prompt = document.getElementById('fixture-prompt');
+    const log = document.getElementById('fixture-log');
+
+    function recordAction(label, payload) {
+      const nodes = payload && Array.isArray(payload.selected_nodes) ? payload.selected_nodes : [];
+      prompt.value = payload && payload.prompt_text ? payload.prompt_text : '';
+      log.textContent = [
+        label,
+        'Attached: ' + (payload && payload.label || 'selected material'),
+        payload && payload.summary ? 'Summary: ' + payload.summary : '',
+        'nodes: ' + nodes.length,
+        nodes.map((node) => '- ' + node.text).join('\n')
+      ].filter(Boolean).join('\n');
+    }
+
+    const surface = createMessageSurface({
+      list: document.getElementById('fixture-messages'),
+      onUseContext: (payload) => recordAction('Unexpected use action', payload),
+      onAskContext: (payload) => recordAction('Unexpected ask action', payload),
+      onDraftContext: (payload) => recordAction('Unexpected draft action', payload),
+      onAskFollowUp: () => {},
+      onToolRecord: () => {}
+    });
+
+    surface.reset();
+    surface.addMessage('assistant', [
+      'CYP2C19 affects clopidogrel activation. I would inspect the evidence lanes before answering.',
+      '',
+      'Evidence I would inspect:',
+      '',
+      '- **Gene-drug guideline evidence** - CPIC and PharmGKB recommendations.',
+      '- `Star-allele definitions` - CYP2C19 *2, *3, and *17 defining variants.',
+      '- Variant-level rows - rs4244285, rs4986893, and rs12248560 annotations.',
+      '- Local genotype support - context_file=/Users/matthewzmd/.genomi/private.json should be redacted.'
+    ].join('\n'));
+  </script>
+</body>
+</html>

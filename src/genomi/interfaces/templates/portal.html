@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/genomi-logo-transparent.png">
+  <meta name="genomi-csrf-token" content="{PORTAL_CSRF_TOKEN}">
+  <title>Genomi Portal</title>
+  <link rel="stylesheet" href="/assets/portal.css">
+  <link rel="stylesheet" href="/assets/portal_evidence_sources.css">
+  <link rel="stylesheet" href="/assets/portal_selection_states.css">
+  <link rel="stylesheet" href="/assets/portal_artifact_actions.css">
+  <link rel="stylesheet" href="/assets/portal_prompt_context.css">
+  <link rel="stylesheet" href="/assets/portal_workspace_files.css">
+  <style data-genomi-portal-css>{PORTAL_INLINE_CSS}</style>
+
+</head>
+<body>
+  <div class="app">
+    <aside class="rail">
+      <div class="brand">
+        <img src="/assets/genomi-logo-transparent.png" alt="Genomi">
+        <div><strong>Genomi</strong><span>Portal {GENOMI_VERSION}</span></div>
+      </div>
+      <nav class="nav" data-workspace-nav>
+        <button class="active" type="button" data-nav-target="research-workspace">Research workspace</button>
+        <button type="button" data-nav-target="artifact-workspace">Files & Artifacts</button>
+        <details class="advanced-nav">
+          <summary>Workspace details</summary>
+          <button type="button" data-evidence-ledger-nav data-nav-target="evidence-ledger-pane" hidden>Current evidence</button>
+          <button type="button" data-nav-target="work-trace-pane">Work trail</button>
+          <button type="button" data-nav-target="genome-index">Active genome</button>
+          <button class="nav-expert" type="button" data-nav-target="tool-launcher">Evidence sources</button>
+          <details class="rail-card runtime-card">
+            <summary>Local assistant</summary>
+            <p class="small"><span id="agent-dot" class="status-dot"></span><span id="agent-status">Checking local assistant...</span></p>
+            <details class="runtime-details">
+              <summary>Assistant troubleshooting</summary>
+              <div id="agent-list" class="runtime-list"></div>
+            </details>
+          </details>
+        </details>
+      </nav>
+      <div class="rail-card workspace-card">
+        <div class="rail-card-header">
+          <h3>Workspace</h3>
+          <button id="workspace-menu-toggle" class="mini-button" type="button" aria-expanded="false">Switch</button>
+        </div>
+        <button id="workspace-current" class="workspace-current" type="button" aria-label="Open workspace switcher">
+          <strong id="workspace-name">Loading workspace...</strong>
+          <span id="workspace-detail">Local project workspace</span>
+        </button>
+        <p id="project-status" class="small workspace-status" hidden></p>
+        <div id="workspace-menu" class="workspace-menu" hidden>
+          <label class="workspace-search">
+            <span>Find workspace</span>
+            <input id="workspace-search" type="search" autocomplete="off" placeholder="Search projects">
+          </label>
+          <div id="workspace-list" class="workspace-list">
+            <div class="frame-empty">No workspaces yet.</div>
+          </div>
+          <form id="workspace-form" class="workspace-form">
+            <input id="workspace-name-input" type="text" maxlength="80" autocomplete="off" placeholder="Name workspace" aria-label="Workspace name">
+            <div class="workspace-form-actions">
+              <button id="workspace-create" class="mini-button" type="submit">New</button>
+              <button id="workspace-rename" class="mini-button" type="button">Rename</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="rail-card">
+        <div class="rail-card-header">
+          <h3>Conversations</h3>
+          <button id="new-chat" class="mini-button" type="button">New</button>
+        </div>
+        <label class="conversation-search">
+          <span>Find conversation</span>
+          <input id="conversation-search" type="search" autocomplete="off" placeholder="Search conversations">
+        </label>
+        <div id="frame-list" class="frame-list">
+          <div class="frame-empty">No conversations yet.</div>
+        </div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <h1>Private genomics research workspace</h1>
+        <div class="actions">
+          <div class="genome-topbar-control" aria-label="Active genome controls">
+            <button id="context-summary-action" class="pill genome-status-button" type="button" aria-label="Open Active genome to switch or add genomes">
+              <span id="context-dot" class="status-dot"></span>
+              <span><strong id="context-label">Active genome</strong><em id="context-detail">Open to switch or add genomes</em></span>
+            </button>
+            <button id="context-switch-genome" class="mini-button genome-topbar-action" type="button">Switch</button>
+            <button id="context-add-genome" class="mini-button genome-topbar-action" type="button">Add genome</button>
+          </div>
+          <button id="refresh" class="secondary" type="button">Refresh</button>
+        </div>
+      </header>
+      <nav class="mobile-nav" data-workspace-nav aria-label="Workspace sections">
+        <button class="active" type="button" data-nav-target="research-workspace">Research</button>
+        <button type="button" data-nav-target="artifact-workspace">Files</button>
+        <button type="button" data-evidence-ledger-nav data-nav-target="evidence-ledger-pane" hidden>Evidence</button>
+        <button type="button" data-mobile-work-trace-nav data-nav-target="work-trace-pane" hidden>Work trail</button>
+        <button type="button" data-nav-target="genome-index">Genome</button>
+        <button type="button" data-mobile-source-nav data-nav-target="tool-launcher" hidden>Evidence sources</button>
+      </nav>
+      <section class="workspace">
+        <div id="research-workspace" class="pane chat" data-nav-section="research-workspace">
+          <div class="pane-header">
+            <div class="conversation-heading">
+              <span>Ask Genomi</span>
+              <h2 id="conversation-title">New conversation</h2>
+            </div>
+            <div class="actions">
+              <details class="pane-menu">
+                <summary>More</summary>
+                <button id="conversation-rename" class="secondary" type="button" hidden>Rename conversation</button>
+                <button id="conversation-review-action" class="secondary" type="button" hidden>Request review</button>
+                <a id="frame-bundle" class="secondary frame-bundle-action" data-testid="genomi-frame-download-bundle" href="" hidden>Download conversation bundle</a>
+              </details>
+            </div>
+          </div>
+          <form id="conversation-rename-form" class="conversation-rename-form" hidden>
+            <label>
+              <span>Conversation title</span>
+              <input id="conversation-title-input" type="text" maxlength="96" autocomplete="off">
+            </label>
+            <button class="primary" type="submit">Save</button>
+            <button id="conversation-rename-cancel" class="secondary" type="button">Cancel</button>
+          </form>
+          <div id="messages" class="messages">
+            {PORTAL_WELCOME_MESSAGE}
+          </div>
+          <section id="conversation-review" class="conversation-review" aria-live="polite" hidden></section>
+          <form id="composer" class="composer">
+            <div id="prompt-context" class="prompt-context" hidden></div>
+            <textarea id="prompt" placeholder="Example: Review CYP2C19 and clopidogrel evidence, separating public sources from any approved active genome."></textarea>
+            <div class="composer-row">
+              <span class="small">Local-first. Evidence comes from Genomi and the current chat.</span>
+              <button id="send" class="primary" type="submit">Send</button>
+            </div>
+          </form>
+        </div>
+        <div class="right-stack">
+          <div id="artifact-workspace" class="pane" data-nav-section="artifact-workspace">
+            <div class="pane-header">
+              <div class="artifact-workspace-heading">
+                <button id="artifact-back" class="secondary" type="button" hidden>Back to files</button>
+                <h2>Files & Artifacts</h2>
+              </div>
+              <div class="actions">
+                <span id="artifact-import-status" class="artifact-import-status" hidden></span>
+                <label id="artifact-import-action" class="secondary file-import-action" for="artifact-import-file">Import file</label>
+                <input id="artifact-import-file" class="file-import-input" type="file">
+              </div>
+            </div>
+            <div id="workspace-files" class="workspace-files"></div>
+            <div id="artifact-list" class="artifact-list">
+              <div class="artifact-card"><strong>No files or artifacts yet</strong><div class="artifact-meta">Imported files, generated reports, project files, and reviewed outputs for this project will appear here.</div></div>
+            </div>
+            <div id="artifact-preview" class="artifact-preview" hidden></div>
+          </div>
+          <div id="evidence-ledger-pane" class="pane" data-nav-section="evidence-ledger-pane" hidden>
+            <div class="pane-header"><h2>Current evidence</h2></div>
+            <div id="evidence-ledger-detail" class="evidence-ledger-detail"></div>
+            <div id="evidence-ledger" class="evidence-ledger"></div>
+          </div>
+          <div id="work-trace-pane" class="pane" data-nav-section="work-trace-pane" hidden>
+            <div class="pane-header"><h2>Work trail</h2></div>
+            <div id="frame-work-trace" class="frame-trace"></div>
+          </div>
+          <div id="genome-index" class="pane" data-nav-section="genome-index" hidden>
+            <div class="pane-header">
+              <h2>Active genome</h2>
+              <div class="actions">
+                <button id="add-genome" class="secondary" type="button">Add genome</button>
+                <button id="switch-genome" class="secondary" type="button">Switch genome</button>
+              </div>
+            </div>
+            <div id="context-summary" class="genome-context-panel"></div>
+            <div id="genome-inventory" class="genome-inventory"></div>
+            <details class="context-json-details">
+              <summary>Technical state</summary>
+              <button id="copy-context" class="secondary" type="button">Copy technical state</button>
+              <pre id="context" class="json">Loading...</pre>
+            </details>
+          </div>
+          <div id="tool-launcher" class="pane" data-nav-section="tool-launcher" hidden>
+            <div class="pane-header">
+              <h2>Evidence sources</h2>
+              <button id="refresh-tools" class="secondary" type="button">Refresh</button>
+            </div>
+            <div id="tool-launcher-list" class="tool-launcher-list">
+              <div class="tool-launcher-empty"><strong>Evidence sources</strong><span>Choose an evidence source to use in chat.</span></div>
+            </div>
+            <div id="tool-inspector" class="tool-inspector-panel">
+              <div class="tool-inspector-empty"><strong>Choose an evidence source</strong><span>Use public or approved genome material in chat.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script id="genomi-starter-cards" type="application/json">{PORTAL_STARTER_CARDS_JSON}</script>
+  <script type="module" src="/assets/portal.js"></script>
+
+</body>
+</html>

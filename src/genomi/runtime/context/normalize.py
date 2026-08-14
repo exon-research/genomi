@@ -13,6 +13,7 @@ CONTEXT_FILE_NAME = "context.json"
 REGISTRY_FILE_NAME = "registry.json"
 SESSIONS_DIR_NAME = "sessions"
 AGI_ACCESS_KEY = "agi_access"
+DEFAULT_USER_AUTO_SELECTION_KEY = "default_user_auto_selection"
 GENOMI_CONTEXT_ENV = "GENOMI_CONTEXT"
 GENOMI_SESSION_ENV = "GENOMI_SESSION_ID"
 GENOMI_CONTEXT_POLICY_ENV = "GENOMI_CONTEXT_POLICY"
@@ -109,6 +110,7 @@ def _normalize_context(value: JsonObject, root: str | Path | None) -> JsonObject
         value.pop(key, None)
     access = value.get(AGI_ACCESS_KEY)
     value[AGI_ACCESS_KEY] = access if isinstance(access, dict) else {}
+    value[DEFAULT_USER_AUTO_SELECTION_KEY] = value.get(DEFAULT_USER_AUTO_SELECTION_KEY) is not False
     value.setdefault("shared_evidence_db", _path_str(shared_evidence_db_path(root)))
     return value
 
@@ -333,6 +335,7 @@ def _empty_context(root: str | Path | None) -> JsonObject:
         "active_agi_id": None,
         "active_user_id": None,
         AGI_ACCESS_KEY: {},
+        DEFAULT_USER_AUTO_SELECTION_KEY: True,
         "shared_evidence_db": _path_str(shared_evidence_db_path(root)),
         "agis": {},
         "created_at": now,

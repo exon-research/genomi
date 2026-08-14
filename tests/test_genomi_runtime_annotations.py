@@ -14,6 +14,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(current["operationScope"], "read")
         self.assertFalse(current["mutating"])
         self.assertEqual(current["privacyScope"], "metadata_only")
+        self.assertEqual(current["portalLabel"], "Active genome")
         self.assertIn("local_artifact_metadata", current["dataAccess"])
 
         invoke = by_name["genomi.invoke"]["annotations"]
@@ -25,6 +26,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(parse["operationScope"], "write")
         self.assertTrue(parse["mutating"])
         self.assertEqual(parse["privacyScope"], "local_private")
+        self.assertEqual(parse["portalLabel"], "Genomi Parse Source")
         self.assertIn("genome_source_file", parse["dataAccess"])
         self.assertIn("active_genome_index_created_or_updated", parse["dataAccess"])
         parse_properties = by_name["genomi.parse_source"]["inputSchema"]["properties"]
@@ -36,11 +38,48 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         background_job = by_name["genomi.check_background_job"]["annotations"]
         self.assertIn("background_job_result", background_job["dataAccess"])
         self.assertIn("active_genome_index_when_job_targets_agi", background_job["dataAccess"])
+        self.assertEqual(background_job["mcpExecution"], "inline_only")
         libraries = by_name["genomi.check_libraries"]["annotations"]
         self.assertEqual(libraries["operationScope"], "read")
         self.assertFalse(libraries["mutating"])
         self.assertEqual(libraries["privacyScope"], "metadata_only")
         self.assertIn("library_inventory", libraries["produces"])
+
+        portal_start = by_name["genomi.start_portal_run"]["annotations"]
+        self.assertEqual(portal_start["portalLabel"], "Start portal run")
+        self.assertEqual(portal_start["operationScope"], "write")
+        self.assertTrue(portal_start["mutating"])
+        self.assertIn("portal_run_id", portal_start["produces"])
+        self.assertIn("host_agent_process", portal_start["dataAccess"])
+        self.assertEqual(portal_start["mcpExecution"], "inline_only")
+
+        portal_check = by_name["genomi.check_portal_run"]["annotations"]
+        self.assertEqual(portal_check["portalLabel"], "Portal run status")
+        self.assertEqual(portal_check["operationScope"], "read")
+        self.assertFalse(portal_check["mutating"])
+        self.assertIn("portal_run_status", portal_check["produces"])
+        self.assertEqual(portal_check["mcpExecution"], "inline_only")
+
+        portal_cancel = by_name["genomi.cancel_portal_run"]["annotations"]
+        self.assertEqual(portal_cancel["portalLabel"], "Cancel portal run")
+        self.assertEqual(portal_cancel["operationScope"], "write")
+        self.assertTrue(portal_cancel["mutating"])
+        self.assertEqual(portal_cancel["mcpExecution"], "inline_only")
+
+        portal_events = by_name["genomi.retrieve_portal_run_event_page"]["annotations"]
+        self.assertEqual(portal_events["portalLabel"], "Portal run events")
+        self.assertEqual(portal_events["operationScope"], "read")
+        self.assertFalse(portal_events["mutating"])
+        self.assertIn("portal_run_event_page", portal_events["produces"])
+        self.assertIn("local_portal_run_events", portal_events["dataAccess"])
+        self.assertEqual(portal_events["mcpExecution"], "inline_only")
+
+        portal_package = by_name["genomi.retrieve_portal_run_result_package"]["annotations"]
+        self.assertEqual(portal_package["portalLabel"], "Portal run package")
+        self.assertEqual(portal_package["operationScope"], "read")
+        self.assertFalse(portal_package["mutating"])
+        self.assertIn("portal_run_result_package", portal_package["produces"])
+        self.assertEqual(portal_package["mcpExecution"], "inline_only")
 
         clinvar = by_name["clinvar.scan_candidates"]["annotations"]
         self.assertEqual(
@@ -55,6 +94,7 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         pgx = by_name["pharmacogenomics.review_medication"]["annotations"]
         self.assertEqual(pgx["operationScope"], "read")
         self.assertFalse(pgx["mutating"])
+        self.assertEqual(pgx["portalLabel"], "Medication-response review")
         self.assertEqual(pgx["externalIO"], ["clinpgx_api", "pgxdb_api", "fda_web"])
         self.assertEqual(
             pgx["dependencyContract"],
@@ -359,6 +399,29 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         record = by_name["research.record"]["annotations"]
         self.assertEqual(record["operationScope"], "write")
         self.assertTrue(record["mutating"])
+
+    def test_target_packet_tool_exposes_request_builder_condition_contract(self) -> None:
+        by_name = {tool["name"]: tool for tool in all_operations()}
+
+        annotations = by_name["research.build_target_packet"]["annotations"]
+        contract = annotations["requestBuilder"]
+        fields = {
+            field["parameter"]: field
+            for field in contract["conditionalFields"]
+        }
+
+        self.assertEqual(
+            fields["gene"],
+            {
+                "parameter": "gene",
+                "visibleWhen": {"parameter": "target_type", "equals": "gene"},
+                "requiredWhen": {"parameter": "target_type", "equals": "gene"},
+            },
+        )
+        self.assertEqual(fields["topic"]["requiredWhen"], {"parameter": "target_type", "equals": "topic"})
+        for parameter in ("chrom", "pos", "ref", "alt"):
+            self.assertEqual(fields[parameter]["visibleWhen"], {"parameter": "target_type", "equals": "variant"})
+            self.assertEqual(fields[parameter]["requiredWhen"], {"parameter": "target_type", "equals": "variant"})
 
     def test_source_record_inputs_are_explicit_verified_import_contracts(self) -> None:
         tools = all_operations()

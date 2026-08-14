@@ -48,6 +48,14 @@ from .handlers_admin import (
     _resources_list,
     _runtime_check_background_job,
 )
+from .handlers_portal import (
+    _genomi_cancel_portal_run,
+    _genomi_check_portal_run,
+    _genomi_describe_portal_workspace,
+    _genomi_retrieve_portal_run_event_page,
+    _genomi_retrieve_portal_run_result_package,
+    _genomi_start_portal_run,
+)
 from .handlers_ancestry_prs import (
     _ancestry_build_source_context,
     _ancestry_check_sample_overlap,
@@ -140,6 +148,12 @@ OPERATIONS: list[Operation] = [
     Operation('genomi.check_background_job', _runtime_check_background_job),
     Operation('genomi.install', _genomi_install),
     Operation('genomi.describe_context', _genomi_describe_context),
+    Operation('genomi.describe_portal_workspace', _genomi_describe_portal_workspace),
+    Operation('genomi.start_portal_run', _genomi_start_portal_run),
+    Operation('genomi.check_portal_run', _genomi_check_portal_run),
+    Operation('genomi.cancel_portal_run', _genomi_cancel_portal_run),
+    Operation('genomi.retrieve_portal_run_event_page', _genomi_retrieve_portal_run_event_page),
+    Operation('genomi.retrieve_portal_run_result_package', _genomi_retrieve_portal_run_result_package),
     Operation('genomi.invoke', _genomi_invoke),
     Operation('genomi.check_libraries', _resources_libraries),
     Operation('genomi.list_resources', _resources_list),

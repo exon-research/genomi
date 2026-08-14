@@ -13,10 +13,15 @@ from .catalog_meta import (
     _operation_catalog_entry,
     _operation_dependency_contract,
     _operation_namespace,
+    _operation_request_builder_contract,
     _operation_scope,
     _without_top_level_schema_combinators,
 )
 from .errors import JsonObject, OperationHandler
+
+MCP_EXECUTION_BACKGROUND_ELIGIBLE = "background_eligible"
+MCP_EXECUTION_INLINE_ONLY = "inline_only"
+MCP_EXECUTION_MODES = {MCP_EXECUTION_BACKGROUND_ELIGIBLE, MCP_EXECUTION_INLINE_ONLY}
 
 
 @dataclass(frozen=True)
@@ -36,9 +41,18 @@ class Operation:
     external_io: tuple[str, ...] = ()
     data_access: tuple[str, ...] = ()
     agi_need: str | None = None
+    mcp_execution: str | None = None
 
     def __post_init__(self) -> None:
         catalog = TOOL_CATALOG_OPERATIONS.get(self.name)
+        mcp_execution = self.mcp_execution
+        if mcp_execution in (None, "") and catalog is not None:
+            mcp_execution = str(catalog.get("mcp_execution") or MCP_EXECUTION_BACKGROUND_ELIGIBLE)
+        if mcp_execution in (None, ""):
+            mcp_execution = MCP_EXECUTION_BACKGROUND_ELIGIBLE
+        if mcp_execution not in MCP_EXECUTION_MODES:
+            raise RuntimeError(f"invalid mcp_execution for {self.name}: {mcp_execution!r}")
+        object.__setattr__(self, "mcp_execution", mcp_execution)
         if catalog is None:
             return
         defaults: dict[str, Any] = {
@@ -72,6 +86,7 @@ class Operation:
         data_access = self.data_access or _catalog_tuple(catalog, "data_access") or _data_access(privacy_scope)
         produces = _operation_produces(self.name, self.produces or _catalog_tuple(catalog, "produces"))
         title = _display_title(self.name)
+        portal_label = _portal_label(self.name)
         parameter_defaults = _operation_parameter_defaults(self)
         source_record_input = _source_record_input_contract(input_schema)
         dependency_contract = _operation_dependency_contract(
@@ -79,6 +94,7 @@ class Operation:
             external_io=tuple(external_io),
             library_check_operation=str(catalog.get("library_check_operation") or ""),
         )
+        request_builder_contract = _operation_request_builder_contract(catalog)
         return {
             "name": self.name,
             "title": title,
@@ -86,6 +102,7 @@ class Operation:
             "inputSchema": input_schema,
             "annotations": {
                 "title": title,
+                "portalLabel": portal_label,
                 "skill": skill,
                 "area": _operation_namespace(self.name),
                 "requires": list(self.requires or _catalog_tuple(catalog, "requires")),
@@ -94,6 +111,7 @@ class Operation:
                 "parameterDefaults": parameter_defaults,
                 **({"sourceRecordInput": source_record_input} if source_record_input else {}),
                 **({"dependencyContract": dependency_contract} if dependency_contract else {}),
+                **({"requestBuilder": request_builder_contract} if request_builder_contract else {}),
                 "privacyScope": privacy_scope,
                 "operationScope": operation_scope,
                 "mutating": mutating,
@@ -104,8 +122,13 @@ class Operation:
                 "flow": "agent-composed",
                 "toolCapability": _operation_capability(self),
                 "discoveryRole": _tool_role(self),
+                **({"mcpExecution": self.mcp_execution} if self.mcp_execution == MCP_EXECUTION_INLINE_ONLY else {}),
             },
         }
+
+    @property
+    def mcp_background_eligible(self) -> bool:
+        return self.mcp_execution == MCP_EXECUTION_BACKGROUND_ELIGIBLE
 
 
 def _operation_produces(name: str, declared: tuple[Any, ...]) -> list[Any]:
@@ -242,6 +265,12 @@ _DISPLAY_TITLE_OVERRIDES: dict[str, str] = {
     "sequence.classify_kozak": "Using Genomi to classify Kozak context",
     "sequence.check_primers": "Using Genomi to check a primer pair",
     "genomi.describe_context": "Using Genomi to describe the current context",
+    "genomi.describe_portal_workspace": "Using Genomi to describe the portal workspace",
+    "genomi.start_portal_run": "Using Genomi to start a portal run",
+    "genomi.check_portal_run": "Using Genomi to check a portal run",
+    "genomi.cancel_portal_run": "Using Genomi to cancel a portal run",
+    "genomi.retrieve_portal_run_event_page": "Using Genomi to retrieve portal run events",
+    "genomi.retrieve_portal_run_result_package": "Using Genomi to retrieve a portal run package",
     "genomi.set_response_profile": "Using Genomi to set the response tone",
     "genomi.install": "Using Genomi to install or update setup",
     "active_genome_index.select_user": "Using Genomi to select a user",
@@ -266,6 +295,40 @@ _DISPLAY_TITLE_OVERRIDES: dict[str, str] = {
     "decode.render_dashboard": "Using Genomi to render the dashboard",
 }
 
+_PORTAL_LABEL_OVERRIDES: dict[str, str] = {
+    "decode.render_dashboard": "Analysis report",
+    "genomi.describe_context": "Active genome",
+    "genomi.describe_portal_workspace": "Portal workspace",
+    "genomi.start_portal_run": "Start portal run",
+    "genomi.check_portal_run": "Portal run status",
+    "genomi.cancel_portal_run": "Cancel portal run",
+    "genomi.retrieve_portal_run_event_page": "Portal run events",
+    "genomi.retrieve_portal_run_result_package": "Portal run package",
+    "pharmacogenomics.review_medication": "Medication-response review",
+    "research.build_target_packet": "Target evidence report",
+    "variant.resolve": "Variant lookup",
+}
+
+_PORTAL_NAMESPACE_LABELS: dict[str, str] = {
+    "active_genome_index": "Active Genome Index",
+    "cell_type": "Cell type",
+    "clinvar": "ClinVar",
+    "decode": "Decode",
+    "functional_genomics": "Functional genomics",
+    "genomi": "Genomi",
+    "gnomad": "gnomAD",
+    "gwas": "GWAS",
+    "journal": "Journal",
+    "pathway": "Pathway",
+    "pharmacogenomics": "Pharmacogenomics",
+    "phenotype": "Phenotype",
+    "prs": "PRS",
+    "region": "Region",
+    "research": "Research",
+    "sequence": "Sequence",
+    "variant": "Variant",
+}
+
 
 def _display_title(operation_name: str) -> str:
     explicit = _DISPLAY_TITLE_OVERRIDES.get(operation_name)
@@ -275,3 +338,26 @@ def _display_title(operation_name: str) -> str:
     tail = operation_name.split(".", 1)[1] if "." in operation_name else operation_name
     words = tail.replace("-", "_").split("_")
     return "Using Genomi to " + " ".join(words)
+
+
+def _portal_label(operation_name: str) -> str:
+    explicit = _PORTAL_LABEL_OVERRIDES.get(operation_name)
+    if explicit:
+        return explicit
+    namespace, _, tail = operation_name.partition(".")
+    if not tail:
+        return _portal_title_words(operation_name)
+    namespace_label = _PORTAL_NAMESPACE_LABELS.get(namespace, _portal_title_words(namespace))
+    return f"{namespace_label} {_portal_title_words(tail)}".strip()
+
+
+def _portal_title_words(value: str) -> str:
+    words = value.replace("-", "_").replace(".", "_").split("_")
+    return " ".join(_portal_title_part(word) for word in words if word)
+
+
+def _portal_title_part(value: str) -> str:
+    upper = value.upper()
+    if upper in {"AGI", "API", "GWAS", "HPO", "PRS", "QC", "VCF"}:
+        return upper
+    return value[:1].upper() + value[1:]

@@ -153,6 +153,14 @@ from .handlers_admin import (
     _resources_list,
     _runtime_check_background_job,
 )
+from .handlers_portal import (
+    _genomi_cancel_portal_run,
+    _genomi_check_portal_run,
+    _genomi_describe_portal_workspace,
+    _genomi_retrieve_portal_run_event_page,
+    _genomi_retrieve_portal_run_result_package,
+    _genomi_start_portal_run,
+)
 from .handlers_vcf_variant import (
     _agi_callability,
     _agi_genotype_support,

@@ -1,0 +1,143 @@
+.prompt-context {
+  margin-bottom: 8px;
+}
+.prompt-context-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.prompt-context-card {
+  display: block;
+  min-width: 0;
+  max-width: min(100%, 460px);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  background: #101312;
+  padding: 5px 6px;
+}
+.prompt-context-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+}
+.prompt-context-card-head strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-context-kind,
+.prompt-context-meta span {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text4);
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.2;
+}
+.prompt-context-remove,
+.prompt-context-clear {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 1px 3px;
+}
+.prompt-context-clear {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.prompt-context-remove:hover,
+.prompt-context-clear:hover {
+  color: var(--ink);
+}
+.prompt-context-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.prompt-context-meta span {
+  color: var(--text2);
+  border-color: var(--border2);
+  background: #0d0d0d;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-context-preview {
+  margin: 0;
+  color: var(--text2);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.prompt-context-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.prompt-context-card-action {
+  min-width: 0;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  background: #101312;
+  color: var(--text2);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.prompt-context-card-action.primary {
+  border-color: #10b98166;
+  background: #10b98118;
+  color: var(--green);
+}
+.prompt-context-card-action:hover {
+  border-color: #10b98177;
+  color: var(--ink);
+}
+.prompt-context-node-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prompt-context-node-list li {
+  display: grid;
+  grid-template-columns: minmax(80px, .34fr) minmax(0, 1fr);
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.prompt-context-node-list span {
+  color: var(--text4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-context-node-list em {
+  color: var(--text2);
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-context-node-list .prompt-context-more {
+  display: block;
+  color: var(--text4);
+  font-family: var(--mono);
+}

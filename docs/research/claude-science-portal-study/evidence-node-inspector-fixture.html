@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Genomi Evidence Node Inspector Fixture</title>
+    <link rel="stylesheet" href="/src/genomi/interfaces/templates/portal.css">
+    <style>
+      body {
+        min-height: 100vh;
+        overflow: auto;
+      }
+      .fixture-shell {
+        max-width: 920px;
+        margin: 24px auto;
+        padding: 0 18px 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="fixture-shell">
+      <section class="pane active">
+        <div class="pane-header">
+          <h2>Evidence Node Inspector Fixture</h2>
+        </div>
+        <div id="fixture-root"></div>
+      </section>
+    </main>
+    <script type="module">
+      import { renderEvidencePanel } from '/src/genomi/interfaces/templates/portal_evidence_panel.js';
+
+      const payload = {
+        headline: 'custom.evidence_probe: canonical envelope returned',
+        status: 'completed',
+        evidence_envelope: {
+          finding_state: 'data_returned',
+          answer_readiness: 'partial_public_evidence',
+          guidance: [
+            'data_returned:preserve_source_prior',
+            'partial_public_evidence:ask_for_confirmatory_source'
+          ],
+          coverage: {
+            consulted_libraries: ['ClinVar', 'dbSNP'],
+            missing_libraries: []
+          },
+          observations: {
+            variant: 'rs429358',
+            public_signal: 'ClinVar risk-factor assertion present'
+          },
+          next_actions: [
+            {
+              action: 'compare_variant_associations',
+              reason: 'Quantify phenotype-specific public evidence'
+            },
+            {
+              action: 'review_active_genome_index',
+              reason: 'Only after explicit user approval'
+            }
+          ]
+        },
+        defaults_applied: {
+          genome_build: 'GRCh38'
+        }
+      };
+
+      const record = {
+        call: {
+          id: 'call_visual_current',
+          name: 'custom.evidence_probe',
+          input: {
+            topic: 'rs429358 public evidence'
+          }
+        },
+        result: {
+          id: 'result_visual_current',
+          name: 'custom.evidence_probe',
+          payload
+        }
+      };
+
+      const panel = renderEvidencePanel(record, {
+        operation: 'custom.evidence_probe'
+      });
+      document.querySelector('#fixture-root').appendChild(panel);
+      document.querySelectorAll('.evidence-node').forEach((node, index) => {
+        if (index < 2) node.click();
+      });
+    </script>
+  </body>
+</html>

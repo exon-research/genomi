@@ -187,6 +187,52 @@ def _operation_dependency_contract(
     return contract
 
 
+def _operation_request_builder_contract(catalog: JsonObject) -> JsonObject | None:
+    request_builder = catalog.get("request_builder")
+    if request_builder in (None, ""):
+        return None
+    if not isinstance(request_builder, dict):
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder must be an object")
+    conditional_fields = request_builder.get("conditional_fields", [])
+    if not conditional_fields:
+        return None
+    if not isinstance(conditional_fields, list):
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder.conditional_fields must be an array")
+    return {
+        "conditionalFields": [
+            _request_builder_conditional_field(field)
+            for field in conditional_fields
+        ]
+    }
+
+
+def _request_builder_conditional_field(field: Any) -> JsonObject:
+    if not isinstance(field, dict):
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder conditional field must be an object")
+    parameter = str(field.get("parameter") or "").strip()
+    if not parameter:
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder conditional field must declare parameter")
+    return {
+        "parameter": parameter,
+        "visibleWhen": _request_builder_condition(field.get("visible_when"), "visible_when"),
+        "requiredWhen": _request_builder_condition(field.get("required_when"), "required_when"),
+    }
+
+
+def _request_builder_condition(value: Any, key: str) -> JsonObject:
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder.{key} must be an object")
+    parameter = str(value.get("parameter") or "").strip()
+    if not parameter:
+        raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder.{key} must declare parameter")
+    if "equals" in value:
+        return {"parameter": parameter, "equals": value["equals"]}
+    values = value.get("in")
+    if isinstance(values, list) and values:
+        return {"parameter": parameter, "in": values}
+    raise RuntimeError(f"{TOOL_CATALOG_FILENAME} request_builder.{key} must declare equals or in")
+
+
 JOURNAL_ENTRY_TYPES = [
     "observation",
     "hypothesis",

@@ -10,6 +10,7 @@ from pathlib import Path
 from ...active_genome_index import source_intake
 from ...runtime import context as runtime_context
 from ...runtime import host_response, host_skills, resources
+from ...runtime import portal_routes
 from ...runtime.libraries import manager as library_manager
 from ...runtime.libraries.manager import inventory as library_inventory
 from ...runtime.libraries.manager import status as library_status
@@ -132,6 +133,7 @@ def _genomi_install(params: JsonObject) -> JsonObject:
         "registry": registry_result,
         "active_response_profile": active_profile,
         "library_inventory": library_inventory(),
+        "portal_onboarding": _genomi_portal_onboarding(),
     }
 
 
@@ -221,6 +223,7 @@ def _genomi_install_scope() -> JsonObject:
             "retrieval_indexes",
             "stale_genome_reparse",
             "response_profile",
+            "portal_onboarding_handoff",
         ],
         "does_not_update": [
             "runtime_code_when_GENOMI_SKIP_RUNTIME_GIT_PULL_is_set",
@@ -228,6 +231,24 @@ def _genomi_install_scope() -> JsonObject:
             "host_skill_links_when_not_a_git_checkout",
         ],
         "force_behavior": "Library install is idempotent — already-present libraries are skipped; force=true re-downloads them and replaces non-symlink host-skill link conflicts. Runtime code updates via git pull unless GENOMI_SKIP_RUNTIME_GIT_PULL is set or the runtime is not a git checkout. A manifest-changing pull also reconciles dependencies.",
+    }
+
+
+def _genomi_portal_onboarding() -> JsonObject:
+    return {
+        "status": "ready",
+        "kind": "post_install_web_portal",
+        "launch_command": "genomi serve",
+        "headless_launch_command": "genomi serve --app --no-browser",
+        "mcp_launch_command": "genomi serve --transport stdio",
+        "default_url": portal_routes.portal_url(),
+        "fallback_port_behavior": "none_port_must_be_available",
+        "runtime_routes": portal_routes.runtime_routes(),
+        "first_turn_target": "host_agent",
+        "host_agent_bridge": {
+            "transport": "local_cli_process",
+            "stream": "server_sent_events",
+        },
     }
 
 

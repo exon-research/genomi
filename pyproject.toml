@@ -44,6 +44,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "genomi" = ["assets/*.png"]
+"genomi.interfaces" = ["templates/*.html", "templates/*.css", "templates/*.js"]
 "genomi.operations" = ["catalog_base.json"]
 "genomi.runtime" = ["tool_catalog.json", "host_response_profiles.json"]
 "genomi.active_genome_index" = ["tool_catalog.json", "panels/*.json"]

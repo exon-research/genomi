@@ -86,7 +86,51 @@
         "selected_public_targets",
         "active_genome_index_when_selected"
       ],
-      "discovery_role": "entry_tool"
+      "discovery_role": "entry_tool",
+      "request_builder": {
+        "conditional_fields": [
+          {
+            "parameter": "gene",
+            "visible_when": {"parameter": "target_type", "equals": "gene"},
+            "required_when": {"parameter": "target_type", "equals": "gene"}
+          },
+          {
+            "parameter": "drug",
+            "visible_when": {"parameter": "target_type", "equals": "drug"},
+            "required_when": {"parameter": "target_type", "equals": "drug"}
+          },
+          {
+            "parameter": "condition",
+            "visible_when": {"parameter": "target_type", "equals": "condition"},
+            "required_when": {"parameter": "target_type", "equals": "condition"}
+          },
+          {
+            "parameter": "topic",
+            "visible_when": {"parameter": "target_type", "equals": "topic"},
+            "required_when": {"parameter": "target_type", "equals": "topic"}
+          },
+          {
+            "parameter": "chrom",
+            "visible_when": {"parameter": "target_type", "equals": "variant"},
+            "required_when": {"parameter": "target_type", "equals": "variant"}
+          },
+          {
+            "parameter": "pos",
+            "visible_when": {"parameter": "target_type", "equals": "variant"},
+            "required_when": {"parameter": "target_type", "equals": "variant"}
+          },
+          {
+            "parameter": "ref",
+            "visible_when": {"parameter": "target_type", "equals": "variant"},
+            "required_when": {"parameter": "target_type", "equals": "variant"}
+          },
+          {
+            "parameter": "alt",
+            "visible_when": {"parameter": "target_type", "equals": "variant"},
+            "required_when": {"parameter": "target_type", "equals": "variant"}
+          }
+        ]
+      }
     },
     "research.record": {
       "capability": "journal",

@@ -16,13 +16,19 @@
       "operations": [
         "genomi.check_background_job",
         "genomi.check_libraries",
+        "genomi.cancel_portal_run",
+        "genomi.check_portal_run",
         "genomi.describe_context",
+        "genomi.describe_portal_workspace",
         "genomi.install",
         "genomi.invoke",
         "genomi.list_resources",
         "genomi.parse_source",
+        "genomi.retrieve_portal_run_event_page",
+        "genomi.retrieve_portal_run_result_package",
         "genomi.search_indexes",
-        "genomi.set_response_profile"
+        "genomi.set_response_profile",
+        "genomi.start_portal_run"
       ]
     }
   },
@@ -117,7 +123,8 @@
         "installed_libraries",
         "response_profile",
         "host_skill_links",
-        "retrieval_index_refresh"
+        "retrieval_index_refresh",
+        "portal_onboarding"
       ],
       "context_optional": [
         "response_profile"
@@ -161,6 +168,7 @@
       "context_optional": [],
       "privacy_scope": "local_private",
       "operation_scope": "read",
+      "mcp_execution": "inline_only",
       "mutating": false,
       "external_io": [],
       "data_access": [
@@ -267,6 +275,288 @@
       "data_access": [
         "local_artifact_metadata",
         "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.describe_portal_workspace": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Describe the current Genomi portal workspace using the same project, frame, artifact, file, and active-context state that the web UI renders.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Optional portal project id. Omit to use the active project, or the most recently updated project if none is active."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [],
+      "produces": [
+        "portal_project",
+        "portal_frames",
+        "portal_artifacts",
+        "portal_workspace_files",
+        "portal_active_context"
+      ],
+      "context_optional": [
+        "portal_project_id"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_artifact_metadata",
+        "local_workspace_file_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.start_portal_run": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Start a Genomi portal host-agent run through the same project, frame, selected-evidence, and run-event contract used by the web UI.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "User-facing request to send into the portal conversation."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Optional portal project id. Omit to use or create the default portal project."
+          },
+          "frame_id": {
+            "type": "string",
+            "description": "Optional existing frame id for a follow-up message."
+          },
+          "source_frame_id": {
+            "type": "string",
+            "description": "Optional same-project frame id that supplied selected material for a new focused conversation. Ignored for follow-up messages."
+          },
+          "started_from_selected_material": {
+            "type": "boolean",
+            "description": "Set true when starting a new conversation from selected visible portal material so the new frame records a public started-from summary."
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Optional runnable host-agent id such as codex or claude. Omit to use the default available portal agent."
+          },
+          "selected_evidence": {
+            "type": "array",
+            "description": "Optional selected visual/context objects to attach to the portal prompt.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [],
+      "produces": [
+        "portal_run_id",
+        "portal_frame",
+        "portal_run_status",
+        "portal_run_events"
+      ],
+      "context_optional": [
+        "portal_project_id",
+        "portal_frame_id",
+        "selected_visual_context"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mcp_execution": "inline_only",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_portal_transcript",
+        "selected_visual_context",
+        "host_agent_process"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.check_portal_run": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Check the current status of a Genomi portal run started by the web UI or a sidecar operation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [
+        "portal_run_id"
+      ],
+      "produces": [
+        "portal_run_status"
+      ],
+      "context_optional": [
+        "portal_run_id"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mcp_execution": "inline_only",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_portal_transcript"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.cancel_portal_run": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Cancel an active Genomi portal run through the same run-control path used by the web UI.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [
+        "portal_run_id"
+      ],
+      "produces": [
+        "portal_run_status"
+      ],
+      "context_optional": [
+        "portal_run_id"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mcp_execution": "inline_only",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_portal_transcript",
+        "host_agent_process"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.retrieve_portal_run_event_page": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Retrieve a bounded sanitized page of Genomi portal run events for sidecars and resumable workspace handoff.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          },
+          "after_event_id": {
+            "type": "integer",
+            "description": "Return events with an id greater than this value. Omit to read from the beginning."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 200,
+            "description": "Maximum events to return, capped by the portal event-page contract."
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [
+        "portal_run_id"
+      ],
+      "produces": [
+        "portal_run_event_page",
+        "portal_run_events",
+        "portal_run_status"
+      ],
+      "context_optional": [
+        "portal_run_id"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mcp_execution": "inline_only",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_portal_transcript",
+        "local_portal_run_events"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomi.retrieve_portal_run_result_package": {
+      "capability": "genomi",
+      "namespace": "genomi",
+      "description": "Retrieve a Genomi portal run result package for host-agent sidecars: run status, project/frame state, transcript messages, artifacts, workspace files, events, and current portal context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "SKILL.md",
+      "area": "portal",
+      "requires": [
+        "portal_run_id"
+      ],
+      "produces": [
+        "portal_run_result_package",
+        "portal_messages",
+        "portal_artifacts",
+        "portal_workspace_files",
+        "portal_run_events"
+      ],
+      "context_optional": [
+        "portal_run_id"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mcp_execution": "inline_only",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "local_portal_project_state",
+        "local_portal_transcript",
+        "local_artifact_metadata",
+        "local_workspace_file_metadata"
       ],
       "discovery_role": "entry_tool"
     },

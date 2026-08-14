@@ -22,7 +22,7 @@ from ..runtime.libraries import manager as library_manager
 from . import mcp
 from .presentation import present_result
 
-# `genomi serve` (the MCP launcher), `genomi install` (setup install/update), and
+# `genomi serve` (the local workspace / MCP launcher), `genomi install` (setup install/update), and
 # `genomi --help` are available without GENOMI_CLI=1. The variable is
 # intentionally undocumented in agent-facing material.
 _AGENT_ONLY_SUBCOMMANDS = ("tools", "call", "workflow", "static")
@@ -80,12 +80,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     call_parser.set_defaults(func=_cmd_call)
 
-    serve_parser = subparsers.add_parser("serve", help="Serve Genomi tools over MCP stdio or HTTP.")
+    serve_parser = subparsers.add_parser("serve", help="Serve Genomi as an MCP server or local web workspace.")
+    serve_parser.add_argument(
+        "--app",
+        action="store_true",
+        help="Start the local Genomi science workspace over HTTP and open it in a browser.",
+    )
+    serve_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Start the web workspace without opening a browser when serve chooses app mode.",
+    )
     serve_parser.add_argument(
         "--transport",
-        choices=["stdio", "http"],
-        default=os.environ.get("GENOMI_MCP_TRANSPORT", "stdio"),
-        help="MCP transport to serve. Defaults to stdio for existing host configs.",
+        choices=["auto", "stdio", "http"],
+        default=os.environ.get("GENOMI_MCP_TRANSPORT", "auto"),
+        help="MCP transport to serve. Defaults to auto: terminal shells open the app, non-TTY host-agent launches use stdio.",
     )
     serve_parser.add_argument(
         "--host",
@@ -146,9 +156,20 @@ def _cmd_call(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _cmd_serve(args: argparse.Namespace) -> None:
-    if args.transport == "http":
-        raise SystemExit(mcp.serve_http(host=args.host, port=args.port))
+    auto_app = args.transport == "auto" and _serve_auto_opens_app()
+    if args.app or args.transport == "http" or auto_app:
+        raise SystemExit(
+            mcp.serve_http(
+                host=args.host,
+                port=args.port,
+                open_browser=bool((args.app or auto_app) and not args.no_browser),
+            )
+        )
     raise SystemExit(mcp.serve_stdio())
+
+
+def _serve_auto_opens_app() -> bool:
+    return bool(sys.stdin.isatty() and sys.stdout.isatty())
 
 
 def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
@@ -316,7 +337,7 @@ def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser])
 def _add_research(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     area = subparsers.add_parser(
         "research",
-        help="Intent-scoped LLM research using structured evidence packets and reviewed-source write-back.",
+        help="Intent-scoped LLM research using structured evidence reports and reviewed-source write-back.",
     )
     commands = area.add_subparsers(dest="command", required=True)
 

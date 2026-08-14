@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
+import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from typing import Any, TextIO
 from urllib.parse import urlparse
 
@@ -15,15 +18,15 @@ from ..operations import (
     get_operation,
     operation_discovery_payload,
 )
-from ..runtime import background_jobs
+from ..runtime import background_jobs, portal_routes
 from .presentation import present_result
+from . import portal
 
 JsonObject = dict[str, Any]
 JSONRPC_VERSION = "2.0"
 MCP_PROTOCOL_VERSION = "2024-11-05"
-BACKGROUND_DIRECT_OPERATIONS = {"genomi.check_background_job"}
-DEFAULT_HTTP_HOST = "127.0.0.1"
-DEFAULT_HTTP_PORT = 8765
+DEFAULT_HTTP_HOST = portal_routes.DEFAULT_HTTP_HOST
+DEFAULT_HTTP_PORT = portal_routes.DEFAULT_HTTP_PORT
 MAX_HTTP_REQUEST_BYTES = 64 * 1024 * 1024
 
 
@@ -51,11 +54,29 @@ def serve_http(
     *,
     host: str = DEFAULT_HTTP_HOST,
     port: int = DEFAULT_HTTP_PORT,
+    open_browser: bool = False,
     stderr: TextIO | None = None,
 ) -> int:
     error_stream = stderr or sys.stderr
-    server = make_http_server(host, port)
-    print(f"[genomi] starting MCP server on http://{host}:{port}/mcp", file=error_stream, flush=True)
+    try:
+        server = make_http_server(host, port)
+    except OSError as exc:
+        print(
+            "[genomi] portal port unavailable at "
+            f"{portal_routes.portal_url(host, port)}; stop the existing server or pass --port. ({exc})",
+            file=error_stream,
+            flush=True,
+        )
+        return 1
+    actual_host, actual_port = server.server_address
+    portal_url = portal_routes.portal_url(actual_host, actual_port)
+    print(f"[genomi] starting Genomi workspace on {portal_url}", file=error_stream, flush=True)
+    print(f"[genomi] starting MCP server on {portal_routes.mcp_url(actual_host, actual_port)}", file=error_stream, flush=True)
+    if open_browser:
+        try:
+            webbrowser.open(portal_url)
+        except Exception as exc:
+            print(f"[genomi] could not open browser automatically: {exc}", file=error_stream, flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -65,7 +86,10 @@ def serve_http(
     return 0
 
 
-def make_http_server(host: str = DEFAULT_HTTP_HOST, port: int = DEFAULT_HTTP_PORT) -> ThreadingHTTPServer:
+def make_http_server(
+    host: str = DEFAULT_HTTP_HOST,
+    port: int = DEFAULT_HTTP_PORT,
+) -> ThreadingHTTPServer:
     return _GenomiMCPHTTPServer((host, port), _GenomiMCPHTTPRequestHandler)
 
 
@@ -105,8 +129,8 @@ def handle_request(request: JsonObject) -> JsonObject | None:
             return _error(request_id, -32602, "tools/call arguments must be an object")
         try:
             arguments = dict(arguments)
-            get_operation(name)
-            if _background_enabled() and name not in BACKGROUND_DIRECT_OPERATIONS:
+            operation = get_operation(name)
+            if _background_enabled() and operation.mcp_background_eligible:
                 timeout_seconds = background_jobs.background_timeout_seconds()
                 job = background_jobs.start_operation_job(name, arguments)
                 job = background_jobs.wait_for_job(str(job["job_id"]), timeout_seconds=timeout_seconds)
@@ -184,22 +208,33 @@ def handle_http_payload(payload: Any) -> tuple[int, JsonObject | list[JsonObject
 class _GenomiMCPHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
+    def __init__(self, server_address: tuple[str, int], RequestHandlerClass: type[BaseHTTPRequestHandler]) -> None:
+        super().__init__(server_address, RequestHandlerClass)
+        self.portal_csrf_token = secrets.token_urlsafe(32)
+
 
 class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
     server_version = "GenomiMCP/0.1"
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
-        if path in {"/", "/health"}:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == portal_routes.HEALTH_ENDPOINT:
             self._send_json(
                 HTTPStatus.OK,
                 {
                     "status": "ok",
                     "server": "genomi",
                     "transport": "http",
-                    "mcp_endpoint": "/mcp",
+                    "mcp_endpoint": portal_routes.MCP_ENDPOINT,
+                    "portal_endpoint": portal_routes.PORTAL_ENDPOINT,
                 },
             )
+            return
+        if portal.is_portal_get_path(path) and not self._portal_request_allowed():
+            self.send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+            return
+        if portal.handle_get(self, path, parsed.query):
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
@@ -207,12 +242,18 @@ class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self._send_common_headers("0")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id, Last-Event-ID")
         self.end_headers()
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
-        if path not in {"/mcp", "/mcp/"}:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path not in {portal_routes.MCP_ENDPOINT, f"{portal_routes.MCP_ENDPOINT}/"}:
+            if portal.is_portal_post_path(path) and not self._portal_request_allowed():
+                self.send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+                return
+            if portal.handle_post_request(self, path):
+                return
             self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
             return
 
@@ -256,6 +297,24 @@ class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
 
+    def _portal_request_allowed(self) -> bool:
+        return self._portal_client_allowed() and self._portal_host_allowed()
+
+    def _portal_client_allowed(self) -> bool:
+        try:
+            return _is_loopback_host(str(self.client_address[0]))
+        except (IndexError, TypeError):
+            return False
+
+    def _portal_host_allowed(self) -> bool:
+        raw_host = str(self.headers.get("Host") or "").strip()
+        if not raw_host:
+            return False
+        candidate = _host_name(raw_host)
+        if candidate == "localhost":
+            return True
+        return _is_loopback_host(candidate)
+
 
 def _background_enabled() -> bool:
     env_value = os.environ.get("GENOMI_MCP_BACKGROUND", "1").strip().lower()
@@ -268,6 +327,25 @@ def _result(request_id: Any, result: JsonObject) -> JsonObject:
 
 def _error(request_id: Any, code: int, message: str) -> JsonObject:
     return {"jsonrpc": JSONRPC_VERSION, "id": request_id, "error": {"code": code, "message": message}}
+
+
+def _host_name(raw_host: str) -> str:
+    host = raw_host.strip()
+    if host.startswith("["):
+        closing = host.find("]")
+        return host[1:closing].lower() if closing > 0 else host.strip("[]").lower()
+    return host.rsplit(":", 1)[0].lower() if ":" in host else host.lower()
+
+
+def _is_loopback_host(candidate: str) -> bool:
+    try:
+        address = ip_address(candidate)
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    mapped = getattr(address, "ipv4_mapped", None)
+    return bool(mapped and mapped.is_loopback)
 
 
 def _write(stream: TextIO, payload: JsonObject) -> None:

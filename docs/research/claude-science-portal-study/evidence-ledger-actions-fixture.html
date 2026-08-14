@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Genomi evidence ledger action fixture</title>
+  <link rel="stylesheet" href="/src/genomi/interfaces/templates/portal.css">
+  <style>
+    body {
+      margin: 0;
+      background: #050606;
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    .fixture-shell {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 14px;
+      min-height: 100vh;
+      padding: 18px;
+    }
+    .fixture-main, .fixture-side {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .fixture-head {
+      border-bottom: 1px solid var(--line);
+      padding: 14px;
+    }
+    .fixture-head span {
+      display: block;
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .fixture-head h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .fixture-side {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+    }
+    .fixture-composer {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .fixture-composer textarea {
+      width: 100%;
+      min-height: 170px;
+      box-sizing: border-box;
+    }
+    .fixture-log {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+    }
+    .fixture-log strong {
+      color: var(--text2);
+      font-size: 12px;
+    }
+    .fixture-log pre {
+      margin: 0;
+      white-space: pre-wrap;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    @media (max-width: 960px) {
+      .fixture-shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="fixture-shell">
+    <main class="fixture-main">
+      <div class="fixture-head">
+        <span>Evidence Ledger fixture</span>
+        <h1>Current Genomi evidence can be selected, drafted, or sent to the host agent</h1>
+      </div>
+      <div id="fixture-ledger-detail" class="evidence-ledger-detail"></div>
+      <div id="fixture-ledger" class="evidence-ledger"></div>
+    </main>
+    <aside class="fixture-side">
+      <div class="fixture-head">
+        <span>Attached material preview</span>
+        <h1>Action output</h1>
+      </div>
+      <div class="fixture-composer">
+        <textarea id="fixture-prompt" readonly placeholder="Draft evidence will place prompt text here."></textarea>
+      </div>
+      <div id="fixture-log" class="fixture-log">
+        <strong>No action yet</strong>
+        <pre>Select a ledger node, then use Ask selected or Draft selected.</pre>
+      </div>
+    </aside>
+  </div>
+  <script type="module">
+    import { createEvidenceLedger } from '/src/genomi/interfaces/templates/portal_evidence_ledger.js';
+
+    const prompt = document.getElementById('fixture-prompt');
+    const log = document.getElementById('fixture-log');
+
+    function recordAction(label, payload) {
+      prompt.value = payload && payload.prompt_text ? payload.prompt_text : '';
+      const nodes = payload && Array.isArray(payload.selected_nodes) ? payload.selected_nodes : [];
+      log.innerHTML = '<strong></strong><pre></pre>';
+      log.querySelector('strong').textContent = label;
+      log.querySelector('pre').textContent = [
+        'Attached: ' + (payload && payload.label || 'selected evidence'),
+        payload && payload.summary ? 'Summary: ' + payload.summary : '',
+        'nodes: ' + nodes.length,
+        nodes.map((node) => '- ' + node.text).join('\n')
+      ].filter(Boolean).join('\n');
+    }
+
+    const ledger = createEvidenceLedger({
+      container: document.getElementById('fixture-ledger'),
+      detailContainer: document.getElementById('fixture-ledger-detail'),
+      onUseContext: (payload) => recordAction('Use evidence attached selected material', payload),
+      onAskContext: (payload) => recordAction('Ask selected would send this evidence through chat', payload),
+      onDraftContext: (payload) => recordAction('Draft selected prepared a next-turn prompt', payload),
+      onAskFollowUp: (request) => recordAction('Ask follow-up drafted a re-check prompt', {
+        context_kind: 'follow_up',
+        source_operation: request.operation,
+        selected_nodes: [],
+        prompt_text: request.prompt
+      })
+    });
+
+    ledger.upsert({
+      scope: { frameId: 'fixture_frame', runId: 'fixture_run' },
+      call: { id: 'call_variant_fixture', name: 'variant.resolve', input: { rsid: 'rs429358' } },
+      result: {
+        id: 'result_variant_fixture',
+        name: 'variant.resolve',
+        payload: {
+          headline: 'variant.resolve: data_returned',
+          status: 'completed',
+          evidence_envelope: {
+            finding_state: 'data_returned',
+            answer_readiness: 'answer_supported',
+            guidance: ['data_returned:use_variant_evidence'],
+            coverage: { consulted_libraries: ['dbSNP', 'ClinVar'] },
+            observations: { variant: 'rs429358', gene: 'APOE' }
+          },
+          query: { rsid: 'rs429358' },
+          resolved_targets: [{ rsid: 'rs429358', resolution_status: 'identifier' }],
+          public_context: {
+            clinvar_by_rsid: [
+              { rsid: 'rs429358', gene: 'APOE', clinical_significance: 'risk_factor' },
+              { rsid: 'rs429358', gene: 'APOE', review_status: 'criteria_provided_single_submitter' }
+            ]
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
