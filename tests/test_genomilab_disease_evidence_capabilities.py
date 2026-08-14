@@ -399,6 +399,353 @@ class _ExternalApplication(_Application):
 
 
 class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
+    def test_generic_public_capability_requires_its_exact_route_and_purpose(
+        self,
+    ) -> None:
+        exact_purpose = (
+            "Investigate disease relevance against the approved molecular profile"
+        )
+
+        class _PaperclipCatalogApplication(_Application):
+            def __init__(self, purpose: str) -> None:
+                super().__init__()
+                self.purpose = purpose
+
+            def evidence_capability_manifest(self) -> dict[str, object]:
+                return {
+                    "paperclip": {
+                        "live_state": "authorized",
+                        "purposes": [self.purpose],
+                        "routes": [
+                            {
+                                "source_family": "literature",
+                                "operations": ["search"],
+                            }
+                        ],
+                    },
+                    "direct_sources": [],
+                    "fixture_source_families": [],
+                }
+
+        unavailable = _PaperclipCatalogApplication(
+            "Different provider purpose"
+        ).investigation_capability_catalog("investigation-a")
+        available = _PaperclipCatalogApplication(
+            exact_purpose
+        ).investigation_capability_catalog("investigation-a")
+
+        self.assertFalse(unavailable[PUBLIC_EVIDENCE_RETRIEVE]["available"])
+        self.assertEqual(
+            unavailable[PUBLIC_EVIDENCE_RETRIEVE]["unavailable_reason"],
+            "no_route_accepts_exact_public_request",
+        )
+        self.assertTrue(available[PUBLIC_EVIDENCE_RETRIEVE]["available"])
+
+    def test_provider_disappearing_after_catalog_never_creates_dead_approval(
+        self,
+    ) -> None:
+        class _DisappearingRouteApplication(_ExternalApplication):
+            def evidence_disclosure_candidate(
+                self, investigation_id: str, payload: dict[str, object]
+            ) -> dict[str, object]:
+                del investigation_id, payload
+                return {"selected_provider": None}
+
+        application = _DisappearingRouteApplication()
+        params = {
+            "profile_revision_ids": ["finding-a"],
+            "operation": "search",
+            "query": "reported finding evidence",
+            "query_terms": ["reported finding"],
+            "filters": {},
+            "purpose": "Investigate the approved disease question",
+        }
+
+        result = application._execute_capability_request(
+            "investigation-a",
+            {"capability": INHERITANCE_CONSEQUENCE_EVIDENCE, "parameters": params},
+            approval=None,
+        )
+
+        self.assertEqual(result["status"], "source_unavailable")
+        self.assertIsNone(result["candidate"]["selected_provider"])
+
+    def test_patient_catalog_has_no_paperclip_route_without_contract_scope(
+        self,
+    ) -> None:
+        catalog = build_external_evidence_catalog(
+            ["finding-a"],
+            {
+                "paperclip": {
+                    "live_state": "authorized_unavailable",
+                    "operations": [],
+                    "source_families": [],
+                    "routes": [],
+                },
+                "direct_sources": [],
+                "fixture_source_families": [],
+            },
+        )
+
+        self.assertFalse(catalog[INHERITANCE_CONSEQUENCE_EVIDENCE]["available"])
+        self.assertFalse(catalog[REGULATORY_EVIDENCE]["available"])
+        self.assertFalse(catalog[TRIAL_EVIDENCE]["available"])
+
+    def test_paperclip_catalog_advertises_only_deployed_source_operation_routes(
+        self,
+    ) -> None:
+        catalog = build_external_evidence_catalog(
+            ["finding-a"],
+            {
+                "paperclip": {
+                    "live_state": "authorized",
+                    "purposes": ["Resolve a public publication"],
+                    "operations": ["search", "lookup"],
+                    "source_families": [
+                        "literature",
+                        "regulatory",
+                        "trial_registry",
+                    ],
+                    "routes": [
+                        {
+                            "source_family": "literature",
+                            "operations": ["search", "lookup", "read_extract"],
+                        },
+                        {
+                            "source_family": "regulatory",
+                            "operations": ["search", "lookup"],
+                        },
+                        {
+                            "source_family": "trial_registry",
+                            "operations": ["search"],
+                        },
+                    ],
+                },
+                "direct_sources": [],
+                "fixture_source_families": [],
+            },
+        )
+        literature_operations = catalog[INHERITANCE_CONSEQUENCE_EVIDENCE][
+            "request_contract"
+        ]["fields"]["operation"]["allowed_values"]
+        regulatory_operations = catalog[REGULATORY_EVIDENCE]["request_contract"][
+            "fields"
+        ]["operation"]["allowed_values"]
+        trial_operations = catalog[TRIAL_EVIDENCE]["request_contract"]["fields"][
+            "operation"
+        ]["allowed_values"]
+        self.assertEqual(literature_operations, ["search", "lookup"])
+        self.assertEqual(regulatory_operations, ["search"])
+        self.assertEqual(trial_operations, ["search"])
+        self.assertFalse(catalog[UNIPROT_EVIDENCE]["available"])
+        route_contracts = catalog[INHERITANCE_CONSEQUENCE_EVIDENCE]["request_contract"][
+            "routes"
+        ]
+        operation_contracts = next(
+            route["operation_contracts"]
+            for route in route_contracts
+            if route["route"] == "paperclip"
+        )
+        self.assertEqual(
+            operation_contracts["search"]["filters"]["allowed_fields"],
+            [
+                "exact",
+                "since",
+                "sort",
+                "author",
+                "journal",
+                "year",
+                "type",
+                "category",
+                "mode",
+            ],
+        )
+        self.assertEqual(
+            operation_contracts["search"]["query_terms"]["maximum_items"], 5
+        )
+        self.assertEqual(
+            operation_contracts["lookup"]["filters"]["required_fields"],
+            ["lookup_field"],
+        )
+        self.assertEqual(
+            operation_contracts["lookup"]["query_terms"]["items_must_equal_field"],
+            "query",
+        )
+        self.assertEqual(
+            operation_contracts["lookup"]["consulted_corpora"],
+            ["pmc", "biorxiv", "medrxiv", "arxiv"],
+        )
+
+    def test_paperclip_operation_contract_rejects_inputs_transport_cannot_run(
+        self,
+    ) -> None:
+        catalog = build_external_evidence_catalog(
+            ["finding-a"],
+            {
+                "paperclip": {
+                    "live_state": "authorized",
+                    "purposes": ["Resolve a public publication"],
+                    "routes": [
+                        {
+                            "source_family": "literature",
+                            "operations": ["search", "lookup"],
+                        }
+                    ],
+                },
+                "direct_sources": [],
+                "fixture_source_families": [],
+            },
+        )
+        entry = catalog[INHERITANCE_CONSEQUENCE_EVIDENCE]
+        base = {
+            "profile_revision_ids": ["finding-a"],
+            "query": "10.1000/synthetic",
+            "query_terms": ["10.1000/synthetic"],
+            "purpose": "Resolve a public publication",
+        }
+        valid = validate_external_evidence_request(
+            INHERITANCE_CONSEQUENCE_EVIDENCE,
+            {
+                **base,
+                "operation": "lookup",
+                "filters": {"lookup_field": "doi"},
+            },
+            entry,
+        )
+        self.assertEqual(valid["filters"]["lookup_field"], "doi")
+        self.assertEqual(
+            entry["request_contract"]["fields"]["purpose"]["allowed_values"],
+            ["Resolve a public publication"],
+        )
+        with self.assertRaisesRegex(ValueError, "purpose is not allowed"):
+            validate_external_evidence_request(
+                INHERITANCE_CONSEQUENCE_EVIDENCE,
+                {
+                    **base,
+                    "operation": "lookup",
+                    "filters": {"lookup_field": "doi"},
+                    "purpose": "A different provider purpose",
+                },
+                entry,
+            )
+
+        invalid_requests = (
+            {**base, "operation": "lookup", "filters": {}},
+            {
+                **base,
+                "operation": "lookup",
+                "query_terms": ["different term"],
+                "filters": {"lookup_field": "doi"},
+            },
+            {
+                **base,
+                "operation": "lookup",
+                "filters": {"lookup_field": "unsupported"},
+            },
+            {
+                **base,
+                "operation": "lookup",
+                "filters": {"lookup_field": "DOI"},
+            },
+            {
+                **base,
+                "operation": "lookup",
+                "filters": {"lookup_field": "doi", "year": "2026"},
+            },
+            {
+                **base,
+                "operation": "search",
+                "filters": {"publication_type": "review"},
+            },
+        )
+        for request in invalid_requests:
+            with self.subTest(request=request):
+                with self.assertRaisesRegex(ValueError, "advertised provider scope"):
+                    validate_external_evidence_request(
+                        INHERITANCE_CONSEQUENCE_EVIDENCE,
+                        request,
+                        entry,
+                    )
+
+    def test_fallback_only_literature_keeps_its_generic_filter_contract(
+        self,
+    ) -> None:
+        catalog = build_external_evidence_catalog(
+            ["finding-a"],
+            {
+                "paperclip": {"live_state": "hard_disabled"},
+                "direct_sources": [],
+                "fixture_source_families": ["literature"],
+            },
+        )
+        entry = catalog[INHERITANCE_CONSEQUENCE_EVIDENCE]
+
+        self.assertEqual(
+            entry["request_contract"]["routes"],
+            [
+                {
+                    "route": "fallback",
+                    "operations": [
+                        "search",
+                        "lookup",
+                        "read_extract",
+                        "verify_claim",
+                    ],
+                }
+            ],
+        )
+        validated = validate_external_evidence_request(
+            INHERITANCE_CONSEQUENCE_EVIDENCE,
+            {
+                "profile_revision_ids": ["finding-a"],
+                "operation": "search",
+                "query": "synthetic published evidence",
+                "query_terms": ["synthetic evidence"],
+                "filters": {"publication_type": "review"},
+                "purpose": "Exercise the fixture literature route",
+            },
+            entry,
+        )
+        self.assertEqual(validated["filters"]["publication_type"], "review")
+
+    def test_fallback_route_preserves_broader_purpose_and_input_scope(self) -> None:
+        catalog = build_external_evidence_catalog(
+            ["finding-a"],
+            {
+                "paperclip": {
+                    "live_state": "authorized",
+                    "purposes": ["Paperclip-approved purpose"],
+                    "routes": [
+                        {
+                            "source_family": "literature",
+                            "operations": ["lookup"],
+                        }
+                    ],
+                },
+                "direct_sources": [],
+                "fixture_source_families": ["literature"],
+            },
+        )
+        entry = catalog[INHERITANCE_CONSEQUENCE_EVIDENCE]
+
+        validated = validate_external_evidence_request(
+            INHERITANCE_CONSEQUENCE_EVIDENCE,
+            {
+                "profile_revision_ids": ["finding-a"],
+                "operation": "lookup",
+                "query": "synthetic publication",
+                "query_terms": ["synthetic", "publication"],
+                "filters": {"publication_type": "review"},
+                "purpose": "Fixture-only investigation purpose",
+            },
+            entry,
+        )
+
+        self.assertEqual(validated["purpose"], "Fixture-only investigation purpose")
+        self.assertNotIn(
+            "allowed_values", entry["request_contract"]["fields"]["purpose"]
+        )
+
     def test_catalog_exposes_each_supported_source_prior_separately(self) -> None:
         manifest = _ExternalApplication().evidence_capability_manifest()
         catalog = build_external_evidence_catalog(

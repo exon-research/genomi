@@ -5,12 +5,15 @@ from __future__ import annotations
 from .approval_store import disclosure_payload_sha256
 from .evidence_application_contract import EvidenceApplication
 from .models import JsonObject
+from .paperclip_contract import paperclip_operation_scope
 from .provider_policy import (
     PAPERCLIP_PROVIDER,
     ProviderPolicyState,
     QueryOrigin,
+    current_policy_time,
     disclosure_fingerprint,
     evaluate_live_provider_request,
+    live_provider_policy_binding,
     provider_name,
 )
 from .service_errors import LabError
@@ -29,12 +32,33 @@ class EvidenceDisclosureApplicationMixin:
         live_policy = evaluate_live_provider_request(
             PAPERCLIP_PROVIDER,
             request,
+            operation=operation.value,
+            current_time=current_policy_time(),
             deployment_authorization=adapter.deployment_authorization,
             patient_data_contract=adapter.patient_data_contract,
         )
-        paperclip_state = adapter.capability_manifest().live_state
+        paperclip_manifest = adapter.capability_manifest()
+        paperclip_state = paperclip_manifest.live_state
+        paperclip_scope = paperclip_operation_scope(
+            request.source_family, operation.value
+        )
+        paperclip_request_in_scope = bool(
+            request.operation == operation.value
+            and any(
+                family is request.source_family and operation in operations
+                for family, operations in paperclip_manifest.routes
+            )
+            and paperclip_scope
+            and paperclip_scope.accepts(
+                query=request.query,
+                query_terms=request.query_terms,
+                filters=dict(request.filters),
+                allow_internal_filters=True,
+            )
+        )
         paperclip_eligible_after_approval = (
             paperclip_state == "authorized"
+            and paperclip_request_in_scope
             and live_policy.state
             in {
                 ProviderPolicyState.ALLOWED,
@@ -48,6 +72,7 @@ class EvidenceDisclosureApplicationMixin:
                 "destination": _PAPERCLIP_DESTINATION,
                 "access_mode": "live_provider",
                 "current_policy_state": live_policy.state.value,
+                "request_in_transport_scope": paperclip_request_in_scope,
                 "eligible_after_exact_approval": paperclip_eligible_after_approval,
                 "requires_exact_approval": request.patient_influenced,
             }
@@ -119,6 +144,8 @@ class EvidenceDisclosureApplicationMixin:
             policy = evaluate_live_provider_request(
                 PAPERCLIP_PROVIDER,
                 request,
+                operation=operation.value,
+                current_time=current_policy_time(),
                 deployment_authorization=adapter.deployment_authorization,
                 patient_data_contract=adapter.patient_data_contract,
             )
@@ -136,13 +163,12 @@ class EvidenceDisclosureApplicationMixin:
                     http_status=409,
                 )
             destination = _PAPERCLIP_DESTINATION
-            policy_versions: JsonObject = {
-                "deployment_authorization_id": adapter.deployment_authorization.authorization_id
-            }
-            if adapter.patient_data_contract is not None:
-                policy_versions["patient_data_contract_id"] = (
-                    adapter.patient_data_contract.contract_id
-                )
+            policy_versions = live_provider_policy_binding(
+                PAPERCLIP_PROVIDER,
+                request,
+                deployment_authorization=adapter.deployment_authorization,
+                patient_data_contract=adapter.patient_data_contract,
+            )
         elif direct is not None and recipient == direct.provider:
             destination = direct.destination
             policy_versions = {"route": "direct_primary_source"}
@@ -162,11 +188,7 @@ class EvidenceDisclosureApplicationMixin:
                 recipient_id=recipient,
                 purpose=request.purpose,
                 destination=destination,
-                data_categories=[
-                    "patient_influenced_query"
-                    if request.patient_influenced
-                    else "public_query"
-                ],
+                data_categories=[request.data_class.value],
                 payload=outbound_payload,
                 policy_versions=policy_versions,
                 approved=True,

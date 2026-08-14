@@ -13,10 +13,15 @@ from .evidence_types import EvidenceResult, EvidenceStatus
 from .models import JsonObject
 from .paperclip_adapter import PaperclipAdapter, PaperclipOperation
 from .provider_policy import (
+    AccessMode,
     DisclosureApproval,
     PAPERCLIP_PROVIDER,
+    ProviderPolicyState,
     SourceFamily,
+    current_policy_time,
     disclosure_fingerprint,
+    evaluate_live_provider_request,
+    live_provider_policy_binding,
 )
 from .service_errors import LabError
 from .evidence_service_support import (
@@ -60,19 +65,19 @@ class EvidenceApplicationMixin(
 
     def evidence_capability_manifest(self: EvidenceApplication) -> JsonObject:
         adapter, direct_sources, fixtures = self._evidence_configuration()
+        paperclip = adapter.capability_manifest().to_dict()
         return {
             "gateway": "GenomiLab",
             "provider_neutral": True,
             "provider_credentials_exposed": False,
-            "operations": [operation.value for operation in PaperclipOperation],
-            "paperclip": adapter.capability_manifest().to_dict(),
+            "operations": list(paperclip["operations"]),
+            "paperclip": paperclip,
             "direct_sources": [
                 direct_sources[family].manifest()
                 for family in sorted(direct_sources, key=lambda item: item.value)
             ],
             "fixture_source_families": sorted(family.value for family in fixtures),
         }
-
 
     def retrieve_public_evidence(
         self: EvidenceApplication,
@@ -94,20 +99,15 @@ class EvidenceApplicationMixin(
             payload.get("direct_disclosure_receipt_id"),
             "direct_disclosure_receipt_id",
         )
-        data_categories = [
-            "patient_influenced_query" if request.patient_influenced else "public_query"
-        ]
+        data_categories = [request.data_class.value]
         paperclip_approval: DisclosureApproval | None = None
         if paperclip_receipt_id is not None:
-            expected_policy_versions: JsonObject = {}
-            if adapter.deployment_authorization is not None:
-                expected_policy_versions["deployment_authorization_id"] = (
-                    adapter.deployment_authorization.authorization_id
-                )
-            if adapter.patient_data_contract is not None:
-                expected_policy_versions["patient_data_contract_id"] = (
-                    adapter.patient_data_contract.contract_id
-                )
+            expected_policy_versions = live_provider_policy_binding(
+                PAPERCLIP_PROVIDER,
+                request,
+                deployment_authorization=adapter.deployment_authorization,
+                patient_data_contract=adapter.patient_data_contract,
+            )
             self._require_evidence_receipt(
                 investigation=investigation,
                 investigation_id=investigation_id,
@@ -162,7 +162,47 @@ class EvidenceApplicationMixin(
             ),
         )
         if result.status is not EvidenceStatus.IN_PROGRESS:
-            if paperclip_receipt_id is not None:
+            attempts = result.route_attempts or (result.attempt(),)
+            paperclip_attempted = any(
+                attempt.provider == PAPERCLIP_PROVIDER
+                and attempt.access_mode is AccessMode.LIVE_PROVIDER
+                and attempt.policy_state is ProviderPolicyState.ALLOWED
+                for attempt in attempts
+            )
+            direct_attempted = bool(
+                direct is not None
+                and any(
+                    attempt.provider == direct.provider
+                    and attempt.access_mode is AccessMode.DIRECT_PRIMARY_SOURCE
+                    and attempt.policy_state is ProviderPolicyState.ALLOWED
+                    for attempt in attempts
+                )
+            )
+            current_adapter, current_direct_sources, _current_fixtures = (
+                self._evidence_configuration()
+            )
+            if paperclip_attempted and paperclip_receipt_id is not None:
+                current_policy = evaluate_live_provider_request(
+                    PAPERCLIP_PROVIDER,
+                    request,
+                    operation=operation.value,
+                    current_time=current_policy_time(),
+                    deployment_authorization=current_adapter.deployment_authorization,
+                    patient_data_contract=current_adapter.patient_data_contract,
+                    disclosure_approval=paperclip_approval,
+                )
+                if not current_policy.allowed:
+                    raise LabError(
+                        "evidence_disclosure_renewal_required",
+                        "The evidence-provider policy changed while the query was running.",
+                        http_status=409,
+                    )
+                current_policy_versions = live_provider_policy_binding(
+                    PAPERCLIP_PROVIDER,
+                    request,
+                    deployment_authorization=current_adapter.deployment_authorization,
+                    patient_data_contract=current_adapter.patient_data_contract,
+                )
                 self._require_evidence_receipt(
                     investigation=self.investigation(investigation_id),
                     investigation_id=investigation_id,
@@ -170,31 +210,49 @@ class EvidenceApplicationMixin(
                     purpose=request.purpose,
                     destination=_PAPERCLIP_DESTINATION,
                     data_categories=data_categories,
-                    policy_versions=expected_policy_versions,
+                    policy_versions=current_policy_versions,
                     payload=outbound_payload,
                     receipt_id=paperclip_receipt_id,
                 )
-            elif direct_receipt_id is not None and direct is not None:
+            if (
+                direct_attempted
+                and direct_receipt_id is not None
+                and direct is not None
+            ):
+                current_direct = current_direct_sources.get(request.source_family)
+                if current_direct is None or current_direct.provider != direct.provider:
+                    raise LabError(
+                        "evidence_disclosure_renewal_required",
+                        "The direct evidence-provider route changed while the query was running.",
+                        http_status=409,
+                    )
                 self._require_evidence_receipt(
                     investigation=self.investigation(investigation_id),
                     investigation_id=investigation_id,
-                    provider=direct.provider,
+                    provider=current_direct.provider,
                     purpose=request.purpose,
-                    destination=direct.destination,
+                    destination=current_direct.destination,
                     data_categories=data_categories,
                     policy_versions={"route": "direct_primary_source"},
                     payload=outbound_payload,
                     receipt_id=direct_receipt_id,
                 )
+        committed_receipt_id = (
+            paperclip_receipt_id
+            if result.provider == PAPERCLIP_PROVIDER
+            and result.access_mode is AccessMode.LIVE_PROVIDER
+            else direct_receipt_id
+            if result.access_mode is AccessMode.DIRECT_PRIMARY_SOURCE
+            else None
+        )
         return self._commit_or_report_evidence_result(
             investigation_id,
             result=result,
             operation=operation,
             expected_plan_version_id=expected_plan_version_id,
-            expected_disclosure_receipt_id=(paperclip_receipt_id or direct_receipt_id),
+            expected_disclosure_receipt_id=committed_receipt_id,
             expected_consent_receipt_id=expected_consent_receipt_id,
         )
-
 
     def _commit_or_report_evidence_result(
         self: EvidenceApplication,

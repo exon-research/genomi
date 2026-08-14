@@ -6,12 +6,18 @@ from genomi.lab.server import _INVESTIGATION_ACTION_ROUTE
 
 
 class GenomiLabEvidenceHTTPContractTests(unittest.TestCase):
-    def test_portal_cannot_initiate_provider_evidence_outside_harness_request(self) -> None:
+    def test_portal_cannot_initiate_provider_evidence_outside_harness_request(
+        self,
+    ) -> None:
         investigation = "investigation-acde1234"
         for action in (
             "evidence-preview",
             "evidence-approval",
             "evidence-retrieve",
+            "paperclip-search",
+            "biohub-esm-run",
+            "proto-run",
+            "proto-deploy",
         ):
             with self.subTest(action=action):
                 matched = _INVESTIGATION_ACTION_ROUTE.fullmatch(
@@ -24,9 +30,7 @@ class GenomiLabEvidenceHTTPContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(continuation)
         assert continuation is not None
-        self.assertEqual(
-            continuation.groups(), (investigation, "capability-execute")
-        )
+        self.assertEqual(continuation.groups(), (investigation, "capability-execute"))
 
 
 if __name__ == "__main__":

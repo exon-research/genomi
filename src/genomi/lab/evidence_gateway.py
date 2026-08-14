@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Callable, Mapping
 
 from .evidence_normalization import (
@@ -23,20 +24,26 @@ from .provider_policy import (
     PatientDataContract,
     ProviderPolicyDecision,
     ProviderPolicyState,
+    current_policy_time,
     evaluate_live_provider_request,
 )
 
 
 LiveEvidenceTransport = Callable[[EvidenceRequest], Mapping[str, object]]
+PolicyClock = Callable[[], datetime]
 
 
 class ProviderGateway:
     """The only execution boundary for live, direct, and fixture evidence routes."""
 
+    def __init__(self, *, clock: PolicyClock = current_policy_time) -> None:
+        self._clock = clock
+
     def retrieve_live(
         self,
         *,
         provider: str,
+        operation: str,
         request: EvidenceRequest,
         transport: LiveEvidenceTransport,
         deployment_authorization: DeploymentAuthorization | None,
@@ -46,6 +53,8 @@ class ProviderGateway:
         decision = evaluate_live_provider_request(
             provider,
             request,
+            operation=operation,
+            current_time=self._clock(),
             deployment_authorization=deployment_authorization,
             patient_data_contract=patient_data_contract,
             disclosure_approval=disclosure_approval,
@@ -75,7 +84,7 @@ class ProviderGateway:
     ) -> EvidenceResult:
         decision = ProviderPolicyDecision(
             ProviderPolicyState.ALLOWED
-            if not request.patient_influenced or exact_egress_approved
+            if not request.patient_influenced or exact_egress_approved is True
             else ProviderPolicyState.BLOCKED_MISSING_EXACT_EGRESS_APPROVAL
         )
         if not decision.allowed:

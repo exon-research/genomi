@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 from .approval_store import disclosure_payload_sha256
-from .evidence_application_contract import EvidenceApplication
+from .evidence_application_contract import DirectEvidenceRoute, EvidenceApplication
 from .evidence_types import EvidenceStatus
 from .models import JsonObject
-from .paperclip_adapter import PAPERCLIP_JOB_RESUME_OPERATION, PaperclipOperation
+from .paperclip_adapter import (
+    PAPERCLIP_JOB_RESUME_OPERATION,
+    PaperclipAdapter,
+    PaperclipOperation,
+)
 from .provider_policy import (
     AccessMode,
     EvidenceRequest,
     PAPERCLIP_PROVIDER,
     SourceFamily,
+    live_provider_policy_binding,
     provider_name,
 )
 from .service_errors import LabError
@@ -56,15 +61,16 @@ class EvidenceJobApplicationMixin:
                 "retry_after_approval": False,
             }
         try:
+            operation = PaperclipOperation(raw_request.get("operation"))
             request = EvidenceRequest(
                 query=raw_request.get("query"),
                 query_terms=tuple(raw_request.get("query_terms") or ()),
                 filters=raw_request.get("filters") or {},
                 source_family=SourceFamily(raw_request.get("source_family")),
                 purpose=raw_request.get("purpose"),
+                operation=operation.value,
                 patient_influenced=True,
             )
-            operation = PaperclipOperation(gateway.get("operation"))
             access_mode = AccessMode(provider_result.get("access_mode"))
         except (TypeError, ValueError) as exc:
             return {
@@ -88,6 +94,7 @@ class EvidenceJobApplicationMixin:
             and active_attempt.get("approval_provider") == provider
             and active_attempt.get("approval_payload_sha256")
         )
+        adapter, direct_sources, _fixtures = self._evidence_configuration()
         try:
             approval_payload_sha256 = (
                 str(active_attempt.get("approval_payload_sha256") or "")
@@ -101,6 +108,8 @@ class EvidenceJobApplicationMixin:
                 request=request,
                 operation=operation,
                 expected_payload_sha256=approval_payload_sha256,
+                adapter=adapter,
+                direct_sources=direct_sources,
             )
         except ValueError as exc:
             raise LabError(
@@ -109,7 +118,6 @@ class EvidenceJobApplicationMixin:
                 http_status=409,
             ) from exc
         approved = approved and bool(receipt)
-        adapter, direct_sources, _fixtures = self._evidence_configuration()
         try:
             if (
                 provider == PAPERCLIP_PROVIDER
@@ -176,6 +184,9 @@ class EvidenceJobApplicationMixin:
                     http_status=409,
                 )
             try:
+                current_adapter, current_direct_sources, _current_fixtures = (
+                    self._evidence_configuration()
+                )
                 receipt = self._require_active_job_disclosure(
                     investigation_id=investigation_id,
                     provider=provider,
@@ -183,6 +194,8 @@ class EvidenceJobApplicationMixin:
                     request=request,
                     operation=operation,
                     expected_payload_sha256=approval_payload_sha256,
+                    adapter=current_adapter,
+                    direct_sources=current_direct_sources,
                 )
             except ValueError as exc:
                 raise LabError(
@@ -249,23 +262,21 @@ class EvidenceJobApplicationMixin:
         request: EvidenceRequest,
         operation: PaperclipOperation,
         expected_payload_sha256: str,
+        adapter: PaperclipAdapter,
+        direct_sources: dict[SourceFamily, DirectEvidenceRoute],
     ) -> JsonObject:
         investigation = self.investigation(investigation_id)
         outbound_payload = self._provider_payload(request, operation)
         if disclosure_payload_sha256(outbound_payload) != expected_payload_sha256:
             raise ValueError("the persisted approval payload does not match the job")
-        adapter, direct_sources, _fixtures = self._evidence_configuration()
         if provider == PAPERCLIP_PROVIDER and access_mode is AccessMode.LIVE_PROVIDER:
             destination = _PAPERCLIP_DESTINATION
-            policy_versions: JsonObject = {}
-            if adapter.deployment_authorization is not None:
-                policy_versions["deployment_authorization_id"] = (
-                    adapter.deployment_authorization.authorization_id
-                )
-            if adapter.patient_data_contract is not None:
-                policy_versions["patient_data_contract_id"] = (
-                    adapter.patient_data_contract.contract_id
-                )
+            policy_versions = live_provider_policy_binding(
+                PAPERCLIP_PROVIDER,
+                request,
+                deployment_authorization=adapter.deployment_authorization,
+                patient_data_contract=adapter.patient_data_contract,
+            )
         elif access_mode is AccessMode.DIRECT_PRIMARY_SOURCE:
             direct = direct_sources.get(request.source_family)
             if direct is None or direct.provider != provider:
@@ -293,7 +304,7 @@ class EvidenceJobApplicationMixin:
                     recipient_id=provider,
                     purpose=request.purpose,
                     destination=destination,
-                    data_categories=["patient_influenced_query"],
+                    data_categories=[request.data_class.value],
                     payload=outbound_payload,
                     policy_versions=policy_versions,
                 )

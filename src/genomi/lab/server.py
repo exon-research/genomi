@@ -40,6 +40,10 @@ _OBSERVATION_REVISION_ROUTE = re.compile(
     r"^/api/v1/molecular-profile/observations/"
     r"(observation-revision-[a-f0-9]+)/supersede$"
 )
+_INTEGRATION_ACTION_ROUTE = re.compile(
+    r"^/api/v1/integrations/(paperclip|biohub-esm|proto)/"
+    r"(connect|verify|disconnect)$"
+)
 _JAVASCRIPT_MODULE_ROUTE = re.compile(r"^/[a-z][a-z0-9_-]*(?:/[a-z][a-z0-9_-]*)*\.js$")
 
 
@@ -183,6 +187,9 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/v1/molecular-profile":
             self._send_json(HTTPStatus.OK, self.server.service.molecular_profile())
             return
+        if parsed.path == "/api/v1/integrations":
+            self._send_json(HTTPStatus.OK, self.server.service.integrations())
+            return
         if parsed.path == "/api/v1/investigations":
             self._send_json(
                 HTTPStatus.OK,
@@ -259,6 +266,30 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             observation = self.server.service.add_profile_observation(payload)
             self._send_json(HTTPStatus.CREATED, observation)
+            return
+        integration_match = _INTEGRATION_ACTION_ROUTE.fullmatch(parsed.path)
+        if integration_match:
+            provider, action = integration_match.groups()
+            payload = self._read_json()
+            if action == "connect":
+                result = self.server.service.connect_integration(provider, payload)
+            elif action == "verify":
+                if payload:
+                    raise LabError(
+                        "invalid_integration_request",
+                        "Connection checks do not accept request fields.",
+                    )
+                result = self.server.service.verify_integration(provider)
+            else:
+                if set(payload) != {"confirmed"}:
+                    raise LabError(
+                        "invalid_integration_request",
+                        "Disconnect requires only explicit confirmation.",
+                    )
+                result = self.server.service.disconnect_integration(
+                    provider, confirmed=payload.get("confirmed") is True
+                )
+            self._send_json(HTTPStatus.OK, {"integration": result})
             return
         observation_match = _OBSERVATION_REVISION_ROUTE.fullmatch(parsed.path)
         if observation_match:

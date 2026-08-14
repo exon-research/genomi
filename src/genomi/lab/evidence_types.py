@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 from .provider_policy import (
@@ -245,12 +245,39 @@ class EvidenceCoverage:
 
 
 @dataclass(frozen=True)
+class ProviderProcessProvenance:
+    """Provider execution identity retained even when no records are returned."""
+
+    provider_result_ids: tuple[str, ...] = ()
+    provider_version: str | None = None
+    provider_repository: str | None = None
+    provider_commit: str | None = None
+    retrieved_at: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            key: value
+            for key, value in {
+                "provider_result_ids": list(self.provider_result_ids),
+                "provider_version": self.provider_version,
+                "provider_repository": self.provider_repository,
+                "provider_commit": self.provider_commit,
+                "retrieved_at": self.retrieved_at,
+            }.items()
+            if value not in (None, [], ())
+        }
+
+
+@dataclass(frozen=True)
 class EvidenceRouteAttempt:
     provider: str
     access_mode: AccessMode
     status: EvidenceStatus
     policy_state: ProviderPolicyState
     coverage: EvidenceCoverage
+    process_provenance: ProviderProcessProvenance = field(
+        default_factory=ProviderProcessProvenance
+    )
     failure: ProviderFailure | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -261,6 +288,9 @@ class EvidenceRouteAttempt:
             "policy_state": self.policy_state.value,
             "coverage": self.coverage.to_dict(),
         }
+        process_provenance = self.process_provenance.to_dict()
+        if process_provenance:
+            result["process_provenance"] = process_provenance
         if self.failure is not None:
             result["failure"] = self.failure.to_dict()
         return result
@@ -275,6 +305,9 @@ class EvidenceResult:
     records: tuple[EvidenceRecord, ...]
     policy: ProviderPolicyDecision
     coverage: EvidenceCoverage
+    process_provenance: ProviderProcessProvenance = field(
+        default_factory=ProviderProcessProvenance
+    )
     failure: ProviderFailure | None = None
     route_attempts: tuple[EvidenceRouteAttempt, ...] = ()
     job_id: str | None = None
@@ -292,6 +325,7 @@ class EvidenceResult:
             status=self.status,
             policy_state=self.policy.state,
             coverage=self.coverage,
+            process_provenance=self.process_provenance,
             failure=self.failure,
         )
 
@@ -318,6 +352,9 @@ class EvidenceResult:
         }
         if self.failure is not None:
             result["failure"] = self.failure.to_dict()
+        process_provenance = self.process_provenance.to_dict()
+        if process_provenance:
+            result["process_provenance"] = process_provenance
         if self.job_id is not None:
             result["job_id"] = self.job_id
         if self.resume_operation is not None:

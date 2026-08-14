@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import stat
 import tempfile
 import unittest
@@ -42,6 +43,80 @@ class GenomiLabStoreTests(unittest.TestCase):
         self.assertEqual(store.list_workspace_user_ids(), ["user-a"])
         self.assertFalse(hasattr(store, "create_profile"))
         self.assertFalse(hasattr(store, "list_profiles"))
+
+    def test_provider_connection_command_and_event_persist_atomically_redacted(
+        self,
+    ) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        result = {
+            "provider": "paperclip",
+            "connection_state": "configured_unverified",
+            "credential_state": "stored",
+            "execution_location": "remote",
+            "policy_state": "blocked_missing_deployment_authorization",
+            "available_operations": [],
+            "last_verified_at": None,
+            "use_scope": "public_evidence",
+            "verification_kind": "fixed_public_search",
+            "verification_may_consume_credits": True,
+            "verification_available": True,
+        }
+
+        command_id = store.record_provider_connection_command(
+            workspace_session_id="genomilab-store-tests",
+            provider="paperclip",
+            action="connect",
+            result=result,
+        )
+        persisted = store.list_provider_connection_commands("genomilab-store-tests")
+        events = store.list_provider_connection_events("genomilab-store-tests")
+
+        self.assertEqual(persisted[0]["command_id"], command_id)
+        self.assertEqual(persisted[0]["result"], result)
+        self.assertEqual(events[0]["command_id"], command_id)
+        self.assertEqual(
+            events[0]["event_type"], "provider_connection_connect_recorded"
+        )
+        self.assertEqual(events[0]["payload"], result)
+        self.assertNotIn("api_key", repr([persisted, events]))
+        with self.assertRaisesRegex(ValueError, "not redacted"):
+            store.record_provider_connection_command(
+                workspace_session_id="genomilab-store-tests",
+                provider="paperclip",
+                action="connect",
+                result={"provider": "paperclip", "api_key": "must-not-persist"},
+            )
+
+    def test_provider_connection_event_failure_rolls_back_command(self) -> None:
+        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        with store._connect() as connection:
+            connection.execute(
+                """
+                CREATE TRIGGER reject_provider_connection_event
+                BEFORE INSERT ON provider_connection_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'synthetic event failure');
+                END
+                """
+            )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "synthetic event failure"):
+            store.record_provider_connection_command(
+                workspace_session_id="genomilab-store-tests",
+                provider="paperclip",
+                action="connect",
+                result={
+                    "provider": "paperclip",
+                    "connection_state": "configured_unverified",
+                },
+            )
+
+        self.assertEqual(
+            store.list_provider_connection_commands("genomilab-store-tests"), []
+        )
+        self.assertEqual(
+            store.list_provider_connection_events("genomilab-store-tests"), []
+        )
 
     def test_observation_revisions_preserve_history_and_current_view(self) -> None:
         store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)

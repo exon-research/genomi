@@ -18,6 +18,7 @@ const REQUIRED_ELEMENT_IDS = [
   "source-artifact-list", "specimen-list", "assay-list", "coverage-list", "profile-version-count",
   "observation-history-list", "question-form", "question",
   "evidence-library-count", "evidence-library-list", "context-activity-list",
+  "research-tools", "integrations-summary", "integration-list",
   "disclosure-activity-list", "plan-activity-list",
   "disease-scope", "investigation-list", "investigation-count", "activity-status", "version-label",
   "investigation-detail", "detail-close", "detail-title", "detail-scope", "detail-status",

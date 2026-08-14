@@ -29,6 +29,7 @@ class _SyntheticService:
         self.created_assays: list[dict[str, object]] = []
         self.revised_observations: list[tuple[str, dict[str, object]]] = []
         self.context_candidate_requests: list[tuple[str, dict[str, object]]] = []
+        self.integration_requests: list[tuple[str, str, object]] = []
         self.bootstrap_error: Exception | None = None
 
     def close(self) -> None:
@@ -42,6 +43,44 @@ class _SyntheticService:
             "product": "GenomiLab",
             "workspace": {"workspace_id": "workspace-acde1234"},
         }
+
+    def integrations(self) -> dict[str, object]:
+        return {
+            "status": "ready",
+            "integrations": [
+                {
+                    "provider": "paperclip",
+                    "connection_state": "not_configured",
+                    "credential_state": "missing",
+                    "execution_location": "remote",
+                    "policy_state": "blocked_missing_deployment_authorization",
+                    "available_operations": [],
+                    "last_verified_at": None,
+                    "use_scope": "public_evidence",
+                }
+            ],
+        }
+
+    def connect_integration(
+        self, provider: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        self.integration_requests.append((provider, "connect", dict(payload)))
+        return {
+            "provider": provider,
+            "connection_state": "configured_unverified",
+            "credential_state": "stored",
+            "policy_state": "blocked_missing_deployment_authorization",
+        }
+
+    def verify_integration(self, provider: str) -> dict[str, object]:
+        self.integration_requests.append((provider, "verify", None))
+        return {"provider": provider, "connection_state": "ready"}
+
+    def disconnect_integration(
+        self, provider: str, *, confirmed: bool
+    ) -> dict[str, object]:
+        self.integration_requests.append((provider, "disconnect", confirmed))
+        return {"provider": provider, "connection_state": "not_configured"}
 
     def add_profile_observation(self, payload: dict[str, object]) -> dict[str, object]:
         self.created_observations.append(payload)
@@ -405,6 +444,83 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             body=b"{}",
         )
         self.assert_error(investigation_wrong_type, 415, "unsupported_media_type")
+
+    def test_integration_setup_is_authenticated_csrf_protected_and_redacted(
+        self,
+    ) -> None:
+        unauthenticated = self.request("GET", "/api/v1/integrations")
+        self.assert_error(unauthenticated, 401, "authentication_required")
+
+        listing = self.request(
+            "GET", "/api/v1/integrations", headers=self.authenticated_headers()
+        )
+        self.assertEqual(listing.status, 200)
+        self.assertNotIn("api_key", listing.body.decode("utf-8"))
+
+        body = b'{"api_key":"gxl-super-secret"}'
+        missing_csrf = self.request(
+            "POST",
+            "/api/v1/integrations/paperclip/connect",
+            headers={
+                "X-GenomiLab-Session": self.session_header,
+                "Origin": self.origin,
+                "Content-Type": "application/json",
+            },
+            body=body,
+        )
+        self.assert_error(missing_csrf, 403, "invalid_csrf_token")
+
+        connected = self.request(
+            "POST",
+            "/api/v1/integrations/paperclip/connect",
+            headers=self.mutation_headers(),
+            body=body,
+        )
+        self.assertEqual(connected.status, 200)
+        self.assertNotIn("gxl-super-secret", connected.body.decode("utf-8"))
+        self.assertEqual(
+            self.service.integration_requests,
+            [("paperclip", "connect", {"api_key": "gxl-super-secret"})],
+        )
+
+    def test_integration_actions_accept_only_fixed_provider_and_payload_shapes(
+        self,
+    ) -> None:
+        unknown = self.request(
+            "POST",
+            "/api/v1/integrations/arbitrary/connect",
+            headers=self.mutation_headers(),
+            body=b"{}",
+        )
+        self.assert_error(unknown, 404, "not_found")
+
+        verify_fields = self.request(
+            "POST",
+            "/api/v1/integrations/biohub-esm/verify",
+            headers=self.mutation_headers(),
+            body=b'{"sequence":"forbidden"}',
+        )
+        self.assert_error(verify_fields, 400, "invalid_integration_request")
+
+        disconnect_fields = self.request(
+            "POST",
+            "/api/v1/integrations/proto/disconnect",
+            headers=self.mutation_headers(),
+            body=b'{"confirmed":true,"command":"forbidden"}',
+        )
+        self.assert_error(disconnect_fields, 400, "invalid_integration_request")
+
+        verified = self.request(
+            "POST",
+            "/api/v1/integrations/biohub-esm/verify",
+            headers=self.mutation_headers(),
+            body=b"{}",
+        )
+        self.assertEqual(verified.status, 200)
+        self.assertEqual(
+            self.service.integration_requests,
+            [("biohub-esm", "verify", None)],
+        )
 
     def test_context_candidate_route_delegates_scope_compilation_to_the_domain(
         self,

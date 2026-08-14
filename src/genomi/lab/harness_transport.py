@@ -103,12 +103,15 @@ _FORBIDDEN_GENOME_KEY_TOKENS = (
 _FORBIDDEN_SECRET_SUFFIXES = (
     "_access_token",
     "_api_key",
+    "_api_token",
     "_credentials",
     "_password",
     "_private_key",
     "_refresh_token",
     "_secret",
     "_token",
+    "_token_id",
+    "_token_secret",
 )
 
 
@@ -154,8 +157,12 @@ def _safe_json(value: object, *, path: tuple[str, ...] = (), depth: int = 0) -> 
     if isinstance(value, str):
         if len(value) > MAX_TRANSPORT_STRING:
             raise ValueError("transport payload contains an oversized string")
-        if any(ord(character) < 32 and character not in "\t\n\r" for character in value):
-            raise ValueError("transport payload contains unsupported control characters")
+        if any(
+            ord(character) < 32 and character not in "\t\n\r" for character in value
+        ):
+            raise ValueError(
+                "transport payload contains unsupported control characters"
+            )
         return value
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
@@ -168,22 +175,30 @@ def _safe_json(value: object, *, path: tuple[str, ...] = (), depth: int = 0) -> 
             normalized_key = re.sub(r"[^a-z0-9]+", "_", snake_key.lower()).strip("_")
             if (
                 normalized_key in _FORBIDDEN_TRANSPORT_KEYS
-                or any(token in normalized_key for token in _FORBIDDEN_GENOME_KEY_TOKENS)
+                or any(
+                    token in normalized_key for token in _FORBIDDEN_GENOME_KEY_TOKENS
+                )
                 or normalized_key.endswith(_FORBIDDEN_SECRET_SUFFIXES)
             ):
-                raise ValueError(f"{'.'.join((*path, raw_key))} is not safe for harness transport")
+                raise ValueError(
+                    f"{'.'.join((*path, raw_key))} is not safe for harness transport"
+                )
             result[raw_key] = _safe_json(item, path=(*path, raw_key), depth=depth + 1)
         return result
     if isinstance(value, (list, tuple)):
         return [_safe_json(item, path=path, depth=depth + 1) for item in value]
-    raise ValueError(f"transport payload contains unsupported type: {type(value).__name__}")
+    raise ValueError(
+        f"transport payload contains unsupported type: {type(value).__name__}"
+    )
 
 
 def safe_json_value(value: object) -> Any:
     """Validate, detach, size-limit, and return one JSON-compatible value."""
 
     detached = _safe_json(value)
-    encoded = json.dumps(detached, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    encoded = json.dumps(
+        detached, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )
     if len(encoded.encode("utf-8")) > MAX_TRANSPORT_BYTES:
         raise ValueError("transport payload exceeds the maximum encoded size")
     return detached
@@ -209,7 +224,9 @@ def frozen_json_object(value: object, field_name: str) -> Mapping[str, Any]:
 
 def _freeze_json(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+        return MappingProxyType(
+            {key: _freeze_json(item) for key, item in value.items()}
+        )
     if isinstance(value, list):
         return tuple(_freeze_json(item) for item in value)
     return value

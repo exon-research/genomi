@@ -1,6 +1,7 @@
 "use strict";
 
 import { apiRequest, initializePortalSession } from "./api.js";
+import { createConnectionsController } from "./connections-controller.js";
 import { createInvestigationController } from "./investigation-controller.js";
 import { PortalState, InvestigationSession } from "./portal-state.js";
 import { createProfileController } from "./profile-controller.js";
@@ -22,6 +23,7 @@ const sessionStartup = initializePortalSession().then(
 );
 let profileController;
 let investigationController;
+let connectionsController;
 
 document.addEventListener("DOMContentLoaded", () => void initialize());
 
@@ -29,6 +31,7 @@ async function initialize() {
   collectElements();
   elements.alertDismiss.addEventListener("click", hideAlert);
   profileController = createProfileController({state, refresh});
+  connectionsController = createConnectionsController();
   investigationController = createInvestigationController({
     state,
     session,
@@ -36,6 +39,7 @@ async function initialize() {
     synchronizeProfile: () => profileController.synchronizeFormState(),
   });
   profileController.bind();
+  connectionsController.bind();
   investigationController.bind();
   const {error} = await sessionStartup;
   if (error) {
@@ -44,6 +48,7 @@ async function initialize() {
     return;
   }
   await refresh();
+  await connectionsController.load();
 }
 
 async function refresh() {

@@ -25,6 +25,7 @@ from .models import (
     utc_now,
 )
 from .profile_entities import ProfileEntityStoreMixin
+from .provider_connection_store import ProviderConnectionStoreMixin
 from .schema_migrations import upgrade_lab_schema
 from .snapshot_store import SnapshotStoreMixin
 
@@ -47,6 +48,7 @@ class GenomiLabStore(
     CapabilityExecutionStoreMixin,
     DiseaseRelationStoreMixin,
     EvidenceStoreMixin,
+    ProviderConnectionStoreMixin,
 ):
     """SQLite-backed GenomiLab domain state with one connection per operation."""
 
@@ -104,9 +106,7 @@ class GenomiLabStore(
                 self._transaction_local.connection = None
 
     @contextmanager
-    def current_user_authority_guard(
-        self, guard: Callable[[], None]
-    ) -> Iterator[None]:
+    def current_user_authority_guard(self, guard: Callable[[], None]) -> Iterator[None]:
         """Apply one service-owned authority check to this thread's store work."""
 
         if not callable(guard):

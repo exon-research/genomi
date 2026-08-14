@@ -118,9 +118,7 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
         self._seed()
         wrong_key = StaticEncryptionKeyProvider(b"w" * 32)
         with self.assertRaises(EncryptedSQLiteAuthenticationError):
-            with EncryptedSQLiteDatabase(
-                self.path, key_provider=wrong_key
-            ).connect():
+            with EncryptedSQLiteDatabase(self.path, key_provider=wrong_key).connect():
                 pass
 
     def test_invalid_or_truncated_container_fails_closed(self) -> None:
@@ -133,7 +131,9 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
 
         self.assertEqual(self.path.read_bytes(), b"not an encrypted database")
 
-    def test_failed_transaction_and_failed_atomic_replace_preserve_prior_state(self) -> None:
+    def test_failed_transaction_and_failed_atomic_replace_preserve_prior_state(
+        self,
+    ) -> None:
         self._seed("before")
         original = self.path.read_bytes()
 
@@ -280,7 +280,9 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
         self.assertEqual(value, 2)
 
     def test_invalid_provider_key_is_rejected_before_creating_database(self) -> None:
-        database = EncryptedSQLiteDatabase(self.path, key_provider=_InvalidKeyProvider())
+        database = EncryptedSQLiteDatabase(
+            self.path, key_provider=_InvalidKeyProvider()
+        )
 
         with self.assertRaises(EncryptionKeyUnavailableError):
             with database.connect() as connection:
@@ -300,10 +302,9 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
             get_password=mock.Mock(side_effect=get_password),
             set_password=mock.Mock(side_effect=set_password),
         )
-        with mock.patch.dict("sys.modules", {"keyring": fake_keyring}):
-            provider = OSKeyringKeyProvider("test.genomilab")
-            first = provider.get_or_create_key("a" * 32)
-            second = provider.get_or_create_key("a" * 32)
+        provider = OSKeyringKeyProvider("test.genomilab", keyring_backend=fake_keyring)
+        first = provider.get_or_create_key("a" * 32)
+        second = provider.get_or_create_key("a" * 32)
 
         self.assertEqual(first, second)
         self.assertEqual(len(first), 32)
@@ -316,11 +317,10 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
     def test_os_keyring_provider_fails_closed_without_a_working_backend(self) -> None:
         fake_keyring = mock.Mock()
         fake_keyring.get_password.side_effect = RuntimeError("backend unavailable")
-        with (
-            mock.patch.dict("sys.modules", {"keyring": fake_keyring}),
-            self.assertRaises(EncryptionKeyUnavailableError),
-        ):
-            OSKeyringKeyProvider("test.genomilab").get_or_create_key("b" * 32)
+        with self.assertRaises(EncryptionKeyUnavailableError):
+            OSKeyringKeyProvider(
+                "test.genomilab", keyring_backend=fake_keyring
+            ).get_or_create_key("b" * 32)
 
 
 @unittest.skipUnless(os.name == "posix", "private modes require a POSIX filesystem")

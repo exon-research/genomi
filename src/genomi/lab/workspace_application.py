@@ -75,6 +75,7 @@ class WorkspaceApplication:
     active_context_receipt: Callable[[JsonObject, JsonObject], JsonObject]
     harness_manifest: Callable[[], JsonObject]
     evidence_manifest: Callable[[], JsonObject]
+    integration_manifest: Callable[[], JsonObject]
 
     def bootstrap(self) -> JsonObject:
         context = self.describe_context()
@@ -113,6 +114,15 @@ class WorkspaceApplication:
         ]
         workspace["privacy_activity"] = self.store.workspace_activity(user_id)
         workspace["attention"] = self._attention(investigation_views)
+        integrations = self.integration_manifest()
+        provider_connections = integrations.get("provider_connections")
+        by_provider = {
+            str(item.get("provider")): item
+            for item in (
+                provider_connections if isinstance(provider_connections, list) else []
+            )
+            if isinstance(item, dict)
+        }
         return {
             "status": "ready",
             "product": "GenomiLab",
@@ -125,8 +135,9 @@ class WorkspaceApplication:
                 "installed_harness": self.harness_manifest(),
                 "collaboration": "capability_unavailable",
                 "public_evidence": self.evidence_manifest(),
-                "proto": "capability_unavailable",
-                "esm": "capability_unavailable",
+                "research_tools": integrations,
+                "proto": by_provider.get("proto", "capability_unavailable"),
+                "esm": by_provider.get("biohub-esm", "capability_unavailable"),
             },
             "privacy": {
                 "processing": (
@@ -379,8 +390,7 @@ class WorkspaceApplication:
             unexpected = set(payload) - {"question", "disease_scope"}
             if unexpected:
                 raise ValueError(
-                    "unsupported investigation fields: "
-                    + ", ".join(sorted(unexpected))
+                    "unsupported investigation fields: " + ", ".join(sorted(unexpected))
                 )
             return self.store.create_investigation(
                 user_id,
@@ -420,8 +430,7 @@ class WorkspaceApplication:
             receipt.get("revoked_at")
             or receipt.get("workspace_session_id") != self.session_id
             or receipt.get("user_id") != investigation.get("user_id")
-            or receipt.get("investigation_id")
-            != investigation.get("investigation_id")
+            or receipt.get("investigation_id") != investigation.get("investigation_id")
             or receipt.get("patient_molecular_snapshot_id") != snapshot_id
         ):
             return "renewal_required"
@@ -508,7 +517,9 @@ class WorkspaceApplication:
         try:
             return self.approved_investigation_profile(investigation_id)
         except ValueError as exc:
-            raise LabError("private_context_required", str(exc), http_status=409) from exc
+            raise LabError(
+                "private_context_required", str(exc), http_status=409
+            ) from exc
 
     def approved_investigation_profile(self, investigation_id: str) -> JsonObject:
         investigation = self.investigation(investigation_id)

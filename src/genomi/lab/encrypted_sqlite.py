@@ -35,6 +35,11 @@ from ..runtime.private_storage import (
     ensure_private_directory,
     refuse_symlink,
 )
+from .native_keyring import (
+    NativeKeyringBackend,
+    NativeKeyringUnavailableError,
+    resolve_native_keyring_backend,
+)
 
 _MAGIC = b"GENOMILAB-ENCRYPTED-SQLITE\x00"
 _FORMAT_VERSION = b"\x01"
@@ -47,6 +52,7 @@ _LOCKS_GUARD = threading.Lock()
 _PATH_LOCKS: dict[Path, threading.RLock] = {}
 _ACTIVE_LOCK_DESCRIPTORS: set[int] = set()
 _CONNECT_LOCAL = threading.local()
+_PRIVATE_LOCK_LOCAL = threading.local()
 _LOCKS_PID = os.getpid()
 
 
@@ -94,14 +100,21 @@ class OSKeyringKeyProvider:
     encrypted database.
     """
 
-    def __init__(self, service_name: str = "com.genomi.genomilab") -> None:
+    def __init__(
+        self,
+        service_name: str = "com.genomi.genomilab",
+        *,
+        keyring_backend: NativeKeyringBackend | None = None,
+    ) -> None:
         self.service_name = service_name
+        self._keyring_backend = keyring_backend
         self._lock = threading.Lock()
 
     def get_or_create_key(self, key_id: str) -> bytes:
         try:
-            import keyring
-        except ImportError as exc:  # pragma: no cover - declared dependency
+            keyring_backend = self._keyring_backend or resolve_native_keyring_backend()
+            self._keyring_backend = keyring_backend
+        except NativeKeyringUnavailableError as exc:
             raise EncryptionKeyUnavailableError(
                 "The OS secret-store integration is unavailable."
             ) from exc
@@ -109,7 +122,7 @@ class OSKeyringKeyProvider:
         account = f"database:{key_id}"
         with self._lock:
             try:
-                encoded = keyring.get_password(self.service_name, account)
+                encoded = keyring_backend.get_password(self.service_name, account)
             except Exception as exc:
                 raise EncryptionKeyUnavailableError(
                     "The operating-system secret store could not be read."
@@ -119,8 +132,8 @@ class OSKeyringKeyProvider:
                 key = secrets.token_bytes(_AES_KEY_BYTES)
                 encoded = base64.urlsafe_b64encode(key).decode("ascii")
                 try:
-                    keyring.set_password(self.service_name, account, encoded)
-                    encoded = keyring.get_password(self.service_name, account)
+                    keyring_backend.set_password(self.service_name, account, encoded)
+                    encoded = keyring_backend.get_password(self.service_name, account)
                 except Exception as exc:
                     raise EncryptionKeyUnavailableError(
                         "The operating-system secret store could not save the database key."
@@ -234,42 +247,10 @@ class EncryptedSQLiteDatabase:
     def _cross_process_lock(self) -> Iterator[None]:
         """Hold one path-keyed OS lock across the complete read/replace cycle."""
 
-        if fcntl is None:
-            raise EncryptedSQLiteError(
-                "GenomiLab encrypted persistence requires POSIX cross-process locking."
-            )
-        ensure_private_directory(self._lock_path.parent)
-        refuse_symlink(self._lock_path)
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        with _LOCKS_GUARD:
-            descriptor = os.open(self._lock_path, flags, PRIVATE_FILE_MODE)
-            _ACTIVE_LOCK_DESCRIPTORS.add(descriptor)
-        try:
-            os.fchmod(descriptor, PRIVATE_FILE_MODE)
-            deadline = time.monotonic() + self._timeout_seconds
-            while True:
-                try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except OSError as exc:
-                    if exc.errno not in {errno.EACCES, errno.EAGAIN}:
-                        raise
-                    if time.monotonic() >= deadline:
-                        raise EncryptedSQLiteLockTimeoutError(
-                            "Timed out waiting for the GenomiLab database transaction lock."
-                        ) from exc
-                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
-            try:
-                yield
-            finally:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-        finally:
-            with _LOCKS_GUARD:
-                try:
-                    os.close(descriptor)
-                finally:
-                    _ACTIVE_LOCK_DESCRIPTORS.discard(descriptor)
+        with exclusive_private_file_lock(
+            self._lock_path, timeout_seconds=self._timeout_seconds
+        ):
+            yield
 
     def _read_container(self) -> bytes:
         refuse_symlink(self.path)
@@ -396,6 +377,81 @@ class EncryptedSQLiteDatabase:
             os.close(descriptor)
 
 
+@contextmanager
+def exclusive_private_file_lock(
+    path: str | Path, *, timeout_seconds: float = 10
+) -> Iterator[None]:
+    """Serialize one private local resource across threads and processes."""
+
+    lock_path = Path(path).absolute()
+    process_lock = _lock_for_path(lock_path)
+    with process_lock:
+        depths = dict(getattr(_PRIVATE_LOCK_LOCAL, "depths", {}))
+        if depths.get(lock_path):
+            depths[lock_path] += 1
+            _PRIVATE_LOCK_LOCAL.depths = depths
+            try:
+                yield
+            finally:
+                current = dict(getattr(_PRIVATE_LOCK_LOCAL, "depths", {}))
+                current[lock_path] -= 1
+                _PRIVATE_LOCK_LOCAL.depths = current
+            return
+        depths[lock_path] = 1
+        _PRIVATE_LOCK_LOCAL.depths = depths
+        try:
+            with _exclusive_os_file_lock(lock_path, timeout_seconds=timeout_seconds):
+                yield
+        finally:
+            current = dict(getattr(_PRIVATE_LOCK_LOCAL, "depths", {}))
+            current.pop(lock_path, None)
+            _PRIVATE_LOCK_LOCAL.depths = current
+
+
+@contextmanager
+def _exclusive_os_file_lock(
+    lock_path: Path, *, timeout_seconds: float
+) -> Iterator[None]:
+    """Hold one hardened POSIX advisory lock for an already serialized caller."""
+
+    if fcntl is None:
+        raise EncryptedSQLiteError(
+            "GenomiLab encrypted persistence requires POSIX cross-process locking."
+        )
+    ensure_private_directory(lock_path.parent)
+    refuse_symlink(lock_path)
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    with _LOCKS_GUARD:
+        descriptor = os.open(lock_path, flags, PRIVATE_FILE_MODE)
+        _ACTIVE_LOCK_DESCRIPTORS.add(descriptor)
+    try:
+        os.fchmod(descriptor, PRIVATE_FILE_MODE)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise EncryptedSQLiteLockTimeoutError(
+                        "Timed out waiting for the GenomiLab private resource lock."
+                    ) from exc
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        with _LOCKS_GUARD:
+            try:
+                os.close(descriptor)
+            finally:
+                _ACTIVE_LOCK_DESCRIPTORS.discard(descriptor)
+
+
 def _validated_key(key: bytes) -> bytes:
     if not isinstance(key, bytes) or len(key) != _AES_KEY_BYTES:
         raise EncryptionKeyUnavailableError(
@@ -415,6 +471,7 @@ def _reset_process_locks_after_unregistered_fork() -> None:
     """Defensively reset inherited thread state if a host bypassed at-fork hooks."""
 
     global _LOCKS_GUARD, _PATH_LOCKS, _ACTIVE_LOCK_DESCRIPTORS, _CONNECT_LOCAL
+    global _PRIVATE_LOCK_LOCAL
     global _LOCKS_PID
     current_pid = os.getpid()
     if current_pid == _LOCKS_PID:
@@ -428,6 +485,7 @@ def _reset_process_locks_after_unregistered_fork() -> None:
     _PATH_LOCKS = {}
     _ACTIVE_LOCK_DESCRIPTORS = set()
     _CONNECT_LOCAL = threading.local()
+    _PRIVATE_LOCK_LOCAL = threading.local()
     _LOCKS_PID = current_pid
 
 
@@ -439,8 +497,11 @@ def _after_fork_parent() -> None:  # pragma: no cover - behavior asserted indire
     _LOCKS_GUARD.release()
 
 
-def _after_fork_child() -> None:  # pragma: no cover - behavior asserted in child process
+def _after_fork_child() -> (
+    None
+):  # pragma: no cover - behavior asserted in child process
     global _LOCKS_GUARD, _PATH_LOCKS, _ACTIVE_LOCK_DESCRIPTORS, _CONNECT_LOCAL
+    global _PRIVATE_LOCK_LOCAL
     global _LOCKS_PID
     for descriptor in tuple(_ACTIVE_LOCK_DESCRIPTORS):
         try:
@@ -451,6 +512,7 @@ def _after_fork_child() -> None:  # pragma: no cover - behavior asserted in chil
     _PATH_LOCKS = {}
     _ACTIVE_LOCK_DESCRIPTORS = set()
     _CONNECT_LOCAL = threading.local()
+    _PRIVATE_LOCK_LOCAL = threading.local()
     _LOCKS_PID = os.getpid()
 
 

@@ -108,6 +108,8 @@ class CapabilityDispatchMixin:
                 expected_plan_version_id or current_plan_version_id
             )
             candidate = self.evidence_disclosure_candidate(investigation_id, params)
+            if candidate.get("selected_provider") is None:
+                return {"status": "source_unavailable", "candidate": candidate}
             if candidate.get("selected_provider") == "fixture":
                 return self.retrieve_public_evidence(
                     investigation_id,

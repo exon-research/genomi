@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from unittest import mock
 
 from genomi.lab.encrypted_sqlite import StaticEncryptionKeyProvider
+from genomi.lab.evidence_service import DirectEvidenceSource
 from genomi.lab.harness import (
     HarnessArtifactKind,
     HarnessEventKind,
@@ -15,6 +16,7 @@ from genomi.lab.harness import (
     SimulatedHarnessAdapter,
 )
 from genomi.lab.harness_adapter import HostArtifact
+from genomi.lab.provider_policy import SourceFamily
 from genomi.lab.service import GenomiLabService
 from genomi.lab.store import GenomiLabStore
 
@@ -187,6 +189,24 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
             harness_adapter=self.adapter,
         )
         self.addCleanup(self.service.close)
+        self.service.configure_evidence_gateway(
+            direct_sources={
+                SourceFamily.LITERATURE: DirectEvidenceSource(
+                    source_family=SourceFamily.LITERATURE,
+                    provider="synthetic-literature",
+                    destination="https://evidence.invalid/",
+                    transport=lambda _operation, _request: {
+                        "status": "in_scope_empty",
+                        "source_family": "literature",
+                        "records": [],
+                        "coverage": {
+                            "consulted": ["synthetic artifact-quarantine fixture"],
+                            "misses": ["Synthetic condition"],
+                        },
+                    },
+                )
+            }
+        )
         self.service.bootstrap_workspace()
         observation = self.service.add_profile_observation(
             {

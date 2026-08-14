@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from genomi.lab.evidence_gateway import (
     ProviderGateway,
@@ -19,6 +21,7 @@ from genomi.lab.provider_policy import (
     AuthorizationBasis,
     DeploymentAuthorization,
     DisclosureApproval,
+    EvidenceDataClass,
     EvidenceRequest,
     EvidenceRoute,
     PAPERCLIP_PROVIDER,
@@ -28,6 +31,7 @@ from genomi.lab.provider_policy import (
     SourceFamily,
     disclosure_fingerprint,
     evaluate_live_provider_request,
+    live_provider_policy_binding,
     select_preferred_evidence_route,
 )
 from genomi.lab.model_policy import (
@@ -39,6 +43,21 @@ from genomi.lab.model_policy import (
     ModelTask,
     execute_model_request,
 )
+
+
+POLICY_NOW = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
+POLICY_EFFECTIVE_AT = datetime(2026, 1, 1, tzinfo=timezone.utc)
+POLICY_EXPIRES_AT = datetime(2027, 1, 1, tzinfo=timezone.utc)
+PUBLIC_PURPOSE = "Build a public evidence packet"
+PATIENT_PURPOSE = "Investigate disease against the approved molecular profile"
+
+
+class _UndefinedOffsetTimezone(tzinfo):
+    def utcoffset(self, _value: datetime | None) -> None:
+        return None
+
+    def dst(self, _value: datetime | None) -> None:
+        return None
 
 
 class NetworkSpy:
@@ -68,6 +87,40 @@ def _paperclip_deployment() -> DeploymentAuthorization:
         permitted_source_families=frozenset(
             {SourceFamily.LITERATURE, SourceFamily.TRIAL_REGISTRY}
         ),
+        permitted_operations=frozenset({"search"}),
+        permitted_purposes=frozenset({PUBLIC_PURPOSE, PATIENT_PURPOSE}),
+        permitted_data_classes=frozenset(EvidenceDataClass),
+        effective_at=POLICY_EFFECTIVE_AT,
+        expires_at=POLICY_EXPIRES_AT,
+        revoked_at=None,
+        policy_version_id="paperclip-policy-2026-08",
+        aup_version_id="paperclip-aup-2026-08",
+        terms_version_id="paperclip-terms-2026-08",
+        privacy_version_id="paperclip-privacy-2026-08",
+        live_use_authorized=True,
+    )
+
+
+def _patient_data_contract(
+    *, contract_id: str = "patient-data-contract-2"
+) -> PatientDataContract:
+    return PatientDataContract(
+        provider=PAPERCLIP_PROVIDER,
+        contract_id=contract_id,
+        permitted_source_families=frozenset({SourceFamily.LITERATURE}),
+        permitted_operations=frozenset({"search"}),
+        permitted_purposes=frozenset({PATIENT_PURPOSE}),
+        permitted_data_classes=frozenset(
+            {EvidenceDataClass.PATIENT_INFLUENCED_PUBLIC_EVIDENCE_QUERY}
+        ),
+        effective_at=POLICY_EFFECTIVE_AT,
+        expires_at=POLICY_EXPIRES_AT,
+        revoked_at=None,
+        policy_version_id="patient-data-policy-2026-08",
+        aup_version_id="patient-data-aup-2026-08",
+        terms_version_id="patient-data-terms-2026-08",
+        privacy_version_id="patient-data-privacy-2026-08",
+        patient_influenced_data_authorized=True,
     )
 
 
@@ -99,20 +152,23 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         self.public_request = EvidenceRequest(
             query="synthetic disease mechanism",
             source_family=SourceFamily.LITERATURE,
-            purpose="Build a public evidence packet",
+            purpose=PUBLIC_PURPOSE,
+            operation="search",
         )
         self.patient_request = EvidenceRequest(
             query="synthetic disease and patient finding rs900000001",
             source_family=SourceFamily.LITERATURE,
-            purpose="Investigate disease against the approved molecular profile",
+            purpose=PATIENT_PURPOSE,
+            operation="search",
             patient_influenced=True,
         )
 
     def test_live_paperclip_fails_closed_without_deployment_authorization(self) -> None:
         network = NetworkSpy(_response())
 
-        result = ProviderGateway().retrieve_live(
+        result = ProviderGateway(clock=lambda: POLICY_NOW).retrieve_live(
             provider=PAPERCLIP_PROVIDER,
+            operation="search",
             request=self.public_request,
             transport=network,
             deployment_authorization=None,
@@ -125,13 +181,34 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         )
         self.assertEqual(network.calls, [])
 
-    def test_patient_influenced_call_needs_independent_contract_and_exact_approval(self) -> None:
+    def test_gateway_rejects_operation_mismatch_before_transport(self) -> None:
         network = NetworkSpy(_response())
-        gateway = ProviderGateway()
+
+        result = ProviderGateway(clock=lambda: POLICY_NOW).retrieve_live(
+            provider=PAPERCLIP_PROVIDER,
+            operation="lookup",
+            request=self.public_request,
+            transport=network,
+            deployment_authorization=_paperclip_deployment(),
+        )
+
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state,
+            ProviderPolicyState.BLOCKED_REQUEST_OPERATION_MISMATCH,
+        )
+        self.assertEqual(network.calls, [])
+
+    def test_patient_influenced_call_needs_independent_contract_and_exact_approval(
+        self,
+    ) -> None:
+        network = NetworkSpy(_response())
+        gateway = ProviderGateway(clock=lambda: POLICY_NOW)
         deployment = _paperclip_deployment()
 
         missing_contract = gateway.retrieve_live(
             provider=PAPERCLIP_PROVIDER,
+            operation="search",
             request=self.patient_request,
             transport=network,
             deployment_authorization=deployment,
@@ -141,13 +218,12 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             ProviderPolicyState.BLOCKED_MISSING_PATIENT_DATA_CONTRACT,
         )
 
-        reused_deployment = PatientDataContract(
-            provider=PAPERCLIP_PROVIDER,
-            contract_id=deployment.authorization_id,
-            permitted_source_families=frozenset({SourceFamily.LITERATURE}),
+        reused_deployment = _patient_data_contract(
+            contract_id=deployment.authorization_id
         )
         not_independent = gateway.retrieve_live(
             provider=PAPERCLIP_PROVIDER,
+            operation="search",
             request=self.patient_request,
             transport=network,
             deployment_authorization=deployment,
@@ -158,11 +234,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             ProviderPolicyState.BLOCKED_MISSING_PATIENT_DATA_CONTRACT,
         )
 
-        contract = PatientDataContract(
-            provider=PAPERCLIP_PROVIDER,
-            contract_id="patient-data-contract-2",
-            permitted_source_families=frozenset({SourceFamily.LITERATURE}),
-        )
+        contract = _patient_data_contract()
         stale_approval = DisclosureApproval(
             provider=PAPERCLIP_PROVIDER,
             approval_id="approval-1",
@@ -172,6 +244,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         )
         wrong_payload = gateway.retrieve_live(
             provider=PAPERCLIP_PROVIDER,
+            operation="search",
             request=self.patient_request,
             transport=network,
             deployment_authorization=deployment,
@@ -193,6 +266,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         )
         allowed = gateway.retrieve_live(
             provider=PAPERCLIP_PROVIDER,
+            operation="search",
             request=self.patient_request,
             transport=network,
             deployment_authorization=deployment,
@@ -201,6 +275,66 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         )
         self.assertEqual(allowed.status, EvidenceStatus.DATA_RETURNED)
         self.assertEqual(network.calls, [self.patient_request])
+
+    def test_disclosure_approval_rejects_truthy_non_boolean_without_transport(
+        self,
+    ) -> None:
+        network = NetworkSpy(_response())
+
+        with self.assertRaisesRegex(ValueError, "approved must be a boolean"):
+            DisclosureApproval(
+                provider=PAPERCLIP_PROVIDER,
+                approval_id="approval-invalid-boolean",
+                request_fingerprint=disclosure_fingerprint(
+                    PAPERCLIP_PROVIDER, self.patient_request
+                ),
+                approved="false",  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(network.calls, [])
+
+    def test_direct_egress_rejects_truthy_non_boolean_before_transport(self) -> None:
+        network = NetworkSpy(_response())
+
+        result = ProviderGateway().retrieve_direct(
+            provider="pubmed",
+            request=self.patient_request,
+            transport=network,
+            exact_egress_approved="false",  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state,
+            ProviderPolicyState.BLOCKED_MISSING_EXACT_EGRESS_APPROVAL,
+        )
+        self.assertEqual(network.calls, [])
+
+    def test_policy_binding_changes_with_each_injected_provider(self) -> None:
+        deployment = _paperclip_deployment()
+        contract = _patient_data_contract()
+        baseline = live_provider_policy_binding(
+            PAPERCLIP_PROVIDER,
+            self.patient_request,
+            deployment_authorization=deployment,
+            patient_data_contract=contract,
+        )
+
+        changed_deployment = live_provider_policy_binding(
+            PAPERCLIP_PROVIDER,
+            self.patient_request,
+            deployment_authorization=replace(deployment, provider="different-provider"),
+            patient_data_contract=contract,
+        )
+        changed_contract = live_provider_policy_binding(
+            PAPERCLIP_PROVIDER,
+            self.patient_request,
+            deployment_authorization=deployment,
+            patient_data_contract=replace(contract, provider="different-provider"),
+        )
+
+        self.assertNotEqual(baseline, changed_deployment)
+        self.assertNotEqual(baseline, changed_contract)
 
     def test_fixture_and_direct_source_share_typed_normalization(self) -> None:
         fixture = normalize_fixture_response(self.public_request, _response())
@@ -221,7 +355,9 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         self.assertEqual(fixture.access_mode, AccessMode.FIXTURE)
         self.assertEqual(direct.access_mode, AccessMode.DIRECT_PRIMARY_SOURCE)
 
-    def test_provider_prompt_injection_is_inert_and_executable_fields_are_dropped(self) -> None:
+    def test_provider_prompt_injection_is_inert_and_executable_fields_are_dropped(
+        self,
+    ) -> None:
         response = _response()
         record = response["records"][0]
         assert isinstance(record, dict)
@@ -239,7 +375,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         self.assertFalse(excerpt["instructions_actionable"])
         self.assertIn("Ignore previous instructions", excerpt["text"])
         self.assertNotIn("tool_call", serialized)
-        self.assertNotIn("delete_workspace\"", serialized)
+        self.assertNotIn('delete_workspace"', serialized)
         self.assertNotIn("patient's genome", serialized)
 
     def test_paperclip_is_preferred_only_when_eligible(self) -> None:
@@ -279,6 +415,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
                 query="synthetic condition",
                 source_family=SourceFamily.TRIAL_REGISTRY,
                 purpose="Find candidate trials",
+                operation="search",
             ),
             {
                 "status": "in_scope_empty",
@@ -293,7 +430,9 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         self.assertEqual(envelope["finding_state"], "not_observed_in_consulted_scope")
         self.assertFalse(envelope["negative_inference"]["allowed"])
 
-    def test_weak_source_states_and_unavailable_results_are_never_independently_answer_ready(self) -> None:
+    def test_weak_source_states_and_unavailable_results_are_never_independently_answer_ready(
+        self,
+    ) -> None:
         cases = (
             (SourceDocumentState.ABSTRACT_ONLY, SourceFamily.LITERATURE),
             (SourceDocumentState.PREPRINT, SourceFamily.LITERATURE),
@@ -305,6 +444,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
                     query="synthetic evidence",
                     source_family=family,
                     purpose="Test source-state handling",
+                    operation="search",
                 )
                 raw = {
                     "status": "data_returned",
@@ -345,15 +485,169 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             query="synthetic trial",
             source_family=SourceFamily.CHEMBL,
             purpose="Review compounds",
+            operation="search",
         )
         decision = evaluate_live_provider_request(
             PAPERCLIP_PROVIDER,
             request,
+            operation="search",
+            current_time=POLICY_NOW,
             deployment_authorization=_paperclip_deployment(),
         )
-        self.assertEqual(
-            decision.state, ProviderPolicyState.BLOCKED_DEPLOYMENT_SCOPE
+        self.assertEqual(decision.state, ProviderPolicyState.BLOCKED_DEPLOYMENT_SCOPE)
+
+    def test_deployment_scope_fails_closed_for_operation_data_class_and_purpose(
+        self,
+    ) -> None:
+        baseline = _paperclip_deployment()
+        cases = (
+            (
+                self.public_request,
+                replace(baseline, permitted_operations=frozenset({"lookup"})),
+                "search",
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_OPERATION_SCOPE,
+            ),
+            (
+                self.patient_request,
+                replace(
+                    baseline,
+                    permitted_data_classes=frozenset({EvidenceDataClass.PUBLIC_QUERY}),
+                ),
+                "search",
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_DATA_CLASS_SCOPE,
+            ),
+            (
+                self.public_request,
+                replace(baseline, permitted_purposes=frozenset({"Different purpose"})),
+                "search",
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_PURPOSE_SCOPE,
+            ),
+            (
+                self.public_request,
+                baseline,
+                "lookup",
+                ProviderPolicyState.BLOCKED_REQUEST_OPERATION_MISMATCH,
+            ),
         )
+        for request, deployment, operation, expected in cases:
+            with self.subTest(expected=expected.value):
+                decision = evaluate_live_provider_request(
+                    PAPERCLIP_PROVIDER,
+                    request,
+                    operation=operation,
+                    current_time=POLICY_NOW,
+                    deployment_authorization=deployment,
+                )
+                self.assertEqual(decision.state, expected)
+
+    def test_deployment_lifecycle_fails_closed_when_inactive(self) -> None:
+        baseline = _paperclip_deployment()
+        cases = (
+            (
+                replace(
+                    baseline,
+                    effective_at=POLICY_NOW + timedelta(days=1),
+                    expires_at=POLICY_NOW + timedelta(days=2),
+                ),
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_NOT_YET_EFFECTIVE,
+            ),
+            (
+                replace(
+                    baseline,
+                    effective_at=POLICY_NOW - timedelta(days=2),
+                    expires_at=POLICY_NOW,
+                ),
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_EXPIRED,
+            ),
+            (
+                replace(baseline, revoked_at=POLICY_NOW),
+                ProviderPolicyState.BLOCKED_DEPLOYMENT_REVOKED,
+            ),
+        )
+        for deployment, expected in cases:
+            with self.subTest(expected=expected.value):
+                decision = evaluate_live_provider_request(
+                    PAPERCLIP_PROVIDER,
+                    self.public_request,
+                    operation="search",
+                    current_time=POLICY_NOW,
+                    deployment_authorization=deployment,
+                )
+                self.assertEqual(decision.state, expected)
+
+    def test_policy_times_reject_timezone_without_a_utc_offset(self) -> None:
+        invalid_time = datetime(2026, 8, 14, tzinfo=_UndefinedOffsetTimezone())
+
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            replace(_paperclip_deployment(), effective_at=invalid_time)
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            evaluate_live_provider_request(
+                PAPERCLIP_PROVIDER,
+                self.public_request,
+                operation="search",
+                current_time=invalid_time,
+                deployment_authorization=_paperclip_deployment(),
+            )
+
+    def test_patient_contract_scope_and_lifecycle_fail_closed(self) -> None:
+        deployment = _paperclip_deployment()
+        baseline = _patient_data_contract()
+        approval = DisclosureApproval(
+            provider=PAPERCLIP_PROVIDER,
+            approval_id="approval-patient-scope",
+            request_fingerprint=disclosure_fingerprint(
+                PAPERCLIP_PROVIDER, self.patient_request
+            ),
+        )
+        cases = (
+            (
+                replace(baseline, permitted_operations=frozenset({"lookup"})),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_OPERATION_SCOPE,
+            ),
+            (
+                replace(
+                    baseline,
+                    permitted_data_classes=frozenset({EvidenceDataClass.PUBLIC_QUERY}),
+                ),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_DATA_CLASS_SCOPE,
+            ),
+            (
+                replace(baseline, permitted_purposes=frozenset({"Different purpose"})),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_PURPOSE_SCOPE,
+            ),
+            (
+                replace(
+                    baseline,
+                    effective_at=POLICY_NOW + timedelta(days=1),
+                    expires_at=POLICY_NOW + timedelta(days=2),
+                ),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_NOT_YET_EFFECTIVE,
+            ),
+            (
+                replace(
+                    baseline,
+                    effective_at=POLICY_NOW - timedelta(days=2),
+                    expires_at=POLICY_NOW,
+                ),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_EXPIRED,
+            ),
+            (
+                replace(baseline, revoked_at=POLICY_NOW),
+                ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_REVOKED,
+            ),
+        )
+        for contract, expected in cases:
+            with self.subTest(expected=expected.value):
+                decision = evaluate_live_provider_request(
+                    PAPERCLIP_PROVIDER,
+                    self.patient_request,
+                    operation="search",
+                    current_time=POLICY_NOW,
+                    deployment_authorization=deployment,
+                    patient_data_contract=contract,
+                    disclosure_approval=approval,
+                )
+                self.assertEqual(decision.state, expected)
 
 
 class GenomiLabModelPolicyTests(unittest.TestCase):
@@ -453,9 +747,7 @@ class GenomiLabModelPolicyTests(unittest.TestCase):
         result = execute_model_request(request, deployment, runner)
 
         self.assertEqual(result.policy.state, ModelPolicyState.ALLOWED)
-        self.assertEqual(
-            result.output, {"artifact_id": "synthetic-model-artifact"}
-        )
+        self.assertEqual(result.output, {"artifact_id": "synthetic-model-artifact"})
         self.assertEqual(runner.calls, [request])
         serialized = result.to_dict()
         self.assertFalse(serialized["independent_clinical_claim_ready"])

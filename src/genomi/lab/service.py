@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import secrets
 import threading
+from contextlib import ExitStack, contextmanager
 from typing import Callable
+from collections.abc import Iterator
 
 from ..operations import OperationError, call_operation
 from .agi_authority import (
@@ -16,6 +18,11 @@ from .agi_authority import (
 )
 from .models import JsonObject
 from .context_candidate_receipts import ContextCandidateReceiptIssuer
+from .encrypted_sqlite import (
+    EncryptedSQLiteError,
+    EncryptedSQLiteLockTimeoutError,
+)
+from .esm_transport import BiohubESMTransport
 from .evidence_service import EvidenceApplicationMixin
 from .harness import HarnessAdapter, InstalledCodexAppServerAdapter
 from .harness_service import HarnessApplicationMixin
@@ -25,7 +32,18 @@ from .investigation_capabilities import (
     _HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
 )
 from .portal_context import PortalContextApplicationMixin
+from .paperclip_adapter import PaperclipAdapter
+from .paperclip_transport import GxlPaperclipTransport
 from .profile_context_application import ProfileContextApplication
+from .proto_transport import ModalProtoTransport
+from .provider_connections import ProviderConnectionError, ProviderConnections
+from .provider_credentials import (
+    OSKeyringProviderCredentialStore,
+    PROVIDER_IDS,
+    ProviderCredentialError,
+    provider_credential_lock,
+)
+from .provider_policy import DeploymentAuthorization, PatientDataContract
 from .service_errors import LabError, patient_safe_operation_message
 from .store import GenomiLabStore
 from .user_authority import CurrentUserAuthorityMixin
@@ -48,6 +66,12 @@ class GenomiLabService(
         session_id: str | None = None,
         operation_call: Callable[..., JsonObject] = call_operation,
         harness_adapter: HarnessAdapter | None = None,
+        provider_credential_store: OSKeyringProviderCredentialStore | None = None,
+        paperclip_deployment_authorization: DeploymentAuthorization | None = None,
+        paperclip_patient_data_contract: PatientDataContract | None = None,
+        paperclip_transport: GxlPaperclipTransport | None = None,
+        biohub_esm_transport: BiohubESMTransport | None = None,
+        proto_transport: ModalProtoTransport | None = None,
     ) -> None:
         self._initialize_current_user_authority()
         self.store = store or GenomiLabStore()
@@ -64,6 +88,33 @@ class GenomiLabService(
         self.harness_adapter = (
             harness_adapter or InstalledCodexAppServerAdapter.discover()
         )
+        self._paperclip_transport = paperclip_transport or GxlPaperclipTransport()
+        self._biohub_esm_transport = biohub_esm_transport or BiohubESMTransport()
+        self._proto_transport = proto_transport or ModalProtoTransport()
+        self._provider_credentials = (
+            provider_credential_store or OSKeyringProviderCredentialStore()
+        )
+        self._provider_connection_lock = threading.RLock()
+        self.provider_connections = ProviderConnections(
+            credential_store=self._provider_credentials,
+            paperclip_probe=self._paperclip_transport.probe,
+            biohub_esm_probe=self._biohub_esm_transport.probe,
+            proto_probe=self._proto_transport.probe,
+            paperclip_deployment_authorization=paperclip_deployment_authorization,
+            paperclip_patient_data_contract=paperclip_patient_data_contract,
+            paperclip_routes=self._paperclip_transport.supported_routes,
+        )
+        self.configure_evidence_gateway(
+            paperclip_adapter=PaperclipAdapter(
+                deployment_authorization=paperclip_deployment_authorization,
+                patient_data_contract=paperclip_patient_data_contract,
+                secret_provider=self._paperclip_secret,
+                credential_configured=self._paperclip_credential_configured,
+                live_transport=self._paperclip_transport,
+                live_routes=self._paperclip_transport.supported_routes,
+                connection_ready=self._paperclip_connection_ready,
+            )
+        )
         self._workspace = WorkspaceApplication(
             store=self.store,
             session_id=self.session_id,
@@ -75,6 +126,7 @@ class GenomiLabService(
             active_context_receipt=self._active_context_receipt,
             harness_manifest=self.harness_capability_manifest,
             evidence_manifest=self.evidence_capability_manifest,
+            integration_manifest=self._provider_connection_manifest,
         )
         self._harness_tools = HarnessToolBoundary(
             store=self.store,
@@ -126,6 +178,270 @@ class GenomiLabService(
 
     def bootstrap_workspace(self) -> JsonObject:
         return self._workspace.bootstrap()
+
+    def integrations(self) -> JsonObject:
+        with self._provider_connection_scope(PROVIDER_IDS):
+            return self.provider_connections.list_integrations(
+                reconciliation_providers=(
+                    self._provider_connection_reconciliation_providers()
+                )
+            )
+
+    def _provider_connection_manifest(self) -> JsonObject:
+        with self._provider_connection_scope(PROVIDER_IDS):
+            return self.provider_connections.capability_manifest(
+                reconciliation_providers=(
+                    self._provider_connection_reconciliation_providers()
+                )
+            )
+
+    def _provider_connection_reconciliation_providers(self) -> tuple[str, ...]:
+        try:
+            return self.store.provider_connection_reconciliation_providers()
+        except Exception as exc:
+            raise LabError(
+                "provider_connection_audit_unavailable",
+                "Research-tool state is unavailable because its local audit could not be read.",
+                http_status=503,
+            ) from exc
+
+    @contextmanager
+    def _provider_connection_scope(self, providers: tuple[str, ...]) -> Iterator[None]:
+        """Hold provider account locks before exposing or changing connection state."""
+
+        requested = frozenset(providers)
+        ordered = tuple(provider for provider in PROVIDER_IDS if provider in requested)
+        locks = ExitStack()
+        try:
+            try:
+                for provider in ordered:
+                    locks.enter_context(provider_credential_lock(provider))
+            except EncryptedSQLiteLockTimeoutError as exc:
+                raise LabError(
+                    "provider_connection_busy",
+                    "This research-tool connection is busy in another GenomiLab process. Try again shortly.",
+                    http_status=503,
+                ) from exc
+            except (EncryptedSQLiteError, OSError) as exc:
+                raise LabError(
+                    "provider_connection_lock_unavailable",
+                    "Research-tool connection state is temporarily unavailable.",
+                    http_status=503,
+                ) from exc
+            with self._provider_connection_lock:
+                yield
+        finally:
+            locks.close()
+
+    def connect_integration(self, provider: str, payload: JsonObject) -> JsonObject:
+        return self._provider_connection_call(
+            "connect", provider, self.provider_connections.connect, provider, payload
+        )
+
+    def verify_integration(self, provider: str) -> JsonObject:
+        return self._provider_connection_call(
+            "verify", provider, self.provider_connections.verify, provider
+        )
+
+    def disconnect_integration(self, provider: str, *, confirmed: bool) -> JsonObject:
+        return self._provider_connection_call(
+            "disconnect",
+            provider,
+            self.provider_connections.disconnect,
+            provider,
+            confirmed=confirmed,
+        )
+
+    def _provider_connection_call(
+        self,
+        action: str,
+        provider: str,
+        operation: Callable[..., JsonObject],
+        *args: object,
+        **kwargs: object,
+    ) -> JsonObject:
+        with self._provider_connection_scope((provider,)):
+            try:
+                command_id = self.store.begin_provider_connection_command(
+                    workspace_session_id=self.session_id,
+                    provider=provider,
+                    action=action,
+                )
+            except Exception as exc:
+                raise LabError(
+                    "provider_connection_audit_unavailable",
+                    "Research-tool setup is unavailable because its local audit could not be started.",
+                    http_status=503,
+                ) from exc
+            try:
+                snapshot = self.provider_connections.transaction_snapshot(provider)
+            except ProviderConnectionError as exc:
+                failure = {
+                    "provider": provider,
+                    "status": "failed",
+                    "error_code": exc.code,
+                }
+                self._finalize_provider_connection_command(
+                    command_id, provider, action, failure
+                )
+                raise LabError(
+                    exc.code,
+                    str(exc),
+                    http_status=exc.http_status,
+                ) from exc
+            try:
+                result = operation(*args, **kwargs)
+            except ProviderConnectionError as exc:
+                try:
+                    current = self.provider_connections.transaction_snapshot(provider)
+                except ProviderConnectionError as snapshot_exc:
+                    self.provider_connections.mark_reconciliation_required(provider)
+                    failure = {
+                        "provider": provider,
+                        "status": "reconciliation_required",
+                        "error_code": "provider_connection_reconciliation_required",
+                    }
+                    self._finalize_provider_connection_command(
+                        command_id, provider, action, failure
+                    )
+                    raise LabError(
+                        "provider_connection_reconciliation_required",
+                        "Research-tool connection state requires reconciliation with its recorded intent.",
+                        http_status=503,
+                    ) from snapshot_exc
+                try:
+                    self.provider_connections.restore_transaction_snapshot(
+                        snapshot,
+                        expected_current=current,
+                    )
+                except ProviderConnectionError as restore_exc:
+                    if (
+                        restore_exc.code
+                        == "provider_connection_reconciliation_required"
+                    ):
+                        self.provider_connections.mark_reconciliation_required(provider)
+                    failure = {
+                        "provider": provider,
+                        "status": (
+                            "reconciliation_required"
+                            if restore_exc.code
+                            == "provider_connection_reconciliation_required"
+                            else "failed"
+                        ),
+                        "error_code": restore_exc.code,
+                    }
+                    self._finalize_provider_connection_command(
+                        command_id, provider, action, failure
+                    )
+                    raise LabError(
+                        restore_exc.code,
+                        str(restore_exc),
+                        http_status=restore_exc.http_status,
+                    ) from restore_exc
+                failure = {
+                    "provider": provider,
+                    "status": "failed",
+                    "error_code": exc.code,
+                }
+                self._finalize_provider_connection_command(
+                    command_id, provider, action, failure
+                )
+                raise LabError(
+                    exc.code,
+                    str(exc),
+                    http_status=exc.http_status,
+                ) from exc
+            post_command_snapshot = None
+            try:
+                post_command_snapshot = self.provider_connections.transaction_snapshot(
+                    provider
+                )
+                self.store.finalize_provider_connection_command(
+                    command_id=command_id,
+                    workspace_session_id=self.session_id,
+                    provider=provider,
+                    action=action,
+                    result=result,
+                )
+            except Exception as exc:
+                if post_command_snapshot is None:
+                    self.provider_connections.mark_reconciliation_required(provider)
+                    failure = {
+                        "provider": provider,
+                        "status": "reconciliation_required",
+                        "error_code": "provider_connection_reconciliation_required",
+                    }
+                    self._finalize_provider_connection_command(
+                        command_id, provider, action, failure
+                    )
+                    raise LabError(
+                        "provider_connection_reconciliation_required",
+                        "Research-tool connection state requires reconciliation with its recorded intent.",
+                        http_status=503,
+                    ) from exc
+                try:
+                    self.provider_connections.restore_transaction_snapshot(
+                        snapshot,
+                        expected_current=post_command_snapshot,
+                    )
+                except ProviderConnectionError as restore_exc:
+                    raise LabError(
+                        restore_exc.code,
+                        str(restore_exc),
+                        http_status=restore_exc.http_status,
+                    ) from restore_exc
+                raise LabError(
+                    "provider_connection_audit_unavailable",
+                    "Research-tool setup was not completed because its local audit could not be finalized.",
+                    http_status=503,
+                ) from exc
+            return {**result, "connection_command_id": command_id}
+
+    def _finalize_provider_connection_command(
+        self,
+        command_id: str,
+        provider: str,
+        action: str,
+        result: JsonObject,
+    ) -> None:
+        try:
+            self.store.finalize_provider_connection_command(
+                command_id=command_id,
+                workspace_session_id=self.session_id,
+                provider=provider,
+                action=action,
+                result=result,
+            )
+        except Exception as exc:
+            raise LabError(
+                "provider_connection_audit_unavailable",
+                "Research-tool setup failed and its local audit could not be finalized.",
+                http_status=503,
+            ) from exc
+
+    def _paperclip_credential_configured(self) -> bool:
+        with self._provider_connection_scope(("paperclip",)):
+            try:
+                return self._provider_credentials.has("paperclip")
+            except ProviderCredentialError:
+                return False
+
+    def _paperclip_secret(self) -> str:
+        with self._provider_connection_scope(("paperclip",)):
+            if "paperclip" in self._provider_connection_reconciliation_providers():
+                return ""
+            return self.provider_connections.verified_secret("paperclip", "api_key")
+
+    def _paperclip_connection_ready(self) -> bool:
+        with self._provider_connection_scope(("paperclip",)):
+            if "paperclip" in self._provider_connection_reconciliation_providers():
+                return False
+            return (
+                self.provider_connections.integration("paperclip").get(
+                    "connection_state"
+                )
+                == "ready"
+            )
 
     def molecular_profile(self) -> JsonObject:
         return self._workspace.molecular_profile()
@@ -257,6 +573,7 @@ class GenomiLabService(
             self.store.revoke_session_consents(self.session_id)
             self.store.revoke_session_disclosures(self.session_id)
             self._context_candidates.clear()
+            self.provider_connections.close()
             self._closed = True
             self.harness_adapter.close()
 
@@ -323,9 +640,7 @@ class GenomiLabService(
             execution_context = execution_context_for_investigation_authorization(
                 handle, operation=operation, params=params
             )
-            result = self._call(
-                operation, params, execution_context=execution_context
-            )
+            result = self._call(operation, params, execution_context=execution_context)
         except InvestigationAgiAuthorizationError as exc:
             raise LabError(exc.code, str(exc), http_status=403) from exc
         except OperationError as exc:
