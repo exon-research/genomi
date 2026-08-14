@@ -430,7 +430,7 @@ class GenomiLabService(
         with self._provider_connection_scope(("paperclip",)):
             if "paperclip" in self._provider_connection_reconciliation_providers():
                 return ""
-            return self.provider_connections.verified_secret("paperclip", "api_key")
+            return self.provider_connections.verified_paperclip_api_key()
 
     def _paperclip_connection_ready(self) -> bool:
         with self._provider_connection_scope(("paperclip",)):

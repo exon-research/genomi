@@ -74,20 +74,19 @@ _SPECS = {
     BIOHUB_ESM_PROVIDER_ID: _ProviderSpec(
         provider=BIOHUB_ESM_PROVIDER_ID,
         execution_location="remote",
-        use_scope="public_or_synthetic_protein",
-        policy_state="requires_pinned_safe_esm_runtime",
+        use_scope="fixed_synthetic_connection_probe",
+        policy_state="connection_only_no_product_operation",
         operations=(),
-        verification_kind="not_available_until_pinned_safe_transport",
-        verification_available=False,
+        verification_kind="fixed_synthetic_encode",
+        verification_may_consume_credits=True,
     ),
     PROTO_PROVIDER_ID: _ProviderSpec(
         provider=PROTO_PROVIDER_ID,
         execution_location="remote",
-        use_scope="expert_non_patient_only",
-        policy_state="requires_proto_runtime_and_expert_mode",
+        use_scope="modal_prerequisite_only",
+        policy_state="connection_only_no_product_operation",
         operations=(),
-        verification_kind="not_available_until_pinned_proto_runtime",
-        verification_available=False,
+        verification_kind="modal_credential_and_environment_check",
     ),
 }
 
@@ -272,12 +271,24 @@ class ProviderConnections:
         try:
             if provider_id == PAPERCLIP_PROVIDER_ID:
                 self._paperclip_probe(credentials["api_key"])
-            else:
+            elif provider_id == BIOHUB_ESM_PROVIDER_ID:
                 self._biohub_esm_probe(credentials["api_token"])
+            else:
+                self._proto_probe(
+                    credentials["modal_token_id"],
+                    credentials["modal_token_secret"],
+                    credentials["modal_environment"],
+                )
         except ProviderTransportError as exc:
             state = {
                 EvidenceStatus.AUTHENTICATION_FAILED: "authentication_failed",
-                EvidenceStatus.SOURCE_UNAVAILABLE: "runtime_unavailable",
+                EvidenceStatus.QUOTA_EXCEEDED: "quota_exceeded",
+                EvidenceStatus.RATE_LIMITED: "rate_limited",
+                EvidenceStatus.TIMEOUT: "timeout",
+                EvidenceStatus.NETWORK_ERROR: "unreachable",
+                EvidenceStatus.SERVER_ERROR: "unreachable",
+                EvidenceStatus.SOURCE_UNAVAILABLE: "source_unavailable",
+                EvidenceStatus.NOT_FOUND: "environment_not_found",
             }.get(exc.status, "unreachable")
         except (TimeoutError, ConnectionError, OSError):
             state = "unreachable"
@@ -320,14 +331,11 @@ class ProviderConnections:
             self._verification.pop(provider_id, None)
         return self.integration(provider_id)
 
-    def verified_secret(self, provider: str, field: str) -> str:
-        """Return a secret only when the current exact credential was verified."""
+    def verified_paperclip_api_key(self) -> str:
+        """Return the Paperclip key only for its exact verified revision."""
 
-        provider_id = self._provider(provider)
-        if (
-            provider_id == PAPERCLIP_PROVIDER_ID
-            and not self._paperclip_probe_authorized()
-        ):
+        provider_id = PAPERCLIP_PROVIDER_ID
+        if not self._paperclip_probe_authorized():
             return ""
         with self._lock:
             try:
@@ -342,7 +350,7 @@ class ProviderConnections:
                 or verification[2] != loaded[1]
             ):
                 return ""
-            return loaded[0].get(field, "")
+            return loaded[0].get("api_key", "")
 
     def transaction_snapshot(self, provider: str) -> ProviderConnectionSnapshot:
         """Capture exact local state before a command with external side effects."""
@@ -472,26 +480,55 @@ class ProviderConnections:
             for operation in operations
         )
 
-    def _paperclip_available_operations(self) -> tuple[str, ...]:
+    def _paperclip_available_routes(
+        self,
+    ) -> tuple[tuple[SourceFamily, tuple[str, ...]], ...]:
         now = self._clock()
-        routed_operations = {
-            operation
+        return tuple(
+            (family, eligible_operations)
             for family, operations in self._paperclip_routes.items()
-            for operation in operations
-            if paperclip_patient_route_eligible(
-                evaluate_paperclip_patient_route(
-                    source_family=family,
-                    operation=operation,
-                    deployment_authorization=self._paperclip_authorization,
-                    patient_data_contract=self._paperclip_patient_data_contract,
-                    current_time=now,
+            if (
+                eligible_operations := tuple(
+                    operation
+                    for operation in operations
+                    if paperclip_patient_route_eligible(
+                        evaluate_paperclip_patient_route(
+                            source_family=family,
+                            operation=operation,
+                            deployment_authorization=self._paperclip_authorization,
+                            patient_data_contract=self._paperclip_patient_data_contract,
+                            current_time=now,
+                        )
+                    )
                 )
             )
+        )
+
+    def _paperclip_available_operations(
+        self,
+        routes: Sequence[tuple[SourceFamily, Sequence[str]]],
+    ) -> tuple[str, ...]:
+        routed_operations = {
+            operation for _family, operations in routes for operation in operations
         }
         return tuple(
             operation
             for operation in _SPECS[PAPERCLIP_PROVIDER_ID].operations
             if operation in routed_operations
+        )
+
+    def _paperclip_available_purposes(self) -> tuple[str, ...]:
+        if (
+            self._paperclip_authorization is None
+            or self._paperclip_patient_data_contract is None
+        ):
+            return ()
+        return tuple(
+            sorted(
+                self._paperclip_authorization.permitted_purposes.intersection(
+                    self._paperclip_patient_data_contract.permitted_purposes
+                )
+            )
         )
 
     def _manifest(
@@ -504,10 +541,21 @@ class ProviderConnections:
         last_verified_at: str | None,
     ) -> dict[str, object]:
         spec = _SPECS[provider]
-        operations = (
-            list(self._paperclip_available_operations())
+        routes = (
+            self._paperclip_available_routes()
             if provider == PAPERCLIP_PROVIDER_ID and connection_state == "ready"
-            else []
+            else ()
+        )
+        operations = list(self._paperclip_available_operations(routes))
+        available_routes = [
+            {
+                "source_family": family.value,
+                "operations": list(route_operations),
+            }
+            for family, route_operations in routes
+        ]
+        available_purposes = (
+            list(self._paperclip_available_purposes()) if routes else []
         )
         verification_available = spec.verification_available and (
             provider != PAPERCLIP_PROVIDER_ID or self._paperclip_probe_authorized()
@@ -520,6 +568,8 @@ class ProviderConnections:
             "execution_location": spec.execution_location,
             "policy_state": self._policy_state(provider),
             "available_operations": operations,
+            "available_routes": available_routes,
+            "available_purposes": available_purposes,
             "last_verified_at": last_verified_at,
             "use_scope": spec.use_scope,
             "verification_kind": spec.verification_kind,
@@ -535,6 +585,8 @@ class ProviderConnections:
             **manifest,
             "connection_state": "reconciliation_required",
             "available_operations": [],
+            "available_routes": [],
+            "available_purposes": [],
             "last_verified_at": None,
         }
 

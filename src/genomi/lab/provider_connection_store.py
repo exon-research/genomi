@@ -26,6 +26,8 @@ _RESULT_FIELDS = frozenset(
         "execution_location",
         "policy_state",
         "available_operations",
+        "available_routes",
+        "available_purposes",
         "last_verified_at",
         "use_scope",
         "verification_kind",

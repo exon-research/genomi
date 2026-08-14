@@ -747,6 +747,26 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
         self.assert_error(preflight, 405, "method_not_allowed")
         self.assertIsNone(preflight.headers.get("Access-Control-Allow-Origin"))
 
+    def test_official_resource_links_redirect_only_to_fixed_destinations(self) -> None:
+        destinations = {
+            "/official/biohub-api-keys": "https://biohub.ai/developer-console/api-keys",
+            "/official/biohub-terms": "https://biohub.org/terms-of-use/",
+            "/official/biohub-privacy": "https://biohub.org/privacy-policy/",
+            "/official/biohub-limitations": "https://biohub.ai/limitations",
+        }
+        for path, expected in destinations.items():
+            with self.subTest(path=path):
+                response = self.request("GET", path)
+                self.assertEqual(response.status, 302)
+                self.assertEqual(response.headers.get("Location"), expected)
+                self.assertEqual(response.headers.get("Referrer-Policy"), "no-referrer")
+                self.assertEqual(response.body, b"")
+
+        hostile = self.request(
+            "GET", "/official/biohub-api-keys?next=https://evil.test"
+        )
+        self.assert_error(hostile, 400, "invalid_request")
+
     def test_internal_errors_and_access_logs_do_not_disclose_sensitive_values(
         self,
     ) -> None:

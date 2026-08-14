@@ -6,7 +6,7 @@ export const INTEGRATION_DEFINITIONS = Object.freeze([
   Object.freeze({
     provider: "paperclip",
     name: "GXL Paperclip",
-    description: "Find scientific literature, trial registrations, and regulatory documents through typed source routes.",
+    description: "Use only the typed public-evidence routes authorized for this installation.",
     boundary: "Remote public-evidence service. Patient-influenced use additionally requires an independent patient-data agreement, plus a preview and approval for every query.",
     fields: Object.freeze([
       Object.freeze({name: "api_key", label: "Paperclip API key", secret: true, maximum: 4096}),
@@ -15,17 +15,23 @@ export const INTEGRATION_DEFINITIONS = Object.freeze([
   Object.freeze({
     provider: "biohub-esm",
     name: "Biohub ESM",
-    description: "Record Biohub access for a future, separately validated protein-analysis workflow.",
-    boundary: "Verification and use remain unavailable until GenomiLab has a pinned, reviewed response-safe ESM transport. No sequence or credential is sent to Biohub in this release.",
+    description: "Check Biohub's ESM encode endpoint with one fixed synthetic amino-acid alphabet for a future protein-analysis workflow.",
+    boundary: "The disclosed check is remote and may use API credits. It sends only GenomiLab's fixed 20-residue synthetic alphabet as JSON—never a patient-derived sequence—and enables no patient-investigation operation.",
     fields: Object.freeze([
       Object.freeze({name: "api_token", label: "Biohub API token", secret: true, maximum: 4096}),
+    ]),
+    resources: Object.freeze([
+      Object.freeze({label: "Create or manage API key", url: "/official/biohub-api-keys"}),
+      Object.freeze({label: "Terms", url: "/official/biohub-terms"}),
+      Object.freeze({label: "Privacy", url: "/official/biohub-privacy"}),
+      Object.freeze({label: "Model limitations", url: "/official/biohub-limitations"}),
     ]),
   }),
   Object.freeze({
     provider: "proto",
     name: "Proto prerequisite (Modal)",
-    description: "Securely record Modal credentials for a future, separately managed Proto expert workflow.",
-    boundary: "GenomiLab does not send these credentials or verify Proto yet. No Proto tool is deployed or enabled, and Proto is not available in patient investigations.",
+    description: "Check the Modal account and exact environment that would host a future reviewed Proto expert workflow.",
+    boundary: "The check authenticates to Modal and lists environments. It does not deploy, start, or run a Proto tool, and it enables no patient-investigation operation.",
     fields: Object.freeze([
       Object.freeze({name: "modal_token_id", label: "Modal token ID", secret: true, maximum: 500}),
       Object.freeze({name: "modal_token_secret", label: "Modal token secret", secret: true, maximum: 4096}),
@@ -41,7 +47,12 @@ const CONNECTION_LABELS = Object.freeze({
   authentication_failed: "Key not accepted",
   unreachable: "Could not check",
   runtime_unavailable: "Provider runtime not installed",
+  source_unavailable: "Provider service or response unavailable",
   verification_unavailable: "Verification not available",
+  quota_exceeded: "Credits or quota unavailable",
+  rate_limited: "Provider rate limit reached",
+  timeout: "Connection check timed out",
+  environment_not_found: "Modal environment not found",
   credential_corrupt: "Saved credential needs replacement",
   credential_store_unavailable: "Secure storage unavailable",
   reconciliation_required: "Saved connection needs confirmation",
@@ -70,8 +81,14 @@ const POLICY_LABELS = Object.freeze({
 
 const SCOPE_LABELS = Object.freeze({
   public_evidence: "Public evidence",
-  public_or_synthetic_protein: "Public or synthetic protein work",
-  expert_non_patient_only: "Expert non-patient research only",
+  fixed_synthetic_connection_probe: "Fixed synthetic connection check only",
+  modal_prerequisite_only: "Modal prerequisite check only",
+});
+
+const SOURCE_FAMILY_LABELS = Object.freeze({
+  literature: "literature",
+  regulatory: "regulatory",
+  trial_registry: "trial registry",
 });
 
 export function renderConnections(payload) {
@@ -115,6 +132,13 @@ function integrationCard(definition, record) {
   const credentialState = text(record.credential_state);
   const credentialPresent = credentialState === "stored" || credentialState === "corrupt";
   const policyState = text(record.policy_state) || "unavailable";
+  const operations = array(record.available_operations)
+    .map((operation) => text(operation))
+    .filter(Boolean);
+  const routes = availableRoutes(record.available_routes);
+  const purposes = array(record.available_purposes)
+    .map((purpose) => text(purpose))
+    .filter(Boolean);
   const card = node("article", "", "integration-card");
   card.dataset.integrationProvider = definition.provider;
 
@@ -124,7 +148,9 @@ function integrationCard(definition, record) {
   const states = node("div", "", "integration-state-stack");
   const connection = node(
     "span",
-    CONNECTION_LABELS[state] || "Connection needs attention",
+    state === "ready" && operations.length === 0
+      ? "Credential checked"
+      : CONNECTION_LABELS[state] || "Connection needs attention",
     "integration-state"
   );
   connection.dataset.state = state;
@@ -146,27 +172,44 @@ function integrationCard(definition, record) {
   facts.textContent = `${location} · ${scope} · ${verified}`;
 
   const boundary = node("p", definition.boundary, "integration-card-boundary");
-  const operations = array(record.available_operations)
-    .map((operation) => text(operation))
-    .filter(Boolean);
-  const operationSummary = node(
-    "p",
-    operations.length
-      ? `Enabled patient-investigation operations: ${operations.join(", ")}`
-      : "No GenomiLab research operation is enabled by this connection.",
-    "integration-operation-summary"
-  );
+  const operationSummary = node("p", operationSummaryText({
+    provider: definition.provider,
+    state,
+    operations,
+    routes,
+    purposes,
+  }), "integration-operation-summary");
   card.append(heading, facts, boundary, operationSummary);
+  if (array(definition.resources).length) {
+    const resources = node("p", "", "integration-card-boundary");
+    resources.append("Official resources: ");
+    array(definition.resources).forEach((resource, index) => {
+      if (index) resources.append(" · ");
+      const link = document.createElement("a");
+      link.href = text(resource.url);
+      link.textContent = text(resource.label);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      resources.append(link);
+    });
+    card.append(resources);
+  }
   if (state === "reconciliation_required") {
     card.append(node(
       "p",
       record.verification_available === true && credentialPresent
-        ? "A previous setup change was interrupted, so GenomiLab will not use this connection. Run the connection check, replace the saved credentials, or disconnect the tool to confirm its current state."
+        ? record.verification_may_consume_credits === true
+          ? "A previous setup change was interrupted, so GenomiLab will not use this connection. The interrupted check may already have used credits, and another check may use more. Run it only when ready, replace the saved credentials, or disconnect the tool."
+          : "A previous setup change was interrupted, so GenomiLab will not use this connection. Run the connection check, replace the saved credentials, or disconnect the tool to confirm its current state."
         : "A previous setup change was interrupted, so GenomiLab will not use this connection. Replace the saved credentials or confirm that the tool is disconnected.",
       "integration-card-boundary"
     ));
   }
-  if (state !== "credential_store_unavailable") {
+  const canEnterCredentials = state !== "credential_store_unavailable"
+    && (definition.provider !== "paperclip"
+      || record.verification_available === true
+      || credentialPresent);
+  if (canEnterCredentials) {
     const details = document.createElement("details");
     details.className = "integration-connect-details";
     details.open = !credentialPresent || credentialState === "corrupt";
@@ -176,6 +219,12 @@ function integrationCard(definition, record) {
     ));
     details.append(connectionForm(definition));
     card.append(details);
+  } else if (definition.provider === "paperclip") {
+    card.append(node(
+      "p",
+      "The installation owner must first configure documented Paperclip product authorization. An API key cannot establish that permission.",
+      "integration-card-boundary"
+    ));
   }
   if (state === "ready" || credentialPresent || state === "reconciliation_required") {
     const actions = node("div", "", "integration-actions");
@@ -200,6 +249,36 @@ function integrationCard(definition, record) {
     card.append(actions);
   }
   return card;
+}
+
+function availableRoutes(value) {
+  return array(value)
+    .filter(isObject)
+    .map((route) => ({
+      sourceFamily: text(route.source_family),
+      operations: array(route.operations)
+        .map((operation) => text(operation))
+        .filter(Boolean),
+    }))
+    .filter((route) => route.sourceFamily && route.operations.length);
+}
+
+function operationSummaryText({provider, state, operations, routes, purposes}) {
+  if (provider === "paperclip" && routes.length) {
+    const routeSummary = routes
+      .map((route) => `${SOURCE_FAMILY_LABELS[route.sourceFamily] || route.sourceFamily}: ${route.operations.join(", ")}`)
+      .join(" · ");
+    const purposeSummary = purposes.length
+      ? ` Approved purposes: ${purposes.join("; ")}.`
+      : "";
+    return `Enabled patient-investigation routes: ${routeSummary}.${purposeSummary} Every query still requires an exact preview and approval.`;
+  }
+  if (operations.length) {
+    return `Enabled patient-investigation operations: ${operations.join(", ")}`;
+  }
+  return state === "ready"
+    ? "Credential and connection checked. No GenomiLab research operation is enabled."
+    : "No GenomiLab research operation is enabled by this connection.";
 }
 
 function connectionForm(definition) {
@@ -236,7 +315,8 @@ function connectionForm(definition) {
 
 function verificationActionLabel(provider) {
   if (provider === "paperclip") return "Run public API check — may use credits";
-  return "Check connection";
+  if (provider === "biohub-esm") return "Run fixed synthetic encode check — may use credits";
+  return "Check Modal account and environment";
 }
 
 function actionButton(provider, action, label, className) {
