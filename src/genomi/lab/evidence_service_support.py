@@ -153,19 +153,20 @@ class EvidenceApplicationSupportMixin:
             raw_terms = payload.get("query_terms") or ()
             if not isinstance(raw_terms, (list, tuple)):
                 raise ValueError("query_terms must be an array")
+            operation = PaperclipOperation(payload.get("operation"))
             request = EvidenceRequest(
                 query=payload.get("query"),
                 query_terms=tuple(raw_terms),
                 filters=payload.get("filters") or (),
                 source_family=SourceFamily(payload.get("source_family")),
                 purpose=payload.get("purpose"),
+                operation=operation.value,
                 # This capability is investigation-scoped. Even a query made
                 # only of public biomedical terms was selected in a private
                 # patient investigation, so callers cannot downgrade its
                 # lineage to bypass the egress gate.
                 patient_influenced=True,
             )
-            operation = PaperclipOperation(payload.get("operation"))
         except (TypeError, ValueError) as exc:
             raise LabError("invalid_evidence_request", str(exc)) from exc
         return request, operation
@@ -174,9 +175,14 @@ class EvidenceApplicationSupportMixin:
     def _provider_payload(
         request: EvidenceRequest, operation: PaperclipOperation
     ) -> JsonObject:
+        normalized_operation = PaperclipOperation(operation).value
+        if normalized_operation != request.operation:
+            raise ValueError("operation does not match the evidence request")
+        request_payload = request.to_dict()
+        request_payload.pop("operation")
         return {
-            "operation": operation.value,
-            "request": request.to_dict(),
+            "operation": normalized_operation,
+            "request": request_payload,
         }
 
     @staticmethod
@@ -231,7 +237,6 @@ class EvidenceApplicationSupportMixin:
         normalized["gateway"] = {
             "owner": "GenomiLab",
             "provider_neutral": True,
-            "operation": operation.value,
             "provider_credentials_exposed": False,
         }
         return normalized
@@ -275,7 +280,17 @@ class EvidenceApplicationSupportMixin:
             if isinstance(value, dict):
                 for raw_key, item in value.items():
                     key = str(raw_key).strip().lower().replace("-", "_")
-                    if key in _CREDENTIAL_FIELDS or key.endswith("_api_key"):
+                    if key in _CREDENTIAL_FIELDS or key.endswith(
+                        (
+                            "_api_key",
+                            "_api_token",
+                            "_access_token",
+                            "_token_id",
+                            "_token_secret",
+                            "_password",
+                            "_secret",
+                        )
+                    ):
                         raise LabError(
                             "provider_credentials_not_accepted",
                             "Provider credentials are configured only in the GenomiLab host.",

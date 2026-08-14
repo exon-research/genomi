@@ -223,10 +223,14 @@ flowchart LR
   transport state. Rebuilding it SHALL recover canonical mappings and artifacts
   from GenomiLab, execution state from the harness, and genome state from
   Genomi.
-- **ARCH-010:** The harness and portal SHALL have no provider credentials or
-  direct provider route for GenomiLab investigations. External evidence/model
-  calls SHALL traverse a GenomiLab gateway that enforces deployment policy,
-  consent, egress, provenance, and result normalization.
+- **ARCH-010:** The harness and ordinary investigation portal SHALL have no
+  provider credentials or direct provider route. A dedicated same-origin,
+  loopback-only setup form MAY transiently collect a credential solely to hand
+  it to the GenomiLab application for immediate OS-credential-store insertion;
+  the browser SHALL neither retain nor use it, and every response SHALL be
+  redacted. External evidence/model calls SHALL still traverse a GenomiLab
+  gateway that enforces deployment policy, consent, egress, provenance, and
+  result normalization.
 - **ARCH-011:** GenomiLab domain capabilities SHALL be exposed to every
   supported installed harness through typed host-compatible tools and focused
   guidance. Switching harness adapters SHALL not change the molecular-profile,
@@ -518,11 +522,35 @@ expose operations equivalent to:
 - `close_workspace_session`
 - `refresh_investigation`
 - `cancel_background_work`
+- `list_research_tool_connections`
+- `connect_or_replace_research_tool_credentials`
+- `verify_research_tool_connection`
+- `disconnect_research_tool`
 - `prepare_review_packet` *(P1; P0 returns typed `capability_unavailable`)*
 
 The GenomiLab domain service SHALL persist the canonical command result and
 domain event before exposing it to the portal. Direct portal access to harness,
 Genomi, providers, domain-store tables or the filesystem is prohibited.
+
+Research-tool setup SHALL be global to the local installation/OS user rather
+than copied into a patient profile or investigation. It SHALL use a fixed
+provider allowlist and fixed provider endpoints; it SHALL accept no caller URL,
+command, model name, tool name, or executable operation. Credential records
+SHALL be complete, atomically replaced, stored only in the OS credential store,
+and absent from the GenomiLab domain database, browser storage, harness
+messages, environment, URLs, logs, errors, and API responses. Connection
+listing SHALL be network-free. Only an explicit verify action MAY make a fixed
+public connection probe. A Paperclip verification SHALL use a fixed, public,
+non-patient search and SHALL be labeled before invocation as potentially using
+API credits. Saving any provider credential SHALL NOT run a network or compute
+probe. Credential presence and validity SHALL be displayed separately from
+deployment, contract, patient-data, task-validation, expert-mode, and
+per-request disclosure eligibility. No setup route SHALL perform user-directed
+scientific research or use patient data. Biohub ESM and Proto verification SHALL
+remain unavailable until Genomi manages a reviewed, versioned runtime and pins
+every credential-bearing transport and response-decoding path. Credits or an
+ambiently importable SDK/runtime alone SHALL NOT establish readiness, and this
+release SHALL NOT send credentials or sequences to either service.
 
 The internal stateless harness adapter SHALL implement a separate versioned,
 host-neutral protocol with operations equivalent to `start_task_run`,
@@ -748,9 +776,12 @@ GXL Paperclip SHALL be implemented as a first-class provider behind GenomiLab's
 provider-neutral public-evidence gateway. When Paperclip is installed,
 authorized, covers the requested source family, and passes the gates below, the
 harness SHOULD select the GenomiLab public-evidence capability and the gateway
-SHALL prefer Paperclip for broad literature, regulatory, trial, UniProt, PDB,
-and ChEMBL discovery and full-text inspection. Direct primary-source adapters
-SHALL remain available for validation, gaps, and provider failure.
+SHALL prefer Paperclip for the typed source-operation routes that the installed
+transport actually declares. The initial transport covers literature search
+and lookup plus regulatory and trial search. UniProt, PDB, ChEMBL, full-text,
+figure, and claim-verification routes remain unavailable until separately typed
+and validated. Direct primary-source adapters SHALL remain available for
+validation, gaps, and provider failure.
 
 An appropriate Paperclip use is one in which:
 
@@ -803,8 +834,11 @@ purpose, data class, or policy requires renewed approval.
 
 The Paperclip adapter SHALL:
 
-- expose typed, allowlisted search, lookup, read/extract, figure-inspection, and
-  provenance operations;
+- expose only typed, allowlisted operations. The initial live transport SHALL
+  expose structured `search` and `lookup`; read/extract, figure inspection, and
+  claim verification SHALL remain unavailable until each has exact typed input,
+  original-source provenance, license-aware retention, and bounded result
+  handling;
 - exclude arbitrary remote shell, generic `execute`, and equivalent escape
   hatches from every production capability surface. Developer experiments, if
   retained, require a separate sandbox and credential;

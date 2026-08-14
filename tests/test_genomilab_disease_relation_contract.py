@@ -225,6 +225,7 @@ class GenomiLabDiseaseRelationContractTests(
                     query="synthetic disease mechanism",
                     source_family=source_family,
                     purpose="Investigate a possible disease relation",
+                    operation="search",
                 )
                 normalized = normalize_fixture_response(
                     request,

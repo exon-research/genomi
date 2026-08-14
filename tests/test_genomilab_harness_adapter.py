@@ -778,6 +778,12 @@ class SimulatedHarnessConformanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
             StartTaskRunPayload("Question", {"accessToken": "must-never-cross"})
         with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
+            StartTaskRunPayload("Question", {"biohubApiToken": "must-never-cross"})
+        with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
+            StartTaskRunPayload("Question", {"modalTokenId": "must-never-cross"})
+        with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
+            StartTaskRunPayload("Question", {"modalTokenSecret": "must-never-cross"})
+        with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
             StartTaskRunPayload("Question", {"rawSequence": "ACGT"})
         with self.assertRaisesRegex(ValueError, "not safe for harness transport"):
             StartTaskRunPayload("Question", {"agi_rows": [{"position": 1}]})

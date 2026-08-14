@@ -216,6 +216,23 @@ CREATE TABLE IF NOT EXISTS harness_events (
     created_at TEXT NOT NULL,
     UNIQUE(investigation_id, sequence)
 );
+CREATE TABLE IF NOT EXISTS provider_connection_commands (
+    command_id TEXT PRIMARY KEY,
+    workspace_session_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    action TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS provider_connection_events (
+    event_id TEXT PRIMARY KEY,
+    command_id TEXT NOT NULL UNIQUE REFERENCES provider_connection_commands(command_id) ON DELETE CASCADE,
+    workspace_session_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS evidence_records (
     evidence_record_id TEXT PRIMARY KEY,
     investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
@@ -507,6 +524,10 @@ CREATE INDEX IF NOT EXISTS idx_harness_commands_investigation_created
     ON harness_commands(investigation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_harness_jobs_investigation_created
     ON harness_jobs(investigation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_provider_connection_commands_session_created
+    ON provider_connection_commands(workspace_session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_provider_connection_events_session_created
+    ON provider_connection_events(workspace_session_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_harness_bindings_one_active
     ON harness_bindings(investigation_id) WHERE binding_state = 'active';
 PRAGMA optimize;

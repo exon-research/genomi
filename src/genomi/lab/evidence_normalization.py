@@ -13,6 +13,7 @@ from .evidence_types import (
     EvidenceResult,
     EvidenceStatus,
     ProviderFailure,
+    ProviderProcessProvenance,
     SourceCurrency,
     SourceDocumentState,
     SourceLicense,
@@ -51,9 +52,7 @@ def _string_tuple(value: object, field: str, maximum: int = 1_000) -> tuple[str,
         return ()
     if not isinstance(value, (list, tuple)):
         raise ValueError(f"{field} must be an array")
-    return tuple(
-        dict.fromkeys(required_text(item, field, maximum) for item in value)
-    )
+    return tuple(dict.fromkeys(required_text(item, field, maximum) for item in value))
 
 
 def _boolean_or_none(value: object, field: str) -> bool | None:
@@ -151,8 +150,7 @@ def _source_license(item: Mapping[str, object]) -> SourceLicense:
     if not isinstance(raw, Mapping):
         raise ValueError("source_license must be an object")
     status = (
-        optional_text(raw.get("status"), "source_license.status", 100)
-        or "not_provided"
+        optional_text(raw.get("status"), "source_license.status", 100) or "not_provided"
     )
     return SourceLicense(
         status=status,
@@ -251,7 +249,9 @@ def normalize_evidence_response(
     if not isinstance(raw, Mapping):
         raise ValueError("provider response must be an object")
     normalized_provider = provider_name(provider)
-    response_family = SourceFamily(raw.get("source_family", request.source_family.value))
+    response_family = SourceFamily(
+        raw.get("source_family", request.source_family.value)
+    )
     if response_family is not request.source_family:
         raise ValueError("provider response source_family does not match the request")
     status = EvidenceStatus(raw.get("status", EvidenceStatus.DATA_RETURNED.value))
@@ -273,8 +273,7 @@ def normalize_evidence_response(
         if job_id is None or resume_operation is None:
             raise ValueError("in_progress requires job_id and resume_operation")
     elif any(
-        value is not None
-        for value in (job_id, resume_operation, poll_after_seconds)
+        value is not None for value in (job_id, resume_operation, poll_after_seconds)
     ):
         raise ValueError("background-job fields require in_progress status")
 
@@ -297,17 +296,53 @@ def normalize_evidence_response(
         misses=misses,
         partial_failures=_partial_failures(raw_coverage.get("partial_failures")),
     )
-    provider_result_id = optional_text(
-        raw.get("provider_result_id"), "provider_result_id", 500
+    raw_process_provenance = raw.get("process_provenance") or {}
+    if not isinstance(raw_process_provenance, Mapping):
+        raise ValueError("process_provenance must be an object")
+    provider_result_ids = _string_tuple(
+        raw_process_provenance.get(
+            "provider_result_ids", raw.get("provider_result_ids")
+        ),
+        "process_provenance.provider_result_ids",
+        500,
     )
+    legacy_provider_result_id = optional_text(
+        raw_process_provenance.get("provider_result_id", raw.get("provider_result_id")),
+        "provider_result_id",
+        500,
+    )
+    if legacy_provider_result_id is not None:
+        provider_result_ids = tuple(
+            dict.fromkeys((*provider_result_ids, legacy_provider_result_id))
+        )
     provider_version = optional_text(
-        raw.get("provider_version"), "provider_version", 500
+        raw_process_provenance.get("provider_version", raw.get("provider_version")),
+        "provider_version",
+        500,
     )
     provider_repository = optional_text(
-        raw.get("provider_repository"), "provider_repository", 1_000
+        raw_process_provenance.get(
+            "provider_repository", raw.get("provider_repository")
+        ),
+        "provider_repository",
+        1_000,
     )
     provider_commit = optional_text(
-        raw.get("provider_commit"), "provider_commit", 500
+        raw_process_provenance.get("provider_commit", raw.get("provider_commit")),
+        "provider_commit",
+        500,
+    )
+    process_retrieved_at = optional_text(
+        raw_process_provenance.get("retrieved_at", raw.get("retrieved_at")),
+        "retrieved_at",
+        100,
+    )
+    process_provenance = ProviderProcessProvenance(
+        provider_result_ids=provider_result_ids,
+        provider_version=provider_version,
+        provider_repository=provider_repository,
+        provider_commit=provider_commit,
+        retrieved_at=process_retrieved_at,
     )
     provider_model = optional_text(raw.get("provider_model"), "provider_model", 500)
     records: list[EvidenceRecord] = []
@@ -352,8 +387,14 @@ def normalize_evidence_response(
         provenance = EvidenceProvenance(
             provider=normalized_provider,
             access_mode=AccessMode(access_mode),
-            provider_result_id=provider_result_id,
-            provider_version=provider_version,
+            provider_result_id=optional_text(
+                item.get("provider_result_id"), "provider_result_id", 500
+            )
+            or (provider_result_ids[0] if len(provider_result_ids) == 1 else None),
+            provider_version=optional_text(
+                item.get("provider_version"), "provider_version", 500
+            )
+            or provider_version,
             provider_repository=optional_text(
                 item.get("provider_repository"), "provider_repository", 1_000
             )
@@ -375,8 +416,9 @@ def normalize_evidence_response(
                 item.get("publication_date"), "publication_date", 100
             ),
             indexed_at=optional_text(item.get("indexed_at"), "indexed_at", 100),
-            retrieved_at=optional_text(
-                item.get("retrieved_at"), "retrieved_at", 100
+            retrieved_at=(
+                optional_text(item.get("retrieved_at"), "retrieved_at", 100)
+                or process_retrieved_at
             ),
             source_license=source_license,
             source_currency=_source_currency(item),
@@ -408,6 +450,7 @@ def normalize_evidence_response(
         records=tuple(records),
         policy=policy or ProviderPolicyDecision(ProviderPolicyState.ALLOWED),
         coverage=coverage,
+        process_provenance=process_provenance,
         failure=provider_failure(status, raw.get("retry_after_seconds")),
         job_id=job_id,
         resume_operation=resume_operation,

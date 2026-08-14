@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import unittest
 from typing import Any
+from unittest import mock
 
+from genomi.lab.evidence_service import DirectEvidenceSource
 from genomi.lab.harness import SimulatedHarnessAdapter
 from genomi.lab.investigation_capabilities import (
     GENOMI_VARIANT_RESOLVE,
@@ -16,9 +18,7 @@ from tests.test_genomilab_capability_jobs import (
 )
 
 
-class GenomiLabCapabilityJobResumeTests(
-    _CapabilityJobResumeSupport, unittest.TestCase
-):
+class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.TestCase):
     def test_upstream_job_check_advances_still_running_then_completed_idempotently(
         self,
     ) -> None:
@@ -175,6 +175,45 @@ class GenomiLabCapabilityJobResumeTests(
         self.assertEqual(execution["status"], "in_progress")
         self.assertEqual(len(state["initial_calls"]), 1)
         self.assertEqual(len(state["poll_calls"]), 1)
+
+    def test_provider_job_poll_uses_the_policy_snapshot_validated_preflight(
+        self,
+    ) -> None:
+        state = self._start_direct_evidence_job(session_id="provider-policy-snapshot")
+        service = state["service"]
+        original_direct = state["direct_source"]
+        replacement_calls: list[str] = []
+        replacement = DirectEvidenceSource(
+            source_family=SourceFamily.LITERATURE,
+            provider=original_direct.provider,
+            destination=original_direct.destination,
+            transport=original_direct.transport,
+            background_job_transport=lambda *_args: (
+                replacement_calls.append("called") or self._completed_direct_response()
+            ),
+            background_job_resume_operation=state["resume_operation"],
+        )
+        original_preflight = service._require_active_job_disclosure
+
+        def reconfigure_after_preflight(*args: Any, **kwargs: Any) -> dict[str, object]:
+            receipt = original_preflight(*args, **kwargs)
+            service.configure_evidence_gateway(
+                direct_sources={SourceFamily.LITERATURE: replacement}
+            )
+            return receipt
+
+        with mock.patch.object(
+            service,
+            "_require_active_job_disclosure",
+            side_effect=reconfigure_after_preflight,
+        ):
+            completed = service.resume_harness_capability_job(
+                state["investigation_id"], state["check_payload"]
+            )
+
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(len(state["poll_calls"]), 1)
+        self.assertEqual(replacement_calls, [])
 
     def test_provider_late_result_fails_closed_after_context_or_plan_change(
         self,

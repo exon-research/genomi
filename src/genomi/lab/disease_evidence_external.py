@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .models import JsonObject, required_text, validate_private_payload
+from .paperclip_contract import (
+    paperclip_operation_scope,
+    paperclip_route_definition,
+)
 
 
 INHERITANCE_CONSEQUENCE_EVIDENCE = "public_evidence.retrieve_inheritance_consequence"
@@ -97,10 +102,49 @@ def build_external_evidence_catalog(
     """Declare every source prior and whether a configured route can serve it."""
 
     anchors = _text_array(profile_revision_ids, "profile_revision_ids")
-    routed_families = _routed_source_families(evidence_manifest)
+    fallback_families = _fallback_source_families(evidence_manifest)
+    paperclip_routes = _paperclip_routes(evidence_manifest)
+    paperclip_purposes = _paperclip_purposes(evidence_manifest)
     catalog: JsonObject = {}
     for capability, spec in EXTERNAL_EVIDENCE_SPECS.items():
-        route_available = spec.source_family in routed_families
+        fallback_available = spec.source_family in fallback_families
+        paperclip_operations = [
+            operation
+            for operation in spec.operations
+            if operation in paperclip_routes.get(spec.source_family, set())
+        ]
+        route_contracts: list[JsonObject] = []
+        if fallback_available:
+            route_contracts.append(
+                {"route": "fallback", "operations": list(spec.operations)}
+            )
+        if paperclip_operations and paperclip_purposes:
+            route_contracts.append(
+                {
+                    "route": "paperclip",
+                    "operations": paperclip_operations,
+                    "purposes": sorted(paperclip_purposes),
+                    "operation_contracts": _paperclip_operation_contracts(
+                        spec.source_family,
+                        set(paperclip_operations),
+                    ),
+                }
+            )
+        routed_operations = {
+            operation
+            for route in route_contracts
+            for operation in route["operations"]
+            if isinstance(operation, str)
+        }
+        allowed_operations = [
+            operation for operation in spec.operations if operation in routed_operations
+        ]
+        allowed_purposes = (
+            sorted(paperclip_purposes)
+            if not fallback_available and paperclip_operations
+            else None
+        )
+        route_available = bool(route_contracts)
         catalog[capability] = {
             "available": bool(anchors and route_available),
             "request_contract": {
@@ -113,6 +157,7 @@ def build_external_evidence_catalog(
                     "purpose",
                 ],
                 "optional_fields": [],
+                "routes": route_contracts,
                 "fields": {
                     "profile_revision_ids": {
                         "type": "unique_string_array",
@@ -121,7 +166,7 @@ def build_external_evidence_catalog(
                     },
                     "operation": {
                         "type": "string",
-                        "allowed_values": list(spec.operations),
+                        "allowed_values": allowed_operations,
                     },
                     "query": {
                         "type": "public_biomedical_string",
@@ -130,6 +175,7 @@ def build_external_evidence_catalog(
                     "query_terms": {
                         "type": "unique_public_biomedical_string_array",
                         "minimum_items": 1,
+                        "maximum_items": 5,
                         "item_maximum_length": 1_000,
                     },
                     "filters": {
@@ -139,6 +185,11 @@ def build_external_evidence_catalog(
                     "purpose": {
                         "type": "investigation_purpose_string",
                         "maximum_length": 500,
+                        **(
+                            {}
+                            if allowed_purposes is None
+                            else {"allowed_values": allowed_purposes}
+                        ),
                     },
                 },
             },
@@ -189,9 +240,23 @@ def validate_external_evidence_request(
     terms = _text_array(parameters.get("query_terms"), "query_terms")
     if not terms:
         raise ValueError("query_terms cannot be empty")
+    if len(terms) > 5:
+        raise ValueError("query_terms cannot contain more than five terms")
     safe_terms = [_safe_egress_text(term, "query_term", 1_000) for term in terms]
     filters = _public_filters(parameters.get("filters"))
     purpose = _safe_egress_text(parameters.get("purpose"), "purpose", 500)
+    _validate_route_input_scope(
+        source_family=spec.source_family,
+        operation=operation,
+        query=query,
+        query_terms=safe_terms,
+        filters=filters,
+        purpose=purpose,
+        contract=contract,
+    )
+    allowed_purposes = _optional_field_allowed_values(contract, "purpose")
+    if allowed_purposes is not None and purpose not in allowed_purposes:
+        raise ValueError("purpose is not allowed for this public source route")
     return {
         "operation": operation,
         "query": query,
@@ -205,7 +270,53 @@ def validate_external_evidence_request(
     }
 
 
-def _routed_source_families(manifest: object) -> set[str]:
+def external_evidence_route_available(
+    evidence_manifest: object,
+    *,
+    source_family: object,
+    operation: object,
+    query: object,
+    query_terms: object,
+    filters: object,
+    purpose: object,
+) -> bool:
+    """Return whether at least one configured route accepts the exact request."""
+
+    if (
+        not isinstance(source_family, str)
+        or not isinstance(operation, str)
+        or not isinstance(query, str)
+        or not query.strip()
+        or not isinstance(purpose, str)
+        or not purpose.strip()
+        or not isinstance(query_terms, (list, tuple))
+        or not query_terms
+        or any(not isinstance(term, str) or not term.strip() for term in query_terms)
+        or not isinstance(filters, Mapping)
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in filters.items()
+        )
+    ):
+        return False
+    if source_family in _fallback_source_families(evidence_manifest):
+        return True
+    if operation not in _paperclip_routes(evidence_manifest).get(source_family, set()):
+        return False
+    if purpose not in _paperclip_purposes(evidence_manifest):
+        return False
+    scope = paperclip_operation_scope(source_family, operation)
+    return bool(
+        scope
+        and scope.accepts(
+            query=query,
+            query_terms=query_terms,
+            filters=dict(filters),
+        )
+    )
+
+
+def _fallback_source_families(manifest: object) -> set[str]:
     if not isinstance(manifest, dict):
         return set()
     routed = {
@@ -216,12 +327,134 @@ def _routed_source_families(manifest: object) -> set[str]:
     for route in manifest.get("direct_sources") or []:
         if isinstance(route, dict) and isinstance(route.get("source_family"), str):
             routed.add(str(route["source_family"]))
-    paperclip = manifest.get("paperclip")
-    if isinstance(paperclip, dict) and paperclip.get("live_state") == "authorized":
-        # Provider policy still evaluates the exact family at call time.  The
-        # catalog advertises the route; a deployment-scope mismatch fails closed.
-        routed.update(spec.source_family for spec in EXTERNAL_EVIDENCE_SPECS.values())
     return routed
+
+
+def _paperclip_routes(manifest: object) -> dict[str, set[str]]:
+    if not isinstance(manifest, dict):
+        return {}
+    paperclip = manifest.get("paperclip")
+    if not isinstance(paperclip, dict) or paperclip.get("live_state") != "authorized":
+        return {}
+    routes: dict[str, set[str]] = {}
+    for route in paperclip.get("routes") or []:
+        if not isinstance(route, dict) or not isinstance(
+            route.get("source_family"), str
+        ):
+            continue
+        source_family = str(route["source_family"])
+        definition = paperclip_route_definition(source_family)
+        if definition is None:
+            continue
+        canonical_operations = {operation.value for operation in definition.operations}
+        advertised_operations = {
+            str(operation)
+            for operation in route.get("operations") or []
+            if isinstance(operation, str)
+        }
+        routes.setdefault(source_family, set()).update(
+            advertised_operations & canonical_operations
+        )
+    return routes
+
+
+def _paperclip_purposes(manifest: object) -> set[str]:
+    if not isinstance(manifest, dict):
+        return set()
+    paperclip = manifest.get("paperclip")
+    if not isinstance(paperclip, dict) or paperclip.get("live_state") != "authorized":
+        return set()
+    purposes = paperclip.get("purposes")
+    if not isinstance(purposes, list):
+        return set()
+    return {
+        purpose.strip()
+        for purpose in purposes
+        if isinstance(purpose, str) and purpose.strip() and len(purpose.strip()) <= 500
+    }
+
+
+def _paperclip_operation_contracts(
+    source_family: str, operations: set[str]
+) -> JsonObject:
+    route = paperclip_route_definition(source_family)
+    if route is None:
+        return {}
+    result: JsonObject = {}
+    for operation in sorted(operations):
+        scope = paperclip_operation_scope(source_family, operation)
+        if scope is None:
+            continue
+        result[operation] = {
+            **scope.catalog_contract(),
+            "consulted_corpora": list(route.corpora),
+        }
+    return result
+
+
+def _validate_route_input_scope(
+    *,
+    source_family: str,
+    operation: str,
+    query: str,
+    query_terms: list[str],
+    filters: JsonObject,
+    purpose: str,
+    contract: JsonObject,
+) -> None:
+    routes = contract.get("routes")
+    if not isinstance(routes, list):
+        raise ValueError("external disease-evidence request contract is malformed")
+    purpose_rejected = False
+    input_rejected = False
+    for route in routes:
+        if not isinstance(route, dict):
+            raise ValueError("external disease-evidence route contract is malformed")
+        route_kind = route.get("route")
+        operations = route.get("operations")
+        if route_kind not in {"fallback", "paperclip"} or not isinstance(
+            operations, list
+        ):
+            raise ValueError("external disease-evidence route contract is malformed")
+        route_operations = _text_array(operations, "route operations")
+        if operation not in route_operations:
+            continue
+        if route_kind == "fallback":
+            return
+        purposes = route.get("purposes")
+        if not isinstance(purposes, list):
+            raise ValueError("external disease-evidence route contract is malformed")
+        if purpose not in _text_array(purposes, "route purposes"):
+            purpose_rejected = True
+            continue
+        operation_contracts = route.get("operation_contracts")
+        declared = (
+            operation_contracts.get(operation)
+            if isinstance(operation_contracts, dict)
+            else None
+        )
+        scope = paperclip_operation_scope(source_family, operation)
+        if scope is None or not isinstance(declared, dict):
+            raise ValueError(
+                "external disease-evidence operation contract is malformed"
+            )
+        expected = scope.catalog_contract()
+        if any(declared.get(field) != expected[field] for field in expected):
+            raise ValueError(
+                "external disease-evidence operation contract is malformed"
+            )
+        if scope.accepts(
+            query=query,
+            query_terms=query_terms,
+            filters={str(key): str(value) for key, value in filters.items()},
+        ):
+            return
+        input_rejected = True
+    if input_rejected:
+        raise ValueError(f"{operation} input is outside the advertised provider scope")
+    if purpose_rejected:
+        raise ValueError("purpose is not allowed for this public source route")
+    raise ValueError("operation is not allowed for this public source route")
 
 
 def _public_filters(value: object) -> JsonObject:
@@ -271,15 +504,24 @@ def _validate_request_fields(parameters: JsonObject, contract: JsonObject) -> No
 
 
 def _field_allowed_values(contract: JsonObject, field: str) -> list[str]:
+    allowed = _optional_field_allowed_values(contract, field)
+    if allowed is None:
+        raise ValueError(f"{field} allowed values are unavailable")
+    return allowed
+
+
+def _optional_field_allowed_values(
+    contract: JsonObject, field: str
+) -> list[str] | None:
     fields = contract.get("fields")
     field_contract = fields.get(field) if isinstance(fields, dict) else None
-    allowed = (
-        field_contract.get("allowed_values")
-        if isinstance(field_contract, dict)
-        else None
-    )
+    if not isinstance(field_contract, dict):
+        raise ValueError(f"{field} contract is unavailable")
+    if "allowed_values" not in field_contract:
+        return None
+    allowed = field_contract.get("allowed_values")
     if not isinstance(allowed, list):
-        raise ValueError(f"{field} allowed values are unavailable")
+        raise ValueError(f"{field} allowed values are malformed")
     return _text_array(allowed, field)
 
 
@@ -295,5 +537,6 @@ __all__ = [
     "TRIAL_EVIDENCE",
     "UNIPROT_EVIDENCE",
     "build_external_evidence_catalog",
+    "external_evidence_route_available",
     "validate_external_evidence_request",
 ]

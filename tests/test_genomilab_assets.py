@@ -170,6 +170,67 @@ class GenomiLabAssetTests(unittest.TestCase):
             with self.subTest(portal_id=portal_id):
                 self.assertIn(f'id="{portal_id}"', self.html)
 
+    def test_optional_research_tool_onboarding_is_local_and_setup_only(self) -> None:
+        controller = self.modules["connections-controller.js"]
+        renderer = self.modules["render-connections.js"]
+
+        self.assertIn('href="#research-tools"', self.html)
+        for portal_id in ("research-tools", "integrations-summary", "integration-list"):
+            with self.subTest(portal_id=portal_id):
+                self.assertIn(f'id="{portal_id}"', self.html)
+
+        self.assertIn('const INTEGRATIONS_PATH = "/api/v1/integrations"', controller)
+        self.assertIn('new Set(["verify", "disconnect"])', controller)
+        self.assertIn("/${provider}/connect", controller)
+        self.assertIn("/${provider}/${action}", controller)
+        for provider in ("paperclip", "biohub-esm", "proto"):
+            with self.subTest(provider=provider):
+                self.assertIn(f'provider: "{provider}"', renderer)
+        for field in (
+            "api_key",
+            "api_token",
+            "modal_token_id",
+            "modal_token_secret",
+            "modal_environment",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(f'name: "{field}"', renderer)
+
+        self.assertIn('input.type = field.secret ? "password" : "text"', renderer)
+        self.assertIn('input.autocomplete = "off"', renderer)
+        self.assertNotIn("input.value", renderer)
+        self.assertIn("form.reset()", controller)
+        self.assertLess(
+            controller.index("form.reset()"),
+            controller.index("setFormBusy(form, submit, false)"),
+        )
+        self.assertNotIn("sessionStorage", controller + renderer)
+        self.assertNotIn("localStorage", controller + renderer)
+        self.assertNotIn("/run", controller)
+        self.assertNotIn("/search", controller)
+        self.assertIn('"Save securely"', renderer)
+        self.assertIn('"Run public API check — may use credits"', renderer)
+        self.assertNotIn('"Run paid synthetic check"', renderer)
+        self.assertNotIn("paid synthetic check", controller)
+        self.assertIn("pinned, reviewed response-safe ESM transport", renderer)
+        self.assertIn("Biohub ESM verification and use remain unavailable", controller)
+        self.assertIn("independent patient-data agreement", renderer)
+        self.assertIn("Enabled patient-investigation operations", renderer)
+        self.assertIn("connection_state", renderer)
+        self.assertIn("reconciliation_required", renderer)
+        self.assertIn("Confirm disconnected", renderer)
+        self.assertIn("Run the connection check", renderer)
+        self.assertIn('credentialState === "stored"', renderer)
+        self.assertIn("policy_state", renderer)
+        self.assertIn('credentialState === "corrupt"', renderer)
+        self.assertIn('integration.connection_state === "not_configured"', controller)
+        self.assertIn('integration.credential_state === "missing"', controller)
+        self.assertIn("remains configured", controller)
+        self.assertIn("await load({announceFailure: connected})", controller)
+        self.assertIn("await load({announceFailure: completed})", controller)
+        self.assertIn("No credentials can be changed until it is available", renderer)
+        self.assertIn("connecting a tool does not start research", self.html.lower())
+
     def test_patient_profile_forms_do_not_expose_generated_or_claimed_authority(
         self,
     ) -> None:
