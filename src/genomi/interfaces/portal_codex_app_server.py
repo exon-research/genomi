@@ -218,7 +218,11 @@ class CodexAppServerSession:
                 "id": item_id,
                 "name": name,
                 "isError": failed,
-                "content": output,
+                "content": _preview(output),
+                # Keep the structured app-server item result available to the
+                # portal projection layer.  The normal public-event boundary
+                # sanitizes this value before it reaches the browser.
+                "payload": output,
             }
         ]
 
@@ -282,6 +286,7 @@ def _tool_item(item: JsonObject) -> tuple[str, JsonObject, Any] | None:
             if isinstance(state, dict)
         ]
         return _COLLAB_TOOL_NAMES.get(raw_name, raw_name), tool_input, {
+            "status": item.get("status"),
             "updates": updates,
             "receiverThreadIds": receiver_ids,
             "agentsStates": agents_states,

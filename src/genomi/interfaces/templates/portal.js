@@ -875,6 +875,9 @@
         onProjectChanged: () => scheduleProjectReload(),
         onFrameChanged: () => scheduleFramesReload(),
         onMessagesChanged: (event) => scheduleMessagesReload(event),
+        onLabInvestigationChanged: () => debounceRefresh('lab-board', genomiLab.loadBoard),
+        onLabProfileChanged: () => debounceRefresh('lab-profile', genomiLab.loadProfile),
+        onLabIntegrationChanged: () => debounceRefresh('lab-integrations', genomiLab.loadConnections),
         onArtifactsChanged: () => {
           scheduleArtifactsReload();
           scheduleWorkspaceFilesReload();

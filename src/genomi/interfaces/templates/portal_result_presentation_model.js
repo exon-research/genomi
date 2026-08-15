@@ -7,6 +7,13 @@ export function sourceOperation(record) {
   const presentation = portalResultPresentation(record && record.result && record.result.portal_presentation);
   const operation = presentationText(presentation && presentation.operation);
   if (operation) return operation;
+  const resultPayload = object(record && record.result && record.result.payload);
+  const dispatched = presentationText(
+    resultPayload.dispatched_tool
+    || (record && record.result && record.result.dispatched_tool)
+    || object(record && record.call && record.call.input).tool
+  );
+  if (dispatched) return dispatched;
   return (record && record.call && record.call.name) || (record && record.result && record.result.name) || '';
 }
 

@@ -25,7 +25,7 @@ def project_context_path(project_id: str, root: str | Path | None = None) -> Pat
 def ensure_project_context(project_id: str, root: str | Path | None = None) -> Path:
     binding = portal_store.project_genome_binding(project_id, root=root)
     path = project_context_path(project_id, root=root)
-    payload = _project_context_payload(binding)
+    payload = _project_context_payload(project_id, binding)
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_atomically(path, payload)
     return path
@@ -38,9 +38,14 @@ def agent_environment(project_id: str, root: str | Path | None = None) -> dict[s
     }
 
 
-def _project_context_payload(binding: JsonObject | None) -> JsonObject:
+def _project_context_payload(project_id: str, binding: JsonObject | None) -> JsonObject:
     agi_id = str(binding.get("agi_id") or "").strip() if isinstance(binding, dict) else ""
-    user_id = str(binding.get("user_id") or "").strip() if isinstance(binding, dict) else ""
+    selected_user_id = str(binding.get("user_id") or "").strip() if isinstance(binding, dict) else ""
+    # Every portal project is already a private session/workspace boundary. Lab
+    # uses that boundary when no AGI owner is selected, so users never face a
+    # second identity picker. Selecting an AGI replaces this opaque fallback
+    # with the AGI owner's user identity.
+    user_id = selected_user_id or f"portal-{_clean_project_id(project_id)}"
     access: JsonObject = {}
     if agi_id:
         access[agi_id] = {
@@ -51,7 +56,7 @@ def _project_context_payload(binding: JsonObject | None) -> JsonObject:
         }
     return {
         "active_agi_id": agi_id or None,
-        "active_user_id": user_id or None,
+        "active_user_id": user_id,
         "agis": {},
         AGI_ACCESS_KEY: access,
         DEFAULT_USER_AUTO_SELECTION_KEY: False,

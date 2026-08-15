@@ -7,6 +7,7 @@ The portal persists only the identity binding needed to open the right board.
 from __future__ import annotations
 
 import threading
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,6 +76,8 @@ def project_board(
             if exc.code != "investigation_not_found":
                 raise
             binding = None
+    if active is None and investigations:
+        active = investigations[0]
     return {
         "status": "ready",
         "binding": binding,
@@ -361,7 +364,7 @@ def project_binding(
 class _PortalGenomiLabApplication:
     """Project-bound projection over the local Genomi Lab record domain.
 
-    This adapter deliberately owns no assistant runner and no credential store.
+    This adapter deliberately owns no assistant runner or provider secret layer.
     Provider connection operations are supplied by the host-neutral Lab backend;
     until that backend reports them, the landing page renders their honest
     unavailable state instead of falling back to a second credential boundary.
@@ -442,27 +445,56 @@ class _PortalGenomiLabApplication:
 
     def list_investigations(self) -> list[JsonObject]:
         with self._current_user() as user_id:
-            return self.store.list_investigations(user_id)
+            records: list[JsonObject] = []
+            for investigation in self.store.list_investigations(user_id):
+                investigation_id = str(investigation.get("investigation_id") or "")
+                if not investigation_id:
+                    continue
+                try:
+                    view = self.store.read_orchestrator_investigation(
+                        investigation_id, include_history=True
+                    )
+                except (KeyError, ValueError):
+                    continue
+                context = view.get("context")
+                session = (
+                    str(context.get("workspace_session_id") or "")
+                    if isinstance(context, dict)
+                    else ""
+                )
+                if session == self.session_id or session.startswith(f"{self.session_id}:"):
+                    records.append(view)
+            return records
 
     def investigation(self, investigation_id: str) -> JsonObject:
         with self._current_user() as user_id:
-            investigation = self.store.get_investigation(investigation_id)
-            if str(investigation.get("user_id") or "") != user_id:
+            view = self.store.read_orchestrator_investigation(
+                investigation_id, include_history=True
+            )
+            investigation = view.get("investigation")
+            if not isinstance(investigation, dict) or str(
+                investigation.get("user_id") or ""
+            ) != user_id:
                 raise PortalGenomiLabError(
                     "investigation_not_found",
                     "Investigation not found.",
                     http_status=404,
                 )
-            return investigation
+            return view
 
     def create_investigation(self, payload: JsonObject) -> JsonObject:
         with self._current_user() as user_id:
-            return self.store.create_investigation(
+            response = self.store.create_lab_investigation(
                 user_id,
+                workspace_session_id=self.session_id,
                 question=str(payload.get("question") or "").strip(),
                 disease_scope=str(payload.get("disease_scope") or "").strip()
                 or None,
+                public_only=False,
+                approved_profile_context=None,
+                command_id=f"portal-create-{uuid.uuid4().hex}",
             )
+            return dict(response["investigation"])
 
     def integrations(self) -> JsonObject:
         return {
@@ -507,7 +539,7 @@ def _application_service(
             # Construction discovers capabilities but does not start or resume an
             # assistant task. The existing portal run remains the only runner.
             application = _PortalGenomiLabApplication(
-                session_id=f"genomilab-portal-{clean_project_id}",
+                session_id=f"portal:{clean_project_id}",
                 context_provider=lambda: _project_context(
                     clean_project_id, root=root
                 ),
@@ -521,7 +553,11 @@ def _project_context(
 ) -> JsonObject:
     binding = portal_store.project_genome_binding(project_id, root=root)
     if not isinstance(binding, dict):
-        return {"active_user_id": None, "active_agi_id": None, "agis": {}}
+        return {
+            "active_user_id": f"portal-{str(project_id or '').strip()}",
+            "active_agi_id": None,
+            "agis": {},
+        }
     return {
         "active_user_id": str(binding.get("user_id") or "").strip() or None,
         "active_agi_id": str(binding.get("agi_id") or "").strip() or None,
@@ -537,6 +573,9 @@ def _require_project(project_id: str, *, root: str | Path | None) -> None:
 
 
 def _investigation_summary(investigation: JsonObject) -> JsonObject:
+    record = investigation.get("investigation")
+    if isinstance(record, dict):
+        investigation = record
     return {
         "investigation_id": investigation.get("investigation_id"),
         "question": investigation.get("question"),
@@ -550,6 +589,8 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     if not isinstance(investigation, dict):
         return None
     result = _investigation_summary(investigation)
+    record = investigation.get("investigation")
+    record = record if isinstance(record, dict) else investigation
     hypotheses = investigation.get("current_hypotheses") or investigation.get(
         "hypothesis_versions"
     ) or []
@@ -558,10 +599,21 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     ) or []
     patient_questions = investigation.get("patient_questions") or []
     next_steps = investigation.get("recommended_next_steps") or []
-    current_brief = investigation.get("current_brief_version")
+    brief_versions = investigation.get("brief_versions") or []
+    current_brief = investigation.get("current_brief_version") or (
+        brief_versions[-1] if brief_versions else None
+    )
+    evidence_snapshots = investigation.get("evidence_snapshots") or []
+    cycles = investigation.get("cycles") or []
+    research_artifacts = investigation.get("research_artifacts") or []
     result.update(
         {
             "private_context_status": investigation.get("private_context_status"),
+            "cycles": cycles,
+            "cycle_count": len(cycles),
+            "evidence_snapshots": evidence_snapshots,
+            "brief_versions": brief_versions,
+            "research_artifacts": research_artifacts,
             "evidence_count": len(investigation.get("evidence_records") or []),
             "hypothesis_count": len(hypotheses),
             "gap_count": len(investigation.get("information_gaps") or []),
@@ -577,12 +629,15 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
                 else current_brief
             ),
             "current_brief": (
-                current_brief.get("summary")
+                (current_brief.get("brief") or {}).get("summary")
+                or (current_brief.get("brief") or {}).get("title")
+                or current_brief.get("summary")
                 or current_brief.get("title")
                 or "Evidence-linked doctor brief ready."
                 if isinstance(current_brief, dict)
                 else None
             ),
+            "domain_revision": record.get("domain_revision"),
         }
     )
     return result

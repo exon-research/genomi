@@ -1,6 +1,7 @@
 import { compactLine, formatContextValue, formatShort, humanizeState, isEmptyValue, titleCase } from './portal_format.js';
 import { genomeContextPayloadForSelection, genomeContextResultViewModel, renderGenomeContext } from './portal_genome_context.js';
 import { extractPresentedPayload, normalizeEvidencePayload } from './portal_presented_payload.js';
+import { LAB_RESULT_OPERATIONS, isLabResultOperation, labResultViewModel } from './portal_lab_results.js';
 import { serverResultPresentationModel, sourceOperation } from './portal_result_presentation_model.js';
 import {
   clearResultSelection,
@@ -44,6 +45,8 @@ export function registeredGenomiResultRendererOperations() {
   return [...resultRenderers.keys()];
 }
 
+LAB_RESULT_OPERATIONS.forEach((operation) => registerGenomiResultRenderer(operation, labResultViewModel));
+
 export function genomiResultViewModel(record, options = {}) {
   const payload = options.payload !== undefined ? options.payload : extractPresentedPayload(record);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -54,12 +57,12 @@ export function genomiResultViewModel(record, options = {}) {
   const renderer = getGenomiResultRenderer(operation);
   if (renderer) {
     const normalized = options.normalized !== undefined ? options.normalized : normalizeEvidencePayload(payload);
-    if (!normalized) return null;
+    if (!normalized && !isLabResultOperation(operation)) return null;
     const model = renderer(payload, operation, normalized, {
       displayOnly: Boolean(options.displayOnly),
       presentationState: options.presentationState || ''
     });
-    return enrichResultModelWithEvidenceState(model, normalized);
+    return normalized ? enrichResultModelWithEvidenceState(model, normalized) : model;
   }
   return null;
 }

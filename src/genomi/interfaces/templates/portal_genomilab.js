@@ -412,7 +412,7 @@ export function createGenomiLabController({ api, getProjectId }) {
     );
   }
 
-  return Object.freeze({ bind, loadAll, loadProfile, loadConnections });
+  return Object.freeze({ bind, loadAll, loadBoard, loadProfile, loadConnections });
 }
 
 export function profileEditorSelection(formIds, selectedFormId) {

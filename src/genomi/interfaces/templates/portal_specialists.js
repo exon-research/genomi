@@ -6,6 +6,17 @@ const SPECIALIST_TOOLS = new Set([
   'send_message',
   'followup_task'
 ]);
+const LAB_ASSIGNMENT_OPERATIONS = new Set([
+  'lab.create_specialist_assignment',
+  'lab.transition_specialist_assignment'
+]);
+const LAB_ASSIGNMENT_STATES = new Set([
+  'proposed',
+  'spawned',
+  'completed',
+  'failed',
+  'cancelled'
+]);
 
 export function isSpecialistToolName(value) {
   const name = String(value || '').trim().toLowerCase();
@@ -15,7 +26,8 @@ export function isSpecialistToolName(value) {
 }
 
 export function specialistLaneModel(records = []) {
-  const collaboration = (Array.isArray(records) ? records : []).filter(isSpecialistRecord);
+  const allRecords = Array.isArray(records) ? records : [];
+  const collaboration = allRecords.filter(isCollaborationRecord);
   const specialists = [];
   const byIdentity = new Map();
   let parentWaiting = false;
@@ -62,6 +74,39 @@ export function specialistLaneModel(records = []) {
       const specialist = findSpecialist(specialists, byIdentity, target);
       if (specialist && !result.isError) specialist.status = 'error';
     }
+  });
+
+  // Lab assignment results are the authoritative lifecycle. Collaboration
+  // events describe live host activity; only a successful canonical Lab
+  // result proves that an isolated assignment reached a durable state.
+  allRecords.forEach((record) => {
+    const update = labAssignmentUpdate(record);
+    if (!update) return;
+    let assignmentSpecialist = findSpecialist(specialists, byIdentity, update.assignmentId);
+    const nativeSpecialist = findSpecialist(specialists, byIdentity, update.nativeAgentId);
+    if (assignmentSpecialist && nativeSpecialist && assignmentSpecialist !== nativeSpecialist) {
+      mergeSpecialists(nativeSpecialist, assignmentSpecialist, specialists);
+      assignmentSpecialist = nativeSpecialist;
+    }
+    const specialist = assignmentSpecialist || nativeSpecialist || {
+      key: update.assignmentId,
+      id: update.nativeAgentId,
+      taskName: '',
+      title: update.title,
+      summary: update.summary,
+      status: update.status
+    };
+    if (!specialists.includes(specialist)) specialists.push(specialist);
+    if (specialist.assignmentRevision && update.revision && update.revision < specialist.assignmentRevision) return;
+    specialist.assignmentId = update.assignmentId;
+    specialist.assignmentRevision = update.revision;
+    specialist.id = update.nativeAgentId || specialist.id;
+    specialist.title = update.title || specialist.title;
+    specialist.summary = update.summary || specialist.summary;
+    specialist.status = update.status;
+    specialist.policy = update.policy;
+    specialist.authoritative = true;
+    registerIdentities(byIdentity, specialist);
   });
 
   const counts = countStatuses(specialists);
@@ -124,10 +169,93 @@ export function renderSpecialistLane(stack, records = []) {
   return model;
 }
 
-function isSpecialistRecord(record) {
+function isCollaborationRecord(record) {
   const call = object(record && record.call);
   const result = object(record && record.result);
   return isSpecialistToolName(call.name || result.name);
+}
+
+function labAssignmentUpdate(record) {
+  const call = object(record && record.call);
+  const result = object(record && record.result);
+  if (!record || !record.result || result.isError) return null;
+  const payload = findKnownResultObject(result.payload);
+  const input = object(call.input);
+  const operation = clean(payload.dispatched_tool || input.tool || call.name || result.name);
+  if (!LAB_ASSIGNMENT_OPERATIONS.has(operation)) return null;
+  const assignment = object(payload.assignment);
+  const assignmentId = clean(assignment.specialist_assignment_id);
+  const state = clean(assignment.state).toLowerCase();
+  if (!assignmentId || !LAB_ASSIGNMENT_STATES.has(state)) return null;
+  const policy = clean(assignment.execution_policy);
+  const finding = completedFinding(payload.specialist_analysis);
+  return {
+    assignmentId,
+    nativeAgentId: clean(assignment.native_agent_id),
+    title: clean(assignment.specialist_role) || 'Research specialist',
+    policy,
+    revision: Number(assignment.revision) || 0,
+    status: labDisplayStatus(state),
+    summary: finding || policySummary(policy)
+  };
+}
+
+function findKnownResultObject(value, depth = 0) {
+  if (depth > 4) return {};
+  const parsed = parsedValue(value);
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      const found = findKnownResultObject(item, depth + 1);
+      if (found.assignment || found.dispatched_tool) return found;
+    }
+    return {};
+  }
+  const source = object(parsed);
+  if (source.assignment || source.dispatched_tool) return source;
+  for (const key of ['structuredContent', 'structured_content', 'result', 'payload', 'content']) {
+    if (source[key] === undefined) continue;
+    const found = findKnownResultObject(source[key], depth + 1);
+    if (found.assignment || found.dispatched_tool) return found;
+  }
+  if (typeof source.text === 'string') return findKnownResultObject(source.text, depth + 1);
+  return {};
+}
+
+function completedFinding(value) {
+  const analysis = object(value);
+  const decoded = parsedValue(analysis.general_analysis_json);
+  if (typeof decoded === 'string') return compact(decoded, 180);
+  const general = object(decoded).general_analysis;
+  if (typeof general === 'string') return compact(general, 180);
+  if (typeof analysis.general_analysis === 'string') return compact(analysis.general_analysis, 180);
+  return '';
+}
+
+function labDisplayStatus(state) {
+  if (state === 'completed') return 'completed';
+  if (state === 'spawned') return 'running';
+  if (state === 'proposed') return 'waiting';
+  return 'error';
+}
+
+function policySummary(policy) {
+  return {
+    reasoning_only: 'Isolated reasoning · no inherited tools or workspace',
+    public_literature: 'Isolated public literature research · Paperclip',
+    protein_model_research: 'Isolated protein model research · ESM',
+    experiment_design: 'Isolated experiment design · Proto'
+  }[policy] || 'Isolated specialist assignment';
+}
+
+function mergeSpecialists(target, source, specialists) {
+  if (!target || !source || target === source) return target;
+  target.assignmentId = source.assignmentId || target.assignmentId;
+  target.assignmentRevision = source.assignmentRevision || target.assignmentRevision;
+  target.policy = source.policy || target.policy;
+  target.authoritative = source.authoritative || target.authoritative;
+  const index = specialists.indexOf(source);
+  if (index >= 0) specialists.splice(index, 1);
+  return target;
 }
 
 function applySignals(values, specialists, byIdentity, fallback) {
@@ -262,7 +390,7 @@ function findSpecialist(specialists, byIdentity, value) {
 }
 
 function registerIdentities(index, specialist) {
-  [specialist.id, specialist.taskName, specialist.key, specialist.title].forEach((value) => {
+  [specialist.id, specialist.assignmentId, specialist.taskName, specialist.key, specialist.title].forEach((value) => {
     const cleanValue = clean(value).toLowerCase();
     if (cleanValue) index.set(cleanValue, specialist);
     const leaf = cleanValue.split('/').filter(Boolean).pop();
@@ -290,6 +418,10 @@ function humanTaskName(value) {
 function normalizedStatus(value) {
   const text = clean(value).toLowerCase();
   if (!text) return '';
+  if (['pendinginit', 'pending_init'].includes(text)) return 'waiting';
+  if (['inprogress', 'in_progress'].includes(text)) return 'running';
+  if (['errored', 'notfound', 'not_found'].includes(text)) return 'error';
+  if (text === 'shutdown') return 'completed';
   if (/\b(error|failed|failure|blocked|cancelled|canceled|interrupted)\b/.test(text)) return 'error';
   if (/\b(completed|complete|succeeded|finished|done|final_answer)\b/.test(text)) return 'completed';
   if (/\b(waiting|idle|pending)\b/.test(text)) return 'waiting';

@@ -21,6 +21,15 @@ export function watchProject(projectId, handlers = {}) {
   source.addEventListener('artifacts_changed', (event) => {
     if (handlers.onArtifactsChanged) handlers.onArtifactsChanged(parseEvent(event));
   });
+  source.addEventListener('genomilab_investigation_changed', (event) => {
+    if (handlers.onLabInvestigationChanged) handlers.onLabInvestigationChanged(parseEvent(event));
+  });
+  source.addEventListener('genomilab_profile_changed', (event) => {
+    if (handlers.onLabProfileChanged) handlers.onLabProfileChanged(parseEvent(event));
+  });
+  source.addEventListener('genomilab_integration_changed', (event) => {
+    if (handlers.onLabIntegrationChanged) handlers.onLabIntegrationChanged(parseEvent(event));
+  });
   source.addEventListener('error', () => {
     if (!closed && handlers.onInterrupt) handlers.onInterrupt();
   });

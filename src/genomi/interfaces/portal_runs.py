@@ -501,6 +501,7 @@ def compose_prompt(
     return (
         "You are operating inside GenomiLab, a local-first genomics workspace.\n"
         "Use the Genomi MCP tools already installed in this assistant session when evidence is needed.\n"
+        "When the underlying intent requires durable patient-specific synthesis across observations or data sources, competing explanations, evidence revised over time, bounded specialist research, or a versioned brief, load the focused lab skill and invoke canonical lab.* operations through genomi.invoke in this same conversation. Decide this semantically; never use keyword, phrase, prompt-template, or disease-name matching. Do not start another orchestration thread or Lab runner.\n"
         "Answer from evidence. Preserve Genomi privacy boundaries. Use informational medical language and recommend clinical confirmation for clinical decisions.\n\n"
         f"{context_section}"
         f"{history_section}"
