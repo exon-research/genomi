@@ -18,8 +18,8 @@ dependencies = [
   # container and stores the encryption key in an OS-backed secret store.
   "cryptography>=42",
   "google-genai>=2.0.1",
-  # Typed Paperclip client used only behind GenomiLab's deployment,
-  # patient-data, exact-disclosure, and verified-credential gates.
+  # Typed Paperclip client for a fixed public connection probe and separately
+  # authorized investigation-scoped evidence operations.
   "gxl-paperclip @ git+https://github.com/GXL-ai/paperclip.git@b5571365f0b36847dce42c5d66d2b158a0f871f9",
   "keyring>=25",
   # Proto prerequisite checks use an isolated, fixed-endpoint child with

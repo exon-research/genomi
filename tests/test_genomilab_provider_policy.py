@@ -163,13 +163,49 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             patient_influenced=True,
         )
 
-    def test_live_paperclip_fails_closed_without_deployment_authorization(self) -> None:
+    def test_public_label_is_not_trusted_paperclip_authority(self) -> None:
         network = NetworkSpy(_response())
 
         result = ProviderGateway(clock=lambda: POLICY_NOW).retrieve_live(
             provider=PAPERCLIP_PROVIDER,
             operation="search",
             request=self.public_request,
+            transport=network,
+            deployment_authorization=None,
+        )
+
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state,
+            ProviderPolicyState.BLOCKED_UNTRUSTED_PUBLIC_CONTEXT,
+        )
+        self.assertEqual(network.calls, [])
+
+    def test_non_paperclip_public_provider_keeps_deployment_only_policy(self) -> None:
+        network = NetworkSpy(_response())
+        provider = "synthetic-public-provider"
+        deployment = replace(_paperclip_deployment(), provider=provider)
+
+        result = ProviderGateway(clock=lambda: POLICY_NOW).retrieve_live(
+            provider=provider,
+            operation="search",
+            request=self.public_request,
+            transport=network,
+            deployment_authorization=deployment,
+        )
+
+        self.assertEqual(result.status, EvidenceStatus.DATA_RETURNED)
+        self.assertEqual(network.calls, [self.public_request])
+
+    def test_patient_paperclip_request_still_requires_deployment_authorization(
+        self,
+    ) -> None:
+        network = NetworkSpy(_response())
+
+        result = ProviderGateway(clock=lambda: POLICY_NOW).retrieve_live(
+            provider=PAPERCLIP_PROVIDER,
+            operation="search",
+            request=self.patient_request,
             transport=network,
             deployment_authorization=None,
         )
@@ -486,6 +522,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             source_family=SourceFamily.CHEMBL,
             purpose="Review compounds",
             operation="search",
+            patient_influenced=True,
         )
         decision = evaluate_live_provider_request(
             PAPERCLIP_PROVIDER,
@@ -502,7 +539,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
         baseline = _paperclip_deployment()
         cases = (
             (
-                self.public_request,
+                self.patient_request,
                 replace(baseline, permitted_operations=frozenset({"lookup"})),
                 "search",
                 ProviderPolicyState.BLOCKED_DEPLOYMENT_OPERATION_SCOPE,
@@ -517,7 +554,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
                 ProviderPolicyState.BLOCKED_DEPLOYMENT_DATA_CLASS_SCOPE,
             ),
             (
-                self.public_request,
+                self.patient_request,
                 replace(baseline, permitted_purposes=frozenset({"Different purpose"})),
                 "search",
                 ProviderPolicyState.BLOCKED_DEPLOYMENT_PURPOSE_SCOPE,
@@ -568,7 +605,7 @@ class GenomiLabProviderPolicyTests(unittest.TestCase):
             with self.subTest(expected=expected.value):
                 decision = evaluate_live_provider_request(
                     PAPERCLIP_PROVIDER,
-                    self.public_request,
+                    self.patient_request,
                     operation="search",
                     current_time=POLICY_NOW,
                     deployment_authorization=deployment,

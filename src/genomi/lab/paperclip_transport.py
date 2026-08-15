@@ -16,17 +16,14 @@ from .paperclip_contract import (
     PAPERCLIP_SUPPORTED_OPERATIONS,
     paperclip_route_definition,
 )
-from .provider_policy import (
-    PAPERCLIP_CONNECTION_PROBE_QUERY,
-    EvidenceRequest,
-    SourceFamily,
-)
+from .provider_policy import EvidenceRequest, SourceFamily
 
 
 PAPERCLIP_SEARCH_LIMIT = 20
 PAPERCLIP_REQUEST_TIMEOUT_SECONDS = 120.0
 PAPERCLIP_PROBE_TIMEOUT_SECONDS = 15.0
 PAPERCLIP_PROBE_SOURCE = "pmc"
+PAPERCLIP_CONNECTION_PROBE_QUERY = "TP53"
 PAPERCLIP_BASE_URL = "https://paperclip.gxl.ai"
 PAPERCLIP_SDK_VERSION = "0.4.2"
 PAPERCLIP_SDK_REPOSITORY = "https://github.com/GXL-ai/paperclip"

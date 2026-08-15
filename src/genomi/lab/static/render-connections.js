@@ -6,8 +6,8 @@ export const INTEGRATION_DEFINITIONS = Object.freeze([
   Object.freeze({
     provider: "paperclip",
     name: "GXL Paperclip",
-    description: "Use only the typed public-evidence routes authorized for this installation.",
-    boundary: "Remote public-evidence service. Patient-influenced use additionally requires an independent patient-data agreement, plus a preview and approval for every query.",
+    description: "Save and check a GXL Paperclip API key for gated biomedical-evidence research.",
+    boundary: "The connection check sends one fixed public search for TP53 to PMC with a limit of 1. It may use API credits and never sends the patient's profile. The check enables no general public search in this patient workspace. Every investigation request separately requires the applicable GXL authorization, an independent patient-data agreement, and a preview and approval for the exact query.",
     fields: Object.freeze([
       Object.freeze({name: "api_key", label: "Paperclip API key", secret: true, maximum: 4096}),
     ]),
@@ -63,10 +63,24 @@ const POLICY_LABELS = Object.freeze({
   authorized: "Available when relevant",
   hard_disabled: "Use is not enabled",
   authorized_unavailable: "Connected service unavailable",
-  blocked_missing_deployment_authorization: "Product authorization required",
-  blocked_deployment_scope: "Product authorization does not cover an available route",
+  blocked_missing_deployment_authorization: "GXL investigation authorization required",
+  blocked_deployment_scope: "GXL patient-use authorization does not cover an available route",
+  blocked_deployment_operation_scope: "GXL authorization does not cover an available operation",
+  blocked_deployment_data_class_scope: "GXL authorization does not cover patient-informed data",
+  blocked_deployment_purpose_scope: "GXL authorization does not cover an investigation purpose",
+  blocked_deployment_not_yet_effective: "GXL investigation authorization is not active yet",
+  blocked_deployment_expired: "GXL investigation authorization expired",
+  blocked_deployment_revoked: "GXL investigation authorization was revoked",
   blocked_missing_patient_data_contract: "Patient-data agreement required",
   blocked_patient_data_contract_scope: "Patient-data agreement does not cover an available route",
+  blocked_patient_data_contract_operation_scope: "Patient-data agreement does not cover an available operation",
+  blocked_patient_data_contract_data_class_scope: "Patient-data agreement does not cover patient-informed data",
+  blocked_patient_data_contract_purpose_scope: "Patient-data agreement does not cover an investigation purpose",
+  blocked_patient_data_contract_not_yet_effective: "Patient-data agreement is not active yet",
+  blocked_patient_data_contract_expired: "Patient-data agreement expired",
+  blocked_patient_data_contract_revoked: "Patient-data agreement was revoked",
+  blocked_request_operation_mismatch: "Requested operation does not match its approval",
+  blocked_untrusted_public_context: "Public-only Paperclip context is not available here",
   blocked_missing_exact_disclosure_approval: "Per-request approval required",
   disabled: "Use is not enabled",
   unavailable: "Not available in this workspace",
@@ -80,7 +94,7 @@ const POLICY_LABELS = Object.freeze({
 });
 
 const SCOPE_LABELS = Object.freeze({
-  public_evidence: "Public evidence",
+  fixed_public_connection_probe: "Fixed public connection check only",
   fixed_synthetic_connection_probe: "Fixed synthetic connection check only",
   modal_prerequisite_only: "Modal prerequisite check only",
 });
@@ -97,8 +111,11 @@ export function renderConnections(payload) {
   const savedCount = INTEGRATION_DEFINITIONS.filter(
     (definition) => text((byProvider.get(definition.provider) || {}).credential_state) === "stored"
   ).length;
-  const enabledCount = INTEGRATION_DEFINITIONS.filter(
-    (definition) => array((byProvider.get(definition.provider) || {}).available_operations).length > 0
+  const checkedCount = INTEGRATION_DEFINITIONS.filter(
+    (definition) => connectionState(byProvider.get(definition.provider) || {}) === "ready"
+  ).length;
+  const investigationEnabledCount = INTEGRATION_DEFINITIONS.filter(
+    (definition) => array((byProvider.get(definition.provider) || {}).investigation_operations).length > 0
   ).length;
   const unavailable = text(payload && payload.status) === "unavailable";
 
@@ -107,7 +124,7 @@ export function renderConnections(payload) {
   if (!summary || !list) return;
   summary.textContent = unavailable
     ? "Connections unavailable"
-    : `${savedCount} of ${INTEGRATION_DEFINITIONS.length} credentials saved · ${enabledCount} investigation connection enabled`;
+    : `${savedCount} of ${INTEGRATION_DEFINITIONS.length} credentials saved · ${checkedCount} connection checks passed · Patient investigations enabled: ${investigationEnabledCount}`;
   if (unavailable) summary.dataset.available = "false";
   else delete summary.dataset.available;
   list.setAttribute("aria-busy", "false");
@@ -128,17 +145,19 @@ export function renderConnections(payload) {
 }
 
 function integrationCard(definition, record) {
-  const state = connectionState(record);
-  const credentialState = text(record.credential_state);
-  const credentialPresent = credentialState === "stored" || credentialState === "corrupt";
-  const policyState = text(record.policy_state) || "unavailable";
-  const operations = array(record.available_operations)
-    .map((operation) => text(operation))
-    .filter(Boolean);
-  const routes = availableRoutes(record.available_routes);
-  const purposes = array(record.available_purposes)
-    .map((purpose) => text(purpose))
-    .filter(Boolean);
+  const presentation = connectionPresentation(definition, record);
+  const {
+    canEnterCredentials,
+    canVerify,
+    connectionLabel,
+    credentialPresent,
+    credentialState,
+    operationSummary,
+    policyLabel,
+    policyState,
+    showActions,
+    state,
+  } = presentation;
   const card = node("article", "", "integration-card");
   card.dataset.integrationProvider = definition.provider;
 
@@ -148,15 +167,13 @@ function integrationCard(definition, record) {
   const states = node("div", "", "integration-state-stack");
   const connection = node(
     "span",
-    state === "ready" && operations.length === 0
-      ? "Credential checked"
-      : CONNECTION_LABELS[state] || "Connection needs attention",
+    connectionLabel,
     "integration-state"
   );
   connection.dataset.state = state;
   const policy = node(
     "span",
-    POLICY_LABELS[policyState] || policyFallback(policyState),
+    policyLabel,
     "integration-policy-state"
   );
   policy.dataset.state = policyState;
@@ -172,14 +189,12 @@ function integrationCard(definition, record) {
   facts.textContent = `${location} · ${scope} · ${verified}`;
 
   const boundary = node("p", definition.boundary, "integration-card-boundary");
-  const operationSummary = node("p", operationSummaryText({
-    provider: definition.provider,
-    state,
-    operations,
-    routes,
-    purposes,
-  }), "integration-operation-summary");
-  card.append(heading, facts, boundary, operationSummary);
+  const operationSummaryNode = node(
+    "p",
+    operationSummary,
+    "integration-operation-summary"
+  );
+  card.append(heading, facts, boundary, operationSummaryNode);
   if (array(definition.resources).length) {
     const resources = node("p", "", "integration-card-boundary");
     resources.append("Official resources: ");
@@ -205,10 +220,6 @@ function integrationCard(definition, record) {
       "integration-card-boundary"
     ));
   }
-  const canEnterCredentials = state !== "credential_store_unavailable"
-    && (definition.provider !== "paperclip"
-      || record.verification_available === true
-      || credentialPresent);
   if (canEnterCredentials) {
     const details = document.createElement("details");
     details.className = "integration-connect-details";
@@ -219,16 +230,16 @@ function integrationCard(definition, record) {
     ));
     details.append(connectionForm(definition));
     card.append(details);
-  } else if (definition.provider === "paperclip") {
+  } else {
     card.append(node(
       "p",
-      "The installation owner must first configure documented Paperclip product authorization. An API key cannot establish that permission.",
+      "Secure credential storage is unavailable, so this tool cannot be connected from the portal.",
       "integration-card-boundary"
     ));
   }
-  if (state === "ready" || credentialPresent || state === "reconciliation_required") {
+  if (showActions) {
     const actions = node("div", "", "integration-actions");
-    if (credentialState === "stored" && record.verification_available !== false) {
+    if (canVerify) {
       actions.append(actionButton(
         definition.provider,
         "verify",
@@ -251,6 +262,54 @@ function integrationCard(definition, record) {
   return card;
 }
 
+function connectionPresentation(definition, record) {
+  const state = connectionState(record);
+  const credentialState = text(record.credential_state);
+  const credentialPresent = credentialState === "stored" || credentialState === "corrupt";
+  const policyState = text(record.policy_state) || "unavailable";
+  const investigationOperations = array(record.investigation_operations)
+    .map((operation) => text(operation))
+    .filter(Boolean);
+  const investigationRoutes = availableRoutes(record.investigation_routes);
+  const investigationPurposes = array(record.investigation_purposes)
+    .map((purpose) => text(purpose))
+    .filter(Boolean);
+  const connectionLabel = definition.provider === "paperclip" && state === "ready"
+    ? "Paperclip API key checked"
+    : state === "ready" && investigationOperations.length === 0
+      ? "Credential checked"
+      : CONNECTION_LABELS[state] || "Connection needs attention";
+  const basePolicyLabel = POLICY_LABELS[policyState] || policyFallback(policyState);
+  return Object.freeze({
+    canEnterCredentials: state !== "credential_store_unavailable",
+    canVerify: credentialState === "stored" && record.verification_available !== false,
+    connectionLabel,
+    credentialPresent,
+    credentialState,
+    investigationOperations,
+    investigationPurposes,
+    investigationRoutes,
+    operationSummary: operationSummaryText({
+      provider: definition.provider,
+      state,
+      investigationOperations,
+      investigationRoutes,
+      investigationPurposes,
+    }),
+    policyLabel: definition.provider === "paperclip"
+      ? `Patient investigations: ${basePolicyLabel}`
+      : basePolicyLabel,
+    policyState,
+    showActions: state === "ready" || credentialPresent || state === "reconciliation_required",
+    state,
+  });
+}
+
+export function integrationPresentation(provider, record = {}) {
+  const definition = integrationDefinition(provider);
+  return definition ? connectionPresentation(definition, isObject(record) ? record : {}) : null;
+}
+
 function availableRoutes(value) {
   return array(value)
     .filter(isObject)
@@ -263,22 +322,41 @@ function availableRoutes(value) {
     .filter((route) => route.sourceFamily && route.operations.length);
 }
 
-function operationSummaryText({provider, state, operations, routes, purposes}) {
-  if (provider === "paperclip" && routes.length) {
-    const routeSummary = routes
-      .map((route) => `${SOURCE_FAMILY_LABELS[route.sourceFamily] || route.sourceFamily}: ${route.operations.join(", ")}`)
-      .join(" · ");
-    const purposeSummary = purposes.length
-      ? ` Approved purposes: ${purposes.join("; ")}.`
-      : "";
-    return `Enabled patient-investigation routes: ${routeSummary}.${purposeSummary} Every query still requires an exact preview and approval.`;
+function operationSummaryText({
+  provider,
+  state,
+  investigationOperations,
+  investigationRoutes,
+  investigationPurposes,
+}) {
+  if (provider === "paperclip") {
+    const connectionSummary = state === "ready"
+      ? "The fixed public API connection check passed; it enables no general public-evidence operation in this patient workspace."
+      : "The fixed public API connection check has not passed.";
+
+    if (investigationRoutes.length) {
+      const purposeSummary = investigationPurposes.length
+        ? ` Approved purposes: ${investigationPurposes.join("; ")}.`
+        : "";
+      return `${connectionSummary} Enabled patient-investigation routes: ${routeSummaryText(investigationRoutes)}.${purposeSummary} Every patient-influenced query still requires an exact preview and approval.`;
+    }
+    if (investigationOperations.length) {
+      return `${connectionSummary} Enabled patient-investigation operations: ${investigationOperations.join(", ")}. Every patient-influenced query still requires an exact preview and approval.`;
+    }
+    return `${connectionSummary} Patient-investigation routes are not enabled by the API key or connection check.`;
   }
-  if (operations.length) {
-    return `Enabled patient-investigation operations: ${operations.join(", ")}`;
+  if (investigationOperations.length) {
+    return `Enabled patient-investigation operations: ${investigationOperations.join(", ")}`;
   }
   return state === "ready"
     ? "Credential and connection checked. No GenomiLab research operation is enabled."
     : "No GenomiLab research operation is enabled by this connection.";
+}
+
+function routeSummaryText(routes) {
+  return routes
+    .map((route) => `${SOURCE_FAMILY_LABELS[route.sourceFamily] || route.sourceFamily}: ${route.operations.join(", ")}`)
+    .join(" · ");
 }
 
 function connectionForm(definition) {

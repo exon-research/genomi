@@ -70,7 +70,7 @@ class EvidenceApplicationMixin(
             "gateway": "GenomiLab",
             "provider_neutral": True,
             "provider_credentials_exposed": False,
-            "operations": list(paperclip["operations"]),
+            "operations": list(paperclip["investigation_operations"]),
             "paperclip": paperclip,
             "direct_sources": [
                 direct_sources[family].manifest()

@@ -215,6 +215,12 @@ class GenomiLabAssetTests(unittest.TestCase):
         self.assertNotIn('"Run paid synthetic check"', renderer)
         self.assertNotIn("paid synthetic check", controller)
         self.assertIn("never a patient-derived sequence", renderer)
+        self.assertIn("one fixed public search for TP53", renderer)
+        self.assertIn("PMC with a limit of 1", renderer)
+        self.assertIn("never sends the patient's profile", renderer)
+        self.assertIn("Paperclip API key checked", renderer)
+        self.assertIn("enables no general public-evidence operation", renderer)
+        self.assertIn("Patient investigations:", renderer)
         self.assertIn("no Proto tool will run", controller)
         self.assertIn('url: "/official/biohub-api-keys"', renderer)
         self.assertIn('url: "/official/biohub-terms"', renderer)
@@ -222,17 +228,32 @@ class GenomiLabAssetTests(unittest.TestCase):
         self.assertIn('url: "/official/biohub-limitations"', renderer)
         self.assertIn('link.rel = "noopener noreferrer"', renderer)
         self.assertIn("independent patient-data agreement", renderer)
+        for field in (
+            "investigation_operations",
+            "investigation_routes",
+            "investigation_purposes",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, renderer + controller)
+        self.assertIn(
+            "When ready, run the fixed public API check: TP53 in PMC, limit 1",
+            controller,
+        )
+        self.assertIn(
+            "Secure credential storage is unavailable, so this tool cannot be connected",
+            renderer,
+        )
         self.assertIn("Enabled patient-investigation routes", renderer)
         self.assertIn("Approved purposes", renderer)
         self.assertIn(
-            "Every query still requires an exact preview and approval", renderer
+            "Every patient-influenced query still requires an exact preview and approval",
+            renderer,
         )
         self.assertIn("connection_state", renderer)
         self.assertIn("reconciliation_required", renderer)
         self.assertIn("Confirm disconnected", renderer)
         self.assertIn("Run the connection check", renderer)
         self.assertIn('credentialState === "stored"', renderer)
-        self.assertIn("An API key cannot establish that permission", renderer)
         self.assertIn("policy_state", renderer)
         self.assertIn('credentialState === "corrupt"', renderer)
         self.assertIn('integration.connection_state === "not_configured"', controller)

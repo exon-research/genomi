@@ -116,16 +116,22 @@ Those GenomiLab capabilities go beyond both base Genomi and a general harness:
 they project an approved Patient Molecular Profile, preserve source-separated
 disease evidence, relate public findings to exact patient observations, and
 maintain hypotheses, counterevidence, gaps, confirmation needs, and versioned
-patient/clinician briefs. GXL Paperclip is used through the gated evidence
-gateway when its source scope and policy allow it. Proto and ESM remain disabled
-unless a narrow, independently validated scientific task makes them appropriate.
+patient/clinician briefs. A Paperclip API key can be saved securely and checked
+explicitly with a fixed public `TP53`/PMC/one-result probe. That check does not
+enable evidence retrieval. Every Paperclip evidence operation in this release
+is investigation-scoped and remains closed until separate deployment
+authorization, an independent patient-data contract, and approval of the exact
+disclosure are all present. An API key does not establish those permissions.
+Proto and ESM remain disabled unless a narrow, independently validated
+scientific task makes them appropriate.
 
 The portal binds to a random loopback-only address and opens with a one-time
 private launch link. Each investigation uses an immutable, consented molecular
 profile snapshot, an exact AGI revision, and a bounded genomic scope. Access is
 revoked when the portal stops or the current Genomi user changes. Optional
 external providers and biological models are behind explicit eligibility and
-patient-data disclosure gates; unavailable capabilities fail closed.
+patient-data disclosure gates; connection verification never opens a
+patient-informed route, and unavailable capabilities fail closed.
 
 This remains a research-support developer preview, not a diagnosis or treatment
 product. Findings and proposed clinical implications require appropriate

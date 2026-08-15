@@ -334,10 +334,13 @@ def _paperclip_routes(manifest: object) -> dict[str, set[str]]:
     if not isinstance(manifest, dict):
         return {}
     paperclip = manifest.get("paperclip")
-    if not isinstance(paperclip, dict) or paperclip.get("live_state") != "authorized":
+    if (
+        not isinstance(paperclip, dict)
+        or paperclip.get("investigation_live_state") != "authorized"
+    ):
         return {}
     routes: dict[str, set[str]] = {}
-    for route in paperclip.get("routes") or []:
+    for route in paperclip.get("investigation_routes") or []:
         if not isinstance(route, dict) or not isinstance(
             route.get("source_family"), str
         ):
@@ -362,9 +365,12 @@ def _paperclip_purposes(manifest: object) -> set[str]:
     if not isinstance(manifest, dict):
         return set()
     paperclip = manifest.get("paperclip")
-    if not isinstance(paperclip, dict) or paperclip.get("live_state") != "authorized":
+    if (
+        not isinstance(paperclip, dict)
+        or paperclip.get("investigation_live_state") != "authorized"
+    ):
         return set()
-    purposes = paperclip.get("purposes")
+    purposes = paperclip.get("investigation_purposes")
     if not isinstance(purposes, list):
         return set()
     return {

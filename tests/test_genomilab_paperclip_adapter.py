@@ -92,17 +92,18 @@ class PaperclipAdapterTests(unittest.TestCase):
             ],
         }
 
-    def test_default_live_state_is_hard_disabled_and_exposes_no_escape_hatch(
+    def test_default_manifest_has_no_investigation_route(
         self,
     ) -> None:
         manifest = PaperclipAdapter().capability_manifest().to_dict()
-        self.assertEqual(manifest["live_state"], "hard_disabled")
-        self.assertEqual(manifest["operations"], [])
-        self.assertEqual(manifest["source_families"], [])
+        self.assertEqual(manifest["investigation_live_state"], "hard_disabled")
+        self.assertEqual(manifest["investigation_operations"], [])
         self.assertFalse(manifest["arbitrary_execute_available"])
         self.assertFalse(manifest["ambient_credentials_allowed"])
 
-    def test_blocked_live_path_never_reads_a_secret_or_invokes_transport(self) -> None:
+    def test_unconfigured_live_path_never_reads_a_secret_or_invokes_transport(
+        self,
+    ) -> None:
         calls: list[str] = []
 
         adapter = PaperclipAdapter(
@@ -113,6 +114,32 @@ class PaperclipAdapterTests(unittest.TestCase):
             operation=PaperclipOperation.SEARCH, request=self.request
         )
         self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state.value,
+            "blocked_untrusted_public_context",
+        )
+        self.assertEqual(calls, [])
+
+    def test_patient_path_without_policy_never_reads_secret_or_transport(self) -> None:
+        calls: list[str] = []
+        adapter = PaperclipAdapter(
+            secret_provider=lambda: calls.append("secret") or "credential",
+            credential_configured=lambda: True,
+            connection_ready=lambda: True,
+            live_transport=lambda *_: calls.append("network") or self.response,
+            live_routes={SourceFamily.LITERATURE: (PaperclipOperation.SEARCH,)},
+        )
+
+        result = adapter.retrieve(
+            operation=PaperclipOperation.SEARCH,
+            request=replace(self.request, patient_influenced=True),
+        )
+
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state.value,
+            "blocked_missing_deployment_authorization",
+        )
         self.assertEqual(calls, [])
 
     def test_manifest_reports_only_deployed_operations_and_actual_key_state(
@@ -136,15 +163,18 @@ class PaperclipAdapterTests(unittest.TestCase):
             },
         )
         manifest = adapter.capability_manifest().to_dict()
-        self.assertEqual(manifest["live_state"], "authorized_unavailable")
-        self.assertEqual(manifest["operations"], ["search", "lookup"])
-        self.assertEqual(manifest["source_families"], ["literature"])
+        self.assertEqual(manifest["investigation_live_state"], "authorized_unavailable")
+        self.assertEqual(manifest["investigation_operations"], [])
 
         unavailable = adapter.retrieve(
             operation=PaperclipOperation.READ_EXTRACT,
             request=replace(self.request, operation="read_extract"),
         )
-        self.assertEqual(unavailable.status, EvidenceStatus.OUT_OF_SCOPE_FOR_INPUT)
+        self.assertEqual(unavailable.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            unavailable.policy.state.value,
+            "blocked_untrusted_public_context",
+        )
 
     def test_stored_key_is_not_an_authorized_route_until_connection_is_ready(
         self,
@@ -162,7 +192,8 @@ class PaperclipAdapterTests(unittest.TestCase):
             live_routes={SourceFamily.LITERATURE: (PaperclipOperation.SEARCH,)},
         )
         self.assertEqual(
-            adapter.capability_manifest().live_state, "authorized_unavailable"
+            adapter.capability_manifest().investigation_live_state,
+            "authorized_unavailable",
         )
 
     def test_injected_transport_without_explicit_routes_or_readiness_stays_closed(
@@ -185,8 +216,12 @@ class PaperclipAdapterTests(unittest.TestCase):
             request=self.request,
         )
 
-        self.assertEqual(result.status, EvidenceStatus.OUT_OF_SCOPE_FOR_INPUT)
-        self.assertEqual(adapter.capability_manifest().operations, ())
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state.value,
+            "blocked_untrusted_public_context",
+        )
+        self.assertEqual(adapter.capability_manifest().investigation_operations, ())
         self.assertEqual(calls, [])
 
     def test_patient_manifest_has_no_routes_without_an_independent_contract(
@@ -218,11 +253,11 @@ class PaperclipAdapterTests(unittest.TestCase):
                 )
 
                 manifest = adapter.capability_manifest().to_dict()
-                self.assertEqual(manifest["live_state"], "authorized_unavailable")
-                self.assertEqual(manifest["operations"], [])
-                self.assertEqual(manifest["source_families"], [])
-                self.assertEqual(manifest["routes"], [])
-                self.assertEqual(manifest["purposes"], [])
+                self.assertEqual(manifest["investigation_live_state"], "hard_disabled")
+                self.assertEqual(manifest["investigation_operations"], [])
+                self.assertEqual(manifest["investigation_source_families"], [])
+                self.assertEqual(manifest["investigation_routes"], [])
+                self.assertEqual(manifest["investigation_purposes"], [])
 
     def test_patient_manifest_intersects_narrow_contract_and_deployment_routes(
         self,
@@ -255,11 +290,11 @@ class PaperclipAdapterTests(unittest.TestCase):
         )
 
         manifest = adapter.capability_manifest().to_dict()
-        self.assertEqual(manifest["live_state"], "authorized")
-        self.assertEqual(manifest["operations"], ["search"])
-        self.assertEqual(manifest["source_families"], ["regulatory"])
+        self.assertEqual(manifest["investigation_live_state"], "authorized")
+        self.assertEqual(manifest["investigation_operations"], ["search"])
+        self.assertEqual(manifest["investigation_source_families"], ["regulatory"])
         self.assertEqual(
-            manifest["routes"],
+            manifest["investigation_routes"],
             [{"source_family": "regulatory", "operations": ["search"]}],
         )
 
@@ -294,12 +329,14 @@ class PaperclipAdapterTests(unittest.TestCase):
 
         manifest = adapter.capability_manifest().to_dict()
 
-        self.assertEqual(manifest["operations"], ["search"])
+        self.assertEqual(manifest["investigation_operations"], ["search"])
         self.assertEqual(
-            manifest["routes"],
+            manifest["investigation_routes"],
             [{"source_family": "literature", "operations": ["search"]}],
         )
-        self.assertEqual(manifest["purposes"], ["Build an evidence packet"])
+        self.assertEqual(
+            manifest["investigation_purposes"], ["Build an evidence packet"]
+        )
 
     def test_patient_manifest_requires_current_exact_full_policy_scope(self) -> None:
         now = datetime(2026, 8, 14, 12, 30, tzinfo=timezone.utc)
@@ -357,10 +394,10 @@ class PaperclipAdapterTests(unittest.TestCase):
                     .to_dict()
                 )
 
-                self.assertEqual(manifest["operations"], [])
-                self.assertEqual(manifest["source_families"], [])
-                self.assertEqual(manifest["routes"], [])
-                self.assertEqual(manifest["purposes"], [])
+                self.assertEqual(manifest["investigation_operations"], [])
+                self.assertEqual(manifest["investigation_source_families"], [])
+                self.assertEqual(manifest["investigation_routes"], [])
+                self.assertEqual(manifest["investigation_purposes"], [])
 
     def test_patient_manifest_respects_narrow_deployment_route_scope(self) -> None:
         adapter = PaperclipAdapter(
@@ -384,10 +421,10 @@ class PaperclipAdapterTests(unittest.TestCase):
         )
 
         manifest = adapter.capability_manifest().to_dict()
-        self.assertEqual(manifest["operations"], ["search", "lookup"])
-        self.assertEqual(manifest["source_families"], ["literature"])
+        self.assertEqual(manifest["investigation_operations"], ["search", "lookup"])
+        self.assertEqual(manifest["investigation_source_families"], ["literature"])
         self.assertEqual(
-            manifest["routes"],
+            manifest["investigation_routes"],
             [
                 {
                     "source_family": "literature",
@@ -476,13 +513,14 @@ class PaperclipAdapterTests(unittest.TestCase):
         )
         self.assertEqual(calls, [])
 
-    def test_authorized_public_live_call_requires_an_explicit_route_and_ready_state(
+    def test_deployment_authorization_cannot_make_public_label_trusted(
         self,
     ) -> None:
         calls: list[object] = []
-        deployment = _deployment_authorization(frozenset({SourceFamily.LITERATURE}))
         adapter = PaperclipAdapter(
-            deployment_authorization=deployment,
+            deployment_authorization=_deployment_authorization(
+                frozenset({SourceFamily.LITERATURE})
+            ),
             secret_provider=lambda: calls.append("secret") or "explicit-credential",
             credential_configured=lambda: True,
             connection_ready=lambda: True,
@@ -494,15 +532,25 @@ class PaperclipAdapterTests(unittest.TestCase):
         result = adapter.retrieve(
             operation=PaperclipOperation.SEARCH, request=self.request
         )
-        self.assertEqual(result.status, EvidenceStatus.DATA_RETURNED)
-        self.assertEqual(calls[0], "secret")
-        self.assertEqual(calls[1][2], "explicit-credential")
+        self.assertEqual(result.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            result.policy.state.value,
+            "blocked_untrusted_public_context",
+        )
+        manifest = adapter.capability_manifest().to_dict()
+        self.assertEqual(manifest["investigation_live_state"], "hard_disabled")
+        self.assertEqual(manifest["investigation_operations"], [])
+        self.assertEqual(calls, [])
 
         refused = adapter.retrieve(
             operation=PaperclipOperation.READ_EXTRACT,
             request=replace(self.request, operation="read_extract"),
         )
-        self.assertEqual(refused.status, EvidenceStatus.OUT_OF_SCOPE_FOR_INPUT)
+        self.assertEqual(refused.status, EvidenceStatus.BLOCKED_BY_POLICY)
+        self.assertEqual(
+            refused.policy.state.value,
+            "blocked_untrusted_public_context",
+        )
 
     def test_patient_query_does_not_fall_back_to_direct_network_without_egress_approval(
         self,

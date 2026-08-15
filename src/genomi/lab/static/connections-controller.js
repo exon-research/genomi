@@ -112,8 +112,17 @@ export function createConnectionsController() {
 function announceConnectionResult(integration) {
   const state = String(integration && integration.connection_state || "");
   if (state === "ready") {
-    const operations = Array.isArray(integration && integration.available_operations)
-      ? integration.available_operations
+    const provider = String(integration && integration.provider || "");
+    if (provider === "paperclip") {
+      showAlert(
+        "Paperclip API key checked. The check sent only TP53 to PMC with a limit of 1, never the patient's profile. It enables no general public search; patient-investigation authorization is shown separately below.",
+        "success"
+      );
+      setActivity("Paperclip API key checked.");
+      return;
+    }
+    const operations = Array.isArray(integration && integration.investigation_operations)
+      ? integration.investigation_operations
       : [];
     showAlert(
       operations.length
@@ -136,9 +145,7 @@ function announceConnectionResult(integration) {
     const message = provider === "biohub-esm"
       ? "Credential saved securely. Run the disclosed fixed synthetic encode check when ready; it may use credits and never sends a patient sequence."
       : provider === "paperclip"
-        ? integration && integration.verification_available === true
-          ? "Credential saved securely. Run the disclosed public API check when you are ready; it may use credits."
-          : "Credential saved securely. Product authorization is required before Paperclip can be checked or used."
+        ? "Credential saved securely. When ready, run the fixed public API check: TP53 in PMC, limit 1. It may use credits and never sends the patient's profile."
         : "Credential saved securely. Check the Modal account and exact environment when ready; no Proto tool will run.";
     showAlert(message, "success");
     setActivity("Research-tool credential saved; use is not enabled.");

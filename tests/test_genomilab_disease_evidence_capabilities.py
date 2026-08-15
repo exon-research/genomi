@@ -365,7 +365,7 @@ class _ExternalApplication(_Application):
 
     def evidence_capability_manifest(self) -> dict[str, object]:
         return {
-            "paperclip": {"live_state": "hard_disabled"},
+            "paperclip": {"investigation_live_state": "hard_disabled"},
             "direct_sources": [],
             "fixture_source_families": [
                 "literature",
@@ -414,9 +414,9 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
             def evidence_capability_manifest(self) -> dict[str, object]:
                 return {
                     "paperclip": {
-                        "live_state": "authorized",
-                        "purposes": [self.purpose],
-                        "routes": [
+                        "investigation_live_state": "authorized",
+                        "investigation_purposes": [self.purpose],
+                        "investigation_routes": [
                             {
                                 "source_family": "literature",
                                 "operations": ["search"],
@@ -477,10 +477,10 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
             ["finding-a"],
             {
                 "paperclip": {
-                    "live_state": "authorized_unavailable",
-                    "operations": [],
-                    "source_families": [],
-                    "routes": [],
+                    "investigation_live_state": "authorized_unavailable",
+                    "investigation_operations": [],
+                    "investigation_source_families": [],
+                    "investigation_routes": [],
                 },
                 "direct_sources": [],
                 "fixture_source_families": [],
@@ -498,15 +498,15 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
             ["finding-a"],
             {
                 "paperclip": {
-                    "live_state": "authorized",
-                    "purposes": ["Resolve a public publication"],
-                    "operations": ["search", "lookup"],
-                    "source_families": [
+                    "investigation_live_state": "authorized",
+                    "investigation_purposes": ["Resolve a public publication"],
+                    "investigation_operations": ["search", "lookup"],
+                    "investigation_source_families": [
                         "literature",
                         "regulatory",
                         "trial_registry",
                     ],
-                    "routes": [
+                    "investigation_routes": [
                         {
                             "source_family": "literature",
                             "operations": ["search", "lookup", "read_extract"],
@@ -583,9 +583,9 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
             ["finding-a"],
             {
                 "paperclip": {
-                    "live_state": "authorized",
-                    "purposes": ["Resolve a public publication"],
-                    "routes": [
+                    "investigation_live_state": "authorized",
+                    "investigation_purposes": ["Resolve a public publication"],
+                    "investigation_routes": [
                         {
                             "source_family": "literature",
                             "operations": ["search", "lookup"],
@@ -673,7 +673,7 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
         catalog = build_external_evidence_catalog(
             ["finding-a"],
             {
-                "paperclip": {"live_state": "hard_disabled"},
+                "paperclip": {"investigation_live_state": "hard_disabled"},
                 "direct_sources": [],
                 "fixture_source_families": ["literature"],
             },
@@ -713,9 +713,9 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
             ["finding-a"],
             {
                 "paperclip": {
-                    "live_state": "authorized",
-                    "purposes": ["Paperclip-approved purpose"],
-                    "routes": [
+                    "investigation_live_state": "authorized",
+                    "investigation_purposes": ["Paperclip-approved purpose"],
+                    "investigation_routes": [
                         {
                             "source_family": "literature",
                             "operations": ["lookup"],
