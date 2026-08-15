@@ -82,7 +82,8 @@ question, call `lab.prepare_specialist_brief` with:
 - a public `research_question` and public concept identifiers;
 - abstract event relations without patient dates or linkage;
 - public evidence record IDs;
-- internal source fact IDs used only for the private derivation record;
+- the exact `source_fact_ids` returned by `lab.update_health_profile`, used
+  only for the private derivation record;
 - purpose, command ID, and expected revision.
 
 The returned outbound brief is the only payload supplied to a native

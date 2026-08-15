@@ -153,6 +153,10 @@ class OrchestratorStateStoreMixin:
             response = {
                 "observations": observations,
                 "profile_snapshot": snapshot,
+                # Canonical handoff to operations deriving from this approved
+                # snapshot. Observation rows also carry stable logical IDs,
+                # while derivations must bind their immutable revisions.
+                "source_fact_ids": list(snapshot["observation_revision_ids"]),
                 "domain_revision": revision,
             }
             save_command(

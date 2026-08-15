@@ -65,7 +65,7 @@
       "skill": "skills/lab/SKILL.md",
       "area": "lab",
       "requires": ["active_lab_workspace", "current_investigation"],
-      "produces": ["health_profile_facts", "profile_snapshot", "consent_receipt", "investigation_revision"],
+      "produces": ["health_profile_facts", "profile_snapshot", "source_fact_ids", "consent_receipt", "investigation_revision"],
       "context_optional": [],
       "privacy_scope": "local_private",
       "operation_scope": "write",
@@ -262,7 +262,10 @@
             }
           },
           "public_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
-          "source_fact_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "source_fact_ids": {
+            "$ref": "#/schema_fragments/properties/string_array",
+            "description": "Use the exact source_fact_ids returned by lab.update_health_profile; these bind immutable revisions in the current approved profile snapshot."
+          },
           "purpose": {"type": "string"},
           "command_id": {"type": "string"},
           "expected_revision": {"type": "integer", "minimum": 0}
