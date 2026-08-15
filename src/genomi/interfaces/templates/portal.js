@@ -1753,6 +1753,11 @@
     $('add-genome').addEventListener('click', startAddGenome);
     $('switch-genome').addEventListener('click', focusGenomeInventory);
     $('new-chat').addEventListener('click', newChat);
+    $('conversation-new').addEventListener('click', (event) => {
+      const menu = event.currentTarget.closest('details');
+      if (menu) menu.open = false;
+      newChat();
+    });
     $('artifact-back').addEventListener('click', closeArtifactPreview);
     $('conversation-rename').addEventListener('click', openConversationRename);
     $('conversation-review-action').addEventListener('click', () => {

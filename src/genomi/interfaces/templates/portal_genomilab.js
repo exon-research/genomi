@@ -3,26 +3,19 @@ const PROVIDERS = Object.freeze([
     id: 'paperclip',
     name: 'GXL Paperclip',
     description: 'Biomedical literature, regulatory, and trial evidence for explicitly approved investigation requests.',
-    boundary: 'The connection check sends one fixed public TP53 query with limit 1. It never sends health context. Patient-informed retrieval still requires exact disclosure approval.',
-    fields: [{ name: 'api_key', label: 'Paperclip API key', secret: true }]
+    boundary: 'Public-source searches remain separate from private health context unless you explicitly approve a relevant transfer.'
   },
   {
     id: 'biohub-esm',
     name: 'BioHub ESM',
     description: 'Connection to the reviewed ESM endpoint for protein-model workflows.',
-    boundary: 'The check sends only GenomiLab\'s fixed synthetic 20-residue alphabet and may use credits. It does not send a patient-derived sequence or enable an analysis operation.',
-    fields: [{ name: 'api_token', label: 'BioHub API token', secret: true }]
+    boundary: 'Protein sequences are sent only for approved public or research-only comparisons.'
   },
   {
     id: 'proto',
-    name: 'Proto prerequisite (Modal)',
-    description: 'Connection to the Modal account and environment reserved for a reviewed Proto workflow.',
-    boundary: 'The check lists Modal environments. It does not deploy, start, or run a Proto model.',
-    fields: [
-      { name: 'modal_token_id', label: 'Modal token ID', secret: true },
-      { name: 'modal_token_secret', label: 'Modal token secret', secret: true },
-      { name: 'modal_environment', label: 'Modal environment', secret: false }
-    ]
+    name: 'Proto',
+    description: 'Typed computational-biology tools for approved public research inputs.',
+    boundary: 'A Proto tool runs only after its typed inputs and external-transfer boundary are clear in the conversation.'
   }
 ]);
 
@@ -43,8 +36,6 @@ export function createGenomiLabController({ api, getProjectId }) {
     byId('patient-context-add')?.addEventListener('click', toggleProfileEditor);
     byId('patient-context-type-chooser')?.addEventListener('click', chooseProfileForm);
     byId('patient-context-editor')?.addEventListener('click', cancelProfileEditor);
-    byId('research-connections-list')?.addEventListener('submit', submitConnection);
-    byId('research-connections-list')?.addEventListener('click', handleConnectionAction);
   }
 
   function toggleProfileEditor() {
@@ -270,39 +261,6 @@ export function createGenomiLabController({ api, getProjectId }) {
     }
   }
 
-  async function submitConnection(event) {
-    const form = event.target.closest('form[data-provider]');
-    if (!form) return;
-    event.preventDefault();
-    if (!form.reportValidity()) return;
-    const payload = {};
-    const values = new FormData(form);
-    for (const [key, value] of values.entries()) payload[key] = text(value);
-    await changeConnection(form.dataset.provider, 'connect', payload, form);
-  }
-
-  function handleConnectionAction(event) {
-    const button = event.target.closest('button[data-provider-action]');
-    if (!button) return;
-    const action = button.dataset.providerAction;
-    if (action === 'disconnect' && !window.confirm('Disconnect this research provider and remove its saved credentials?')) return;
-    void changeConnection(button.dataset.provider, action, action === 'disconnect' ? { confirmed: true } : {}, button);
-  }
-
-  async function changeConnection(provider, action, payload, control) {
-    setControlBusy(control, true);
-    setStatus('research-connections-status', action === 'verify' ? 'Running the disclosed connection check…' : 'Updating secure connection state…');
-    try {
-      await api.changeGenomiLabIntegration(getProjectId(), provider, action, payload);
-      if (control instanceof HTMLFormElement) control.reset();
-      await loadConnections();
-    } catch (error) {
-      setStatus('research-connections-status', error.message || 'The connection could not be updated.', 'error');
-    } finally {
-      setControlBusy(control, false);
-    }
-  }
-
   function renderProfile(payload) {
     const container = byId('patient-context-summary');
     if (!container) return;
@@ -363,19 +321,15 @@ export function createGenomiLabController({ api, getProjectId }) {
 
   function renderOnboardingConnections(payload) {
     const records = connectionRecords(payload);
-    if (records.length && records.every((record) => text(record.connection_state) === 'backend_unavailable')) {
-      setOnboardingState('onboarding-connections-state', 'Unavailable');
-      return;
-    }
+    const availableCount = records.filter((record) => text(record.capability_state) === 'available').length;
     const readyCount = records.filter((record) => text(record.connection_state) === 'ready').length;
-    const storedCount = records.filter((record) => text(record.credential_state) === 'stored').length;
     setOnboardingState(
       'onboarding-connections-state',
       readyCount
-        ? `${readyCount} checked · ${storedCount} credentials held for this session`
-        : storedCount
-          ? `${storedCount} configured · run an explicit connection check`
-          : 'Not configured'
+        ? `${readyCount} ready · ${availableCount} capabilities available`
+        : availableCount
+          ? `${availableCount} capabilities available · credentials needed`
+          : 'No research capabilities available'
     );
   }
 
@@ -384,7 +338,7 @@ export function createGenomiLabController({ api, getProjectId }) {
     if (!container) return;
     container.replaceChildren();
     if (!payload || !Array.isArray(payload.integrations)) {
-      container.append(card('Connection state', 'Waiting for the Lab connection backend. No credentials can be entered while connection state is unavailable.'));
+      container.append(card('Connection state', 'Research capability state could not be loaded.'));
       return;
     }
     const records = connectionRecords(payload);
@@ -496,51 +450,22 @@ function connectionCard(definition, record) {
   const state = document.createElement('span');
   const connectionState = text(record.connection_state) || 'not_configured';
   state.className = 'genomilab-connection-state' + (connectionState === 'ready' ? ' ready' : '');
-  state.textContent = connectionState.replaceAll('_', ' ');
+  state.textContent = connectionState === 'ready'
+    ? 'Ready'
+    : connectionState === 'credentials_required'
+      ? 'Credentials needed'
+      : 'Capability unavailable';
   head.append(copy, state);
   const boundary = document.createElement('p');
   boundary.textContent = definition.boundary;
   article.append(head, boundary);
-  if (connectionState === 'backend_unavailable') {
-    const unavailable = document.createElement('p');
-    unavailable.className = 'genomilab-connection-unavailable';
-    unavailable.textContent = 'This connection is not available in the current Lab backend. No credential can be entered or sent.';
-    article.append(unavailable);
-    return article;
-  }
-  const form = document.createElement('form');
-  form.className = 'genomilab-credential-form';
-  form.dataset.provider = definition.id;
-  form.autocomplete = 'off';
-  definition.fields.forEach((field) => {
-    const label = document.createElement('label');
-    label.textContent = field.label;
-    const input = document.createElement('input');
-    input.name = field.name;
-    input.type = field.secret ? 'password' : 'text';
-    input.required = true;
-    input.autocomplete = 'off';
-    label.append(input);
-    form.append(label);
-  });
-  const save = document.createElement('button');
-  save.className = 'primary';
-  save.type = 'submit';
-  save.textContent = record.credential_state === 'stored' ? 'Replace for session' : 'Use for session';
-  form.append(save);
-  article.append(form);
-  if (record.credential_state === 'stored' || record.credential_state === 'corrupt') {
-    const actions = document.createElement('div');
-    actions.className = 'genomilab-connection-actions';
-    if (record.verification_available !== false) actions.append(actionButton(definition.id, 'verify', verificationLabel(definition.id)));
-    actions.append(actionButton(definition.id, 'disconnect', 'Disconnect'));
-    article.append(actions);
-  }
   const policy = document.createElement('p');
   const operations = array(record.investigation_operations);
   policy.textContent = operations.length
-    ? `Enabled operations: ${operations.join(', ')}. Exact request approval remains required.`
-    : `Use policy: ${text(record.policy_state) || 'not enabled'}. No model or investigation operation is implied by a successful connection check.`;
+    ? connectionState === 'ready'
+      ? 'Available to Genomi for relevant, approved research requests.'
+      : 'The capability is installed. Add its credentials to the Genomi environment or local api.md when you want to use it.'
+    : 'This focused research capability is not installed in the current Genomi build.';
   article.append(policy);
   return article;
 }
@@ -571,22 +496,6 @@ function boardEvidenceSummary(investigation) {
   if (gapCount) parts.push(`${gapCount} open gaps`);
   if (questionCount) parts.push(`${questionCount} follow-up questions`);
   return parts.length ? parts.join(' · ') : 'New records and missing evidence will be tracked here.';
-}
-
-function actionButton(provider, action, label) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'secondary';
-  button.dataset.provider = provider;
-  button.dataset.providerAction = action;
-  button.textContent = label;
-  return button;
-}
-
-function verificationLabel(provider) {
-  if (provider === 'paperclip') return 'Run fixed public check';
-  if (provider === 'biohub-esm') return 'Run fixed synthetic ESM check';
-  return 'Check Modal environment';
 }
 
 function connectionRecords(payload) {
@@ -630,11 +539,6 @@ function setOnboardingState(id, message) {
 
 function setFormBusy(form, busy) {
   form.querySelectorAll('input, select, textarea, button').forEach((control) => { control.disabled = busy; });
-}
-
-function setControlBusy(control, busy) {
-  if (control instanceof HTMLFormElement) setFormBusy(control, busy);
-  else if (control) control.disabled = busy;
 }
 
 function setupMessage(payload) {

@@ -115,6 +115,7 @@
             <div class="actions">
               <details class="pane-menu">
                 <summary>More</summary>
+                <button id="conversation-new" class="secondary" type="button">New conversation</button>
                 <button id="conversation-rename" class="secondary" type="button" hidden>Rename conversation</button>
                 <button id="conversation-review-action" class="secondary" type="button" hidden>Request review</button>
                 <a id="frame-bundle" class="secondary frame-bundle-action" data-testid="genomi-frame-download-bundle" href="" hidden>Download conversation bundle</a>
@@ -281,7 +282,7 @@
           </div>
           <div id="research-connections-pane" class="pane genomilab-pane" data-nav-section="research-connections-pane" hidden>
             <div class="pane-header">
-              <div><h2>Research connections</h2><p class="small">Credentials remain in session memory only. Connection checks are explicit and may use provider credits.</p></div>
+              <div><h2>Research connections</h2><p class="small">Genomi uses configured research capabilities when they help answer your question. Credential values are never shown here.</p></div>
               <button id="refresh-research-connections" class="secondary" type="button">Refresh</button>
             </div>
             <div id="research-connections-status" class="genomilab-status" role="status"></div>

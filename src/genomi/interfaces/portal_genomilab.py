@@ -14,11 +14,25 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 
 from ..lab.store import GenomiLabStore
+from ..operations.registry import all_operations
+from ..runtime.external_credentials import credential_state as external_credential_state
 from . import portal_project_events, portal_state, portal_store
 
 JsonObject = dict[str, Any]
 _BINDING_KEY = "genomilab_binding"
 _SERVICE_LOCK = threading.Lock()
+_RESEARCH_PROVIDER_OPERATIONS = {
+    "paperclip": ("paperclip.search_biomedical",),
+    "biohub-esm": ("biohub.compare_protein_embeddings",),
+    "proto": ("proto.search_tools", "proto.describe_tool_schema", "proto.run_tool"),
+}
+_RESEARCH_PROVIDER_CREDENTIAL_IDS = {
+    "paperclip": "paperclip",
+    "biohub-esm": "biohub",
+    "proto": "proto",
+}
+
+
 class _GenomiLabApplication(Protocol):
     def bootstrap_workspace(self) -> JsonObject: ...
     def molecular_profile(self) -> JsonObject: ...
@@ -365,9 +379,8 @@ class _PortalGenomiLabApplication:
     """Project-bound projection over the local Genomi Lab record domain.
 
     This adapter deliberately owns no assistant runner or provider secret layer.
-    Provider connection operations are supplied by the host-neutral Lab backend;
-    until that backend reports them, the landing page renders their honest
-    unavailable state instead of falling back to a second credential boundary.
+    It reports only whether focused provider operations are registered and
+    whether the shared credential resolver found a complete configuration.
     """
 
     def __init__(
@@ -497,17 +510,14 @@ class _PortalGenomiLabApplication:
             return dict(response["investigation"])
 
     def integrations(self) -> JsonObject:
+        registered_operations = {
+            str(operation.get("name") or "") for operation in all_operations()
+        }
         return {
             "status": "ready",
             "integrations": [
-                {
-                    "provider": provider,
-                    "connection_state": "backend_unavailable",
-                    "credential_state": "not_configured",
-                    "policy_state": "connection_backend_unavailable",
-                    "investigation_operations": [],
-                }
-                for provider in ("paperclip", "biohub-esm", "proto")
+                _research_provider_readiness(provider, registered_operations)
+                for provider in _RESEARCH_PROVIDER_OPERATIONS
             ],
         }
 
@@ -525,6 +535,33 @@ class _PortalGenomiLabApplication:
     def disconnect_integration(self, provider: str, *, confirmed: bool) -> JsonObject:
         del confirmed
         return self.connect_integration(provider, {})
+
+
+def _research_provider_readiness(
+    provider: str, registered_operations: set[str]
+) -> JsonObject:
+    operations = _RESEARCH_PROVIDER_OPERATIONS[provider]
+    available_operations = [
+        operation for operation in operations if operation in registered_operations
+    ]
+    capability_available = len(available_operations) == len(operations)
+    credential = external_credential_state(
+        _RESEARCH_PROVIDER_CREDENTIAL_IDS[provider]
+    )
+    credential_configured = bool(credential.get("configured"))
+    if not capability_available:
+        connection_state = "capability_unavailable"
+    elif credential_configured:
+        connection_state = "ready"
+    else:
+        connection_state = "credentials_required"
+    return {
+        "provider": provider,
+        "connection_state": connection_state,
+        "capability_state": "available" if capability_available else "unavailable",
+        "credential_state": "configured" if credential_configured else "not_configured",
+        "investigation_operations": available_operations,
+    }
 
 
 def _application_service(
