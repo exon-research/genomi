@@ -34,11 +34,9 @@ from ...active_genome_index.active_genome_index import (
     open_reader,
 )
 from ...active_genome_index._agi_readiness import reference_pending as _reference_pending
-from ...active_genome_index.revisions import ActiveGenomeIndexArtifactIntegrityError
 from ...runtime import context as runtime_context
 from ...runtime.paths import expand_user_path
 from .errors import JsonObject, OperationError
-from .execution import current_execution_context
 
 def _approval_error(action: str) -> OperationError:
     return OperationError(
@@ -55,45 +53,13 @@ def _clean_build(value: object) -> str | None:
     return build if build and build != "auto" else None
 
 
-def _registered_revision(run: JsonObject) -> JsonObject:
-    try:
-        return runtime_context.require_registered_agi_revision(run)
-    except ActiveGenomeIndexArtifactIntegrityError as exc:
-        raise OperationError(
-            "active_genome_index_artifact_integrity_failed",
-            str(exc),
-        ) from exc
-
-
-def _open_registered_reader(
-    run: JsonObject,
-    *,
-    need: ActiveGenomeIndexNeed,
-    genome_build: str | None,
-) -> ActiveGenomeIndexReader:
-    revision = _registered_revision(run)
-    try:
-        return open_reader(
-            Path(str(revision["agi_path"])),
-            need=need,
-            genome_build=genome_build,
-            expected_artifact_sha256=str(revision["agi_artifact_sha256"]),
-            expected_snapshot_id=str(revision["agi_snapshot_id"]),
-        )
-    except ActiveGenomeIndexArtifactIntegrityError as exc:
-        raise OperationError(
-            "active_genome_index_artifact_integrity_failed",
-            str(exc),
-        ) from exc
-
-
 def _index_path_for_run(run: JsonObject, params: JsonObject) -> Path | None:
-    stored = run.get("agi_path")
-    if stored:
-        return expand_user_path(str(stored))
     explicit = params.get("agi_path")
     if explicit not in (None, ""):
         return expand_user_path(str(explicit))
+    stored = run.get("agi_path")
+    if stored:
+        return expand_user_path(str(stored))
     return None
 
 
@@ -109,17 +75,9 @@ def _registered_run_for_agi_path(agi_path: object) -> JsonObject | None:
         if not isinstance(container, dict):
             continue
         for run in container.values():
-            if not isinstance(run, dict):
+            if not isinstance(run, dict) or not run.get("agi_path"):
                 continue
-            candidate_paths = [run.get("agi_path"), run.get("agi_build_path")]
-            outputs = run.get("outputs")
-            if isinstance(outputs, dict):
-                candidate_paths.append(outputs.get("agi_path"))
-            if any(
-                candidate not in (None, "")
-                and _resolved_path(candidate) == target
-                for candidate in candidate_paths
-            ):
+            if _resolved_path(run["agi_path"]) == target:
                 return run
     return None
 
@@ -177,26 +135,6 @@ def open_agi(
     available — for operations whose AGI use is optional (public-only fallback).
     """
     params = params or {}
-    execution_context = current_execution_context()
-    read_lease = (
-        execution_context.agi_read_lease
-        if execution_context is not None
-        else None
-    )
-    if read_lease is not None:
-        leased_agi_id = str(read_lease.agi_record.get("agi_id") or "")
-        requested_agi_id = str(agi_id or params.get("agi_id") or leased_agi_id)
-        if requested_agi_id != leased_agi_id:
-            raise OperationError(
-                "operation_execution_context_scope_mismatch",
-                "The requested Active Genome Index does not match the execution context.",
-            )
-        if need is not ActiveGenomeIndexNeed.NONE and read_lease.reader.need is not need:
-            raise OperationError(
-                "operation_execution_context_need_mismatch",
-                "The execution context's Active Genome Index reader does not satisfy this operation.",
-            )
-        return read_lease.reader
     explicit_path = params.get("agi_path")
     if explicit_path not in (None, "") and not agi_id and not params.get("agi_id"):
         run = _registered_run_for_agi_path(explicit_path)
@@ -204,17 +142,8 @@ def open_agi(
             if optional:
                 return None
             raise _approval_error(action)
-        registered_path = _index_path_for_run(run, {})
-        if registered_path is None:
-            if optional:
-                return None
-            raise OperationError(
-                "missing_context",
-                f"The selected Active Genome Index has no index path; re-run genomi.parse_source before {action}.",
-            )
-        revision_run = {**run, "agi_path": str(registered_path)}
-        return _open_registered_reader(
-            revision_run,
+        return open_reader(
+            expand_user_path(str(explicit_path)),
             need=need,
             genome_build=_clean_build(run.get("genome_build")) or _clean_build(params.get("genome_build")),
         )
@@ -251,9 +180,8 @@ def open_agi(
             f"The selected Active Genome Index has no index path; re-run genomi.parse_source before {action}.",
         )
 
-    revision_run = {**run, "agi_path": str(path)}
-    return _open_registered_reader(
-        revision_run,
+    return open_reader(
+        path,
         need=need,
         genome_build=_clean_build(run.get("genome_build")),
     )
@@ -282,12 +210,6 @@ def _resolved_index_path(params: JsonObject | None, *, agi_id: str | None = None
     params = params or {}
     explicit = params.get("agi_path")
     if explicit not in (None, ""):
-        run = _registered_run_for_agi_path(explicit)
-        if isinstance(run, dict):
-            live_build_path = run.get("agi_build_path")
-            if live_build_path:
-                return expand_user_path(str(live_build_path))
-            return _index_path_for_run(run, {})
         return expand_user_path(str(explicit))
     named = agi_id or params.get("agi_id")
     if named:
@@ -295,9 +217,6 @@ def _resolved_index_path(params: JsonObject | None, *, agi_id: str | None = None
     else:
         run = runtime_context.active_agi_record()
     if isinstance(run, dict):
-        live_build_path = run.get("agi_build_path")
-        if live_build_path:
-            return expand_user_path(str(live_build_path))
         path = _index_path_for_run(run, params)
         if path is not None:
             return path

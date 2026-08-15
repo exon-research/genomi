@@ -29,11 +29,7 @@ def serve_dashboard_info(
     start_server: bool,
 ) -> JsonObject:
     serve_dir = Path(directory).resolve()
-    should_start = start_server and autoserve_enabled()
-    # Generate-only dashboard renders must be side-effect free. Report the
-    # stable default launch metadata without probing or temporarily binding a
-    # socket; only an actual autoserve attempt needs to resolve a free port.
-    port = _find_available_port(_DEFAULT_PORT) if should_start else _DEFAULT_PORT
+    port = _find_available_port(_DEFAULT_PORT)
     url = f"http://{_HOST}:{port}/{filename}"
     command = (
         f"python3 -m http.server {port} --bind {_HOST} "
@@ -46,7 +42,7 @@ def serve_dashboard_info(
         "url": url,
         "command": command,
     }
-    if not should_start:
+    if not start_server or not autoserve_enabled():
         payload["status"] = "ready_to_start"
         return payload
 

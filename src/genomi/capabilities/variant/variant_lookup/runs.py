@@ -44,7 +44,6 @@ def _selected_runs(
 
 
 def _append_run(selected: list[tuple[JsonObject, str]], seen: set[str], run: JsonObject, selection: str) -> None:
-    run = runtime_context.require_registered_agi_revision(run)
     run_key = str(run.get("agi_id") or run.get("sample_slug") or id(run))
     if run_key in seen:
         return

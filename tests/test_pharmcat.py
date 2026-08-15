@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from genomi.capabilities.decode.panel_adapters import normalize_pgx_panel
 from genomi.capabilities.pharmacogenomics.pharmcat import (
     _parse_calls_only_tsv,
     import_pharmcat_artifacts,
@@ -17,8 +19,6 @@ from genomi.capabilities.pharmacogenomics.pharmcat import (
 )
 from genomi.operations import call_operation, list_operations
 from genomi.runtime import context as runtime_context
-
-from tests.pharmcat_test_support import _escaped_header_vcf_text
 
 
 # A realistic PharmCAT 3.x calls-only TSV: a leading version/title line, then the
@@ -45,6 +45,38 @@ class CallsOnlyTsvParsingTests(unittest.TestCase):
         self.assertEqual(parsed["rows"][0]["Source Diplotype"], "*1/*2")
         self.assertEqual(parsed["rows"][0]["Phenotype"], "Intermediate Metabolizer")
 
+
+def _escaped_header_vcf_text() -> str:
+    """A GRCh38 VCF carrying a bcftools-style FILTER description with
+    backslash-escaped quotes (CHROM=\\"X\\") — the exact metadata shape that
+    crashes PharmCAT's parser. Includes a real CYP2C19 PGx position so the
+    matcher has something to call.
+    """
+    return (
+        "##fileformat=VCFv4.2\n"
+        "##reference=GRCh38\n"
+        '##FILTER=<ID=PASS,Description="All filters passed">\n'
+        '##FILTER=<ID=LowDP,Description="Set if true: (CHROM=\\"X\\" && FORMAT/DP<6) || (CHROM=\\"Y\\" && FORMAT/DP<6)">\n'
+        "##contig=<ID=chr10,length=133797422>\n"
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n"
+        "chr10\t94761900\trs4244285\tG\tA\t.\tPASS\t.\tGT\t0/1\n"
+    )
+
+
+def _resolve_real_pharmcat_jar() -> str | None:
+    candidates: list[Path] = []
+    env_jar = os.environ.get("PHARMCAT_JAR")
+    if env_jar:
+        candidates.append(Path(env_jar).expanduser())
+    candidates.append(Path.home() / ".genomi" / "tools" / "pharmcat" / "pharmcat.jar")
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+_REAL_PHARMCAT_JAR = _resolve_real_pharmcat_jar()
 
 
 class PharmCATIntegrationTests(unittest.TestCase):
@@ -758,6 +790,7 @@ class PharmCATIntegrationTests(unittest.TestCase):
                     "agi_path": parsed["outputs"]["agi_path"],
                 },
             )
+
             result = call_operation("pharmacogenomics.preflight_pharmcat")
 
         self.assertEqual(result["status"], "completed")
@@ -782,9 +815,6 @@ class PharmCATIntegrationTests(unittest.TestCase):
                     "agi_path": parsed["outputs"]["agi_path"],
                 },
             )
-            active = call_operation("genomi.describe_context")[
-                "active_genome_index"
-            ]
 
             with patch(
                 "genomi.operations.pharmcat.run_pharmcat",
@@ -796,11 +826,6 @@ class PharmCATIntegrationTests(unittest.TestCase):
         runner.assert_called_once()
         self.assertEqual(
             Path(runner.call_args.kwargs["agi_path"]).resolve(strict=False),
-            Path(active["agi_path"]).resolve(strict=False),
-        )
-        self.assertTrue(active["agi_snapshot_id"])
-        self.assertNotEqual(
-            Path(active["agi_path"]).resolve(strict=False),
             Path(parsed["outputs"]["agi_path"]).resolve(strict=False),
         )
         self.assertTrue(runner.call_args.kwargs["dry_run"])
@@ -898,6 +923,72 @@ class PharmCATIntegrationTests(unittest.TestCase):
         self.assertEqual(Path(preflight.call_args.args[0]), index)
 
 
+@unittest.skipUnless(
+    _REAL_PHARMCAT_JAR and shutil.which("java"),
+    "real PharmCAT jar integration requires a managed pharmcat.jar (or PHARMCAT_JAR) and java",
+)
+class RealPharmCATJarTests(unittest.TestCase):
+    """Run the genuine PharmCAT jar against a realistic escaped-quote header.
+
+    This is the only coverage that exercises the actual failure mode: a real
+    consumer/WGS header with bcftools backslash escapes parsed by PharmCAT's own
+    Java parser. A regression in header sanitization fails here with PharmCAT's
+    "character to be escaped is missing" parse error.
+    """
+
+    def setUp(self) -> None:
+        self._home_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._home_tmp.cleanup)
+        self._env = patch.dict(
+            os.environ,
+            {
+                "GENOMI_HOME": str(Path(self._home_tmp.name) / "genomi-home"),
+                "GENOMI_CONTEXT": "",
+                "GENOMI_SESSION_ID": "",
+                "GENOMI_MCP_BACKGROUND": "0",
+                **{name: "" for name in runtime_context.AGENT_SESSION_ENVS},
+            },
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+
+    def test_real_jar_parses_escaped_quote_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf = Path(tmp) / "escaped.vcf"
+            vcf.write_text(_escaped_header_vcf_text(), encoding="utf-8")
+            parsed = call_operation("genomi.parse_source", {"source": str(vcf)})
+            agi_path = Path(parsed["outputs"]["agi_path"])
+            output = Path(tmp) / "pharmcat"
+
+            result = run_pharmcat(
+                agi_path=agi_path,
+                output_dir=output,
+                base_filename="escaped",
+                mode="jar",
+                pharmcat_jar=_REAL_PHARMCAT_JAR,
+                timeout_seconds=600,
+            )
+
+            # The matcher input must be backslash-free, and PharmCAT must get past
+            # metadata parsing — i.e. NOT the "character to be escaped" crash.
+            input_header = [
+                line
+                for line in (output / "escaped.pharmcat-input.vcf").read_text(encoding="utf-8").splitlines()
+                if line.startswith("##")
+            ]
+            self.assertNotIn("\\", "\n".join(input_header))
+
+        stderr_tail = (result.get("execution") or {}).get("stderr_tail") or ""
+        self.assertNotIn("character to be escaped", stderr_tail)
+        self.assertEqual(result["status"], "completed", result)
+        self.assertEqual(result["execution"]["returncode"], 0, result)
+        self.assertTrue(result["interpretation_readiness"]["has_report_artifact"], result)
+
+        # Guard the real-format calls-only parse and dashboard adaptation path.
+        calls = result["artifacts"]["calls_only"]
+        for row in calls["rows"]:
+            self.assertIn("Gene", row, result)
+        normalize_pgx_panel(result)
 
 
 if __name__ == "__main__":

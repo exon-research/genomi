@@ -21,24 +21,14 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
     # final at variants_ready). Personal-genome context comes only from the
     # Active Genome Index, never a raw VCF.
     reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
-    resolved = _with_context(
-        params,
-        db=True,
-        matches=True,
-        genome_build=True,
-        allow_shared_db_without_vcf=False,
-    )
+    resolved = _with_context(params, db=True, genome_build=True, allow_shared_db_without_vcf=False)
     agi_path = reader.agi_path
     if not agi_path.exists():
         raise OperationError(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar matching.",
         )
-    output = (
-        resolved.get("output")
-        or resolved.get("matches")
-        or str(agi_path.with_name(CLINVAR_MATCHES_NAME))
-    )
+    output = resolved.get("output") or str(agi_path.with_name(CLINVAR_MATCHES_NAME))
     return static_annotation.match_static_clinvar_from_active_genome_index(
         reader,
         evidence_db=_path(resolved, "db"),
@@ -52,13 +42,7 @@ def _clinvar_match(params: JsonObject) -> JsonObject:
 
 def _clinvar_scan(params: JsonObject) -> JsonObject:
     reader = open_agi(need=ActiveGenomeIndexNeed.VARIANT, action="reading parsed Active Genome Index artifacts", params=params)
-    resolved = _with_context(
-        params,
-        db=True,
-        matches=True,
-        genome_build=True,
-        allow_shared_db_without_vcf=False,
-    )
+    resolved = _with_context(params, db=True, genome_build=True, allow_shared_db_without_vcf=False)
     materialized = _materialize_clinvar_matches_for_scan(reader, resolved)
     if isinstance(materialized, dict):
         return materialized
@@ -80,9 +64,7 @@ def _materialize_clinvar_matches_for_scan(
             "needs_active_genome_index",
             "Select or parse an Active Genome Index before ClinVar candidate scanning.",
         )
-    output_path = Path(
-        str(resolved.get("matches") or agi_path.with_name(CLINVAR_MATCHES_NAME))
-    )
+    output_path = agi_path.with_name(CLINVAR_MATCHES_NAME)
     materialized = static_annotation.match_static_clinvar_from_active_genome_index(
         reader,
         evidence_db=_path(resolved, "db"),

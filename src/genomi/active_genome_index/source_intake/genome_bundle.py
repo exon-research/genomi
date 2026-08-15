@@ -31,7 +31,6 @@ from ..record_kinds import (
     RECORD_KIND_VARIANT_CALL,
     _is_no_call_genotype,
 )
-from ..revisions import require_mutable_agi_build_path
 from ..vcf_info import format_vcf_info
 from .agi_store import (
     JsonObject,
@@ -137,7 +136,6 @@ def _build_genome_bundle_active_genome_index(
     force: bool,
     max_records: int | None,
 ) -> JsonObject:
-    agi_path = require_mutable_agi_build_path(agi_path)
     if agi_path.exists() and not force:
         cached = _cached_array_active_genome_index_if_usable(
             source_path,
@@ -152,7 +150,7 @@ def _build_genome_bundle_active_genome_index(
     agi_path.parent.mkdir(parents=True, exist_ok=True)
     with connect_active_genome_index(agi_path) as connection:
         _reset_source_active_genome_index_schema(connection)
-        snapshot_identity = _insert_source_active_genome_index_metadata(
+        _insert_source_active_genome_index_metadata(
             connection,
             source_path,
             detection=detection,
@@ -170,7 +168,6 @@ def _build_genome_bundle_active_genome_index(
         _mark_source_active_genome_index_completed(connection)
         connection.commit()
     return {
-        **snapshot_identity,
         "status": "completed",
         "source": str(source_path),
         "source_format": "genome",

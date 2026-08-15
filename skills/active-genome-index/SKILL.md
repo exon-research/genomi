@@ -44,12 +44,12 @@ only after the relevant evidence skill gathers support for the user's claim.
 
 Contract:
 
-- A supplied source file or an Active Genome Index explicitly approved in the current session is accessible before sample-specific work.
+- A supplied source file, an approved `agi_id`, or a default user's selected Active Genome Index is accessible before sample-specific work.
 - `GENOMI_HOME` stores durable Active Genome Index records.
 - Every genome source parsed by Genomi becomes an Active Genome Index record.
 - User/profile nicknames belong to users, not genome artifacts.
 - A user can have multiple genome records and one selected Active Genome Index.
-- A default user is auto-selected as metadata for every session using this `GENOMI_HOME`; its selected Active Genome Index still requires current-session approval before a private read.
+- A default user is auto-selected for every session using this `GENOMI_HOME`, and readable access is scoped only to that user's selected Active Genome Index.
 - `genomi.parse_source` digitizes the intake file so future inquiries use the Active Genome Index.
 - The original intake path is hidden from normal agent-facing context after parsing.
 - Parsing success creates a source-appropriate Active Genome Index for later interpretation.
@@ -174,19 +174,19 @@ Select a user/profile for this session without granting private artifact access.
 
 **Example prompts**: Use Alice's genome context.
 
-**Result semantics**: Sets the selected user and selected Active Genome Index metadata; private reads still require scoped current-session approval, including for the default user.
+**Result semantics**: Sets the selected user and selected Active Genome Index metadata; private reads still require scoped access approval unless this is the default user.
 
 ### active_genome_index.set_default_user
 
 Set the default user/profile for this GENOMI_HOME.
 
-**Use when**: The user wants one profile's selected Active Genome Index selected as metadata by default in every session.
+**Use when**: The user wants one profile's selected Active Genome Index available by default in every session.
 
-**Why necessary**: Default selection identifies one profile without selecting every genome or user; it does not grant private read access.
+**Why necessary**: Default access is scoped to a user's selected Active Genome Index rather than all genomes or all users.
 
 **Example prompts**: Make Alice the default user.
 
-**Result semantics**: Sets exactly one default user for metadata selection. The selected Active Genome Index requires explicit approval in every session before private reads.
+**Result semantics**: Sets exactly one default user. Persistent private read access applies only to that user's active_agi_id.
 
 ## Selection Notes
 
@@ -212,15 +212,15 @@ Set the default user/profile for this GENOMI_HOME.
   only after explicit approval for this session.
 - If the user supplied a user nickname, call `active_genome_index.select_user` for metadata
   selection, then call `active_genome_index.approve_access` if sample evidence is needed
-  for that user's selected Active Genome Index.
+  and the selected user is not the default user.
 - For interpretation work, load the matching focused capability skill and call its capability tools through `genomi.invoke`.
 
 ## Boundaries
 
 - Raw genome source files stay local.
 - Durable Active Genome Index records in `GENOMI_HOME` become readable only when the session
-  explicitly approves the resolved `agi_id` or supplies its source path. Default
-  user selection is metadata-only.
+  explicitly approves the resolved `agi_id`, supplies a source path, or uses the
+  default user's selected Active Genome Index.
 - VCF/gVCF parsing does not import public sources or build whole-callset static
   artifacts. Use focused tools such as `clinvar.match_variants`,
   `active_genome_index.classify_genotype_support`, or
@@ -306,7 +306,7 @@ downstream artifacts. Do not silently substitute mock or placeholder data.
 
 ## Context Checks
 
-- Select the Active Genome Index from the session's source path, approved `agi_id`, or default-user metadata; approve any previously imported Active Genome Index before reading it.
+- Select the Active Genome Index from the session's source path, approved `agi_id`, or default user.
 - Use an existing Active Genome Index when it answers the question.
 - Use `variant.resolve` for rsID, allele, locus, or region checks after parsing.
 - Treat broad candidate inventories as triage inputs.

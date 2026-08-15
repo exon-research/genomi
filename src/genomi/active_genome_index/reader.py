@@ -9,7 +9,7 @@ its reference-block tail is still being appended in the background).
 
 This module is pure data layer: it performs the *readiness* gate but knows
 nothing about session authorization. The authorization gate lives one layer up
-in ``genomi.operations.registry.agi_access``, which resolves + authorizes a run and
+in ``genomi.runtime.context.agi_access``, which resolves + authorizes a run and
 then hands back an ``ActiveGenomeIndexReader`` built here. Keeping auth out of this module
 preserves the ``active_genome_index`` package's independence from the runtime
 and operations layers (no circular imports).
@@ -37,7 +37,6 @@ from ._agi_schema import connect_existing_readonly, read_header_from_active_geno
 from .filtering import passing_filter_sql
 from .dosage import dosage_for_variants as _dosage_for_variants
 from .genotype_resolver import resolve_locus_genotype as _resolve_locus_genotype
-from .revisions import verify_immutable_agi_revision
 
 JsonObject = dict[str, Any]
 
@@ -78,8 +77,6 @@ class ActiveGenomeIndexReader:
     need: ActiveGenomeIndexNeed
     readiness: JsonObject = field(default_factory=dict)
     genome_build: str | None = None
-    verified_artifact_sha256: str | None = None
-    verified_snapshot_id: str | None = None
 
     # --- parse-state identification -------------------------------------
     @property
@@ -115,17 +112,14 @@ class ActiveGenomeIndexReader:
 
     # --- data access (the ONLY AGI read path) --------------------------
     def summary(self) -> JsonObject:
-        self.ensure_ready()
         return active_genome_index_summary(self.agi_path)
 
     def query_rsid(self, rsid: str, *, limit: int = 50, pass_only: bool = False) -> list[dict[str, Any]]:
-        self.ensure_ready()
         return query_rsid_filtered(self.agi_path, rsid, limit=limit, pass_only=pass_only)
 
     def query_variant(
         self, chrom: str, pos: int, ref: str, alt: str, *, limit: int = 50, pass_only: bool = False
     ) -> list[dict[str, Any]]:
-        self.ensure_ready()
         return query_variant(
             self.agi_path, chrom, pos, ref, alt, limit=limit, pass_only=pass_only
         )
@@ -140,7 +134,6 @@ class ActiveGenomeIndexReader:
         pass_only: bool = False,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        self.ensure_ready()
         return query_region(
             self.agi_path,
             chrom,
@@ -152,7 +145,6 @@ class ActiveGenomeIndexReader:
         )
 
     def coverage(self, chrom: str, start: int, end: int, *, limit: int = 200) -> dict[str, Any]:
-        self.ensure_ready()
         return coverage_query(self.agi_path, chrom, start, end, limit=limit)
 
     def iter_pass_variant_rsid_batches(self, *, batch_size: int) -> Iterator[dict[str, list[dict[str, Any]]]]:
@@ -366,42 +358,23 @@ def open_reader(
     *,
     need: ActiveGenomeIndexNeed,
     genome_build: str | None = None,
-    expected_artifact_sha256: str | None = None,
-    expected_snapshot_id: str | None = None,
 ) -> ActiveGenomeIndexReader:
     """Build an :class:`ActiveGenomeIndexReader` bound to one index path.
 
-    The readiness gate is deferred to the moment data is read. When a registry
-    digest is supplied, artifact integrity is verified once here and that
-    attestation is reused by every reader method. A caller can still inspect
+    The readiness gate is NOT enforced here — it is deferred to the moment data
+    is read (:meth:`ActiveGenomeIndexReader.connect` and the ``query_*`` helpers). Building a
+    reader is therefore cheap and side-effect-free, so a caller can inspect
     :attr:`ActiveGenomeIndexReader.readiness` / parse-state and run its own cheap *public*
     prerequisite checks (panel installed? score imported?) before paying — or
     triggering — the gate. ``need`` is carried on the reader and decides what
     the lazy gate raises and what gets stamped ``reference_pending`` downstream.
     """
     path = Path(agi_path)
-    verified_identity: JsonObject | None = None
-    if expected_artifact_sha256 is not None:
-        verified_identity = verify_immutable_agi_revision(
-            path,
-            expected_artifact_sha256=expected_artifact_sha256,
-            expected_snapshot_id=expected_snapshot_id,
-        )
     return ActiveGenomeIndexReader(
         agi_path=path,
         need=need,
         readiness=active_genome_index_readiness(path),
         genome_build=genome_build,
-        verified_artifact_sha256=(
-            str(verified_identity["agi_artifact_sha256"])
-            if verified_identity is not None
-            else None
-        ),
-        verified_snapshot_id=(
-            str(verified_identity.get("agi_snapshot_id") or "")
-            if verified_identity is not None
-            else None
-        ),
     )
 
 

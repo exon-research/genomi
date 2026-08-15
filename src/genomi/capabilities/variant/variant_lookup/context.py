@@ -3,11 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ....active_genome_index.active_genome_index import (
-    ActiveGenomeIndexNeed,
-    ActiveGenomeIndexReader,
-    open_reader,
-)
+from ....active_genome_index.active_genome_index import ActiveGenomeIndexNeed, open_reader
 from ....evidence import envelope as _env
 from .parsing import _chrom_aliases, _dedupe_records
 from .queries import (
@@ -93,11 +89,9 @@ def _sample_context(
     include_fail: bool,
     limit: int,
     warnings: list[str],
-    bound_agi_reader: ActiveGenomeIndexReader | None = None,
-) -> tuple[JsonObject, dict[str, ActiveGenomeIndexReader]]:
+) -> JsonObject:
     searched_active_genome_indexes: list[JsonObject] = []
     matches: list[JsonObject] = []
-    readers: dict[str, ActiveGenomeIndexReader] = {}
     for run, selection in runs:
         summary = _run_summary(run, selection)
         searched_active_genome_indexes.append(summary)
@@ -109,21 +103,11 @@ def _sample_context(
         # variants_ready indexes while still surfacing schema lifecycle errors
         # as operation-level failures instead of silently turning them into an
         # empty sample context.
-        reader = bound_agi_reader or open_reader(
+        reader = open_reader(
             Path(str(agi_path)),
             need=ActiveGenomeIndexNeed.VARIANT,
             genome_build=run.get("genome_build"),
-            expected_artifact_sha256=str(run["agi_artifact_sha256"]),
-            expected_snapshot_id=str(run["agi_snapshot_id"]),
         )
-        if bound_agi_reader is not None and (
-            reader.agi_path.resolve(strict=False)
-            != Path(str(agi_path)).resolve(strict=False)
-        ):
-            raise ValueError(
-                "bound Active Genome Index reader does not match the selected run"
-            )
-        readers[str(reader.agi_path.resolve(strict=False))] = reader
         summary["active_genome_index_readiness"] = reader.readiness
         if not reader.agi_path.exists():
             summary["query_available"] = False
@@ -146,15 +130,12 @@ def _sample_context(
     deduped_matches = _dedupe_records(
         matches, ("agi_id", "chrom", "pos", "ref", "alt", "rsid", "genotype", "filter")
     )
-    return (
-        {
-            "searched_active_genome_indexes": searched_active_genome_indexes,
-            "searched_known_active_genome_indexes": any(selection == "known_active_genome_index" for _run, selection in runs),
-            "count": len(deduped_matches),
-            "matches": deduped_matches,
-        },
-        readers,
-    )
+    return {
+        "searched_active_genome_indexes": searched_active_genome_indexes,
+        "searched_known_active_genome_indexes": any(selection == "known_active_genome_index" for _run, selection in runs),
+        "count": len(deduped_matches),
+        "matches": deduped_matches,
+    }
 
 
 def _support_context(
@@ -164,8 +145,6 @@ def _support_context(
     genome_build: str,
     limit: int,
     warnings: list[str],
-    bound_agi_reader: ActiveGenomeIndexReader | None = None,
-    opened_agi_readers: dict[str, ActiveGenomeIndexReader] | None = None,
 ) -> JsonObject:
     genotype_support: list[JsonObject] = []
     if not runs:
@@ -174,23 +153,11 @@ def _support_context(
         agi_path = run.get("agi_path")
         if not agi_path:
             continue
-        reader_key = str(Path(str(agi_path)).resolve(strict=False))
-        reader = bound_agi_reader or (opened_agi_readers or {}).get(reader_key)
-        if reader is None:
-            reader = open_reader(
-                Path(str(agi_path)),
-                need=ActiveGenomeIndexNeed.REFERENCE,
-                genome_build=run.get("genome_build") or genome_build,
-                expected_artifact_sha256=str(run["agi_artifact_sha256"]),
-                expected_snapshot_id=str(run["agi_snapshot_id"]),
-            )
-        if bound_agi_reader is not None and (
-            reader.agi_path.resolve(strict=False)
-            != Path(str(agi_path)).resolve(strict=False)
-        ):
-            raise ValueError(
-                "bound Active Genome Index reader does not match the selected run"
-            )
+        reader = open_reader(
+            Path(str(agi_path)),
+            need=ActiveGenomeIndexNeed.REFERENCE,
+            genome_build=run.get("genome_build") or genome_build,
+        )
         for target in targets:
             if target["target_type"] != "allele":
                 continue

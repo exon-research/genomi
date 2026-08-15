@@ -108,8 +108,6 @@ class GenomiRuntimeArrayIntakeTests(ActiveGenomeIndexContractFixtureMixin, Genom
                 self.assertEqual(parsed["status"], "completed")
                 self.assertEqual(parsed["source_format"], "23andme")
                 self.assertIn("active_genome_index", parsed)
-                snapshot_id = parsed["active_genome_index"]["agi_snapshot_id"]
-                self.assertRegex(snapshot_id, r"^agi-snapshot-sha256-[0-9a-f]{64}$")
                 readiness = active_genome_index_readiness(parsed["outputs"]["agi_path"])
                 self.assertTrue(readiness["complete"])
                 self.assertEqual(readiness["status"], "completed")
@@ -143,8 +141,6 @@ class GenomiRuntimeArrayIntakeTests(ActiveGenomeIndexContractFixtureMixin, Genom
                 current = call_operation("genomi.describe_context")
                 self.assertTrue(current["has_active_genome_index"])
                 self.assertEqual(current["active_genome_index"]["agi_source_format"], "23andme")
-                self.assertEqual(current["active_agi_snapshot_id"], snapshot_id)
-                self.assertEqual(current["active_genome_index"]["agi_snapshot_id"], snapshot_id)
                 current_readiness = current["active_genome_index"]["active_genome_index_readiness"]
                 self.assertTrue(current_readiness["complete"])
                 self.assertEqual(current_readiness["status"], "completed")

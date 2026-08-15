@@ -1,28 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
-import threading
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
-
-try:  # POSIX is the supported production boundary; tests retain a thread lock.
-    import fcntl
-except ImportError:  # pragma: no cover - non-POSIX fallback
-    fcntl = None  # type: ignore[assignment]
 
 from ..host_response import host_response_profiles
 from ..paths import (
     genomi_data_root,
     shared_evidence_db_path,
-)
-from ..private_storage import (
-    PRIVATE_FILE_MODE,
-    atomic_write_private_json,
-    ensure_private_directory,
-    private_root_for_path,
-    read_private_json,
-    refuse_symlink,
 )
 from .normalize import (
     AGI_ACCESS_KEY,
@@ -47,12 +32,6 @@ from .normalize import (
 )
 
 
-_CONTEXT_LOCKS_GUARD = threading.Lock()
-_CONTEXT_LOCKS: dict[Path, threading.RLock] = {}
-_CONTEXT_LOCK_LOCAL = threading.local()
-_AUTHORITY_TRANSACTION_FILE = ".context-registry.transaction.json"
-
-
 def context_path(root: str | Path | None = None) -> Path:
     if root is not None:
         return genomi_data_root(root) / CONTEXT_FILE_NAME
@@ -68,230 +47,55 @@ def context_path(root: str | Path | None = None) -> Path:
     return genomi_data_root() / SESSIONS_DIR_NAME / _workspace_session_id() / CONTEXT_FILE_NAME
 
 
-@contextmanager
-def context_authority_lock(root: str | Path | None = None) -> Iterator[None]:
-    """Serialize current-user context reads/writes across threads and processes.
-
-    Compound context operations hold this boundary for their full read/modify/
-    write cycle. Ordinary readers and writers enter it briefly, so a selection
-    cannot become current halfway through a related registry commit.
-    """
-
-    authority_root = genomi_data_root(root)
-    lock_path = authority_root / ".context-registry.authority.lock"
-    with _CONTEXT_LOCKS_GUARD:
-        process_lock = _CONTEXT_LOCKS.setdefault(lock_path, threading.RLock())
-    with process_lock:
-        depths = dict(getattr(_CONTEXT_LOCK_LOCAL, "depths", {}))
-        depth = int(depths.get(lock_path, 0))
-        if depth:
-            depths[lock_path] = depth + 1
-            _CONTEXT_LOCK_LOCAL.depths = depths
-            try:
-                yield
-            finally:
-                latest = dict(getattr(_CONTEXT_LOCK_LOCAL, "depths", {}))
-                remaining = int(latest.get(lock_path, 1)) - 1
-                if remaining:
-                    latest[lock_path] = remaining
-                else:
-                    latest.pop(lock_path, None)
-                _CONTEXT_LOCK_LOCAL.depths = latest
-            return
-
-        boundary = private_root_for_path(lock_path, genomi_data_root(root))
-        if boundary is not None:
-            ensure_private_directory(lock_path.parent, private_root=boundary)
-        else:
-            # An explicitly configured context may live in a user-owned
-            # directory.  Create a missing parent privately, but never chmod an
-            # existing directory outside Genomi's own data root.
-            refuse_symlink(lock_path.parent)
-            lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            refuse_symlink(lock_path.parent)
-        refuse_symlink(lock_path)
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(lock_path, flags, PRIVATE_FILE_MODE)
-        os.fchmod(descriptor, PRIVATE_FILE_MODE)
-        depths[lock_path] = 1
-        _CONTEXT_LOCK_LOCAL.depths = depths
-        try:
-            if fcntl is not None:
-                fcntl.flock(descriptor, fcntl.LOCK_EX)
-            _recover_authority_transaction(root)
-            yield
-        finally:
-            latest = dict(getattr(_CONTEXT_LOCK_LOCAL, "depths", {}))
-            latest.pop(lock_path, None)
-            _CONTEXT_LOCK_LOCAL.depths = latest
-            if fcntl is not None:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
-
-
 def registry_path(root: str | Path | None = None) -> Path:
     return genomi_data_root(root) / REGISTRY_FILE_NAME
 
 
 def load_context(root: str | Path | None = None) -> JsonObject:
-    with context_authority_lock(root):
-        path = context_path(root)
-        if not path.exists():
-            return _empty_context(root)
-        try:
-            value = read_private_json(path)
-        except (ValueError, OSError):
-            return _empty_context(root)
-        if not isinstance(value, dict):
-            return _empty_context(root)
-        value = _normalize_context(value, root)
-        value.setdefault(AGI_ACCESS_KEY, {})
-        value.setdefault("shared_evidence_db", _path_str(shared_evidence_db_path(root)))
-        return value
+    path = context_path(root)
+    if not path.exists():
+        return _empty_context(root)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return _empty_context(root)
+    if not isinstance(value, dict):
+        return _empty_context(root)
+    value = _normalize_context(value, root)
+    value.setdefault(AGI_ACCESS_KEY, {})
+    value.setdefault("shared_evidence_db", _path_str(shared_evidence_db_path(root)))
+    return value
 
 
 def load_registry(root: str | Path | None = None) -> JsonObject:
-    with context_authority_lock(root):
-        path = registry_path(root)
-        if not path.exists():
-            return _empty_registry()
-        try:
-            value = read_private_json(path)
-        except (ValueError, OSError):
-            return _empty_registry()
-        if not isinstance(value, dict):
-            return _empty_registry()
-        return _normalize_registry(value)
+    path = registry_path(root)
+    if not path.exists():
+        return _empty_registry()
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return _empty_registry()
+    if not isinstance(value, dict):
+        return _empty_registry()
+    return _normalize_registry(value)
 
 
 def save_context(context: JsonObject, root: str | Path | None = None) -> JsonObject:
-    with context_authority_lock(root):
-        return _save_context_at_path_locked(
-            context,
-            context_path(root),
-            root,
-            stamp_updated_at=True,
-        )
-
-
-def save_registry(registry: JsonObject, root: str | Path | None = None) -> JsonObject:
-    with context_authority_lock(root):
-        return _save_registry_locked(registry, root)
-
-
-def save_context_and_registry(
-    context: JsonObject,
-    registry: JsonObject,
-    root: str | Path | None = None,
-) -> tuple[JsonObject, JsonObject]:
-    """Publish session selection and registry state as one recoverable commit.
-
-    The journal is private and atomically written before either destination.
-    If the process exits between the two replacements, the next authority-lock
-    holder completes the same generation before exposing either store.
-    """
-
-    with context_authority_lock(root):
-        normalized_context = _normalize_context(context, root)
-        normalized_context["updated_at"] = _now()
-        normalized_registry = _normalize_registry(registry)
-        normalized_registry["updated_at"] = _now()
-        transaction_path = _authority_transaction_path(root)
-        atomic_write_private_json(
-            transaction_path,
-            {
-                "context_path": str(context_path(root).absolute()),
-                "context": normalized_context,
-                "registry": normalized_registry,
-            },
-            private_root=genomi_data_root(root),
-        )
-        _save_registry_locked(normalized_registry, root, stamp_updated_at=False)
-        _save_context_at_path_locked(
-            normalized_context,
-            context_path(root),
-            root,
-            stamp_updated_at=False,
-        )
-        transaction_path.unlink(missing_ok=True)
-        return normalized_context, normalized_registry
-
-
-def _save_registry_locked(
-    registry: JsonObject,
-    root: str | Path | None,
-    *,
-    stamp_updated_at: bool = True,
-) -> JsonObject:
-    path = registry_path(root)
-    registry = _normalize_registry(registry)
-    if stamp_updated_at:
-        registry["updated_at"] = _now()
-    atomic_write_private_json(
-        path,
-        registry,
-        private_root=private_root_for_path(path, genomi_data_root(root)),
-    )
-    return registry
-
-
-def _save_context_at_path_locked(
-    context: JsonObject,
-    path: Path,
-    root: str | Path | None,
-    *,
-    stamp_updated_at: bool,
-) -> JsonObject:
+    path = context_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
     context = _normalize_context(context, root)
-    if stamp_updated_at:
-        context["updated_at"] = _now()
-    atomic_write_private_json(
-        path,
-        context,
-        private_root=private_root_for_path(path, genomi_data_root(root)),
-    )
+    context["updated_at"] = _now()
+    path.write_text(json.dumps(context, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return context
 
 
-def _authority_transaction_path(root: str | Path | None) -> Path:
-    return genomi_data_root(root) / _AUTHORITY_TRANSACTION_FILE
-
-
-def _recover_authority_transaction(root: str | Path | None) -> None:
-    transaction_path = _authority_transaction_path(root)
-    if not transaction_path.exists():
-        return
-    try:
-        transaction = read_private_json(transaction_path)
-    except (OSError, ValueError):
-        transaction_path.unlink(missing_ok=True)
-        return
-    if not isinstance(transaction, dict):
-        transaction_path.unlink(missing_ok=True)
-        return
-    context = transaction.get("context")
-    registry = transaction.get("registry")
-    raw_context_path = transaction.get("context_path")
-    if (
-        not isinstance(context, dict)
-        or not isinstance(registry, dict)
-        or raw_context_path in (None, "")
-    ):
-        transaction_path.unlink(missing_ok=True)
-        return
-    target_context_path = Path(str(raw_context_path))
-    if target_context_path.name != CONTEXT_FILE_NAME:
-        transaction_path.unlink(missing_ok=True)
-        return
-    _save_registry_locked(registry, root, stamp_updated_at=False)
-    _save_context_at_path_locked(
-        context,
-        target_context_path,
-        root,
-        stamp_updated_at=False,
-    )
-    transaction_path.unlink(missing_ok=True)
+def save_registry(registry: JsonObject, root: str | Path | None = None) -> JsonObject:
+    path = registry_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    registry = _normalize_registry(registry)
+    registry["updated_at"] = _now()
+    path.write_text(json.dumps(registry, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return registry
 
 
 def get_response_profile_id(registry: JsonObject) -> str | None:
@@ -320,10 +124,9 @@ def set_response_profile_id(profile_id: str | None, root: str | Path | None = No
         raise ValueError(
             f"Unknown response profile id: {normalized!r}. Known ids: {sorted(known_ids)}."
         )
-    with context_authority_lock(root):
-        registry = load_registry(root)
-        registry["response_profile"] = normalized
-        return save_registry(registry, root)
+    registry = load_registry(root)
+    registry["response_profile"] = normalized
+    return save_registry(registry, root)
 
 
 def context_scope(root: str | Path | None = None) -> JsonObject:
@@ -351,6 +154,6 @@ def context_policy() -> JsonObject:
         "default": DEFAULT_CONTEXT_POLICY,
         "env": GENOMI_CONTEXT_POLICY_ENV,
         "implicit_artifact_selection": mode == "auto",
-        "default_user_auto_selection": "A configured default user is auto-selected as metadata independent of this policy; the selected Active Genome Index still requires current-session approval before it is read.",
+        "default_user_auto_selection": "A configured default user is auto-selected independent of this policy, but only that user's selected Active Genome Index is readable.",
         "recommended": "explicit",
     }

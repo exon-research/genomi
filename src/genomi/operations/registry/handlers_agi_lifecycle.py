@@ -14,8 +14,8 @@ def _genomi_describe_context(_: JsonObject) -> JsonObject:
     has_genome_data = bool(context.get("users")) or bool(context.get("session_agis")) or has_active
     # Point at the AGI skill only when there is genome data to work with but it
     # is not already active + approved (so the host needs the invoke-only
-    # selection/approval tools). A default user's AGI can be auto-selected as
-    # metadata, but it remains on this path until the session approves access.
+    # selection/approval tools). When the default user's AGI is auto-selected
+    # and approved, downstream capability tools read it directly — no pointer.
     if has_genome_data and not (has_active and approved):
         context = with_next_action(
             context,

@@ -13,17 +13,8 @@ def list_active_genome_index_inventory(root: str | Path | None = None) -> JsonOb
     context = describe_context(root)
     users = _inventory_users(registry)
     user_links = _agi_user_links(users)
-    registered_revisions = [
-        revision
-        for revision in registry.get("agi_revisions", {}).values()
-        if isinstance(revision, dict)
-    ]
     agis = [
-        _inventory_agi_record(
-            run,
-            linked_users=user_links.get(str(run.get("agi_id") or ""), []),
-            registered_revisions=registered_revisions,
-        )
+        _inventory_agi_record(run, linked_users=user_links.get(str(run.get("agi_id") or ""), []))
         for run in sorted(
             [run for run in registry.get("agis", {}).values() if isinstance(run, dict)],
             key=lambda item: str(item.get("updated_at", "")),
@@ -34,13 +25,11 @@ def list_active_genome_index_inventory(root: str | Path | None = None) -> JsonOb
         "status": "completed",
         "active": {
             "agi_id": context.get("active_agi_id"),
-            "agi_snapshot_id": context.get("active_agi_snapshot_id"),
             "user_id": context.get("active_user_id"),
             "selection_source": context.get("selection_source"),
         },
         "users": users,
         "active_genome_indexes": agis,
-        "registered_revision_count": len(registered_revisions),
     }
 
 
@@ -80,44 +69,14 @@ def _agi_user_links(users: list[JsonObject]) -> dict[str, list[JsonObject]]:
     return links
 
 
-def _inventory_agi_record(
-    run: JsonObject,
-    *,
-    linked_users: list[JsonObject],
-    registered_revisions: list[JsonObject],
-) -> JsonObject:
+def _inventory_agi_record(run: JsonObject, *, linked_users: list[JsonObject]) -> JsonObject:
     described = describe_agi_record(run) or {}
     agi_id = str(run.get("agi_id") or described.get("agi_id") or "")
     sample_slug = str(run.get("sample_slug") or described.get("sample_slug") or "")
     user_names = [str(user.get("nickname")) for user in linked_users if user.get("nickname")]
     display_name = str(run.get("nickname") or (user_names[0] if user_names else "") or sample_slug or agi_id)
-    current_snapshot_id = str(run.get("agi_snapshot_id") or "")
-    revision_history = [
-        {
-            "agi_snapshot_id": revision.get("agi_snapshot_id"),
-            "created_at": revision.get("created_at"),
-            "genome_build": revision.get("genome_build"),
-            "agi_schema_version": revision.get("agi_schema_version"),
-            "current": str(revision.get("agi_snapshot_id") or "")
-            == current_snapshot_id,
-            "available": bool(
-                revision.get("agi_path")
-                and Path(str(revision["agi_path"])).is_file()
-            ),
-        }
-        for revision in sorted(
-            (
-                revision
-                for revision in registered_revisions
-                if str(revision.get("agi_id") or "") == agi_id
-            ),
-            key=lambda item: str(item.get("created_at") or ""),
-            reverse=True,
-        )
-    ]
     return {
         "agi_id": agi_id,
-        "agi_snapshot_id": run.get("agi_snapshot_id") or described.get("agi_snapshot_id"),
         "sample_slug": sample_slug,
         "names": {
             "display": display_name,
@@ -138,8 +97,6 @@ def _inventory_agi_record(
         "digitized": described.get("digitized"),
         "availability": described.get("availability") or {},
         "active_genome_index_readiness": described.get("active_genome_index_readiness"),
-        "revision_count": len(revision_history),
-        "revisions": revision_history,
     }
 
 

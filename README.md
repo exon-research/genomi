@@ -86,57 +86,6 @@ already packaged or otherwise present, the canonical install/update path is
 `genomi install` or the MCP operation `genomi.install`; the source bootstrap is
 only for hosts that do not have Genomi yet.
 
-## GenomiLab Local Research Workspace (Developer Preview)
-
-GenomiLab is the patient-facing disease-investigation application built on
-Genomi. Its web portal opens the current local Genomi user and brings that
-patient's molecular profile, investigation evidence, hypotheses, open gaps,
-and research brief into one workspace:
-
-```bash
-genomi lab --harness-processing-destination "remote: OpenAI Codex service"
-```
-
-The destination label is deliberately explicit: it is shown in the exact
-disclosure preview before approved molecular context is sent. Omitting it still
-opens the local workspace, but remote harness work remains unavailable rather
-than silently assuming where reasoning will run.
-
-The web portal is the UI; GenomiLab itself owns the application workflow and
-durable patient-research records. The installed agent harness owns dynamic
-planning, agent execution, reasoning, and draft synthesis. A planning task is
-tool-free: accepting its exact plan records the decision but runs nothing. The
-patient then reviews a separate disclosure for a fresh execution task, where
-the harness alone can invoke the exact accepted GenomiLab disease-investigation
-capabilities. Genomi remains the source of truth for the current user, genome
-intake, and the reusable Active Genome Index. GenomiLab never creates a second
-patient selector, copies AGI rows, or asks for a new VCF for each case.
-
-Those GenomiLab capabilities go beyond both base Genomi and a general harness:
-they project an approved Patient Molecular Profile, preserve source-separated
-disease evidence, relate public findings to exact patient observations, and
-maintain hypotheses, counterevidence, gaps, confirmation needs, and versioned
-patient/clinician briefs. A Paperclip API key can be saved securely and checked
-explicitly with a fixed public `TP53`/PMC/one-result probe. That check does not
-enable evidence retrieval. Every Paperclip evidence operation in this release
-is investigation-scoped and remains closed until separate deployment
-authorization, an independent patient-data contract, and approval of the exact
-disclosure are all present. An API key does not establish those permissions.
-Proto and ESM remain disabled unless a narrow, independently validated
-scientific task makes them appropriate.
-
-The portal binds to a random loopback-only address and opens with a one-time
-private launch link. Each investigation uses an immutable, consented molecular
-profile snapshot, an exact AGI revision, and a bounded genomic scope. Access is
-revoked when the portal stops or the current Genomi user changes. Optional
-external providers and biological models are behind explicit eligibility and
-patient-data disclosure gates; connection verification never opens a
-patient-informed route, and unavailable capabilities fail closed.
-
-This remains a research-support developer preview, not a diagnosis or treatment
-product. Findings and proposed clinical implications require appropriate
-clinical confirmation and review.
-
 ## Works With Every Agent
 
 Genomi is not tied to one chat app. Any agent host that can use MCP tools,
@@ -385,10 +334,9 @@ Genomi keeps the most sensitive data close to you.
 - Raw genome sources stay on the user's machine.
 - Genomi creates Active Genome Index records for personal genome files locally so agents query only the
   variants needed for the current question.
-- Genomi asks for current-session approval before read operations use any
-  existing Active Genome Index artifact. A configured default user is
-  auto-selected as metadata, but that selection does not approve a private
-  read.
+- Genomi asks for current-session approval before read operations use existing
+  Active Genome Index artifacts, unless they belong to the configured default
+  user.
 - Public lookups use selected targets such as rsIDs, genes, drugs, conditions,
   or guideline questions.
 - Journal entries are agent-authored memory, not evidence.

@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ....active_genome_index.active_genome_index import ActiveGenomeIndexReader
-
 from .context import (
     _build_variant_envelope,
     _public_context,
@@ -45,9 +43,6 @@ def lookup_variant(
     include_known_active_genome_indexes: bool = False,
     include_fail: bool = False,
     limit: int = 20,
-    bound_agi_reader: ActiveGenomeIndexReader | None = None,
-    bound_agi_record: JsonObject | None = None,
-    bound_agi_selection: str = "explicit_binding",
 ) -> JsonObject:
     """Return deterministic facts for flexible variant-like input.
 
@@ -70,19 +65,12 @@ def lookup_variant(
         genome_build=effective_build,
         warnings=warnings,
     )
-    if (bound_agi_reader is None) != (bound_agi_record is None):
-        raise ValueError(
-            "bound_agi_reader and bound_agi_record must be supplied together"
-        )
-    if bound_agi_reader is not None and bound_agi_record is not None:
-        runs = [(bound_agi_record, bound_agi_selection)]
-    else:
-        runs = _selected_runs(
-            agi_id=agi_id,
-            include_active_genome_index=include_active_genome_index,
-            include_known_active_genome_indexes=include_known_active_genome_indexes,
-            warnings=warnings,
-        )
+    runs = _selected_runs(
+        agi_id=agi_id,
+        include_active_genome_index=include_active_genome_index,
+        include_known_active_genome_indexes=include_known_active_genome_indexes,
+        warnings=warnings,
+    )
     evidence_dbs = _selected_evidence_dbs(
         db=db,
         shared_db=shared_db,
@@ -92,13 +80,12 @@ def lookup_variant(
     public_context = _public_context(targets, evidence_dbs=evidence_dbs, genome_build=effective_build, limit=bounded_limit, warnings=warnings)
     inferred_targets = _inferred_allele_targets(public_context, genome_build=effective_build)
     all_targets = _dedupe_targets([*targets, *inferred_targets])
-    sample_context, opened_agi_readers = _sample_context(
+    sample_context = _sample_context(
         all_targets,
         runs=runs,
         include_fail=include_fail,
         limit=bounded_limit,
         warnings=warnings,
-        bound_agi_reader=bound_agi_reader,
     )
     support_context = _support_context(
         all_targets,
@@ -106,8 +93,6 @@ def lookup_variant(
         genome_build=effective_build,
         limit=bounded_limit,
         warnings=warnings,
-        bound_agi_reader=bound_agi_reader,
-        opened_agi_readers=opened_agi_readers,
     )
     target_inventory = _target_inventory(
         targets=all_targets,

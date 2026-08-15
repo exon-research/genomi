@@ -9,12 +9,7 @@ from .agi_records import describe_user
 from .agi_registry import find_agi_by_intake_source
 from .agi_summary import describe_context
 from .normalize import AGI_ACCESS_KEY, JsonObject, _find_user, _now
-from .storage import (
-    context_authority_lock,
-    load_context,
-    load_registry,
-    save_context_and_registry,
-)
+from .storage import load_context, load_registry, save_context, save_registry
 
 
 def remove_active_genome_index(
@@ -29,34 +24,6 @@ def remove_active_genome_index(
     nicknames: list[str] | None = None,
     remove_artifacts: bool = True,
     root: str | Path | None = None,
-) -> JsonObject:
-    with context_authority_lock(root):
-        return _remove_active_genome_index_locked(
-            agi_id=agi_id,
-            agi_ids=agi_ids,
-            source=source,
-            sources=sources,
-            user_id=user_id,
-            user_ids=user_ids,
-            nickname=nickname,
-            nicknames=nicknames,
-            remove_artifacts=remove_artifacts,
-            root=root,
-        )
-
-
-def _remove_active_genome_index_locked(
-    *,
-    agi_id: str | None,
-    agi_ids: list[str] | None,
-    source: str | Path | None,
-    sources: list[str | Path] | None,
-    user_id: str | None,
-    user_ids: list[str] | None,
-    nickname: str | None,
-    nicknames: list[str] | None,
-    remove_artifacts: bool,
-    root: str | Path | None,
 ) -> JsonObject:
     registry = load_registry(root)
     context = load_context(root)
@@ -81,12 +48,7 @@ def _remove_active_genome_index_locked(
 
     cleanup_results: list[tuple[str, JsonObject, JsonObject]] = []
     for target_agi_id, run in targets:
-        revisions = _registered_revisions_for_agi(registry, target_agi_id)
-        artifacts = (
-            _remove_agi_artifacts(run, revisions=revisions, root=root)
-            if remove_artifacts
-            else _planned_agi_artifacts(run, revisions=revisions, root=root)
-        )
+        artifacts = _remove_agi_artifacts(run, root=root) if remove_artifacts else _planned_agi_artifacts(run, root=root)
         cleanup_results.append((target_agi_id, run, artifacts))
     failures = [
         {"agi_id": target_agi_id, "artifact_cleanup": artifacts}
@@ -109,13 +71,6 @@ def _remove_active_genome_index_locked(
     removed: list[JsonObject] = []
     for target_agi_id, _run, artifacts in cleanup_results:
         removed_from_registry = bool(registry.get("agis", {}).pop(target_agi_id, None))
-        for snapshot_id, revision in list(
-            registry.get("agi_revisions", {}).items()
-        ):
-            if isinstance(revision, dict) and str(
-                revision.get("agi_id") or ""
-            ) == target_agi_id:
-                registry["agi_revisions"].pop(snapshot_id, None)
         removed_from_session = bool(context.get("agis", {}).pop(target_agi_id, None))
         _remove_agi_access_grant(context, target_agi_id)
         if str(context.get("active_agi_id") or "") == target_agi_id:
@@ -133,7 +88,8 @@ def _remove_active_genome_index_locked(
 
     removed_users = _remove_users(registry, context, user_targets)
 
-    save_context_and_registry(context, registry, root)
+    save_registry(registry, root)
+    save_context(context, root)
     return {
         "status": "completed",
         "removed_count": len(removed) + len(removed_users),
@@ -278,31 +234,10 @@ def _remove_users(registry: JsonObject, context: JsonObject, users: list[JsonObj
     return removed
 
 
-def _registered_revisions_for_agi(
-    registry: JsonObject,
-    agi_id: str,
-) -> list[JsonObject]:
-    return [
-        revision
-        for revision in registry.get("agi_revisions", {}).values()
-        if isinstance(revision, dict)
-        and str(revision.get("agi_id") or "") == agi_id
-    ]
-
-
-def _planned_agi_artifacts(
-    run: JsonObject,
-    *,
-    revisions: list[JsonObject],
-    root: str | Path | None,
-) -> JsonObject:
+def _planned_agi_artifacts(run: JsonObject, *, root: str | Path | None) -> JsonObject:
     entries = [
         {"kind": kind, "state": state}
-        for kind, state, _path in _iter_agi_artifact_paths(
-            run,
-            revisions=revisions,
-            root=root,
-        )
+        for kind, state, _path in _iter_agi_artifact_paths(run, root=root)
     ]
     return {
         "removed_count": 0,
@@ -313,22 +248,13 @@ def _planned_agi_artifacts(
     }
 
 
-def _remove_agi_artifacts(
-    run: JsonObject,
-    *,
-    revisions: list[JsonObject],
-    root: str | Path | None,
-) -> JsonObject:
+def _remove_agi_artifacts(run: JsonObject, *, root: str | Path | None) -> JsonObject:
     removed_count = 0
     missing_count = 0
     skipped_count = 0
     failed_count = 0
     entries: list[JsonObject] = []
-    for kind, state, path in _iter_agi_artifact_paths(
-        run,
-        revisions=revisions,
-        root=root,
-    ):
+    for kind, state, path in _iter_agi_artifact_paths(run, root=root):
         if state == "missing":
             missing_count += 1
             entries.append({"kind": kind, "state": state})
@@ -361,12 +287,7 @@ def _remove_agi_artifacts(
     }
 
 
-def _iter_agi_artifact_paths(
-    run: JsonObject,
-    *,
-    revisions: list[JsonObject],
-    root: str | Path | None,
-) -> list[tuple[str, str, Path]]:
+def _iter_agi_artifact_paths(run: JsonObject, *, root: str | Path | None) -> list[tuple[str, str, Path]]:
     genomi_root = genomi_data_root(root).resolve(strict=False)
     expected_project_dir = _expected_agi_project_dir(run, root=root)
     project_dir = _artifact_path(run.get("project_dir"))
@@ -391,10 +312,6 @@ def _iter_agi_artifact_paths(
         path = _artifact_path(run.get(key))
         if path is not None:
             artifacts.append((key, path))
-    for revision in revisions:
-        path = _artifact_path(revision.get("agi_path"))
-        if path is not None:
-            artifacts.append(("agi_revision", path))
     outputs = run.get("outputs")
     if isinstance(outputs, dict):
         for key, value in outputs.items():

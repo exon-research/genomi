@@ -677,7 +677,6 @@ def _compact_active_index(value: object) -> JsonObject | None:
         value,
         (
             "agi_id",
-            "agi_snapshot_id",
             "sample_slug",
             "status",
             "agi_source_format",

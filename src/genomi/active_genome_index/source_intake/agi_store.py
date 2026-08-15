@@ -22,11 +22,6 @@ from .._agi_schema import (
 )
 from ..active_genome_index import ActiveGenomeIndexSchemaTooNew, SCHEMA_VERSION, _chrom_sort
 from ..active_genome_index import connect as connect_active_genome_index
-from ..identity import (
-    agi_snapshot_identity_from_metadata,
-    mint_agi_snapshot_identity,
-    source_content_sha256,
-)
 from ..record_kinds import (
     ARRAY_FORMAT,
     ARRAY_NO_CALL_FILTER,
@@ -163,15 +158,9 @@ def _insert_source_active_genome_index_metadata(
     detection: SourceDetection,
     genome_build: str,
     max_records: int | None,
-) -> JsonObject:
-    snapshot_identity = mint_agi_snapshot_identity(
-        source_content_sha256=source_content_sha256(source_path),
-        genome_build=genome_build,
-        schema_version=SCHEMA_VERSION,
-    )
+) -> None:
     values = {
         "schema_version": SCHEMA_VERSION,
-        **snapshot_identity,
         "source": str(source_path),
         "source_metadata": file_metadata(source_path),
         "source_format": detection.source_format,
@@ -192,7 +181,6 @@ def _insert_source_active_genome_index_metadata(
         [(key, json.dumps(value, sort_keys=True)) for key, value in values.items()],
     )
     _insert_source_header_lines(connection, detection=detection)
-    return snapshot_identity
 
 
 def _insert_source_header_lines(connection: sqlite3.Connection, *, detection: SourceDetection) -> None:
@@ -307,7 +295,6 @@ def _cached_array_active_genome_index_if_usable(
     if actual_metadata != expected_metadata:
         return None
     return {
-        **agi_snapshot_identity_from_metadata(metadata),
         "status": "cached",
         "source": str(source_path),
         "source_format": source_format,

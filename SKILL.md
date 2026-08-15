@@ -35,8 +35,6 @@ registration. Ask the user to start a new session.
   evidence, or searching for an existing "my Active Genome Index"/"my genome" context requires
   explicit user approval for this session. Record approval with
   `active_genome_index.approve_access` before calling those tools.
-- A configured default user may select an Active Genome Index as metadata, but
-  default selection never replaces current-session read approval.
 - Do not use unrelated genome sources from other chats, workspaces, or external
   evaluation tasks.
 - Call narrow tools first and inspect evidence before making a claim.

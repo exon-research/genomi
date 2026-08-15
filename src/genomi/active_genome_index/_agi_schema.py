@@ -15,7 +15,6 @@ from .vcf import VcfRecord
 from .vcf import _is_symbolic_non_ref_alt
 from .vcf import sample_metrics as _vcf_sample_metrics
 from .observations import observed_alleles_from_vcf_genotype
-from .identity import mint_agi_snapshot_identity
 from .record_kinds import (
     RECORD_KIND_NO_CALL,
     RECORD_KIND_REFERENCE_BLOCK,
@@ -35,7 +34,7 @@ import sqlite3
 import time
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 5
 
 ACTIVE_GENOME_INDEX_BUILD_STATUS_IN_PROGRESS = "in_progress"
 
@@ -280,18 +279,10 @@ def _insert_metadata(
     max_records: int | None,
     source_format: str = "vcf",
     provider: str | None = None,
-    genome_build: str = "auto",
-    source_content_sha256: str,
-) -> dict[str, Any]:
+) -> None:
     stat = vcf_path.stat()
-    snapshot_identity = mint_agi_snapshot_identity(
-        source_content_sha256=source_content_sha256,
-        genome_build=genome_build,
-        schema_version=SCHEMA_VERSION,
-    )
     values = {
         "schema_version": SCHEMA_VERSION,
-        **snapshot_identity,
         "vcf_path": str(vcf_path),
         "source_format": source_format,
         "provider": provider,
@@ -310,7 +301,6 @@ def _insert_metadata(
         [(key, json.dumps(value)) for key, value in values.items()],
     )
     _insert_source_header_lines(connection, header)
-    return snapshot_identity
 
 def _insert_source_header_lines(connection: sqlite3.Connection, header: VcfHeader) -> None:
     """Persist the source VCF header verbatim (meta ## lines + the #CHROM
