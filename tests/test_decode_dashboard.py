@@ -99,26 +99,69 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertIn("--bind 127.0.0.1", serve["command"])
         self.assertIn(f"--directory {shlex.quote(str(out.parent.resolve()))}", serve["command"])
 
-    def test_render_serve_metadata_avoids_busy_default_port(self) -> None:
+    def test_generate_only_serve_metadata_is_deterministic_without_socket_probe(self) -> None:
         out = self.tmpdir / "dash.html"
-
-        def available(port: int) -> bool:
-            return port != 8765
-
-        with mock.patch.object(decode_dashboard.local_server, "_port_available", side_effect=available):
+        with mock.patch.object(decode_dashboard.local_server, "_find_available_port") as find_port:
             result = decode_dashboard.render_dashboard(
                 evidence={"overview": {"sampleId": "HG-PORT", "variantCount": 1}},
                 mode="full",
                 output=out,
             )
-        self.assertNotEqual(result["serve"]["port"], 8765)
-        self.assertIn(f":{result['serve']['port']}/dash.html", result["serve"]["url"])
+        find_port.assert_not_called()
+        self.assertEqual(result["serve"]["status"], "ready_to_start")
+        self.assertEqual(result["serve"]["port"], 8765)
+        self.assertEqual(result["serve"]["url"], "http://127.0.0.1:8765/dash.html")
+
+    def test_disabled_autoserve_returns_deterministic_metadata_without_socket_probe(self) -> None:
+        out = self.tmpdir / "dash.html"
+        with (
+            mock.patch.dict(os.environ, {"GENOMI_DASHBOARD_AUTOSERVE": "0"}),
+            mock.patch.object(decode_dashboard.local_server, "_find_available_port") as find_port,
+            mock.patch.object(decode_dashboard.local_server.subprocess, "Popen") as popen,
+        ):
+            result = decode_dashboard.render_dashboard(
+                evidence={"overview": {"sampleId": "HG-NO-SERVE", "variantCount": 1}},
+                mode="full",
+                output=out,
+                start_server=True,
+            )
+
+        find_port.assert_not_called()
+        popen.assert_not_called()
+        self.assertEqual(result["serve"]["status"], "ready_to_start")
+        self.assertEqual(result["serve"]["port"], 8765)
+        self.assertEqual(result["serve"]["url"], "http://127.0.0.1:8765/dash.html")
+
+    def test_autoserve_avoids_busy_default_port_when_starting(self) -> None:
+        out = self.tmpdir / "dash.html"
+        process = mock.Mock(pid=12345)
+
+        def available(port: int) -> bool:
+            return port != 8765
+
+        with (
+            mock.patch.dict(os.environ, {"GENOMI_DASHBOARD_AUTOSERVE": "1"}),
+            mock.patch.object(decode_dashboard.local_server, "_port_available", side_effect=available),
+            mock.patch.object(decode_dashboard.local_server.subprocess, "Popen", return_value=process),
+            mock.patch.object(decode_dashboard.local_server, "_verify_url", return_value=200),
+        ):
+            result = decode_dashboard.render_dashboard(
+                evidence={"overview": {"sampleId": "HG-PORT", "variantCount": 1}},
+                mode="full",
+                output=out,
+                start_server=True,
+            )
+
+        self.assertEqual(result["serve"]["status"], "started")
+        self.assertEqual(result["serve"]["port"], 8766)
+        self.assertEqual(result["serve"]["url"], "http://127.0.0.1:8766/dash.html")
 
     def test_render_can_autostart_local_dashboard_server(self) -> None:
         out = self.tmpdir / "dash.html"
         process = mock.Mock(pid=12345)
         with (
             mock.patch.dict(os.environ, {"GENOMI_DASHBOARD_AUTOSERVE": "1"}),
+            mock.patch.object(decode_dashboard.local_server, "_find_available_port", return_value=8765),
             mock.patch.object(decode_dashboard.local_server.subprocess, "Popen", return_value=process) as popen,
             mock.patch.object(decode_dashboard.local_server, "_verify_url", return_value=200),
         ):

@@ -34,7 +34,7 @@ jobs:
           python -m pip install uv
           uv lock --locked
           python -m pip install -e .
-          python -m pip install pytest ruff
+          python -m pip install pytest ruff==0.16.2
 
       - name: Run lint
         run: ruff check src tests

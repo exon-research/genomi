@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="theme-color" content="#123c36">
+    <title>GenomiLab — Your personal research lab</title>
+    <meta name="description" content="Investigate disease against your molecular profile with the agent harness already installed with Genomi.">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/workspace.css">
+    <link rel="stylesheet" href="/brief.css">
+    <link rel="stylesheet" href="/responsive.css">
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to the Research Desk</a>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="GenomiLab home">
+        <span class="brand-mark" aria-hidden="true">G</span>
+        <span><strong>GenomiLab</strong><small>Personal research lab</small></span>
+      </a>
+      <div class="local-badge"><span aria-hidden="true"></span> Local Research Desk</div>
+    </header>
+
+    <div class="boundary" role="note">
+      <strong>Research support—not diagnosis or treatment.</strong>
+      Findings and hypotheses need appropriate laboratory and clinical confirmation before health decisions.
+    </div>
+
+    <div id="global-alert" class="alert" role="alert" hidden>
+      <span id="global-alert-message"></span>
+      <button id="alert-dismiss" type="button" aria-label="Dismiss message">×</button>
+    </div>
+
+    <main id="main-content" tabindex="-1">
+      <section id="setup-state" class="setup-state" hidden>
+        <p class="eyebrow">One identity, one genome</p>
+        <h1>Finish setup in Genomi</h1>
+        <p>
+          GenomiLab opens the current Genomi user and reuses that user’s Active Genome Index.
+          It does not create another patient profile or ask you to upload a VCF for each question.
+        </p>
+        <div class="setup-card">
+          <span class="step-number">1</span>
+          <div><strong>Create or select your user in Genomi</strong><p id="genomi-setup-prompt">In your installed assistant, ask: “Set up my Genomi user and manage my genome.” Then reopen or refresh this page.</p></div>
+        </div>
+      </section>
+
+      <div id="research-desk" class="desk" hidden>
+        <aside class="desk-nav" aria-label="Research Desk navigation">
+          <div class="user-card">
+            <p class="eyebrow">Current Genomi user</p>
+            <h2 id="current-user-name">Current user</h2>
+            <p id="current-user-id" class="technical-id"></p>
+          </div>
+          <nav>
+            <a class="active" href="#overview">Research Desk</a>
+            <a href="#molecular-profile">My Molecular Profile</a>
+            <a href="#investigations">Investigations</a>
+            <a href="#evidence-library">Evidence Library</a>
+            <a href="#research-tools">Research tools</a>
+            <a href="#collaborate">Collaborate</a>
+            <a href="#privacy-activity">Privacy &amp; Activity</a>
+          </nav>
+          <div class="privacy-note">
+            <strong>Your genome stays in Genomi.</strong>
+            <p>GenomiLab stores reviewed context and evidence references, never a copied genome or AGI rows.</p>
+          </div>
+          <p id="version-label" class="version-label">GenomiLab</p>
+        </aside>
+
+        <div class="desk-main">
+          <section id="overview" class="hero-grid">
+            <div class="hero-copy">
+              <p class="eyebrow">Research Desk</p>
+              <h1>Investigate disease in the context of your molecular profile.</h1>
+              <p>
+                Ask the question in your own words. The installed agent harness plans the work;
+                GenomiLab keeps the profile, evidence, hypotheses, gaps, and living brief together.
+              </p>
+            </div>
+            <div class="genome-card">
+              <span class="genome-icon" aria-hidden="true">◎</span>
+              <div>
+                <strong id="genome-status">Checking genome…</strong><p id="genome-detail"></p>
+                <button id="manage-genome-button" class="text-button" type="button">Manage genome in Genomi →</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="attention-grid" aria-label="Research Desk summary">
+            <article><strong id="attention-plan-reviews">0</strong><span>working plans to inspect</span></article>
+            <article><strong id="attention-provider-approvals">0</strong><span>external approvals</span></article>
+            <article><strong id="attention-running-jobs">0</strong><span>research in progress</span></article>
+            <article><strong id="attention-new-evidence">0</strong><span>evidence found</span></article>
+            <article><strong id="attention-completed-briefs">0</strong><span>current briefs</span></article>
+          </section>
+
+          <section class="ask-card" aria-labelledby="ask-heading">
+            <div>
+              <p class="eyebrow">Start or continue an investigation</p>
+              <h2 id="ask-heading">What disease question should we investigate?</h2>
+            </div>
+            <form id="question-form">
+              <label for="question">Your question</label>
+              <textarea id="question" name="question" rows="3" maxlength="2000" required placeholder="Could the molecular findings and symptoms in my profile help explain this condition?"></textarea>
+              <div class="form-row">
+                <div>
+                  <label for="disease-scope">Disease or condition <span>Optional</span></label>
+                  <input id="disease-scope" name="disease_scope" maxlength="300" placeholder="Example: hereditary neuropathy">
+                </div>
+                <button class="primary-button" type="submit">Create investigation</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="molecular-profile" class="panel">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Patient context</p><h2>My Molecular Profile</h2><p id="profile-summary"></p></div>
+              <span class="count"><strong id="observation-count">0</strong> observations</span>
+            </header>
+            <div class="profile-layout">
+              <form id="observation-form" class="observation-form">
+                <h3>Add reviewed context</h3>
+                <p>Add only what could help answer your current research questions. Link a report, specimen, or assay when one supports the observation.</p>
+                <label for="observation-modality">Type</label>
+                <select id="observation-modality" name="modality" required>
+                  <option value="condition">Condition</option>
+                  <option value="phenotype">Symptom or phenotype</option>
+                  <option value="family_history">Family history</option>
+                  <option value="measurement">Lab or measurement</option>
+                  <option value="medication">Medication</option>
+                  <option value="reported_germline_finding">Reported germline finding</option>
+                  <option value="reported_somatic_finding">Reported tumor finding</option>
+                  <option value="pathology">Pathology observation</option>
+                  <option value="biomarker">Biomarker</option>
+                </select>
+                <label for="observation-label">What was observed or reported?</label>
+                <textarea id="observation-label" name="label" rows="2" maxlength="500" required></textarea>
+                <label for="assertion-status">Status</label>
+                <select id="assertion-status" name="assertion_status">
+                  <option value="present">Present</option>
+                  <option value="absent">Not detected or absent</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+                <fieldset class="profile-link-fields">
+                  <legend>Supporting record or test <span>Optional</span></legend>
+                  <label class="profile-record-assertion"><input id="observation-record-assertion" name="record_assertion" type="checkbox"> This observation is stated in the selected issued medical record</label>
+                  <label for="observation-artifact">Source record</label>
+                  <select id="observation-artifact" name="artifact_id"><option value="">No linked source record</option></select>
+                  <div class="two-columns">
+                    <div><label for="observation-specimen">Specimen</label><select id="observation-specimen" name="specimen_id"><option value="">No linked specimen</option></select></div>
+                    <div><label for="observation-assay">Assay</label><select id="observation-assay" name="assay_id"><option value="">No linked assay</option></select></div>
+                  </div>
+                  <p id="observation-source-note" class="field-help">A source link alone remains supporting evidence; check the box only when the issued record states the observation.</p>
+                </fieldset>
+                <div class="two-columns">
+                  <div><label for="reported-variant">Reported variant <span>When applicable</span></label><input id="reported-variant" name="reported_variant" placeholder="rs123 or chr:pos:ref:alt"></div>
+                  <div><label for="gene">Gene <span>Optional</span></label><input id="gene" name="gene" maxlength="80" placeholder="Example: BRCA1"></div>
+                </div>
+                <button class="secondary-button" type="submit">Save to molecular profile</button>
+              </form>
+              <div class="record-panel">
+                <h3>Current reviewed observations</h3>
+                <ul id="observation-list" class="record-list"><li class="empty-row">No profile observations yet.</li></ul>
+              </div>
+            </div>
+
+            <section id="observation-editor" class="profile-editor" aria-labelledby="observation-editor-heading" hidden>
+              <div class="profile-editor-heading">
+                <div>
+                  <p class="eyebrow">Immutable correction</p>
+                  <h3 id="observation-editor-heading">Review or correct this observation</h3>
+                  <p>Saving creates a new revision. The earlier wording remains in version history.</p>
+                </div>
+                <button id="observation-edit-cancel" class="text-button" type="button">Cancel</button>
+              </div>
+              <form id="observation-edit-form" class="profile-edit-form">
+                <p id="observation-edit-modality" class="profile-editor-modality"></p>
+                <label for="observation-edit-label">What should the current observation say?</label>
+                <textarea id="observation-edit-label" name="label" rows="2" maxlength="500" required></textarea>
+                <label for="observation-edit-assertion-status">Status</label>
+                <select id="observation-edit-assertion-status" name="assertion_status">
+                  <option value="present">Present</option>
+                  <option value="absent">Not detected or absent</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+                <fieldset class="profile-link-fields">
+                  <legend>Supporting record or test <span>Optional</span></legend>
+                  <label class="profile-record-assertion"><input id="observation-edit-record-assertion" name="record_assertion" type="checkbox"> This observation is stated in the selected issued medical record</label>
+                  <label for="observation-edit-artifact">Source record</label>
+                  <select id="observation-edit-artifact" name="artifact_id"><option value="">No linked source record</option></select>
+                  <div class="two-columns">
+                    <div><label for="observation-edit-specimen">Specimen</label><select id="observation-edit-specimen" name="specimen_id"><option value="">No linked specimen</option></select></div>
+                    <div><label for="observation-edit-assay">Assay</label><select id="observation-edit-assay" name="assay_id"><option value="">No linked assay</option></select></div>
+                  </div>
+                  <p id="observation-edit-link-help" class="field-help">Review the linked evidence before saving this correction.</p>
+                </fieldset>
+                <div class="two-columns">
+                  <div><label for="observation-edit-reported-variant">Reported variant <span>When applicable</span></label><input id="observation-edit-reported-variant" name="reported_variant" placeholder="rs123 or chr:pos:ref:alt"></div>
+                  <div><label for="observation-edit-gene">Gene <span>Optional</span></label><input id="observation-edit-gene" name="gene" maxlength="80" placeholder="Example: BRCA1"></div>
+                </div>
+                <button class="secondary-button" type="submit">Save corrected revision</button>
+              </form>
+            </section>
+
+            <div class="profile-entity-grid">
+              <section>
+                <h3>Reports and source records</h3>
+                <p class="section-summary">Register a local report without uploading it. GenomiLab keeps only its SHA-256 fingerprint and the details you enter below.</p>
+                <details class="profile-entry-details">
+                  <summary>Add a source record</summary>
+                  <form id="source-artifact-form" class="profile-entity-form">
+                    <label for="source-artifact-file">Local report file</label>
+                    <input id="source-artifact-file" name="source_file" type="file" required accept=".pdf,.txt,.rtf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,text/plain,image/png,image/jpeg">
+                    <p class="field-help local-hash-note">The browser computes a SHA-256 fingerprint locally. File bytes and the file path are never sent to GenomiLab.</p>
+                    <label for="source-artifact-title">Record title</label>
+                    <input id="source-artifact-title" name="title" maxlength="500" required placeholder="Example: pathology report, March 2026">
+                    <label for="source-artifact-type">Record type</label>
+                    <select id="source-artifact-type" name="source_type" required>
+                      <option value="issued_report">Issued medical report</option>
+                      <option value="laboratory_report">Laboratory report</option>
+                      <option value="pathology_report">Pathology report</option>
+                      <option value="clinical_note">Clinical note</option>
+                      <option value="patient_document">Patient document</option>
+                      <option value="other">Other record</option>
+                    </select>
+                    <div class="two-columns">
+                      <div><label for="source-artifact-identifier">Record number <span>Optional</span></label><input id="source-artifact-identifier" name="source_identifier" maxlength="300"></div>
+                      <div><label for="source-artifact-issued-at">Issued date <span>Optional</span></label><input id="source-artifact-issued-at" name="issued_at" type="date"></div>
+                    </div>
+                    <button class="secondary-button" type="submit">Register source record</button>
+                  </form>
+                </details>
+                <ul id="source-artifact-list" class="record-list"><li class="empty-row">No source records yet.</li></ul>
+              </section>
+              <section>
+                <h3>Specimens</h3>
+                <p class="section-summary">Describe the sample represented by a report or molecular test.</p>
+                <details class="profile-entry-details">
+                  <summary>Add a specimen</summary>
+                  <form id="specimen-form" class="profile-entity-form">
+                    <label for="specimen-type">Specimen type</label>
+                    <select id="specimen-type" name="specimen_type" required>
+                      <option value="blood">Blood</option>
+                      <option value="saliva">Saliva</option>
+                      <option value="buccal_swab">Buccal swab</option>
+                      <option value="tumor_tissue">Tumor tissue</option>
+                      <option value="other_tissue">Other tissue</option>
+                      <option value="bone_marrow">Bone marrow</option>
+                      <option value="plasma">Plasma</option>
+                      <option value="urine">Urine</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label for="specimen-artifact">Source record <span>Optional</span></label>
+                    <select id="specimen-artifact" name="artifact_id"><option value="">No linked source record</option></select>
+                    <div class="two-columns">
+                      <div><label for="specimen-body-site">Body site <span>Optional</span></label><input id="specimen-body-site" name="body_site" maxlength="200" placeholder="Example: left lung"></div>
+                      <div><label for="specimen-collected-at">Collected date <span>Optional</span></label><input id="specimen-collected-at" name="collected_at" type="date"></div>
+                    </div>
+                    <div class="two-columns">
+                      <div><label for="specimen-disease-state">Disease state</label><select id="specimen-disease-state" name="disease_state"><option value="unknown">Unknown</option><option value="unaffected">Unaffected</option><option value="affected">Affected</option><option value="primary_tumor">Primary tumor</option><option value="metastatic_tumor">Metastatic tumor</option><option value="recurrence">Recurrence</option><option value="remission">Remission</option></select></div>
+                      <div><label for="specimen-tumor-role">Tumor / normal role</label><select id="specimen-tumor-role" name="tumor_normal_role"><option value="unknown">Unknown</option><option value="patient">Patient sample</option><option value="germline">Germline</option><option value="tumor">Tumor</option><option value="matched_normal">Matched normal</option></select></div>
+                    </div>
+                    <button class="secondary-button" type="submit">Save specimen</button>
+                  </form>
+                </details>
+                <ul id="specimen-list" class="record-list"><li class="empty-row">No specimens yet.</li></ul>
+              </section>
+              <section>
+                <h3>Assays and molecular tests</h3>
+                <p class="section-summary">Record what a test examined and what it could detect before using a negative result.</p>
+                <details class="profile-entry-details">
+                  <summary>Add an assay</summary>
+                  <form id="assay-form" class="profile-entity-form">
+                    <label for="assay-type">Assay type</label>
+                    <select id="assay-type" name="assay_type" required>
+                      <option value="focused_dna_panel">Focused DNA panel</option>
+                      <option value="tumor_normal_sequencing">Paired tumor / normal sequencing</option>
+                      <option value="whole_exome_sequencing">Whole-exome sequencing</option>
+                      <option value="whole_genome_sequencing">Whole-genome sequencing</option>
+                      <option value="rna_sequencing">RNA sequencing</option>
+                      <option value="immunohistochemistry">Immunohistochemistry</option>
+                      <option value="fish">FISH</option>
+                      <option value="pcr">PCR</option>
+                      <option value="other">Other assay</option>
+                    </select>
+                    <div class="two-columns">
+                      <div><label for="assay-specimen">Specimen <span>Optional</span></label><select id="assay-specimen" name="specimen_id"><option value="">No linked specimen</option></select></div>
+                      <div><label for="assay-artifact">Source record <span>Optional</span></label><select id="assay-artifact" name="artifact_id"><option value="">No linked source record</option></select></div>
+                    </div>
+                    <p id="assay-link-help" class="field-help">When a specimen has a source record, that record is selected automatically.</p>
+                    <label for="assay-scope">What did this assay examine?</label>
+                    <textarea id="assay-scope" name="assay_scope" rows="2" maxlength="1200" required placeholder="Example: coding exons and splice boundaries of 84 hereditary cancer genes"></textarea>
+                    <label for="assay-detection-limits">What could this assay detect?</label>
+                    <textarea id="assay-detection-limits" name="detection_limits" rows="2" maxlength="1200" required placeholder="Example: SNVs and small indels above the laboratory's stated allele-fraction threshold"></textarea>
+                    <div class="two-columns">
+                      <div><label for="assay-laboratory">Laboratory <span>Optional</span></label><input id="assay-laboratory" name="laboratory" maxlength="300"></div>
+                      <div><label for="assay-platform">Platform <span>Optional</span></label><input id="assay-platform" name="platform" maxlength="300"></div>
+                    </div>
+                    <label for="assay-genome-build">Genome build <span>Optional</span></label>
+                    <select id="assay-genome-build" name="genome_build"><option value="">Not stated</option><option value="GRCh37">GRCh37 / hg19</option><option value="GRCh38">GRCh38 / hg38</option><option value="other">Other or not specified</option></select>
+                    <button class="secondary-button" type="submit">Save assay</button>
+                  </form>
+                </details>
+                <ul id="assay-list" class="record-list"><li class="empty-row">No assays yet.</li></ul>
+              </section>
+              <section>
+                <h3>Coverage and version history</h3>
+                <p id="profile-version-count" class="section-summary">No profile versions yet.</p>
+                <ul id="coverage-list" class="record-list"><li class="empty-row">No modality coverage recorded.</li></ul>
+                <div id="observation-history-list" class="observation-history-list"><p class="empty-row">No observation revisions yet.</p></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="investigations" class="panel">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Longitudinal research</p><h2>Disease investigations</h2><p>Each investigation keeps its exact profile and genome revision, evidence, hypotheses, gaps, and brief.</p></div>
+              <span class="count"><strong id="investigation-count">0</strong> investigations</span>
+            </header>
+            <ul id="investigation-list" class="investigation-list"><li class="empty-row">No disease investigations yet.</li></ul>
+          </section>
+
+          <section id="evidence-library" class="panel">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Reusable research record</p><h2>Evidence Library</h2><p>Evidence remains separated by source family, investigation, version, and answer-readiness.</p></div>
+              <span class="count"><strong id="evidence-library-count">0</strong> records</span>
+            </header>
+            <div id="evidence-library-list" class="evidence-library-list"><p class="empty-row">No evidence has been saved yet.</p></div>
+          </section>
+
+          <section id="research-tools" class="panel">
+            <header class="panel-heading">
+              <div>
+                <p class="eyebrow">Optional connections</p>
+                <h2>Research tools</h2>
+                <p>
+                  Connect tools you already have access to. The installed agent harness decides
+                  when one could help; connecting a tool does not start research or send your genome.
+                </p>
+              </div>
+              <span id="integrations-summary" class="availability-chip">Checking connections</span>
+            </header>
+            <p class="integration-boundary">
+              A saved key and permission to use a tool are shown separately. Before any
+              patient-influenced information is sent outside this device, GenomiLab will show
+              exactly what will be sent and ask you again.
+            </p>
+            <div id="integration-list" class="integration-grid" aria-live="polite" aria-busy="true">
+              <p class="empty-row">Checking optional research tools…</p>
+            </div>
+          </section>
+
+          <section id="collaborate" class="panel unavailable-panel">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Professional review</p><h2>Collaborate</h2></div>
+              <span class="availability-chip" data-available="false">Unavailable in P0</span>
+            </header>
+            <p>Selective clinician, genetic-counselor, and tumor-board packets are not enabled in this release. GenomiLab will not simulate delivery or claim that a professional reviewed an investigation.</p>
+          </section>
+
+          <section id="privacy-activity" class="panel">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Your controls</p><h2>Privacy &amp; Activity</h2><p>This view shows research authorization, exception approvals, and destinations without replaying disclosed payloads.</p></div>
+            </header>
+            <div class="privacy-activity-grid">
+              <section><h3>Research authorization and private context</h3><ul id="context-activity-list" class="record-list"><li class="empty-row">No research authorizations yet.</li></ul></section>
+              <section><h3>Outbound disclosures</h3><ul id="disclosure-activity-list" class="record-list"><li class="empty-row">No outbound disclosures yet.</li></ul></section>
+              <section><h3>Working plan history</h3><ul id="plan-activity-list" class="record-list"><li class="empty-row">No working plans adopted yet.</li></ul></section>
+            </div>
+          </section>
+
+          <section id="investigation-detail" class="investigation-detail" aria-labelledby="detail-title" tabindex="-1" hidden>
+            <header class="investigation-header">
+              <button id="detail-close" class="text-button" type="button">← All investigations</button>
+              <div class="investigation-heading-row">
+                <div>
+                  <p class="eyebrow">Open investigation</p>
+                  <h2 id="detail-title">Disease investigation</h2>
+                  <p id="detail-scope" class="detail-scope"></p>
+                </div>
+                <span id="detail-status" class="status-chip">Opening</span>
+              </div>
+            </header>
+
+            <div class="responsibility-banner" role="note">
+              <div>
+                <strong id="harness-name">Installed agent harness</strong>
+                <p id="harness-location">Checking where agents and reasoning will run…</p>
+              </div>
+              <span id="harness-capability" class="availability-chip">Checking</span>
+            </div>
+            <p id="harness-disclosure" class="boundary-copy">
+              GenomiLab shows the work and pauses when your authorization must expand;
+              the disclosed installed harness owns the agents, planning, and reasoning.
+            </p>
+
+            <div class="investigation-grid">
+              <section class="work-card plan-card" aria-labelledby="plan-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Current work</p><h3 id="plan-heading">Plan and progress</h3></div>
+                  <div class="status-stack">
+                    <span id="plan-review-status" class="mini-status">Waiting for a working plan</span>
+                    <span id="progress-summary" class="mini-status">Waiting for a plan</span>
+                  </div>
+                </header>
+                <p id="plan-summary" class="section-summary">The installed harness has not proposed a plan yet.</p>
+                <ol id="plan-list" class="plan-list"><li class="empty-row">No plan steps yet.</li></ol>
+                <div id="plan-review-actions" class="plan-review-actions" hidden>
+                  <p>The research team keeps this working plan current as evidence arrives. You can redirect it at any time.</p>
+                  <form id="plan-change-form" class="plan-change-form">
+                    <label for="plan-change-message">What should change?</label>
+                    <textarea id="plan-change-message" rows="2" maxlength="20000" required placeholder="Example: focus first on the reported finding and add functional evidence only if needed."></textarea>
+                    <button id="plan-change-button" class="secondary-button" type="submit">Send requested changes</button>
+                  </form>
+                </div>
+              </section>
+
+              <section class="work-card context-card" aria-labelledby="context-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Research access</p><h3 id="context-heading">Start with only what this investigation needs</h3></div>
+                  <span id="context-state" class="mini-status">Not started</span>
+                </header>
+                <p class="section-summary">
+                  Choose the profile observations this disease question needs. One authorization starts
+                  the research team and covers routine planning, local evidence work, replanning, and
+                  follow-up messages within this exact scope. GenomiLab pauses before using an external
+                  provider, wider private context, or additional cost.
+                </p>
+                <fieldset id="context-observation-selector" class="context-observation-selector">
+                  <legend>Profile observations for this investigation</legend>
+                  <p id="context-selection-help">Select at least one current observation before reviewing research access.</p>
+                  <ul id="context-observation-list" class="context-observation-list"><li class="empty-row">No profile observations are available.</li></ul>
+                </fieldset>
+                <div class="button-row">
+                  <button id="context-preview-button" class="secondary-button" type="button">Review research access</button>
+                  <button id="context-refresh-preview-button" class="secondary-button" type="button" hidden>Compare latest profile</button>
+                  <button id="context-revoke-button" class="danger-button" type="button" hidden>Revoke research access</button>
+                </div>
+                <div id="context-preview" class="approval-preview" aria-live="polite" hidden>
+                  <h4>Research authorization</h4>
+                  <p id="context-preview-purpose"></p>
+                  <dl id="context-preview-list" class="preview-list"></dl>
+                  <p class="approval-warning">This authorization is limited to this investigation and the exact profile and genome revisions shown above. You can revoke it at any time.</p>
+                  <button id="context-approve-button" class="primary-button" type="button">Authorize and start investigation</button>
+                </div>
+              </section>
+
+              <section class="work-card harness-card" aria-labelledby="harness-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Agent execution</p><h3 id="harness-heading">Installed harness</h3></div>
+                  <span id="harness-binding-state" class="mini-status">Not started</span>
+                </header>
+                <p class="section-summary">
+                  The installed harness runs the authorized investigation. Routine plans, specialist
+                  handoffs, and follow-ups continue automatically within the research scope above.
+                </p>
+                <div class="button-row">
+                  <button id="cancel-harness-button" class="danger-button" type="button" hidden>Stop research</button>
+                </div>
+                <form id="harness-message-form" class="harness-message-form" hidden>
+                  <label for="harness-message">Instruction to the installed harness</label>
+                  <textarea id="harness-message" name="message" rows="2" maxlength="20000" required placeholder="Ask a follow-up or tell the harness what to investigate next."></textarea>
+                  <button id="message-preview-button" class="secondary-button" type="submit">Send instruction</button>
+                </form>
+              </section>
+
+              <section class="work-card events-card" aria-labelledby="events-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Activity</p><h3 id="events-heading">Agent progress</h3></div>
+                  <span id="event-status" class="mini-status">Not connected</span>
+                </header>
+                <div class="button-row">
+                  <button id="reconnect-events-button" class="secondary-button" type="button">Reconnect events</button>
+                </div>
+                <ol id="event-list" class="event-list"><li class="empty-row">No harness events yet.</li></ol>
+              </section>
+
+              <section class="work-card evidence-card full-width" aria-labelledby="evidence-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Evidence ledger</p><h3 id="evidence-heading">Evidence, kept separate by source</h3></div>
+                  <span id="evidence-count" class="mini-status">0 records</span>
+                </header>
+                <p class="section-summary">Source families remain separate so a weak signal from one source cannot masquerade as a stronger kind of evidence.</p>
+                <div id="capability-approval-list" class="capability-approval-list" aria-live="polite"></div>
+                <div id="evidence-ledger" class="evidence-ledger"><p class="empty-row">No evidence has been committed yet.</p></div>
+              </section>
+
+              <section class="work-card" aria-labelledby="hypotheses-heading">
+                <header class="work-card-heading"><div><p class="eyebrow">Working interpretation</p><h3 id="hypotheses-heading">Hypotheses</h3></div></header>
+                <ul id="hypothesis-list" class="claim-list"><li class="empty-row">No hypotheses yet.</li></ul>
+              </section>
+
+              <section class="work-card" aria-labelledby="gaps-heading">
+                <header class="work-card-heading"><div><p class="eyebrow">What remains unknown</p><h3 id="gaps-heading">Open gaps</h3></div></header>
+                <ul id="gap-list" class="claim-list"><li class="empty-row">No open gaps recorded yet.</li></ul>
+              </section>
+
+              <section class="work-card brief-card full-width" aria-labelledby="brief-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Living output</p><h3 id="brief-heading">Investigation Brief</h3></div>
+                  <span id="brief-version-count" class="mini-status">No versions</span>
+                </header>
+                <p class="section-summary">Every saved version remains available with its evidence and profile anchors.</p>
+                <div id="brief-list" class="brief-list"><p class="empty-row">The harness has not proposed a brief yet.</p></div>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <aside class="urgent-care-route" aria-label="Urgent care guidance">
+      <strong>Symptoms that should not wait for research?</strong>
+      Seek urgent medical care or contact your local emergency service now. In the United States, call 911; for a mental-health crisis, call or text 988.
+    </aside>
+    <footer><span id="activity-status" role="status" aria-live="polite">Opening GenomiLab…</span></footer>
+  </body>
+</html>

@@ -1,3 +1,16 @@
+# Unreleased
+
+- Added `genomi lab`, a loopback-only GenomiLab developer preview with patient
+  workspaces, relevant health-context entry, reported findings, VCF/gVCF
+  intake, current-session consent, and research-only Investigation Briefs.
+- Added two disjoint synthetic patient fixtures and end-to-end isolation tests.
+- Default-user selection is metadata-only; previously imported Active Genome
+  Index data now always requires explicit current-session read approval.
+- Runtime context, registry, and background-job state now use private file
+  permissions, atomic JSON writes, and symlink refusal.
+- Decode dashboard generation no longer probes a socket when no server will be
+  started.
+
 # Genomi 0.1.0 Release Notes
 
 Released July 2026.

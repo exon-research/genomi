@@ -14,7 +14,17 @@ authors = [
 ]
 dependencies = [
   "biopython>=1.87",
+  # GenomiLab persists its in-memory SQLite state as an authenticated encrypted
+  # container and stores the encryption key in an OS-backed secret store.
+  "cryptography>=42",
   "google-genai>=2.0.1",
+  # Typed Paperclip client for a fixed public connection probe and separately
+  # authorized investigation-scoped evidence operations.
+  "gxl-paperclip @ git+https://github.com/GXL-ai/paperclip.git@b5571365f0b36847dce42c5d66d2b158a0f871f9",
+  "keyring>=25",
+  # Proto prerequisite checks use an isolated, fixed-endpoint child with
+  # explicit user-owned Modal credentials; no Proto tool is deployed or run.
+  "modal==1.5.1",
   "numpy>=1.26",
   "openpyxl>=3.1.5",
   # htslib bindings: parse_source writes a bgzip-compressed canonical VCF
@@ -62,6 +72,13 @@ where = ["src"]
 "genomi.capabilities.research" = ["tool_catalog.json"]
 "genomi.capabilities.sequence" = ["tool_catalog.json"]
 "genomi.capabilities.variant" = ["tool_catalog.json"]
+"genomi.lab" = ["static/*.html", "static/*.css", "static/*.js"]
+
+[tool.ruff]
+required-version = "==0.16.2"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = ["F401"]

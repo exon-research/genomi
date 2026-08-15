@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 
 from ...active_genome_index.active_genome_index import default_agi_path
+from ...active_genome_index.identity import read_agi_snapshot_identity
+from ...active_genome_index.revisions import materialize_immutable_agi_revision
 from ..paths import (
     ACTIVE_GENOME_INDEX_DB_NAME,
     CLINVAR_CANDIDATES_NAME,
@@ -69,8 +73,21 @@ def infer_agi_record(
         if is_vcf
         else None
     )
+    resolved_agi_path = Path(agi_path or outputs.get("agi_path") or default_agi)
+    try:
+        snapshot_identity = read_agi_snapshot_identity(resolved_agi_path) if resolved_agi_path.is_file() else {}
+    except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error):
+        snapshot_identity = {}
+    agi_revision_path: Path | None = None
+    agi_artifact_sha256: str | None = None
+    if snapshot_identity:
+        revision = materialize_immutable_agi_revision(resolved_agi_path)
+        agi_revision_path = Path(str(revision["agi_revision_path"]))
+        agi_artifact_sha256 = str(revision["agi_artifact_sha256"])
     run: JsonObject = {
         "agi_id": sample_slug,
+        **snapshot_identity,
+        "agi_schema_version": snapshot_identity.get("schema_version"),
         "sample_slug": sample_slug,
         "status": status,
         "agi_intake_source_path": _path_str(result.get("source") or agi_intake_path),
@@ -78,7 +95,7 @@ def infer_agi_record(
         "agi_source_kind": result.get("source_kind"),
         "agi_source_member": result.get("source_member"),
         "agi_source_provider": result.get("provider"),
-        "source_content_sha256": result.get("source_content_sha256") or vcf_content_hash(agi_intake_path),
+        "source_content_sha256": snapshot_identity.get("source_content_sha256") or result.get("source_content_sha256") or vcf_content_hash(agi_intake_path),
         "project_dir": _path_str(
             result.get("project_dir")
             or run_project_dir_for_source(agi_intake_path, source_format=effective_format, root=root)
@@ -101,7 +118,15 @@ def infer_agi_record(
             or run_evidence_db_path_for_source(agi_intake_path, source_format=effective_format, root=root)
         ),
         "shared_evidence_db": _path_str(shared_db or result.get("shared_evidence_db") or shared_evidence_db_path(root)),
-        "agi_path": _path_str(agi_path or outputs.get("agi_path") or default_agi),
+        "agi_path": _path_str(agi_revision_path or resolved_agi_path),
+        "agi_artifact_sha256": agi_artifact_sha256,
+        "agi_build_path": (
+            _path_str(resolved_agi_path)
+            if agi_revision_path is not None
+            and agi_revision_path.resolve(strict=False)
+            != resolved_agi_path.resolve(strict=False)
+            else None
+        ),
         "matches": _path_str(matches or outputs.get("clinvar_matches") or default_matches),
         "candidate_inventory": _path_str(outputs.get("clinvar_scan") or default_candidate_inventory),
         "agi_comparable_variant_export": _path_str(

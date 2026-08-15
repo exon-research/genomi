@@ -45,6 +45,7 @@ from .normalize import (
     _workspace_session_id,
 )
 from .storage import (
+    context_authority_lock,
     context_path,
     context_policy,
     context_scope,
@@ -53,6 +54,7 @@ from .storage import (
     load_registry,
     registry_path,
     save_context,
+    save_context_and_registry,
     save_registry,
     set_response_profile_id,
 )
@@ -76,6 +78,7 @@ from .agi_registry import (
     _find_agi,
     find_agi,
     reconcile_current_agi_registry,
+    require_registered_agi_revision,
     save_agi_to_registry,
 )
 from .agi_removal import remove_active_genome_index
@@ -121,6 +124,7 @@ __all__ = [
     "clear_active_genome_index",
     "clear_default_user",
     "context_path",
+    "context_authority_lock",
     "context_policy",
     "context_scope",
     "describe_context",
@@ -135,12 +139,14 @@ __all__ = [
     "load_context",
     "load_registry",
     "reconcile_current_agi_registry",
+    "require_registered_agi_revision",
     "remove_active_genome_index",
     "registry_path",
     "rename_user",
     "revoke_agi_access",
     "save_agi_to_registry",
     "save_context",
+    "save_context_and_registry",
     "save_registry",
     "select_user",
     "set_active_agi_id",

@@ -22,8 +22,9 @@ from ..runtime.libraries import manager as library_manager
 from . import mcp
 from .presentation import present_result
 
-# `genomi serve` (the MCP launcher), `genomi install` (setup install/update), and
-# `genomi --help` are available without GENOMI_CLI=1. The variable is
+# `genomi serve` (the MCP launcher), `genomi install` (setup install/update),
+# `genomi lab` (the local patient portal), and `genomi --help` are available
+# without GENOMI_CLI=1. The variable is
 # intentionally undocumented in agent-facing material.
 _AGENT_ONLY_SUBCOMMANDS = ("tools", "call", "workflow", "static")
 _CLI_GATE_ENV = "GENOMI_CLI"
@@ -128,6 +129,47 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser.add_argument("--ancestry-panel-dir", help="Copy a prebuilt compact ancestry panel directory.")
     install_parser.set_defaults(func=_cmd_install)
 
+    lab_parser = subparsers.add_parser(
+        "lab",
+        help="Start the local GenomiLab patient research portal.",
+    )
+    lab_parser.add_argument(
+        "--host",
+        choices=["127.0.0.1", "localhost"],
+        default="127.0.0.1",
+        help="Loopback bind host. GenomiLab never binds to the local network.",
+    )
+    lab_parser.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Loopback port. Defaults to a random available port.",
+    )
+    lab_parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Print the private launch link without opening a browser.",
+    )
+    lab_parser.add_argument(
+        "--harness-processing-destination",
+        help=(
+            "Exact user-visible destination for installed-harness reasoning, "
+            "for example 'remote: OpenAI Codex service'. The harness stays "
+            "unavailable when this is omitted."
+        ),
+    )
+    lab_parser.add_argument(
+        "--paperclip-authorization-config",
+        type=Path,
+        help=(
+            "Owner-controlled policy required for current Paperclip evidence "
+            "operations. It records deployment authorization and a separate "
+            "patient-data contract. Save and verify the API key in the portal; "
+            "the fixed probe does not establish either permission."
+        ),
+    )
+    lab_parser.set_defaults(func=_cmd_lab)
+
     workflow_parser = subparsers.add_parser("workflow", help="Print the agent runtime and evidence contracts.")
     workflow_parser.set_defaults(func=_cmd_workflow)
 
@@ -171,6 +213,18 @@ def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
         if value:
             params[attr] = value
     return call_operation("genomi.install", params)
+
+
+def _cmd_lab(args: argparse.Namespace) -> None:
+    from ..lab.server import run_lab
+
+    run_lab(
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+        harness_processing_destination=args.harness_processing_destination,
+        paperclip_authorization_config=args.paperclip_authorization_config,
+    )
 
 
 def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

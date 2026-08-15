@@ -17,13 +17,16 @@ from .normalize import (
 from .agi_inference import infer_agi_record
 from .agi_registry import (
     _find_agi,
+    _register_agi_revision,
     find_agi_by_intake_source,
 )
 from .agi_records import describe_user
 from .storage import (
+    context_authority_lock,
     load_context,
     load_registry,
     save_context,
+    save_context_and_registry,
     save_registry,
 )
 
@@ -38,33 +41,35 @@ def list_users(root: str | Path | None = None) -> list[JsonObject]:
 
 
 def select_user(user_id_or_nickname: str, root: str | Path | None = None) -> JsonObject:
-    registry = load_registry(root)
-    user = _find_user(registry, user_id_or_nickname)
-    if not isinstance(user, dict):
-        raise KeyError(str(user_id_or_nickname))
-    context = load_context(root)
-    context["active_user_id"] = user["user_id"]
-    context["active_agi_id"] = user.get("active_agi_id")
-    active_id = str(user.get("active_agi_id") or "")
-    if active_id and active_id in registry.get("agis", {}):
-        context.setdefault("agis", {})[active_id] = registry["agis"][active_id]
-    save_context(context, root)
-    return user
+    with context_authority_lock(root):
+        registry = load_registry(root)
+        user = _find_user(registry, user_id_or_nickname)
+        if not isinstance(user, dict):
+            raise KeyError(str(user_id_or_nickname))
+        context = load_context(root)
+        context["active_user_id"] = user["user_id"]
+        context["active_agi_id"] = user.get("active_agi_id")
+        active_id = str(user.get("active_agi_id") or "")
+        if active_id and active_id in registry.get("agis", {}):
+            context.setdefault("agis", {})[active_id] = registry["agis"][active_id]
+        save_context(context, root)
+        return user
 
 
 def rename_user(user_id_or_nickname: str, new_nickname: str, root: str | Path | None = None) -> JsonObject:
-    registry = load_registry(root)
-    user = _find_user(registry, user_id_or_nickname)
-    if not isinstance(user, dict):
-        raise KeyError(str(user_id_or_nickname))
-    nickname = _normalize_nickname(new_nickname)
-    if not nickname:
-        raise ValueError("new_nickname is required")
-    _assert_unique_user_nickname(registry, nickname, existing_user_id=str(user["user_id"]))
-    user["nickname"] = nickname
-    user["updated_at"] = _now()
-    save_registry(registry, root)
-    return user
+    with context_authority_lock(root):
+        registry = load_registry(root)
+        user = _find_user(registry, user_id_or_nickname)
+        if not isinstance(user, dict):
+            raise KeyError(str(user_id_or_nickname))
+        nickname = _normalize_nickname(new_nickname)
+        if not nickname:
+            raise ValueError("new_nickname is required")
+        _assert_unique_user_nickname(registry, nickname, existing_user_id=str(user["user_id"]))
+        user["nickname"] = nickname
+        user["updated_at"] = _now()
+        save_registry(registry, root)
+        return user
 
 
 def assign_user_genome(
@@ -84,6 +89,44 @@ def assign_user_genome(
     set_active: bool = True,
     set_default_user: bool = False,
     root: str | Path | None = None,
+) -> JsonObject:
+    with context_authority_lock(root):
+        return _assign_user_genome_locked(
+            user_id=user_id,
+            nickname=nickname,
+            agi_id=agi_id,
+            source=source,
+            agi_source_format=agi_source_format,
+            db=db,
+            agi_path=agi_path,
+            matches=matches,
+            shared_db=shared_db,
+            reference_fasta=reference_fasta,
+            genotype_reference_fasta=genotype_reference_fasta,
+            genome_build=genome_build,
+            set_active=set_active,
+            set_default_user=set_default_user,
+            root=root,
+        )
+
+
+def _assign_user_genome_locked(
+    *,
+    user_id: str | None,
+    nickname: str | None,
+    agi_id: str | None,
+    source: str | Path | None,
+    agi_source_format: str | None,
+    db: str | Path | None,
+    agi_path: str | Path | None,
+    matches: str | Path | None,
+    shared_db: str | Path | None,
+    reference_fasta: str | Path | None,
+    genotype_reference_fasta: str | Path | None,
+    genome_build: str | None,
+    set_active: bool,
+    set_default_user: bool,
+    root: str | Path | None,
 ) -> JsonObject:
     if not nickname and not user_id:
         raise ValueError("user_id or nickname is required")
@@ -123,19 +166,42 @@ def assign_user_genome(
                 genome_build=genome_build,
                 root=root,
             )
+            registered_revision = registry.get("agi_revisions", {}).get(
+                str(run.get("agi_snapshot_id") or "")
+            )
+            if isinstance(registered_revision, dict):
+                registered_agi_id = str(
+                    registered_revision.get("agi_id") or ""
+                )
+                registered_run = registry.get("agis", {}).get(registered_agi_id)
+                if registered_agi_id and isinstance(registered_run, dict):
+                    inferred_run = run
+                    run = dict(registered_run)
+                    for field, supplied in (
+                        ("evidence_db", db),
+                        ("matches", matches),
+                        ("shared_evidence_db", shared_db),
+                        ("reference_fasta", reference_fasta),
+                        ("genotype_reference_fasta", genotype_reference_fasta),
+                        ("genome_build", genome_build),
+                        ("agi_build_path", agi_path),
+                    ):
+                        if supplied not in (None, ""):
+                            run[field] = inferred_run.get(field)
+                    run["updated_at"] = _now()
             existing = registry.get("agis", {}).get(str(run.get("agi_id") or ""))
             if isinstance(existing, dict):
                 run["created_at"] = existing.get("created_at") or run["created_at"]
                 run["updated_at"] = _now()
             run = _normalize_agi_record(run)
         registry.setdefault("agis", {})[str(run["agi_id"])] = _normalize_agi_record(run)
+        _register_agi_revision(registry, run)
     else:
         raise ValueError("agi_id or source is required")
     target_agi_id = str(run.get("agi_id") or "")
     _attach_agi_to_user(user, target_agi_id, make_active=set_active or not user.get("active_agi_id"))
     if set_default_user:
         _mark_default_user(registry, str(user["user_id"]))
-    save_registry(registry, root)
     context = load_context(root)
     if set_active:
         context["active_user_id"] = user["user_id"]
@@ -143,7 +209,9 @@ def assign_user_genome(
         context.setdefault("agis", {})[target_agi_id] = registry["agis"][target_agi_id]
         if source:
             _grant_agi_access(context, target_agi_id, reason="User supplied a genome source path in this session.")
-        save_context(context, root)
+        save_context_and_registry(context, registry, root)
+    else:
+        save_registry(registry, root)
     return user
 
 
@@ -152,27 +220,29 @@ def _has_explicit_agi_materialization(**values: object) -> bool:
 
 
 def set_default_user(user_id_or_nickname: str, root: str | Path | None = None) -> JsonObject:
-    registry = load_registry(root)
-    user = _find_user(registry, user_id_or_nickname)
-    if not isinstance(user, dict):
-        raise KeyError(str(user_id_or_nickname))
-    _mark_default_user(registry, str(user["user_id"]))
-    save_registry(registry, root)
-    return user
+    with context_authority_lock(root):
+        registry = load_registry(root)
+        user = _find_user(registry, user_id_or_nickname)
+        if not isinstance(user, dict):
+            raise KeyError(str(user_id_or_nickname))
+        _mark_default_user(registry, str(user["user_id"]))
+        save_registry(registry, root)
+        return user
 
 
 def clear_default_user(root: str | Path | None = None) -> JsonObject:
-    registry = load_registry(root)
-    changed = bool(registry.get("default_user_id"))
-    registry["default_user_id"] = None
-    for user in registry.setdefault("users", {}).values():
-        if isinstance(user, dict) and user.get("default"):
-            user["default"] = False
-            user["updated_at"] = _now()
-            changed = True
-    save_registry(registry, root)
-    return {
-        "status": "completed",
-        "cleared_default": changed,
-        "users": list_users(root),
-    }
+    with context_authority_lock(root):
+        registry = load_registry(root)
+        changed = bool(registry.get("default_user_id"))
+        registry["default_user_id"] = None
+        for user in registry.setdefault("users", {}).values():
+            if isinstance(user, dict) and user.get("default"):
+                user["default"] = False
+                user["updated_at"] = _now()
+                changed = True
+        save_registry(registry, root)
+        return {
+            "status": "completed",
+            "cleared_default": changed,
+            "users": list_users(root),
+        }
