@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS specialist_briefs (
     specialist_brief_id TEXT PRIMARY KEY,
     specialist_brief_derivation_id TEXT NOT NULL UNIQUE REFERENCES specialist_brief_derivations(specialist_brief_derivation_id) ON DELETE CASCADE,
     execution_policy TEXT NOT NULL,
-    policy_version TEXT NOT NULL,
+    policy_sha256 TEXT NOT NULL,
     outbound_payload_json TEXT NOT NULL,
     outbound_payload_sha256 TEXT NOT NULL,
     disclosure_receipt_id TEXT REFERENCES outbound_disclosure_receipts(disclosure_receipt_id),
@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS provider_result_receipts (
     operation TEXT NOT NULL,
     exact_result_json TEXT NOT NULL,
     exact_result_sha256 TEXT NOT NULL,
+    specialist_assignment_id TEXT NOT NULL REFERENCES specialist_assignments(specialist_assignment_id),
     specialist_brief_id TEXT NOT NULL REFERENCES specialist_briefs(specialist_brief_id),
     specialist_brief_payload_sha256 TEXT NOT NULL,
     disclosure_receipt_id TEXT REFERENCES outbound_disclosure_receipts(disclosure_receipt_id),
@@ -220,7 +221,8 @@ CREATE TRIGGER IF NOT EXISTS provider_result_receipts_content_immutable BEFORE U
 WHEN NEW.provider_result_receipt_id IS NOT OLD.provider_result_receipt_id OR NEW.provider IS NOT OLD.provider
   OR NEW.result_kind IS NOT OLD.result_kind OR NEW.operation IS NOT OLD.operation
   OR NEW.exact_result_json IS NOT OLD.exact_result_json OR NEW.exact_result_sha256 IS NOT OLD.exact_result_sha256
-  OR NEW.specialist_brief_id IS NOT OLD.specialist_brief_id OR NEW.specialist_brief_payload_sha256 IS NOT OLD.specialist_brief_payload_sha256
+  OR NEW.specialist_assignment_id IS NOT OLD.specialist_assignment_id OR NEW.specialist_brief_id IS NOT OLD.specialist_brief_id
+  OR NEW.specialist_brief_payload_sha256 IS NOT OLD.specialist_brief_payload_sha256
   OR NEW.disclosure_receipt_id IS NOT OLD.disclosure_receipt_id OR NEW.provider_provenance_json IS NOT OLD.provider_provenance_json
   OR NEW.receipt_sha256 IS NOT OLD.receipt_sha256 OR NEW.issued_at IS NOT OLD.issued_at
   OR OLD.captured_at IS NOT NULL OR NEW.captured_at IS NULL

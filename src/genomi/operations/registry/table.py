@@ -29,6 +29,7 @@ from .execution import (
     OperationExecutionContext,
     OperationExecutionContextError,
     activate_execution_context,
+    current_execution_context,
     reset_execution_context,
 )
 from ...runtime.context import context_scope
@@ -438,6 +439,14 @@ def call_operation(
             receipt_subject = _evidence_receipt_subject(name, safe_params)
             if receipt_subject is not None:
                 receipt_operation, receipt_params = receipt_subject
+                process_receipt_id = None
+                if execution_context.evidence_result_receipt_issuer is not None:
+                    candidate = result.get("result_receipt_id")
+                    if isinstance(candidate, str) and candidate.startswith(
+                        "result-receipt-"
+                    ):
+                        process_receipt_id = candidate
+                        result.pop("result_receipt_id")
                 try:
                     receipt_id = execution_context.issue_evidence_result_receipt(
                         operation=receipt_operation,
@@ -452,7 +461,14 @@ def call_operation(
                             "operation_execution_context_annotation_conflict",
                             "The operation result already contains 'result_receipt_id'.",
                         )
+                    if process_receipt_id is not None:
+                        EVIDENCE_RESULT_RECEIPTS.discard(
+                            process_receipt_id,
+                            session_id=str(context_scope().get("id") or ""),
+                        )
                     result["result_receipt_id"] = receipt_id
+                elif process_receipt_id is not None:
+                    result["result_receipt_id"] = process_receipt_id
         return result
     finally:
         reset_execution_context(execution_token)
@@ -524,12 +540,17 @@ def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
         name in EVIDENCE_PRODUCING_OPERATIONS
         and isinstance(result, dict)
         and isinstance(result.get("evidence_envelope"), dict)
+        and not (
+            current_execution_context() is not None
+            and current_execution_context().evidence_result_receipt_issuer is not None
+        )
     ):
         session_id = str(context_scope().get("id") or "").strip()
         if session_id:
             result["result_receipt_id"] = EVIDENCE_RESULT_RECEIPTS.issue(
                 session_id=session_id,
                 operation=name,
+                params=safe_params,
                 result=result,
             )
     return result

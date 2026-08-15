@@ -18,7 +18,11 @@ from .orchestrator_support import (
     save_command,
     unique_ids,
 )
-from .specialist_policies import EXPECTED_CONNECTORS, policy_manifest
+from .specialist_policies import (
+    EXPECTED_CONNECTORS,
+    policy_manifest,
+    policy_manifest_sha256,
+)
 from .specialist_validation import (
     build_outbound_specialist_brief,
     validate_specialist_brief,
@@ -122,7 +126,7 @@ class SpecialistStoreMixin:
                     "INSERT INTO outbound_disclosure_receipts(disclosure_receipt_id, "
                     "workspace_session_id, user_id, investigation_id, recipient_kind, recipient_id, "
                     "purpose, destination, data_categories_json, payload_json, payload_sha256, "
-                    "policy_versions_json, approved_at) VALUES (?, ?, ?, ?, 'specialist', ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "policy_identity_json, approved_at) VALUES (?, ?, ?, ?, 'specialist', ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         disclosure_id,
                         session,
@@ -134,7 +138,10 @@ class SpecialistStoreMixin:
                         compact_json(["deidentified_public_research_brief"]),
                         compact_json(outbound),
                         payload_hash,
-                        compact_json({"specialist_policy": profile.get("id"), "schema_version": 1}),
+                        compact_json({
+                            "specialist_policy": profile.get("id"),
+                            "policy_sha256": policy_manifest_sha256(),
+                        }),
                         now,
                     ),
                 )
@@ -160,9 +167,9 @@ class SpecialistStoreMixin:
                 )
                 connection.execute(
                     "INSERT INTO specialist_briefs(specialist_brief_id, specialist_brief_derivation_id, "
-                    "execution_policy, policy_version, outbound_payload_json, outbound_payload_sha256, "
+                    "execution_policy, policy_sha256, outbound_payload_json, outbound_payload_sha256, "
                     "disclosure_receipt_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (brief_id, derivation_id, policy_id, "1", compact_json(outbound), payload_hash, disclosure_id, now),
+                    (brief_id, derivation_id, policy_id, policy_manifest_sha256(), compact_json(outbound), payload_hash, disclosure_id, now),
                 )
             revision = advance_investigation_revision(self, investigation_id)
             response = {

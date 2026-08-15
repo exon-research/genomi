@@ -18,6 +18,13 @@ from .orchestrator_support import (
 )
 
 
+def durable_genomi_result_receipt_id(receipt_token: object) -> str:
+    """Derive the durable identity for one opaque process receipt token."""
+
+    token = required_text(receipt_token, "result_receipt_id", 500)
+    return f"genomi-result-receipt-{json_sha256({'process_receipt': token})}"
+
+
 def _object(value: object, field: str) -> JsonObject:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field} must be an object")
@@ -33,6 +40,7 @@ def _verified_receipt(row: object, *, provider: bool = False) -> JsonObject:
             "operation": value["operation"],
             "exact_result": value["exact_result"],
             "exact_result_sha256": value["exact_result_sha256"],
+            "specialist_assignment_id": value["specialist_assignment_id"],
             "specialist_brief_id": value["specialist_brief_id"],
             "specialist_brief_payload_sha256": value["specialist_brief_payload_sha256"],
             "disclosure_receipt_id": value.get("disclosure_receipt_id"),
@@ -70,6 +78,7 @@ class ResultReceiptStoreMixin:
         presented_result: object,
         investigation_id: object = None,
         workspace_session_id: object = None,
+        receipt_token: object = None,
     ) -> str:
         operation_value = required_text(operation, "operation", 300)
         params_value = _object(params, "params")
@@ -126,7 +135,11 @@ class ResultReceiptStoreMixin:
             "issued_at": issued_at,
         }
         receipt_hash = json_sha256(signed)
-        receipt_id = f"genomi-result-receipt-{uuid.uuid4().hex}"
+        receipt_id = (
+            durable_genomi_result_receipt_id(receipt_token)
+            if receipt_token is not None
+            else f"genomi-result-receipt-{uuid.uuid4().hex}"
+        )
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO genomi_result_receipts(result_receipt_id, operation, params_json, "
@@ -215,25 +228,59 @@ class ResultReceiptStoreMixin:
     def issue_provider_result_receipt(
         self: OrchestratorStoreContract,
         *, provider: object, result_kind: object, operation: object, exact_result: object,
-        specialist_brief_id: object, provider_provenance: object,
+        specialist_assignment_id: object, specialist_brief_id: object,
+        provider_provenance: object,
     ) -> str:
         provider_value = required_text(provider, "provider", 100)
         kind = required_text(result_kind, "result_kind", 100)
         if kind not in {"public_source_evidence", "research_artifact"}:
             raise ValueError("unsupported provider result kind")
+        expected_kind = (
+            "public_source_evidence"
+            if provider_value == "paperclip"
+            else "research_artifact"
+            if provider_value in {"biohub-esm", "proto"}
+            else None
+        )
+        if expected_kind is None or kind != expected_kind:
+            raise ValueError(
+                "provider result kind does not match the fixed provider evidence policy"
+            )
         operation_value = required_text(operation, "operation", 300)
         result = _object(exact_result, "exact_result")
         provenance = _object(provider_provenance, "provider_provenance")
+        assignment_id = required_text(
+            specialist_assignment_id, "specialist_assignment_id", 300
+        )
         brief_id = required_text(specialist_brief_id, "specialist_brief_id", 300)
         with self._connect() as connection:
             brief = connection.execute("SELECT * FROM specialist_briefs WHERE specialist_brief_id = ?", (brief_id,)).fetchone()
+            assignment = connection.execute(
+                "SELECT * FROM specialist_assignments "
+                "WHERE specialist_assignment_id = ? AND specialist_brief_id = ?",
+                (assignment_id, brief_id),
+            ).fetchone()
         if brief is None:
             raise ValueError("specialist brief not found")
+        if assignment is None or str(assignment["state"]) != "completed":
+            raise ValueError(
+                "provider result receipts require the completed matching assignment"
+            )
+        expected_provider = {
+            "public_literature": "paperclip",
+            "protein_model_research": "biohub-esm",
+            "experiment_design": "proto",
+        }.get(str(brief["execution_policy"]))
+        if provider_value != expected_provider:
+            raise ValueError(
+                "provider does not match the specialist brief execution policy"
+            )
         issued_at = utc_now()
         result_hash = json_sha256(result)
         signed = {
             "provider": provider_value, "result_kind": kind, "operation": operation_value,
             "exact_result": result, "exact_result_sha256": result_hash,
+            "specialist_assignment_id": assignment_id,
             "specialist_brief_id": brief_id,
             "specialist_brief_payload_sha256": brief["outbound_payload_sha256"],
             "disclosure_receipt_id": brief["disclosure_receipt_id"],
@@ -244,11 +291,11 @@ class ResultReceiptStoreMixin:
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO provider_result_receipts(provider_result_receipt_id, provider, result_kind, "
-                "operation, exact_result_json, exact_result_sha256, specialist_brief_id, "
+                "operation, exact_result_json, exact_result_sha256, specialist_assignment_id, specialist_brief_id, "
                 "specialist_brief_payload_sha256, disclosure_receipt_id, provider_provenance_json, "
-                "receipt_sha256, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "receipt_sha256, issued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (receipt_id, provider_value, kind, operation_value, compact_json(result), result_hash,
-                 brief_id, brief["outbound_payload_sha256"], brief["disclosure_receipt_id"],
+                 assignment_id, brief_id, brief["outbound_payload_sha256"], brief["disclosure_receipt_id"],
                  compact_json(provenance), receipt_hash, issued_at),
             )
         return receipt_id
@@ -274,12 +321,12 @@ class ResultReceiptStoreMixin:
             with self._connect() as connection:
                 assignment_row = connection.execute("SELECT * FROM specialist_assignments WHERE specialist_assignment_id = ? AND investigation_id = ?", (assignment, investigation_id)).fetchone()
                 receipt_row = connection.execute("SELECT * FROM provider_result_receipts WHERE provider_result_receipt_id = ?", (receipt_id,)).fetchone()
-            if assignment_row is None or assignment_row["cycle_id"] != cycle["cycle_id"] or assignment_row["specialist_brief_id"] != brief_id:
+            if assignment_row is None or assignment_row["cycle_id"] != cycle["cycle_id"] or assignment_row["specialist_brief_id"] != brief_id or assignment_row["state"] != "completed":
                 raise ValueError("assignment and specialist brief do not match this cycle")
             if receipt_row is None:
                 raise ValueError("provider result receipt not found")
             receipt = _verified_receipt(receipt_row, provider=True)
-            if receipt["specialist_brief_id"] != brief_id or receipt.get("captured_at"):
+            if receipt["specialist_assignment_id"] != assignment or receipt["specialist_brief_id"] != brief_id or receipt.get("captured_at"):
                 raise ValueError("provider result receipt is not capturable for this brief")
             evidence = None
             artifact = None
@@ -322,4 +369,4 @@ class ResultReceiptStoreMixin:
         return response
 
 
-__all__ = ["ResultReceiptStoreMixin"]
+__all__ = ["ResultReceiptStoreMixin", "durable_genomi_result_receipt_id"]

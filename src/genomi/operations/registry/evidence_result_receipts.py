@@ -13,6 +13,7 @@ import secrets
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,7 @@ class EvidenceResultReceipt:
     receipt_id: str
     session_id: str
     operation: str
+    params: JsonObject
     result: JsonObject
     issued_at_monotonic: float
 
@@ -47,11 +49,17 @@ class EvidenceResultReceiptIssuer:
         *,
         session_id: str,
         operation: str,
+        params: JsonObject,
         result: JsonObject,
     ) -> str:
         session = str(session_id or "").strip()
         operation_name = str(operation or "").strip()
-        if not session or not operation_name or not isinstance(result, dict):
+        if (
+            not session
+            or not operation_name
+            or not isinstance(params, dict)
+            or not isinstance(result, dict)
+        ):
             raise EvidenceResultReceiptError(
                 "evidence result receipts require a session, operation, and result"
             )
@@ -62,6 +70,7 @@ class EvidenceResultReceiptIssuer:
                 receipt_id=receipt_id,
                 session_id=session,
                 operation=operation_name,
+                params=copy.deepcopy(params),
                 result=copy.deepcopy(result),
                 issued_at_monotonic=time.monotonic(),
             )
@@ -90,14 +99,50 @@ class EvidenceResultReceiptIssuer:
             return {
                 "result_receipt_id": receipt.receipt_id,
                 "operation": receipt.operation,
+                "params": copy.deepcopy(receipt.params),
                 "result": copy.deepcopy(receipt.result),
             }
+
+    def redeem(
+        self,
+        receipt_id: object,
+        *,
+        session_id: str,
+        consumer: Callable[[JsonObject], JsonObject],
+    ) -> JsonObject:
+        """Consume one exact receipt only after its durable consumer succeeds."""
+
+        if not callable(consumer):
+            raise TypeError("consumer must be callable")
+        identifier = str(receipt_id or "").strip()
+        session = str(session_id or "").strip()
+        with self._lock:
+            resolved = self.resolve(identifier, session_id=session)
+            result = consumer(resolved)
+            if not isinstance(result, dict):
+                raise EvidenceResultReceiptError(
+                    "the evidence result receipt consumer returned an invalid result"
+                )
+            self._receipts.pop(identifier, None)
+            return result
 
     def clear(self) -> None:
         """Clear process-local receipts for deterministic tests."""
 
         with self._lock:
             self._receipts.clear()
+
+    def discard(self, receipt_id: object, *, session_id: str) -> bool:
+        """Discard a process receipt after a stronger host receipt replaces it."""
+
+        identifier = str(receipt_id or "").strip()
+        session = str(session_id or "").strip()
+        with self._lock:
+            receipt = self._receipts.get(identifier)
+            if receipt is None or receipt.session_id != session:
+                return False
+            self._receipts.pop(identifier, None)
+            return True
 
     def _prune_locked(self) -> None:
         cutoff = time.monotonic() - _RECEIPT_TTL_SECONDS

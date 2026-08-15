@@ -84,7 +84,56 @@ def upgrade_lab_schema(connection: Any) -> None:
 
     repair_observation_logical_roots(connection)
     connection.executescript(SCHEMA_SQL)
+    _prepare_provider_receipt_assignment_binding(connection)
     install_orchestrator_schema(connection)
+    _replace_specialist_policy_version_fields(connection)
+
+
+def _prepare_provider_receipt_assignment_binding(connection: Any) -> None:
+    """Add the assignment binding before reinstalling its integrity trigger."""
+
+    columns = {
+        str(row["name"])
+        for row in connection.execute(
+            "PRAGMA table_info(provider_result_receipts)"
+        ).fetchall()
+    }
+    if columns and "specialist_assignment_id" not in columns:
+        connection.execute(
+            "ALTER TABLE provider_result_receipts ADD COLUMN "
+            "specialist_assignment_id TEXT "
+            "REFERENCES specialist_assignments(specialist_assignment_id)"
+        )
+        connection.execute(
+            "DROP TRIGGER IF EXISTS provider_result_receipts_content_immutable"
+        )
+
+
+def _replace_specialist_policy_version_fields(connection: Any) -> None:
+    """Converge early Lab databases on fixed policy identity by content hash."""
+
+    columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(specialist_briefs)").fetchall()
+    }
+    if "policy_version" in columns and "policy_sha256" not in columns:
+        connection.execute(
+            "ALTER TABLE specialist_briefs RENAME COLUMN policy_version TO policy_sha256"
+        )
+    disclosure_columns = {
+        str(row["name"])
+        for row in connection.execute(
+            "PRAGMA table_info(outbound_disclosure_receipts)"
+        ).fetchall()
+    }
+    if (
+        "policy_versions_json" in disclosure_columns
+        and "policy_identity_json" not in disclosure_columns
+    ):
+        connection.execute(
+            "ALTER TABLE outbound_disclosure_receipts "
+            "RENAME COLUMN policy_versions_json TO policy_identity_json"
+        )
 
 
 def _root_logical_observation_id(user_id: str, revision_id: str) -> str:

@@ -10,7 +10,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from ..operations.registry.errors import JsonObject, OperationError
+from ..operations.registry.evidence_result_receipts import (
+    EVIDENCE_RESULT_RECEIPTS,
+)
 from ..runtime.context import context_authority_lock, context_scope, describe_context
+from .result_receipts import durable_genomi_result_receipt_id
 from .store import GenomiLabStore
 
 
@@ -274,7 +278,46 @@ def transition_specialist_assignment(params: JsonObject) -> JsonObject:
 
 
 def capture_evidence_result(params: JsonObject) -> JsonObject:
-    return _invoke_store_operation("capture_evidence_result", params)
+    investigation_id = _required(params, "investigation_id")
+    process_receipt_id = _required(params, "result_receipt_id")
+
+    def capture(store: GenomiLabStore, user_id: str, session_id: str) -> JsonObject:
+        _owned(store, user_id, investigation_id)
+        durable_receipt_id = durable_genomi_result_receipt_id(process_receipt_id)
+        capture_args = {
+            "cycle_id": params.get("cycle_id"),
+            "result_receipt_id": durable_receipt_id,
+            "purpose": params.get("purpose"),
+            "command_id": params.get("command_id"),
+            "expected_revision": params.get("expected_revision"),
+        }
+        try:
+            store.get_genomi_result_receipt(durable_receipt_id)
+        except KeyError:
+            def persist(resolved: JsonObject) -> JsonObject:
+                with store.atomic_write():
+                    issued = store.issue_genomi_result_receipt(
+                        operation=resolved.get("operation"),
+                        params=resolved.get("params"),
+                        presented_result=resolved.get("result"),
+                        investigation_id=investigation_id,
+                        workspace_session_id=session_id,
+                        receipt_token=process_receipt_id,
+                    )
+                    if issued != durable_receipt_id:
+                        raise ValueError("durable result receipt identity mismatch")
+                    return store.capture_evidence_result(
+                        investigation_id, **capture_args
+                    )
+
+            return EVIDENCE_RESULT_RECEIPTS.redeem(
+                process_receipt_id,
+                session_id=session_id,
+                consumer=persist,
+            )
+        return store.capture_evidence_result(investigation_id, **capture_args)
+
+    return _run(capture)
 
 
 def capture_provider_result(params: JsonObject) -> JsonObject:

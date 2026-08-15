@@ -188,7 +188,7 @@ class OrchestratorHypothesisStoreMixin:
                             f"SELECT source_family FROM evidence_records WHERE evidence_record_id IN ({placeholders})",
                             tuple(newly_assessed_evidence),
                         ).fetchall()
-                        if any(str(item["source_family"]).lower() in {"model", "computational_model", "esm", "proto", "specialist"} for item in model_rows):
+                        if any(str(item["source_family"]).lower() in {"model", "computational_model", "esm", "biohub-esm", "proto", "specialist"} for item in model_rows):
                             raise ValueError("model or specialist output cannot independently change patient hypothesis status")
                     assessment = {
                         "new_patient_fact_ids": newly_assessed_facts,

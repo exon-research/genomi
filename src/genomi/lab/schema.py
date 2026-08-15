@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS outbound_disclosure_receipts (
     data_categories_json TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     payload_sha256 TEXT NOT NULL,
-    policy_versions_json TEXT,
+    policy_identity_json TEXT,
     approved_at TEXT NOT NULL,
     revoked_at TEXT
 );
