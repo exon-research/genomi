@@ -523,6 +523,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
                 "recipient_provider": "pubmed",
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
         approved_payload = {
@@ -641,6 +642,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
                 "recipient_provider": "pubmed",
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
         self.service.retrieve_public_evidence(
@@ -700,6 +702,53 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             self.investigation_id, payload
         )
         self.assertEqual(candidate["selected_provider"], PAPERCLIP_PROVIDER)
+        route = next(
+            item
+            for item in candidate["routes"]
+            if item["provider"] == PAPERCLIP_PROVIDER
+        )
+        self.assertEqual(
+            route["policy_binding"]["patient_data_contract_id"],
+            contract.contract_id,
+        )
+        self.assertEqual(
+            route["retention_training_state"],
+            {
+                "retention": "governed_by_pinned_patient_data_contract",
+                "training": "prohibited_by_required_patient_data_contract",
+            },
+        )
+        self.assertEqual(candidate["payload"]["operation"], payload["operation"])
+        self.assertEqual(
+            candidate["payload"]["request"]["purpose"], payload["purpose"]
+        )
+        self.assertEqual(
+            candidate["payload"]["request"]["data_class"],
+            EvidenceDataClass.PATIENT_INFLUENCED_PUBLIC_EVIDENCE_QUERY.value,
+        )
+        self.assertEqual(
+            candidate["payload"]["request"]["filters"], payload["filters"]
+        )
+        configure(
+            replace(
+                deployment,
+                policy_version_id="paperclip-policy-changed-before-approval",
+            )
+        )
+        with self.assertRaisesRegex(
+            LabError, "policy, or data-handling terms changed"
+        ):
+            self.service.approve_evidence_disclosure(
+                self.investigation_id,
+                {
+                    **payload,
+                    "recipient_provider": PAPERCLIP_PROVIDER,
+                    "approved": True,
+                    "payload_sha256": candidate["payload_sha256"],
+                    "approval_sha256": candidate["approval_sha256"],
+                },
+            )
+        configure(deployment)
         approval = self.service.approve_evidence_disclosure(
             self.investigation_id,
             {
@@ -707,6 +756,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
                 "recipient_provider": PAPERCLIP_PROVIDER,
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
         receipt = approval["disclosure_receipt"]
@@ -772,6 +822,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
     def test_paperclip_policy_change_during_transport_prevents_commit(self) -> None:
         deployment = _patient_deployment("deployment-contract-toctou")
         contract = _patient_contract()
+        payload = {**self._payload(), "filters": {"type": "research article"}}
         network_calls: list[str] = []
 
         def transport(*_args: object) -> dict[str, object]:
@@ -804,15 +855,16 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             )
         )
         candidate = self.service.evidence_disclosure_candidate(
-            self.investigation_id, self._payload()
+            self.investigation_id, payload
         )
         approval = self.service.approve_evidence_disclosure(
             self.investigation_id,
             {
-                **self._payload(),
+                **payload,
                 "recipient_provider": PAPERCLIP_PROVIDER,
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
 
@@ -820,7 +872,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             self.service.retrieve_public_evidence(
                 self.investigation_id,
                 {
-                    **self._payload(),
+                    **payload,
                     "paperclip_disclosure_receipt_id": approval["disclosure_receipt"][
                         "disclosure_receipt_id"
                     ],
@@ -837,6 +889,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
     def test_direct_fallback_cannot_commit_after_its_receipt_is_revoked(self) -> None:
         calls: list[str] = []
         direct_receipt: dict[str, str] = {}
+        payload = {**self._payload(), "filters": {"type": "research article"}}
 
         def direct_transport(
             _operation: PaperclipOperation, _request: EvidenceRequest
@@ -871,24 +924,30 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             direct_sources={SourceFamily.LITERATURE: direct},
         )
         candidate = self.service.evidence_disclosure_candidate(
-            self.investigation_id, self._payload()
+            self.investigation_id, payload
         )
         paperclip_approval = self.service.approve_evidence_disclosure(
             self.investigation_id,
             {
-                **self._payload(),
+                **payload,
                 "recipient_provider": PAPERCLIP_PROVIDER,
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
         direct_approval = self.service.approve_evidence_disclosure(
             self.investigation_id,
             {
-                **self._payload(),
+                **payload,
                 "recipient_provider": "pubmed",
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": next(
+                    route["approval_sha256"]
+                    for route in candidate["routes"]
+                    if route["provider"] == "pubmed"
+                ),
             },
         )
         direct_receipt["id"] = direct_approval["disclosure_receipt"][
@@ -901,7 +960,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             self.service.retrieve_public_evidence(
                 self.investigation_id,
                 {
-                    **self._payload(),
+                    **payload,
                     "paperclip_disclosure_receipt_id": paperclip_approval[
                         "disclosure_receipt"
                     ]["disclosure_receipt_id"],
@@ -938,6 +997,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
                 "recipient_provider": "pubmed",
                 "approved": True,
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
             },
         )
         receipt_id = approval["disclosure_receipt"]["disclosure_receipt_id"]

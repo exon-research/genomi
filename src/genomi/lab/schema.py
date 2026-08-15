@@ -167,6 +167,33 @@ CREATE TABLE IF NOT EXISTS investigations (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS investigation_authorization_receipts (
+    authorization_receipt_id TEXT PRIMARY KEY,
+    workspace_session_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    patient_molecular_snapshot_id TEXT NOT NULL REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    consent_receipt_id TEXT NOT NULL REFERENCES consent_receipts(consent_receipt_id),
+    authorization_scope_json TEXT NOT NULL,
+    authorization_scope_sha256 TEXT NOT NULL,
+    candidate_receipt_sha256 TEXT NOT NULL UNIQUE,
+    approved_at TEXT NOT NULL,
+    supersedes_authorization_receipt_id TEXT REFERENCES investigation_authorization_receipts(authorization_receipt_id),
+    revoked_at TEXT
+);
+CREATE TABLE IF NOT EXISTS investigation_authorization_derivations (
+    authorization_derivation_id TEXT PRIMARY KEY,
+    authorization_receipt_id TEXT NOT NULL REFERENCES investigation_authorization_receipts(authorization_receipt_id) ON DELETE CASCADE,
+    disclosure_receipt_id TEXT UNIQUE REFERENCES outbound_disclosure_receipts(disclosure_receipt_id),
+    plan_acceptance_id TEXT UNIQUE REFERENCES plan_acceptances(plan_acceptance_id),
+    subject_fingerprint TEXT NOT NULL,
+    derived_at TEXT NOT NULL,
+    CHECK (
+        (disclosure_receipt_id IS NOT NULL AND plan_acceptance_id IS NULL)
+        OR
+        (disclosure_receipt_id IS NULL AND plan_acceptance_id IS NOT NULL)
+    )
+);
 CREATE TABLE IF NOT EXISTS harness_bindings (
     binding_id TEXT PRIMARY KEY,
     investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
@@ -488,6 +515,30 @@ BEFORE DELETE ON assays
 BEGIN
     SELECT RAISE(ABORT, 'assays are immutable');
 END;
+CREATE TRIGGER IF NOT EXISTS investigation_authorization_receipt_immutable
+BEFORE UPDATE ON investigation_authorization_receipts
+WHEN NEW.authorization_receipt_id IS NOT OLD.authorization_receipt_id
+  OR NEW.workspace_session_id IS NOT OLD.workspace_session_id
+  OR NEW.user_id IS NOT OLD.user_id
+  OR NEW.investigation_id IS NOT OLD.investigation_id
+  OR NEW.patient_molecular_snapshot_id IS NOT OLD.patient_molecular_snapshot_id
+  OR NEW.consent_receipt_id IS NOT OLD.consent_receipt_id
+  OR NEW.authorization_scope_json IS NOT OLD.authorization_scope_json
+  OR NEW.authorization_scope_sha256 IS NOT OLD.authorization_scope_sha256
+  OR NEW.candidate_receipt_sha256 IS NOT OLD.candidate_receipt_sha256
+  OR NEW.approved_at IS NOT OLD.approved_at
+  OR NEW.supersedes_authorization_receipt_id
+     IS NOT OLD.supersedes_authorization_receipt_id
+  OR OLD.revoked_at IS NOT NULL
+  OR NEW.revoked_at IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'investigation authorization receipts are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS investigation_authorization_derivation_immutable
+BEFORE UPDATE ON investigation_authorization_derivations
+BEGIN
+    SELECT RAISE(ABORT, 'investigation authorization derivations are immutable');
+END;
 CREATE INDEX IF NOT EXISTS idx_snapshots_user_created
     ON profile_snapshots(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_snapshots_investigation_version
@@ -502,6 +553,17 @@ CREATE INDEX IF NOT EXISTS idx_consents_session_user
     ON consent_receipts(workspace_session_id, user_id, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_disclosures_session_user
     ON outbound_disclosure_receipts(workspace_session_id, user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_investigation_authorizations_session_user
+    ON investigation_authorization_receipts(
+        workspace_session_id, user_id, revoked_at
+    );
+CREATE INDEX IF NOT EXISTS idx_investigation_authorizations_investigation
+    ON investigation_authorization_receipts(investigation_id, approved_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_investigation_authorizations_one_active
+    ON investigation_authorization_receipts(investigation_id)
+    WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_investigation_authorization_derivations_parent
+    ON investigation_authorization_derivations(authorization_receipt_id);
 CREATE INDEX IF NOT EXISTS idx_investigations_user_created
     ON investigations(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_evidence_investigation_created

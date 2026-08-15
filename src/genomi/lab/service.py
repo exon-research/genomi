@@ -16,6 +16,7 @@ from .agi_authority import (
     revoke_investigation_agi_authorization,
     revoke_investigation_agi_authorizations_for_session,
 )
+from .authorization_candidate_receipts import AuthorizationCandidateReceiptIssuer
 from .models import JsonObject
 from .context_candidate_receipts import ContextCandidateReceiptIssuer
 from .encrypted_sqlite import (
@@ -24,13 +25,18 @@ from .encrypted_sqlite import (
 )
 from .esm_transport import BiohubESMTransport
 from .evidence_service import EvidenceApplicationMixin
-from .harness import HarnessAdapter, InstalledCodexAppServerAdapter
+from .harness import (
+    HarnessAdapter,
+    InstalledCodexAppServerAdapter,
+)
 from .harness_service import HarnessApplicationMixin
 from .harness_tool_boundary import HarnessToolBoundary
 from .investigation_capabilities import (
     InvestigationCapabilityMixin,
     _HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
 )
+from .investigation_authorization import InvestigationAuthorizationApplication
+from .investigation_authorized_flow import InvestigationAuthorizedFlowMixin
 from .portal_context import PortalContextApplicationMixin
 from .paperclip_adapter import PaperclipAdapter
 from .paperclip_transport import GxlPaperclipTransport
@@ -55,6 +61,7 @@ class GenomiLabService(
     PortalContextApplicationMixin,
     InvestigationCapabilityMixin,
     EvidenceApplicationMixin,
+    InvestigationAuthorizedFlowMixin,
     HarnessApplicationMixin,
 ):
     """Current-user application service; the portal never talks to Genomi directly."""
@@ -84,6 +91,9 @@ class GenomiLabService(
         self._agi_authorizations: dict[str, AgiAuthorizationHandle] = {}
         self._context_candidates = ContextCandidateReceiptIssuer(
             self.store, self.session_id
+        )
+        self._authorization_candidates = AuthorizationCandidateReceiptIssuer(
+            self.session_id
         )
         self.harness_adapter = (
             harness_adapter or InstalledCodexAppServerAdapter.discover()
@@ -135,6 +145,9 @@ class GenomiLabService(
             current_context=self._current_context,
             accepted_plan=self._accepted_current_plan,
             active_context_receipt=self._active_context_receipt,
+            require_authorized_disclosure=(
+                self._require_authorized_harness_disclosure
+            ),
             execute_request=lambda investigation_id, request: (
                 self._execute_harness_capability_request(
                     investigation_id,
@@ -154,6 +167,17 @@ class GenomiLabService(
             safe_call=self._safe_call,
             candidate_receipts=self._context_candidates,
             authorizations=self._agi_authorizations,
+        )
+        self._investigation_authorizations = InvestigationAuthorizationApplication(
+            store=self.store,
+            session_id=self.session_id,
+            current_context=self._current_context,
+            investigation=self.investigation,
+            context_candidate=self.investigation_context_candidate,
+            approve_context=self._profile_context.approve,
+            harness_manifest=self.harness_capability_manifest,
+            ensure_planning_started=self._ensure_authorized_planning_started,
+            candidate_receipts=self._authorization_candidates,
         )
         self.harness_adapter.bind_dynamic_tool_handler(
             self._execute_guarded_harness_capability
@@ -474,9 +498,11 @@ class GenomiLabService(
     def list_investigations(self) -> list[JsonObject]:
         return self._workspace.list_investigations()
 
-    def accept_current_plan(
+    def _accept_plan_for_conformance(
         self, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise exact plan persistence in internal tests only."""
+
         return self._workspace.accept_current_plan(investigation_id, payload)
 
     def investigation_profile(self, investigation_id: str) -> JsonObject:
@@ -499,9 +525,11 @@ class GenomiLabService(
     ) -> JsonObject:
         return self.compare_investigation_context_candidate(investigation_id, payload)
 
-    def approve_investigation_context(
+    def _approve_context_for_conformance(
         self, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise context persistence in internal tests only."""
+
         return self._profile_context.approve(investigation_id, payload)
 
     def invoke_investigation_genome(
@@ -545,6 +573,10 @@ class GenomiLabService(
 
     def revoke_private_context(self, investigation_id: str) -> JsonObject:
         investigation = self.investigation(investigation_id)
+        revoked_authorizations = self.store.revoke_investigation_authorizations(
+            investigation_id
+        )
+        self._authorization_candidates.discard_investigation(investigation_id)
         snapshot_id = investigation.get("patient_molecular_snapshot_id")
         revoked_receipt = False
         if snapshot_id:
@@ -563,6 +595,7 @@ class GenomiLabService(
             "investigation_id": investigation_id,
             "consent_revoked": revoked_receipt,
             "runtime_authorization_revoked": revoked_handle,
+            "investigation_authorizations_revoked": revoked_authorizations,
         }
 
     def close(self) -> None:
@@ -572,7 +605,9 @@ class GenomiLabService(
             self._revoke_runtime_access()
             self.store.revoke_session_consents(self.session_id)
             self.store.revoke_session_disclosures(self.session_id)
+            self.store.revoke_session_investigation_authorizations(self.session_id)
             self._context_candidates.clear()
+            self._authorization_candidates.clear()
             self.provider_connections.close()
             self._closed = True
             self.harness_adapter.close()
@@ -594,16 +629,20 @@ class GenomiLabService(
         if self._bound_user_id and self._bound_user_id != user_id:
             self._revoke_runtime_access()
             self._context_candidates.clear()
+            self._authorization_candidates.clear()
             self.store.revoke_session_consents(self.session_id)
             self.store.revoke_session_disclosures(self.session_id)
+            self.store.revoke_session_investigation_authorizations(self.session_id)
         self._bound_user_id = user_id
 
     def _unbind_current_user(self) -> None:
         if self._bound_user_id:
             self._revoke_runtime_access()
             self._context_candidates.clear()
+            self._authorization_candidates.clear()
             self.store.revoke_session_consents(self.session_id)
             self.store.revoke_session_disclosures(self.session_id)
+            self.store.revoke_session_investigation_authorizations(self.session_id)
         self._bound_user_id = None
 
     def _safe_call(

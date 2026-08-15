@@ -188,7 +188,7 @@ class GenomiLabHarnessAsyncSecurityTests(unittest.TestCase):
                 "observation_revision_ids": [observation["observation_revision_id"]],
             },
         )
-        service.approve_investigation_context(
+        service._approve_context_for_conformance(
             investigation_id,
             {
                 key: context[key]
@@ -216,9 +216,9 @@ class GenomiLabHarnessAsyncSecurityTests(unittest.TestCase):
             "command_id": "command-async-security",
             "expected_revision": 0,
         }
-        started = service.start_investigation(investigation_id, request)
+        started = service._start_harness_for_conformance(investigation_id, request)
         self.assertEqual(started["status"], "in_progress")
-        same = service.start_investigation(investigation_id, request)
+        same = service._start_harness_for_conformance(investigation_id, request)
         self.assertEqual(same["job_id"], started["job_id"])
         self.assertEqual(adapter.dispatch_count, 1)
         return service, operations, adapter, investigation_id, started
@@ -444,7 +444,7 @@ class GenomiLabHarnessAsyncSecurityTests(unittest.TestCase):
             command_id="command-cancel-async-security",
         )
         context = preview["payload"]["command_context"]
-        cancelled = service.cancel_background_work(
+        cancelled = service._cancel_harness_for_conformance(
             investigation_id,
             {
                 "approved": True,
@@ -507,7 +507,7 @@ class GenomiLabHarnessAsyncSecurityTests(unittest.TestCase):
             command_id="command-replace-async-security",
         )
         context = preview["payload"]["command_context"]
-        replacement = service.replace_harness_binding(
+        replacement = service._replace_harness_for_conformance(
             investigation_id,
             {
                 "approved": True,
@@ -562,7 +562,7 @@ class GenomiLabHarnessAsyncSecurityTests(unittest.TestCase):
                 command_id=command_id,
             )
             context = preview["payload"]["command_context"]
-            return service.replace_harness_binding(
+            return service._replace_harness_for_conformance(
                 investigation_id,
                 {
                     "approved": True,

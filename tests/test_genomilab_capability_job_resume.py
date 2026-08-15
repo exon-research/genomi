@@ -46,13 +46,13 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
         )
         payload = self._check_payload(job_id=job_id, resume_operation=resume_operation)
 
-        still_running = application.resume_harness_capability_job(
+        still_running = application._resume_harness_capability_job(
             self.investigation_id, payload
         )
-        completed = application.resume_harness_capability_job(
+        completed = application._resume_harness_capability_job(
             self.investigation_id, payload
         )
-        replay = application.resume_harness_capability_job(
+        replay = application._resume_harness_capability_job(
             self.investigation_id, payload
         )
 
@@ -86,7 +86,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
         )
         payload = self._check_payload(job_id=job_id, resume_operation=resume_operation)
 
-        failed = application.resume_harness_capability_job(
+        failed = application._resume_harness_capability_job(
             self.investigation_id, payload
         )
         restarted = _ResumableCapabilityApplication(
@@ -96,7 +96,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
             capability=PUBLIC_EVIDENCE_RETRIEVE,
             check_results=[],
         )
-        replay = restarted.resume_harness_capability_job(self.investigation_id, payload)
+        replay = restarted._resume_harness_capability_job(self.investigation_id, payload)
 
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["result"]["status"], "source_unavailable")
@@ -122,7 +122,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
         restarted.bootstrap_workspace()
 
         with self.assertRaisesRegex(LabError, "consent is no longer active"):
-            restarted.resume_harness_capability_job(
+            restarted._resume_harness_capability_job(
                 state["investigation_id"], state["check_payload"]
             )
         self.assertEqual(state["poll_calls"], [])
@@ -137,11 +137,12 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
                 **parameters,
                 "recipient_provider": candidate["selected_provider"],
                 "payload_sha256": candidate["payload_sha256"],
+                "approval_sha256": candidate["approval_sha256"],
                 "approved": True,
             },
         )
         with self.assertRaisesRegex(LabError, "consent is no longer active"):
-            restarted.resume_harness_capability_job(
+            restarted._resume_harness_capability_job(
                 state["investigation_id"], state["check_payload"]
             )
         self.assertEqual(len(state["initial_calls"]), 1)
@@ -160,7 +161,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
         )
 
         with self.assertRaisesRegex(LabError, "disclosure changed"):
-            state["service"].resume_harness_capability_job(
+            state["service"]._resume_harness_capability_job(
                 state["investigation_id"], state["check_payload"]
             )
 
@@ -207,7 +208,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
             "_require_active_job_disclosure",
             side_effect=reconfigure_after_preflight,
         ):
-            completed = service.resume_harness_capability_job(
+            completed = service._resume_harness_capability_job(
                 state["investigation_id"], state["check_payload"]
             )
 
@@ -246,7 +247,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
                     on_poll=callback,
                 )
                 with self.assertRaises(LabError):
-                    state["service"].resume_harness_capability_job(
+                    state["service"]._resume_harness_capability_job(
                         state["investigation_id"], state["check_payload"]
                     )
                 persisted = state["service"].store.get_investigation(
@@ -296,7 +297,7 @@ class GenomiLabCapabilityJobResumeTests(_CapabilityJobResumeSupport, unittest.Te
         ]
         for payload in cases:
             with self.subTest(payload=payload), self.assertRaises(Exception):
-                application.resume_harness_capability_job(
+                application._resume_harness_capability_job(
                     self.investigation_id, payload
                 )
         self.assertEqual(application.check_calls, 0)

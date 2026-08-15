@@ -237,12 +237,18 @@ flowchart LR
   guidance. Switching harness adapters SHALL not change the molecular-profile,
   evidence, investigation or brief contracts.
 - **ARCH-012:** Planning and execution SHALL be separate harness-owned tasks.
-  The planning task is tool-free. Accepting its exact plan SHALL only persist
-  acceptance. A separately previewed and approved execution-task disclosure
-  SHALL bind the exact plan version/hash, request IDs, profile snapshot, consent,
-  user, investigation and workspace session; only that execution task may invoke
-  those requests. GenomiLab SHALL NOT execute an accepted plan through a domain
-  bulk loop or a portal-initiated capability endpoint.
+  The planning task is tool-free. One patient-approved investigation
+  authorization SHALL bind the exact profile snapshot, consent, user,
+  investigation, workspace session, installed harness recipient and destination,
+  and routine harness intents; it SHALL include no external provider. Exact plan
+  acceptance and execution-task disclosures SHALL still be persisted as derived
+  receipts linked to that parent authorization. While every bound field and the
+  requested capabilities remain in scope, GenomiLab MAY adopt the visible plan
+  and start the separately owned execution task without another patient click.
+  A changed session, user, profile snapshot, consent, harness destination,
+  provider, or wider scope SHALL fail closed and require a new applicable
+  decision. GenomiLab SHALL NOT execute an accepted plan through a domain bulk
+  loop or a portal-initiated capability endpoint.
 
 ## 4. Canonical data model
 
@@ -455,23 +461,29 @@ The primary action SHALL be **Ask or continue**, never **Upload a genome**.
    investigation and asks the patient to select the current profile observations
    needed for this question; it does not create another patient, default to the
    whole profile, or ask for another genome upload.
-4. **Approve scoped profile access.** GenomiLab records approval for the exact
-   molecular observation revisions, mints the purpose-scoped Molecular Profile
-   Snapshot, and compiles the versioned investigation context. Genomi separately
-   enforces a matching exact-AGI authorization bound to that investigation,
-   snapshot and consent receipt. The snapshot pins what this investigation may
-   use.
-5. **Review and accept a tool-free plan.** In a separately approved harness
-   planning task, the installed harness proposes the questions it will pursue,
-   specialist agents, exact typed capability requests, potential outbound
-   destinations, and material missing information. Accepting the plan records
-   acceptance of that exact version and hash; it does not execute capabilities.
-6. **Approve harness-owned execution.** The portal previews a fresh harness-task
-   disclosure bound to the accepted plan, profile snapshot, consent receipt,
-   current user, investigation and session. Only after the patient approves that
-   exact payload does the adapter create the execution task and expose the exact
-   accepted capability requests as tools. GenomiLab has no alternate bulk
-   executor for the plan.
+4. **Authorize and start the investigation.** The patient reviews one concise
+   authorization covering the exact molecular observation revisions, purpose,
+   current workspace session, and the installed harness recipient and processing
+   destination. GenomiLab atomically records that decision, mints the
+   purpose-scoped Molecular Profile Snapshot, and starts planning. Genomi
+   separately enforces a matching exact-AGI authorization bound to the
+   investigation, snapshot and consent receipt. The authorization covers routine
+   planning, execution, follow-up, resume and cancellation within that scope; it
+   includes no external provider or future expansion.
+5. **Follow and edit the working plan.** In the authorized, tool-free planning
+   task, the installed harness proposes the questions it will pursue, specialist
+   agents, exact typed capability requests, potential outbound destinations, and
+   material missing information. The portal keeps that plan visible and
+   editable. If it remains inside the authorization and capability catalog,
+   GenomiLab records the exact plan version/hash as a derived acceptance and
+   continues without a second approval prompt. A wider profile, changed harness
+   destination, or other scope expansion pauses for a new decision.
+6. **Run harness-owned execution.** GenomiLab creates a separate execution task
+   and persists its exact disclosure as a derived receipt linked to the active
+   investigation authorization. Only that task may invoke the exact accepted
+   capability requests. Routine replanning, follow-up, resume and cancellation
+   stay under the same authorization while its bindings remain unchanged.
+   GenomiLab has no alternate bulk executor for the plan.
 7. **Investigate the disease against the profile.** The harness invokes only the
    exact accepted GenomiLab dynamic tools. At that domain boundary, GenomiLab
    validates each call and, when required, performs an authorized targeted
@@ -516,13 +528,14 @@ expose operations equivalent to:
 - `list_investigations`
 - `create_investigation`
 - `resume_investigation`
-- `send_investigation_message`
-- `approve_private_context`
+- `preview_investigation_authorization`
+- `authorize_and_start_investigation`
+- `send_authorized_investigation_message`
 - `approve_outbound_disclosure`
-- `revoke_private_context`
+- `revoke_investigation_authorization`
 - `close_workspace_session`
 - `refresh_investigation`
-- `cancel_background_work`
+- `cancel_authorized_background_work`
 - `list_research_tool_connections`
 - `connect_or_replace_research_tool_credentials`
 - `verify_research_tool_connection`
@@ -661,28 +674,34 @@ cases against every host adapter.
   task outside the session, user, AGI revision, expanded scope, or outbound
   disclosure.
 - **GEN-008:** A host that cannot safely carry the exact investigation-bound
-  authorization across a replacement task binding SHALL request approval again
-  rather than simulate reuse.
+  authorization and its installed-harness recipient/destination binding across a
+  replacement task SHALL request approval again rather than simulate reuse.
 - **GEN-009:** Long-running parse and evidence work SHALL resume by job ID and
   SHALL NOT be duplicated.
 - **GEN-010:** GenomiLab SHALL own and enforce molecular-profile/context
-  approvals scoped to an `investigation_id`, exact observation revisions,
-  purpose, duration and an immutable manifest. The harness receives the
-  approved snapshot through narrow GenomiLab reads, not unrestricted store
-  access.
-- **GEN-011:** The portal collects an approval decision through the GenomiLab
-  API; GenomiLab records/enforces it and requests a matching Genomi grant when
-  AGI access is included. Neither the portal, adapter nor harness may mint,
-  widen, or persist an authorization independently.
+  approvals through an investigation authorization scoped to an
+  `investigation_id`, exact observation revisions, profile snapshot, consent,
+  purpose, duration, workspace session, installed harness recipient/destination,
+  allowed routine intents and an immutable manifest. External-provider scope
+  SHALL be empty. The harness receives the approved snapshot through narrow
+  GenomiLab reads, not unrestricted store access.
+- **GEN-011:** The portal collects one authorize-and-start decision through the
+  GenomiLab API; GenomiLab atomically records/enforces it with the profile
+  snapshot and requests a matching Genomi grant when AGI access is included.
+  GenomiLab SHALL create exact plan-acceptance and harness-task disclosure
+  records as derivations of that decision, not as independent browser-minted
+  authority. Neither the portal, adapter nor harness may mint, widen, or persist
+  an authorization independently.
 - **GEN-012:** GenomiLab SHALL own outbound approvals and disclosure receipts
   keyed to exact provider, destination, purpose and payload manifest, subject to
   the independent deployment contract policy. Changing any of them requires a
   new decision. The harness chooses a useful evidence capability but has no
   provider credentials or bypass route.
 - **GEN-013:** A browser reconnect while the workspace session remains alive
-  MAY resume its event cursor and valid grant. A full harness/app restart MAY
-  restore tasks and jobs, but the prior AGI grant is revoked; further private
-  reads wait for renewed approval.
+  MAY resume its event cursor, active investigation authorization and valid
+  grant without repeating routine approvals. A full harness/app restart MAY
+  restore tasks and jobs, but the prior AGI grant and session-bound investigation
+  authorization are revoked; further private reads wait for renewed approval.
 - **GEN-014:** Local Genomi capabilities MAY be invoked through Genomi MCP only
   with the authorization in GEN-007. Any Genomi capability that would send a
   patient-influenced query or payload to a network source SHALL additionally
@@ -757,7 +776,10 @@ gate.
 - **INV-002:** The original patient wording SHALL be retained beside normalized
   entities and search terms.
 - **INV-003:** The harness SHALL propose a visible, editable plan before broad
-  private-data or external-provider use.
+  private-data or external-provider use. A plan that remains inside the active
+  investigation authorization MAY be adopted and executed without a second
+  patient approval; any external provider or scope expansion requires its own
+  applicable decision.
 - **INV-004:** The plan SHALL use the smallest relevant capability first and add
   orthogonal evidence when needed.
 - **INV-005:** Source priors SHALL remain separate. ClinVar, gene–disease,
@@ -1307,7 +1329,7 @@ part of the active goal only when that phase is explicitly brought into scope.
 | **AC-06** | P0 | Revising a profile observation or rebuilding the same logical AGI makes a changed candidate selection or refresh available but does not mint a snapshot without explicit approval; an approved refresh creates a new immutable snapshot, while existing investigations remain unchanged and compare/rerun is explicit. Extracted facts cannot self-verify, and explicit negative findings require assay scope and detection limits. |
 | **AC-07** | P0 | GenomiLab receipts enforce exact profile slices and external payloads; every private Genomi call presents an independently validated authorization bound to workspace session, user, investigation, profile snapshot, consent receipt, AGI snapshot, purpose and scope. Revocation or expansion of any bound field, provider, destination or payload fails closed until reapproved, and network-backed Genomi work also crosses the GenomiLab egress gate. |
 | **AC-08** | P0 | Creating an investigation creates one canonical GenomiLab `investigation_id` and at most one active harness-task binding per idempotent command. Browser reconnect resumes events; harness loss/replacement preserves the dossier, ledger and briefs and can resume through a new task, while a full restart pauses private reads pending renewed grants. |
-| **AC-09** | P0 | Harness traces demonstrate tool-free dynamic planning, agent delegation, accepted-plan capability invocation and synthesis drafts. Plan acceptance causes no capability side effect; execution begins only in a separately approved harness execution task exposing the exact accepted requests. GenomiLab supplies/validates domain contracts but contains no fallback LLM, agent loop or plan bulk-execution path; the harness cannot directly mutate profile facts, consent, source evidence, clinical stage or committed brief history. |
+| **AC-09** | P0 | Harness traces demonstrate tool-free dynamic planning, agent delegation, accepted-plan capability invocation and synthesis drafts. One exact investigation authorization permits routine planning, derived plan adoption and a separately owned execution task without repeated patient prompts; exact plan and execution disclosures remain persisted and linked to that authorization, and an out-of-scope change fails closed. GenomiLab supplies/validates domain contracts but contains no fallback LLM, agent loop or plan bulk-execution path; the harness cannot directly mutate profile facts, consent, source evidence, clinical stage or committed brief history. |
 | **AC-10** | P0 | At least one real harness adapter and a simulated second adapter pass the same factory-driven host-adapter conformance suite for manifest, identity, idempotency, revision conflict, event ordering/deduplication/replay, cancellation and typed failure behavior. |
 | **AC-11** | P0 | With a synthetic user, reviewed phenotype/condition context, reported germline finding and AGI snapshot, one end-to-end disease investigation executed through the installed harness produces an approved pinned Molecular Profile Snapshot, targeted profile projection, source-separated evidence ledger containing each targeted Genomi result exactly once, hypothesis/gap register and versioned Investigation Brief. |
 | **AC-12** | P0 | Every molecular-profile observation and brief/hypothesis claim resolves to immutable evidence and profile revisions; every Genomi record retains its original envelope and returned, empty, out-of-scope, blocked, unavailable and running states remain distinct. |
@@ -1354,10 +1376,11 @@ Patient-release gates beyond P0:
    evidence ledgers, hypothesis/gap registers and versioned briefs.
 6. Implement and test the first existing-finding disease investigation using a
    pinned Patient Molecular Profile, a tool-free installed-harness planning
-   task, a separately approved installed-harness execution task, and exact
-   Genomi/GenomiLab source-specific capabilities. The final vertical-slice test
-   SHALL run through the real installed harness rather than substituting the
-   simulated adapter or calling the capability executor directly.
+   task, one exact investigation authorization, derived plan acceptance, a
+   separately owned installed-harness execution task, and exact Genomi/GenomiLab
+   source-specific capabilities. The final vertical-slice test SHALL run through
+   the real installed harness rather than substituting the simulated adapter or
+   calling the capability executor directly.
 7. Add GXL Paperclip through the GenomiLab evidence gateway as the preferred
    provider for covered public evidence, with primary-source normalization and
    fallback. Allow secure API-key setup and the fixed explicit connection probe

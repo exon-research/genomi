@@ -160,7 +160,9 @@ class GenomiLabAssetTests(unittest.TestCase):
             "investigation-detail",
             "plan-list",
             "context-observation-list",
-            "harness-outbound-details",
+            "context-preview-list",
+            "harness-message-form",
+            "capability-approval-list",
             "event-list",
             "evidence-ledger",
             "hypothesis-list",
@@ -289,17 +291,42 @@ class GenomiLabAssetTests(unittest.TestCase):
 
     def test_safety_and_review_language_remains_visible(self) -> None:
         for copy in (
-            "Exact private context",
-            "Exact outbound disclosure",
+            "Research authorization",
+            "Authorize and start investigation",
+            "covers routine planning, local evidence work, replanning, and",
+            "pauses before using an external",
             "Evidence, kept separate by source",
             "Hypotheses",
             "Open gaps",
             "Investigation Brief",
-            "Nothing in this plan runs until you accept it",
+            "keeps this working plan current",
             "Choose the profile observations this disease question needs",
         ):
             with self.subTest(copy=copy):
                 self.assertIn(copy, self.html)
+
+    def test_investigation_uses_one_start_authorization_and_direct_routine_work(
+        self,
+    ) -> None:
+        controller = self.modules["investigation-controller.js"]
+        renderer = self.modules["render.js"]
+
+        self.assertIn('session.path("/authorization-candidate")', controller)
+        self.assertIn('session.path("/authorize-start")', controller)
+        self.assertIn('session.path("/messages")', controller)
+        self.assertIn('session.path("/cancel")', controller)
+        self.assertIn("authorization_candidate_receipt", controller + renderer)
+        self.assertIn("authorization_scope", controller + renderer)
+        self.assertIn("Authorize and start investigation", self.html + renderer)
+        self.assertIn("Working plan", renderer)
+        self.assertIn("Approve exact evidence request", renderer)
+        self.assertIn("Operation:", renderer)
+        self.assertIn("Purpose:", renderer)
+        self.assertIn("Data:", renderer)
+        self.assertIn("Query terms:", renderer)
+        self.assertIn("Retention:", renderer)
+        self.assertIn("Training:", renderer)
+        self.assertIn("approvalSha256", controller + renderer)
 
     def test_responsive_and_evidence_styles_remain_packaged(self) -> None:
         self.assertIn(

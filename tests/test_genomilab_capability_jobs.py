@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import threading
 import unittest
@@ -8,7 +9,7 @@ from typing import Any
 
 from genomi.lab.capability_store import CAPABILITY_RETRY_OPERATION
 from genomi.lab.evidence_service import DirectEvidenceSource
-from genomi.lab.harness import SimulatedHarnessAdapter
+from genomi.lab.harness import HarnessArtifactKind, HarnessOperation, SimulatedHarnessAdapter
 from genomi.lab.investigation_capabilities import (
     PROFILE_PROJECT,
     PUBLIC_EVIDENCE_RETRIEVE,
@@ -111,6 +112,7 @@ class _ApprovalCapabilityApplication(_DurableCapabilityApplication):
                 "candidate": {
                     "selected_provider": "gxl_paperclip",
                     "payload_sha256": "a" * 64,
+                    "approval_sha256": "b" * 64,
                     "payload": {"request": {"query": "synthetic mechanism"}},
                 },
             }
@@ -375,6 +377,7 @@ class GenomiLabCapabilityJobTests(_CapabilityJobTestSupport, unittest.TestCase):
             "approved": True,
             "recipient_provider": "gxl_paperclip",
             "payload_sha256": "a" * 64,
+            "approval_sha256": "b" * 64,
         }
 
         completed = self._execute(application, request, approval=approval)
@@ -416,6 +419,7 @@ class GenomiLabCapabilityJobTests(_CapabilityJobTestSupport, unittest.TestCase):
                     "approved": True,
                     "recipient_provider": "other-provider",
                     "payload_sha256": "a" * 64,
+                    "approval_sha256": "b" * 64,
                 },
             )
 
@@ -436,6 +440,7 @@ class GenomiLabCapabilityJobTests(_CapabilityJobTestSupport, unittest.TestCase):
                     "approved": True,
                     "recipient_provider": "gxl_paperclip",
                     "payload_sha256": "a" * 64,
+                    "approval_sha256": "b" * 64,
                 },
             )
 
@@ -689,7 +694,7 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
                 "observation_revision_ids": [observation["observation_revision_id"]],
             },
         )
-        service.approve_investigation_context(
+        service._approve_context_for_conformance(
             investigation_id,
             {
                 key: context_candidate[key]
@@ -708,12 +713,29 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
             }
             | {"approved": True},
         )
+        authorized_context = service.investigation(investigation_id)
+        authorization = service.store.create_investigation_authorization(
+            "user-capability",
+            workspace_session_id=session_id,
+            investigation_id=investigation_id,
+            patient_molecular_snapshot_id=authorized_context[
+                "patient_molecular_snapshot_id"
+            ],
+            consent_receipt_id=authorized_context["active_consent_receipt_id"],
+            authorization_scope=(
+                service._investigation_authorizations._authorization_scope()
+            ),
+            candidate_receipt_sha256=hashlib.sha256(
+                f"{session_id}:{investigation_id}".encode("utf-8")
+            ).hexdigest(),
+            approved=True,
+        )
         service.store.commit_plan(
             investigation_id,
             self._public_evidence_plan(summary="Review the synthetic evidence scope."),
         )
         current_plan = service.investigation(investigation_id)["current_plan_version"]
-        service.accept_current_plan(
+        service._accept_plan_for_conformance(
             investigation_id,
             {
                 "plan_version_id": current_plan["plan_version_id"],
@@ -740,7 +762,7 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
             command_id=command_id,
             expected_revision=1,
         )
-        execution = service.replace_harness_binding(
+        execution = service._execute_harness_command(
             investigation_id,
             {
                 "approved": True,
@@ -751,17 +773,23 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
                 "artifact_kind": "execution_report",
                 "reason": "Run the separately approved evidence execution task.",
             },
+            operation=HarnessOperation.REPLACE_TASK_BINDING,
+            artifact_kind=HarnessArtifactKind.EXECUTION_REPORT,
+            authorization_receipt_id=str(
+                authorization["authorization_receipt_id"]
+            ),
         )
         self.assertEqual(execution["status"], "accepted")
         self.assertEqual(len(execution["capability_results"]), 1)
         preview = execution["capability_results"][0]["result"]["candidate"]
-        launched = service.continue_harness_capability_after_approval(
+        launched = service._continue_harness_capability_after_approval(
             investigation_id,
             {
                 "request_id": "request-public",
                 "approved": True,
                 "recipient_provider": preview["selected_provider"],
                 "payload_sha256": preview["payload_sha256"],
+                "approval_sha256": preview["approval_sha256"],
             },
         )
         self.assertEqual(launched["status"], "in_progress")

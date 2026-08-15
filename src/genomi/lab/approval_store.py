@@ -240,21 +240,42 @@ class ApprovalStoreMixin:
                 (user_id,),
             ).fetchall()
             disclosures = connection.execute(
-                "SELECT disclosure_receipt_id, investigation_id, recipient_kind, "
-                "recipient_id, purpose, destination, data_categories_json, "
-                "payload_sha256, approved_at, revoked_at "
-                "FROM outbound_disclosure_receipts WHERE user_id = ? "
-                "ORDER BY approved_at DESC",
+                "SELECT disclosure.disclosure_receipt_id, "
+                "disclosure.investigation_id, disclosure.recipient_kind, "
+                "disclosure.recipient_id, disclosure.purpose, "
+                "disclosure.destination, disclosure.data_categories_json, "
+                "disclosure.payload_sha256, disclosure.approved_at, "
+                "disclosure.revoked_at, derivation.authorization_receipt_id "
+                "FROM outbound_disclosure_receipts AS disclosure "
+                "LEFT JOIN investigation_authorization_derivations AS derivation "
+                "ON derivation.disclosure_receipt_id = "
+                "disclosure.disclosure_receipt_id "
+                "WHERE disclosure.user_id = ? ORDER BY disclosure.approved_at DESC",
                 (user_id,),
             ).fetchall()
             plan_acceptances = connection.execute(
-                "SELECT plan_acceptance_id, plan_version_id, investigation_id, "
-                "plan_sha256, accepted_at FROM plan_acceptances WHERE user_id = ? "
-                "ORDER BY accepted_at DESC",
+                "SELECT acceptance.plan_acceptance_id, acceptance.plan_version_id, "
+                "acceptance.investigation_id, acceptance.plan_sha256, "
+                "acceptance.accepted_at, derivation.authorization_receipt_id "
+                "FROM plan_acceptances AS acceptance "
+                "LEFT JOIN investigation_authorization_derivations AS derivation "
+                "ON derivation.plan_acceptance_id = acceptance.plan_acceptance_id "
+                "WHERE acceptance.user_id = ? ORDER BY acceptance.accepted_at DESC",
+                (user_id,),
+            ).fetchall()
+            authorizations = connection.execute(
+                "SELECT authorization_receipt_id, investigation_id, "
+                "patient_molecular_snapshot_id, consent_receipt_id, "
+                "authorization_scope_json, approved_at, revoked_at "
+                "FROM investigation_authorization_receipts WHERE user_id = ? "
+                "ORDER BY approved_at DESC",
                 (user_id,),
             ).fetchall()
         return {
             "context_approvals": [row_dict(row) for row in consents],
+            "investigation_authorizations": [
+                row_dict(row) for row in authorizations
+            ],
             "outbound_disclosures": [row_dict(row) for row in disclosures],
             "plan_acceptances": [row_dict(row) for row in plan_acceptances],
             "payloads_included": False,

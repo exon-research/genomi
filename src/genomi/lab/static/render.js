@@ -20,7 +20,6 @@ import {
 } from "./render-dom.js";
 import { renderBriefs } from "./render-brief.js";
 import {
-  contextDisclosureDescription,
   coverageDescription,
   evidenceHeadline,
   evidenceReadiness,
@@ -128,14 +127,29 @@ function renderEvidenceLibrary(records) {
 
 function renderPrivacyActivity(activityValue) {
   const activity = isObject(activityValue) ? activityValue : {};
+  const authorizations = array(activity.investigation_authorizations);
+  const authorizedConsentReceipts = new Set(
+    authorizations.map((item) => text(item.consent_receipt_id)).filter(Boolean)
+  );
+  const contextActivity = [
+    ...authorizations.map((item) => ({...item, activity_kind: "investigation_authorization"})),
+    ...array(activity.context_approvals)
+      .filter((item) => !authorizedConsentReceipts.has(text(item.consent_receipt_id)))
+      .map((item) => ({...item, activity_kind: "private_context"})),
+  ].sort((left, right) => text(right.approved_at).localeCompare(text(left.approved_at)));
   renderCompactRecords(
     elements.contextActivityList,
-    array(activity.context_approvals),
-    "No private context approvals yet.",
-    (item) => [
-      item.revoked_at ? "Private context revoked" : "Private context approved",
-      [formatTime(text(item.approved_at)), item.agi_snapshot_id ? "Targeted genome context included" : "Profile context only"].filter(Boolean).join(" · "),
-    ]
+    contextActivity,
+    "No research authorizations yet.",
+    (item) => item.activity_kind === "investigation_authorization"
+      ? [
+        item.revoked_at ? "Research authorization revoked" : "Research authorized",
+        [formatTime(text(item.approved_at)), authorizationScopeDescription(item.authorization_scope)].filter(Boolean).join(" · "),
+      ]
+      : [
+        item.revoked_at ? "Private context revoked" : "Private context included",
+        [formatTime(text(item.approved_at)), item.agi_snapshot_id ? "Targeted genome context included" : "Profile context only"].filter(Boolean).join(" · "),
+      ]
   );
   renderCompactRecords(
     elements.disclosureActivityList,
@@ -143,15 +157,15 @@ function renderPrivacyActivity(activityValue) {
     "No outbound disclosures yet.",
     (item) => [
       `${friendly(text(item.recipient_kind)) || "Recipient"}: ${text(item.recipient_id) || "not named"}`,
-      [friendly(text(item.destination)), array(item.data_categories).map((value) => friendly(text(value))).join(", "), item.revoked_at ? "Revoked" : "Approved"].filter(Boolean).join(" · "),
+      [friendly(text(item.destination)), array(item.data_categories).map((value) => friendly(text(value))).join(", "), item.revoked_at ? "Revoked" : item.authorization_receipt_id ? "Covered by research authorization" : "Exact exception approved"].filter(Boolean).join(" · "),
     ]
   );
   renderCompactRecords(
     elements.planActivityList,
     array(activity.plan_acceptances),
-    "No accepted plans yet.",
+    "No working plans adopted yet.",
     (item) => [
-      "Investigation plan accepted",
+      item.authorization_receipt_id ? "Working plan adopted under research authorization" : "Investigation plan accepted",
       `${formatTime(text(item.accepted_at))} · ${shortId(text(item.plan_version_id))}`,
     ]
   );
@@ -207,7 +221,6 @@ export function renderInvestigation(investigation, harnessManifest = {}, observa
   );
   renderBriefs(array(investigation.brief_versions), investigation);
   hideContextCandidate();
-  hideOutboundPreview();
 }
 
 function renderContextObservationSelection(investigation, observations) {
@@ -229,12 +242,12 @@ function renderContextObservationSelection(investigation, observations) {
   );
   const pinnedIds = new Set(array(pinnedSnapshot && pinnedSnapshot.observation_revision_ids).map(text));
   elements.contextSelectionHelp.textContent = pinnedSnapshot
-    ? "Checked observations are the starting selection for Compare latest profile. Review and renew keeps the exact pinned selection."
-    : "Select at least one current observation. Only checked observations can enter this investigation's approved profile context.";
+    ? "Checked observations are the current authorized scope. Compare the latest profile before approving any expansion."
+    : "Select at least one current observation. Only checked observations can enter this investigation's research scope.";
   if (!observations.length) {
     elements.contextObservationList.dataset.investigationId = investigationId;
     elements.contextObservationList.replaceChildren(
-      empty("Add a profile observation before approving private context.")
+      empty("Add a profile observation before starting this investigation.")
     );
     return;
   }
@@ -274,7 +287,6 @@ export function closeInvestigation() {
   elements.investigationDetail.hidden = true;
   elements.contextObservationList.dataset.investigationId = "";
   hideContextCandidate();
-  hideOutboundPreview();
 }
 
 export function renderContextCandidate(candidate, observations = []) {
@@ -301,46 +313,17 @@ export function renderContextCandidate(candidate, observations = []) {
   ]);
   definitions.push(["Allowed genome scope", candidate.genomic_scope ? exactValue(candidate.genomic_scope) : "Not included"]);
   definitions.push(["Profile coverage", coverageDescription(candidate.modality_coverage)]);
+  definitions.push(["Routine work covered", authorizationScopeDescription(candidate.authorization_scope)]);
   replaceDefinitions(elements.contextPreviewList, definitions);
+  elements.contextApproveButton.textContent = candidate.refresh === true
+    ? "Authorize updated scope and continue"
+    : "Authorize and start investigation";
   elements.contextApproveButton.disabled = false;
 }
 
 export function hideContextCandidate() {
   elements.contextPreview.hidden = true;
   elements.contextPreviewList.replaceChildren();
-}
-
-export function renderOutboundPreview(candidate) {
-  const payload = isObject(candidate.payload) ? candidate.payload : {};
-  const manifest = isObject(candidate.capability_manifest) ? candidate.capability_manifest : {};
-  elements.harnessOutboundPreview.hidden = false;
-  elements.harnessOutboundDestination.textContent = [
-    `Recipient: ${text(manifest.host_kind) || text(candidate.recipient_id) || "installed harness"}`,
-    `Execution location: ${friendly(text(candidate.destination) || text(manifest.execution_location)) || "not disclosed"}`,
-  ].join(" · ");
-  const definitions = [
-    ["Action", friendly(text(payload.operation)) || "Harness work"],
-    ["Instruction", text(payload.instruction) || "None"],
-    ["Requested output", friendly(text(payload.artifact_kind)) || "Not specified"],
-    ["Data categories", array(candidate.data_categories).map((value) => friendly(text(value))).join(", ") || "None"],
-    ["Private context", contextDisclosureDescription(payload.approved_context)],
-    ["Exact outbound contents", exactValue(payload), "exact"],
-  ];
-  replaceDefinitions(elements.harnessOutboundDetails, definitions);
-  const operation = text(payload.operation);
-  elements.harnessApproveButton.textContent = {
-    start_task_run: "Approve and start harness",
-    resume_task_run: "Approve and resume harness",
-    send_task_message: "Approve and send message",
-    replace_task_binding: "Approve and replace harness task",
-    cancel_task_work: "Approve and cancel harness work",
-  }[operation] || "Approve this disclosure";
-  elements.harnessApproveButton.disabled = false;
-}
-
-export function hideOutboundPreview() {
-  elements.harnessOutboundPreview.hidden = true;
-  elements.harnessOutboundDetails.replaceChildren();
 }
 
 export function renderEvents(payload) {
@@ -385,21 +368,17 @@ function renderHarnessIdentity(manifest, binding) {
   elements.harnessCapability.textContent = available ? "Available" : "Unavailable";
   elements.harnessCapability.dataset.available = available ? "true" : "false";
   elements.harnessDisclosure.textContent = binding
-    ? `This investigation is connected to task ${shortId(text(binding.task_id)) || "in the installed harness"}. The web portal displays state and approvals; the harness owns agents and reasoning.`
-    : "This web portal displays and approves work. GenomiLab manages the investigation; the disclosed installed harness owns the agents, planning, and reasoning.";
+    ? `This investigation is connected to task ${shortId(text(binding.task_id)) || "in the installed harness"}. GenomiLab shows its work and pauses only when authorization must expand; the harness owns agents and reasoning.`
+    : "GenomiLab shows the work and pauses when authorization must expand; the disclosed installed harness owns agents, planning, and reasoning.";
 }
 
 function renderPlan(planVersionValue, events) {
   const planVersion = isObject(planVersionValue) ? planVersionValue : null;
   const plan = planVersion && isObject(planVersion.plan) ? planVersion.plan : null;
   const steps = plan ? array(plan.steps) : [];
-  const accepted = Boolean(planVersion && text(planVersion.review_status) === "accepted");
-  elements.planReviewStatus.textContent = plan
-    ? accepted ? "Accepted" : "Your review needed"
-    : "No plan to review";
-  elements.planReviewStatus.dataset.state = accepted ? "accepted" : plan ? "proposed" : "none";
-  elements.planReviewActions.hidden = !plan || accepted;
-  elements.planAcceptButton.disabled = !plan || accepted;
+  elements.planReviewStatus.textContent = plan ? "Working plan" : "Waiting for a working plan";
+  elements.planReviewStatus.dataset.state = plan ? "active" : "none";
+  elements.planReviewActions.hidden = !plan;
   elements.planSummary.textContent = plan
     ? text(plan.summary) || "Current plan"
     : "The installed harness has not proposed a plan yet.";
@@ -430,9 +409,7 @@ function renderPlan(planVersionValue, events) {
     return item;
   });
   elements.planList.replaceChildren(...rows);
-  elements.progressSummary.textContent = accepted
-    ? `${steps.length} accepted ${steps.length === 1 ? "step" : "steps"}`
-    : `${steps.length} proposed ${steps.length === 1 ? "step" : "steps"}`;
+  elements.progressSummary.textContent = `${steps.length} working ${steps.length === 1 ? "step" : "steps"}`;
 }
 
 function renderContextState(investigation) {
@@ -443,9 +420,9 @@ function renderContextState(investigation) {
     ? friendly(text(investigation.refresh_lifecycle.state))
     : "";
   elements.contextState.textContent = approved
-    ? ["Approved for this session", lifecycle].filter(Boolean).join(" · ")
-    : pinned ? "Pinned history · approval renewal required" : "Not approved";
-  elements.contextPreviewButton.textContent = pinned ? "Review and renew private context" : "Preview private context";
+    ? ["Authorized", lifecycle].filter(Boolean).join(" · ")
+    : pinned ? "Review access to continue" : "Not started";
+  elements.contextPreviewButton.textContent = pinned ? "Review current research access" : "Review research access";
   elements.contextRefreshPreviewButton.hidden = !pinned;
   elements.contextRevokeButton.hidden = !approved;
 }
@@ -482,6 +459,14 @@ function renderCapabilityApprovals(executions) {
     const payload = isObject(candidate.payload) && isObject(candidate.payload.request)
       ? candidate.payload.request
       : {};
+    const queryTerms = array(payload.query_terms).map((value) => text(value)).filter(Boolean);
+    const filters = isObject(payload.filters)
+      ? Object.entries(payload.filters).map(([key, value]) => `${friendly(key)}: ${text(value)}`)
+      : [];
+    const handling = isObject(route.retention_training_state)
+      ? route.retention_training_state
+      : {};
+    const policy = isObject(route.policy_binding) ? route.policy_binding : {};
     copy.append(
       node("strong", `Evidence request: ${friendly(text(payload.source_family)) || "public evidence"}`),
       node("p", text(payload.query) || "The exact query is unavailable."),
@@ -490,6 +475,31 @@ function renderCapabilityApprovals(executions) {
         selected
           ? `Provider: ${friendly(selected)} · Destination: ${friendly(text(route.destination)) || "not disclosed"}`
           : "No eligible provider route is currently configured.",
+        "record-trace-line"
+      ),
+      node(
+        "span",
+        [
+          `Operation: ${friendly(text(candidate.payload && candidate.payload.operation)) || "not disclosed"}`,
+          `Purpose: ${text(payload.purpose) || "not disclosed"}`,
+          `Data: ${friendly(text(payload.data_class)) || "not disclosed"}`,
+        ].join(" · "),
+        "record-trace-line"
+      ),
+      node(
+        "span",
+        `Query terms: ${queryTerms.length ? queryTerms.join(", ") : "none"} · Filters: ${filters.length ? filters.join(", ") : "none"}`,
+        "record-trace-line"
+      ),
+      node(
+        "span",
+        [
+          `Retention: ${friendly(text(handling.retention)) || "not disclosed"}`,
+          `Training: ${friendly(text(handling.training)) || "not disclosed"}`,
+          policy.patient_data_contract_id
+            ? `Patient-data contract: ${shortId(text(policy.patient_data_contract_id))}`
+            : "Patient-data contract: not active",
+        ].join(" · "),
         "record-trace-line"
       )
     );
@@ -501,6 +511,7 @@ function renderCapabilityApprovals(executions) {
     button.dataset.planVersionId = text(execution.plan_version_id);
     button.dataset.recipientProvider = selected;
     button.dataset.payloadSha256 = text(candidate.payload_sha256);
+    button.dataset.approvalSha256 = text(candidate.approval_sha256);
     item.append(copy, button);
     list.append(item);
   });
@@ -531,17 +542,30 @@ function renderCapabilityApprovals(executions) {
 }
 
 function renderHarnessState(binding, manifest) {
-  const available = manifest.available === true;
   const operations = new Set(array(manifest.supported_operations).map(text));
   const started = Boolean(binding);
   elements.harnessBindingState.textContent = started
     ? friendly(text(binding.harness_status)) || "Connected"
     : "Not started";
-  elements.harnessPreviewButton.hidden = started;
-  elements.harnessPreviewButton.disabled = !available || !operations.has("start_task_run");
-  elements.resumePreviewButton.hidden = !started || !operations.has("resume_task_run");
-  elements.resumePreviewButton.textContent = "Replan with approved context";
-  elements.replaceHarnessButton.hidden = !started || !operations.has("replace_task_binding");
   elements.cancelHarnessButton.hidden = !started || !operations.has("cancel_task_work");
   elements.harnessMessageForm.hidden = !started || !operations.has("send_task_message");
+}
+
+function authorizationScopeDescription(value) {
+  if (isObject(value)) {
+    const summary = text(value.summary);
+    if (summary) return summary;
+    const activities = array(value.routine_activities).map((item) => friendly(text(item)));
+    if (activities.length) return activities.join(", ");
+    const harness = isObject(value.harness) ? value.harness : {};
+    const destination = friendly(text(harness.destination));
+    const intents = array(harness.allowed_intents).map((item) => friendly(text(item)));
+    if (destination || intents.length) {
+      return [
+        destination ? `Installed harness at ${destination}` : "Installed harness",
+        intents.length ? intents.join(", ") : "routine investigation work",
+      ].join(" · ");
+    }
+  }
+  return "Planning, local Genomi evidence work, specialist handoffs, replanning, and follow-up instructions within this exact investigation scope.";
 }

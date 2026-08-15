@@ -22,6 +22,7 @@ from .harness import (
     StartTaskRunPayload,
 )
 from .harness_application_contract import HarnessApplication as _HarnessApplication
+from .harness_authorized_service import AuthorizedHarnessApplicationMixin
 from .harness_background_service import HarnessBackgroundApplicationMixin
 from .harness_event_service import HarnessEventApplicationMixin
 from .harness_execution_attestation import HarnessExecutionAttestationMixin
@@ -30,6 +31,7 @@ from .service_errors import LabError
 
 
 class HarnessApplicationMixin(
+    AuthorizedHarnessApplicationMixin,
     HarnessBackgroundApplicationMixin,
     HarnessEventApplicationMixin,
     HarnessExecutionAttestationMixin,
@@ -97,7 +99,7 @@ class HarnessApplicationMixin(
             ):
                 raise LabError(
                     "harness_execution_task_required",
-                    "Start a separately approved harness execution task for this accepted plan.",
+                    "Start the separately owned harness execution task for this adopted plan.",
                     http_status=409,
                 )
         elif (
@@ -273,9 +275,11 @@ class HarnessApplicationMixin(
             and bound.get("plan_sha256") == accepted_plan.get("plan_sha256")
         )
 
-    def start_investigation(
+    def _start_harness_for_conformance(
         self: _HarnessApplication, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise the lower-level adapter contract in internal tests only."""
+
         return self._execute_harness_command(
             investigation_id,
             payload,
@@ -283,9 +287,11 @@ class HarnessApplicationMixin(
             artifact_kind=HarnessArtifactKind.PLAN,
         )
 
-    def resume_investigation(
+    def _resume_harness_for_conformance(
         self: _HarnessApplication, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise the lower-level adapter contract in internal tests only."""
+
         artifact_kind = HarnessArtifactKind(
             str(payload.get("artifact_kind") or HarnessArtifactKind.PLAN.value)
         )
@@ -296,9 +302,11 @@ class HarnessApplicationMixin(
             artifact_kind=artifact_kind,
         )
 
-    def send_investigation_message(
+    def _send_harness_message_for_conformance(
         self: _HarnessApplication, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise the lower-level adapter contract in internal tests only."""
+
         artifact_kind = HarnessArtifactKind(
             str(payload.get("artifact_kind") or HarnessArtifactKind.BRIEF_DRAFT.value)
         )
@@ -309,9 +317,11 @@ class HarnessApplicationMixin(
             artifact_kind=artifact_kind,
         )
 
-    def replace_harness_binding(
+    def _replace_harness_for_conformance(
         self: _HarnessApplication, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise the lower-level adapter contract in internal tests only."""
+
         artifact_kind = HarnessArtifactKind(
             str(payload.get("artifact_kind") or HarnessArtifactKind.PLAN.value)
         )
@@ -322,9 +332,11 @@ class HarnessApplicationMixin(
             artifact_kind=artifact_kind,
         )
 
-    def cancel_background_work(
+    def _cancel_harness_for_conformance(
         self: _HarnessApplication, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
+        """Exercise the lower-level adapter contract in internal tests only."""
+
         return self._execute_harness_command(
             investigation_id,
             payload,
@@ -339,6 +351,7 @@ class HarnessApplicationMixin(
         *,
         operation: HarnessOperation,
         artifact_kind: HarnessArtifactKind,
+        authorization_receipt_id: str | None = None,
     ) -> JsonObject:
         # The HTTP server is threaded.  Serializing the claim/call/terminal
         # write boundary prevents a concurrent retry in this process from
@@ -349,6 +362,7 @@ class HarnessApplicationMixin(
                 request,
                 operation=operation,
                 artifact_kind=artifact_kind,
+                authorization_receipt_id=authorization_receipt_id,
             )
 
     def _execute_harness_command_locked(
@@ -358,6 +372,7 @@ class HarnessApplicationMixin(
         *,
         operation: HarnessOperation,
         artifact_kind: HarnessArtifactKind,
+        authorization_receipt_id: str | None = None,
     ) -> JsonObject:
         _, user_id = self._current_context()
         investigation = self.investigation(investigation_id)
@@ -445,7 +460,7 @@ class HarnessApplicationMixin(
             command_id=command_id,
             expected_revision=request.get("expected_revision"),
         )
-        if request.get("approved") is not True:
+        if authorization_receipt_id is None and request.get("approved") is not True:
             raise LabError(
                 "outbound_disclosure_approval_required",
                 "Review and approve the exact harness disclosure first.",
@@ -497,6 +512,21 @@ class HarnessApplicationMixin(
             payload=candidate["payload"],
             policy_versions={"harness_protocol": "genomilab.harness.v1"},
         )
+        if authorization_receipt_id is not None:
+            from .authorization_store import (
+                AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE,
+            )
+
+            self.store.derive_investigation_authorization_subject(
+                authorization_receipt_id,
+                subject_kind=AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE,
+                subject_id=str(receipt_id),
+            )
+            self.store.require_investigation_authorization_subject(
+                authorization_receipt_id,
+                subject_kind=AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE,
+                subject_id=str(receipt_id),
+            )
         binding = self.store.active_harness_binding(investigation_id)
         approved_context = candidate["payload"]["approved_context"]
         command_context = candidate["payload"]["command_context"]

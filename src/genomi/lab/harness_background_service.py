@@ -238,7 +238,10 @@ class HarnessBackgroundApplicationMixin:
             self._run_current_user_operation(commit_identity)
 
         def complete(job_id: str, job_state: HarnessJobState, response: Any) -> None:
+            committed_for_continuation: JsonObject | None = None
+
             def commit_current_result() -> None:
+                nonlocal committed_for_continuation
                 if getattr(self, "_closed", False):
                     raise ValueError("workspace session is closed")
                 _, current_user_id = self._current_context()
@@ -310,6 +313,7 @@ class HarnessBackgroundApplicationMixin:
                         self.store.complete_harness_job(
                             job_id, job_state=state, response=committed
                         )
+                        committed_for_continuation = dict(committed)
 
             try:
                 # The host owns this callback thread, so it must explicitly enter
@@ -326,6 +330,12 @@ class HarnessBackgroundApplicationMixin:
                 command,
                 job_id=job_id,
             )
+            if committed_for_continuation is not None:
+                self._continue_authorized_harness_flow(
+                    command,
+                    committed_for_continuation,
+                    receipt_id=str(receipt_id),
+                )
 
         try:
             submission = self.harness_adapter.dispatch_background(
@@ -565,6 +575,27 @@ class HarnessBackgroundApplicationMixin:
             payload=receipt.get("payload"),
             policy_versions={"harness_protocol": "genomilab.harness.v1"},
         )
+        from .authorization_store import AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE
+
+        derived = self.store.investigation_authorization_for_subject(
+            subject_kind=AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE,
+            subject_id=receipt_id,
+        )
+        if isinstance(derived, dict):
+            authorization = derived.get("authorization")
+            if not isinstance(authorization, dict):
+                raise ValueError("derived harness disclosure lost its authorization")
+            intent = self._authorization_intent_for_harness_command(command)
+            current_authorization = self._require_investigation_authorization(
+                command.investigation_id,
+                intent=intent,
+                receipt=authorization,
+            )
+            self.store.require_investigation_authorization_subject(
+                current_authorization["authorization_receipt_id"],
+                subject_kind=AUTHORIZATION_SUBJECT_OUTBOUND_DISCLOSURE,
+                subject_id=receipt_id,
+            )
         approved_context = command.payload.to_dict().get("approved_context")
         if not isinstance(approved_context, dict):
             return

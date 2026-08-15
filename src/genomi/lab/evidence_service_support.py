@@ -142,6 +142,7 @@ class EvidenceApplicationSupportMixin:
             "paperclip_disclosure_receipt_id",
             "direct_disclosure_receipt_id",
             "payload_sha256",
+            "approval_sha256",
         }
         unknown = sorted(str(key) for key in payload if key not in allowed)
         if unknown:

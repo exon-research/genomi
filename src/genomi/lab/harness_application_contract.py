@@ -40,6 +40,26 @@ class HarnessApplication(Protocol):
 
     def _accepted_current_plan(self, investigation_id: str) -> JsonObject: ...
 
+    def _require_investigation_authorization(
+        self,
+        investigation_id: str,
+        *,
+        intent: str,
+        receipt: JsonObject | None = None,
+    ) -> JsonObject: ...
+
+    def _authorization_intent_for_harness_command(
+        self, command: HarnessCommand
+    ) -> str: ...
+
+    def _continue_authorized_harness_flow(
+        self,
+        command: HarnessCommand,
+        committed: JsonObject,
+        *,
+        receipt_id: str,
+    ) -> None: ...
+
     def _persisted_capability_result(self, execution: JsonObject) -> JsonObject: ...
 
     def _accepted_plan_transport_context(

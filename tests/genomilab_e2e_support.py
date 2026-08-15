@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from genomi.lab import agi_authority as investigation_access
-from genomi.lab.harness import SimulatedHarnessAdapter
+from genomi.lab.harness import HarnessArtifactKind, HarnessOperation, SimulatedHarnessAdapter
 from genomi.lab.provider_policy import SourceFamily
 from genomi.lab.service import GenomiLabService
 from genomi.lab.store import GenomiLabStore
@@ -144,14 +144,30 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
             request["message"] = instruction
         if reason is not None:
             request["reason"] = reason
-        if operation == "start_task_run":
-            result = service.start_investigation(investigation_id, request)
+        _, user_id = service._current_context()
+        authorization = service.store.current_investigation_authorization(
+            workspace_session_id=service.session_id,
+            user_id=user_id,
+            investigation_id=investigation_id,
+        )
+        if isinstance(authorization, dict):
+            result = service._execute_harness_command(
+                investigation_id,
+                request,
+                operation=HarnessOperation(operation),
+                artifact_kind=HarnessArtifactKind(artifact_kind),
+                authorization_receipt_id=str(
+                    authorization["authorization_receipt_id"]
+                ),
+            )
+        elif operation == "start_task_run":
+            result = service._start_harness_for_conformance(investigation_id, request)
         elif operation == "send_task_message":
             request["artifact_kind"] = artifact_kind
-            result = service.send_investigation_message(investigation_id, request)
+            result = service._send_harness_message_for_conformance(investigation_id, request)
         elif operation == "replace_task_binding":
             request["artifact_kind"] = artifact_kind
-            result = service.replace_harness_binding(investigation_id, request)
+            result = service._replace_harness_for_conformance(investigation_id, request)
         else:  # pragma: no cover - the helper intentionally has a closed scope
             raise AssertionError(f"unsupported harness operation: {operation}")
         self.assertEqual(result["status"], "accepted")
@@ -159,7 +175,7 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
         committed = result.get("committed_artifact")
         if accept_plan and artifact_kind == "plan" and isinstance(committed, dict):
             saved = service.investigation(investigation_id)["current_plan_version"]
-            acceptance = service.accept_current_plan(
+            acceptance = service._accept_plan_for_conformance(
                 investigation_id,
                 {
                     "approved": True,
@@ -288,7 +304,7 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
             candidate["specimen_ids"], [records["specimen"]["specimen_id"]]
         )
         self.assertEqual(candidate["assay_ids"], [records["assay"]["assay_id"]])
-        approved = service.approve_investigation_context(
+        approved = service._approve_context_for_conformance(
             investigation_id,
             {
                 key: candidate[key]
@@ -307,7 +323,35 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
             }
             | {"approved": True},
         )
+        self._record_conformance_authorization(
+            service, investigation_id, candidate
+        )
         self.assertEqual(
             approved["private_genome_access"], "authorized_for_exact_scope"
         )
         return approved
+
+    @staticmethod
+    def _record_conformance_authorization(
+        service: GenomiLabService,
+        investigation_id: str,
+        candidate: dict[str, object],
+    ) -> None:
+        context = service.investigation(investigation_id)
+        _, user_id = service._current_context()
+        service.store.create_investigation_authorization(
+            user_id,
+            workspace_session_id=service.session_id,
+            investigation_id=investigation_id,
+            patient_molecular_snapshot_id=context["patient_molecular_snapshot_id"],
+            consent_receipt_id=context["active_consent_receipt_id"],
+            authorization_scope=(
+                service._investigation_authorizations._authorization_scope()
+            ),
+            candidate_receipt_sha256=hashlib.sha256(
+                f"{service.session_id}:{candidate['candidate_receipt']}".encode(
+                    "utf-8"
+                )
+            ).hexdigest(),
+            approved=True,
+        )
