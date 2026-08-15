@@ -88,6 +88,15 @@ export function activeGenomeHeaderModel(payload = {}, fallback = {}) {
   }, model);
 }
 
+export function inquiryGenomeStateLabel(header = {}) {
+  const title = firstText(header.displayTitle, header.title) || 'Active genome';
+  if (header.status === 'ready') return title + ' selected.';
+  if (header.status === 'needs_rebuild') {
+    return title + ' needs rebuilding; choose another ready genome or add the source again.';
+  }
+  return 'Choose an Active Genome Index for this workspace.';
+}
+
 function inventoryHead(model, options) {
   const head = document.createElement('div');
   head.className = 'genome-inventory-head';

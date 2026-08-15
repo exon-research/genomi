@@ -341,6 +341,25 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
         self.assertEqual(result["selected"], [])
         self.assertEqual(result["rebuild"], ["rebuild"])
 
+        label_script = textwrap.dedent(
+            f"""
+            const inventory = await import({module_url!r});
+            const payload = {{
+              active: {{ agi_id: 'agi_legacy' }},
+              genomes: [{{
+                agi_id: 'agi_legacy',
+                display_name: 'Alex genome',
+                active: true,
+                readiness: {{ status: 'needs_reparse', complete: false, snapshot_bound: false }}
+              }}]
+            }};
+            process.stdout.write(JSON.stringify(inventory.inquiryGenomeStateLabel(inventory.activeGenomeHeaderModel(payload))));
+            """
+        )
+        label = _run_node_json(self, label_script)
+        self.assertIn("needs rebuilding", label)
+        self.assertNotIn("selected.", label)
+
     def test_genome_inventory_render_distinguishes_error_from_empty_library(self) -> None:
         module_url = (
             Path(__file__).resolve().parents[1]

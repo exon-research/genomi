@@ -162,7 +162,6 @@ export function createGenomiLabController({ api, getProjectId }) {
     } catch (error) {
       profile = null;
       renderProfile(null);
-      setOnboardingState('onboarding-agi-state', 'Needs attention');
       setOnboardingState('onboarding-profile-state', 'Unavailable');
       setStatus('patient-context-status', error.message || 'Health context is unavailable.', 'error');
     }
@@ -304,19 +303,23 @@ export function createGenomiLabController({ api, getProjectId }) {
 
   function renderOnboardingProfile(payload) {
     if (!profile) {
-      setOnboardingState('onboarding-agi-state', 'Choose a genome');
       setOnboardingState('onboarding-profile-state', 'Not added');
       return;
     }
     const observationCount = array(profile.observations).length;
     const reportCount = array(profile.source_artifacts).length;
-    setOnboardingState('onboarding-agi-state', 'Ready');
     setOnboardingState(
       'onboarding-profile-state',
       observationCount || reportCount
         ? `${observationCount} health facts · ${reportCount} reports`
         : 'Not added'
     );
+  }
+
+  async function refreshFromToolRecord(record) {
+    if (!completedLabOperation(record)) return false;
+    await Promise.all([loadProfile(), loadBoard()]);
+    return true;
   }
 
   function renderOnboardingConnections(payload) {
@@ -366,7 +369,17 @@ export function createGenomiLabController({ api, getProjectId }) {
     );
   }
 
-  return Object.freeze({ bind, loadAll, loadBoard, loadProfile, loadConnections });
+  return Object.freeze({ bind, loadAll, loadBoard, loadProfile, loadConnections, refreshFromToolRecord });
+}
+
+export function completedLabOperation(record) {
+  if (!record || !record.result || record.result.isError === true) return '';
+  const call = record.call && typeof record.call === 'object' ? record.call : {};
+  const input = call.input && typeof call.input === 'object' ? call.input : {};
+  const invoked = text(input.tool);
+  if (invoked.startsWith('lab.')) return invoked;
+  const direct = text(call.name);
+  return direct.startsWith('lab.') ? direct : '';
 }
 
 export function profileEditorSelection(formIds, selectedFormId) {

@@ -6,7 +6,7 @@
     import { createArtifactWorkTraceController } from './portal_artifact_work_trace_controller.js';
     import { createEvidenceLedger } from './portal_evidence_ledger.js';
     import { genomeContextViewModel, renderGenomeContext } from './portal_genome_context.js';
-    import { activeGenomeHeaderModel, renderGenomeInventory } from './portal_genome_inventory.js';
+    import { activeGenomeHeaderModel, inquiryGenomeStateLabel, renderGenomeInventory } from './portal_genome_inventory.js';
     import { createGenomiLabController } from './portal_genomilab.js';
     import { shouldReloadFrameMessages } from './portal_message_refresh.js';
     import { createMessageSurface } from './portal_messages.js';
@@ -649,7 +649,10 @@
       if (!record) evidenceLedger.reset();
       else if (!isPermissionRequestRecord(record)) evidenceLedger.upsert(record);
       updateEvidenceLedgerVisibility(evidenceLedger.count());
-      if (record) workTrace.trackLiveToolRecord(record, state.activeRun);
+      if (record) {
+        workTrace.trackLiveToolRecord(record, state.activeRun);
+        genomiLab.refreshFromToolRecord(record).catch(() => undefined);
+      }
     }
     function isPermissionRequestRecord(record) {
       return Boolean(record && record.result && record.result.permission_request);
@@ -720,9 +723,7 @@
       const genomeHeader = activeGenomeHeaderModel(state.genomeInventory, genomeState);
       const onboardingAgiState = $('onboarding-agi-state');
       if (onboardingAgiState) {
-        onboardingAgiState.textContent = genomeHeader.status === 'ready'
-          ? (genomeHeader.displayTitle || genomeHeader.title) + ' selected.'
-          : 'Choose an Active Genome Index for this workspace.';
+        onboardingAgiState.textContent = inquiryGenomeStateLabel(genomeHeader);
       }
       $('context-dot').className = 'status-dot ' + (genomeHeader.status === 'ready' ? 'ready' : '');
       const genomeHeaderTitle = genomeHeader.displayTitle || genomeHeader.title;

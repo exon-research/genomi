@@ -232,6 +232,60 @@ class PortalGenomiLabTests(unittest.TestCase):
             [form_ids[2]],
         )
 
+    def test_completed_lab_tool_result_triggers_projection_refresh_contract(self) -> None:
+        script_path = (
+            Path(__file__).resolve().parents[1]
+            / "src/genomi/interfaces/templates/portal_genomilab.js"
+        )
+        node_script = f"""
+          const module = await import({script_path.as_uri()!r});
+          globalThis.document = {{ getElementById: () => null }};
+          let profileLoads = 0;
+          let boardLoads = 0;
+          const controller = module.createGenomiLabController({{
+            api: {{
+              loadGenomiLabProfile: async () => {{ profileLoads += 1; return {{ profile: {{ observations: [{{ label: 'Persisted fact' }}] }} }}; }},
+              loadGenomiLabBoard: async () => {{ boardLoads += 1; return {{}}; }}
+            }},
+            getProjectId: () => 'project-1'
+          }});
+          const completedLab = module.completedLabOperation({{
+            call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'lab.update_health_profile' }} }},
+            result: {{ isError: false }}
+          }});
+          const pendingLab = module.completedLabOperation({{
+            call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'lab.update_health_profile' }} }}
+          }});
+          const publicEvidence = module.completedLabOperation({{
+            call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'paperclip.search_biomedical' }} }},
+            result: {{ isError: false }}
+          }});
+          const refreshed = await controller.refreshFromToolRecord({{
+            call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'lab.update_health_profile' }} }},
+            result: {{ isError: false }}
+          }});
+          const ignored = await controller.refreshFromToolRecord({{
+            call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'paperclip.search_biomedical' }} }},
+            result: {{ isError: false }}
+          }});
+          process.stdout.write(JSON.stringify({{ completedLab, pendingLab, publicEvidence, refreshed, ignored, profileLoads, boardLoads }}));
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "-e", node_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        state = json.loads(completed.stdout)
+
+        self.assertEqual(state["completedLab"], "lab.update_health_profile")
+        self.assertEqual(state["pendingLab"], "")
+        self.assertEqual(state["publicEvidence"], "")
+        self.assertTrue(state["refreshed"])
+        self.assertFalse(state["ignored"])
+        self.assertEqual(state["profileLoads"], 1)
+        self.assertEqual(state["boardLoads"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
