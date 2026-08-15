@@ -163,7 +163,7 @@ class GenomiLabPortalContextTests(unittest.TestCase):
             },
         )
         approval = self._approval(candidate)
-        self.service.approve_investigation_context(self.investigation_id, approval)
+        self.service._approve_context_for_conformance(self.investigation_id, approval)
 
         projected = self.service.investigation_profile(self.investigation_id)
 
@@ -263,7 +263,7 @@ class GenomiLabPortalContextTests(unittest.TestCase):
                 "exclude_genome": True,
             },
         )
-        self.service.approve_investigation_context(
+        self.service._approve_context_for_conformance(
             self.investigation_id, self._approval(initial)
         )
         broad = self.service.investigation_context_candidate(
@@ -286,12 +286,12 @@ class GenomiLabPortalContextTests(unittest.TestCase):
                 "exclude_genome": True,
             },
         )
-        self.service.approve_investigation_context(
+        self.service._approve_context_for_conformance(
             self.investigation_id, self._approval(narrow, refresh=True)
         )
 
         with self.assertRaises(LabError) as stale:
-            self.service.approve_investigation_context(
+            self.service._approve_context_for_conformance(
                 self.investigation_id, self._approval(broad, refresh=True)
             )
         self.assertEqual(stale.exception.code, "invalid_context_approval")
@@ -308,7 +308,7 @@ class GenomiLabPortalContextTests(unittest.TestCase):
         self.genomi_context.agi_snapshot_id = "agi-snapshot-replaced"
 
         with self.assertRaises(LabError) as stale:
-            self.service.approve_investigation_context(
+            self.service._approve_context_for_conformance(
                 self.investigation_id, self._approval(candidate)
             )
         self.assertEqual(stale.exception.code, "invalid_context_approval")

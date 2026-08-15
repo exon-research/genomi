@@ -91,10 +91,10 @@
           </section>
 
           <section class="attention-grid" aria-label="Research Desk summary">
-            <article><strong id="attention-plan-reviews">0</strong><span>plans to review</span></article>
-            <article><strong id="attention-provider-approvals">0</strong><span>provider approvals</span></article>
-            <article><strong id="attention-running-jobs">0</strong><span>jobs running</span></article>
-            <article><strong id="attention-new-evidence">0</strong><span>evidence records</span></article>
+            <article><strong id="attention-plan-reviews">0</strong><span>working plans to inspect</span></article>
+            <article><strong id="attention-provider-approvals">0</strong><span>external approvals</span></article>
+            <article><strong id="attention-running-jobs">0</strong><span>research in progress</span></article>
+            <article><strong id="attention-new-evidence">0</strong><span>evidence found</span></article>
             <article><strong id="attention-completed-briefs">0</strong><span>current briefs</span></article>
           </section>
 
@@ -364,12 +364,12 @@
 
           <section id="privacy-activity" class="panel">
             <header class="panel-heading">
-              <div><p class="eyebrow">Your controls</p><h2>Privacy &amp; Activity</h2><p>This view shows approvals and destinations without replaying the disclosed payload.</p></div>
+              <div><p class="eyebrow">Your controls</p><h2>Privacy &amp; Activity</h2><p>This view shows research authorization, exception approvals, and destinations without replaying disclosed payloads.</p></div>
             </header>
             <div class="privacy-activity-grid">
-              <section><h3>AGI and private-context approvals</h3><ul id="context-activity-list" class="record-list"><li class="empty-row">No private context approvals yet.</li></ul></section>
+              <section><h3>Research authorization and private context</h3><ul id="context-activity-list" class="record-list"><li class="empty-row">No research authorizations yet.</li></ul></section>
               <section><h3>Outbound disclosures</h3><ul id="disclosure-activity-list" class="record-list"><li class="empty-row">No outbound disclosures yet.</li></ul></section>
-              <section><h3>Accepted plans</h3><ul id="plan-activity-list" class="record-list"><li class="empty-row">No accepted plans yet.</li></ul></section>
+              <section><h3>Working plan history</h3><ul id="plan-activity-list" class="record-list"><li class="empty-row">No working plans adopted yet.</li></ul></section>
             </div>
           </section>
 
@@ -394,7 +394,7 @@
               <span id="harness-capability" class="availability-chip">Checking</span>
             </div>
             <p id="harness-disclosure" class="boundary-copy">
-              This web portal displays and approves work. GenomiLab manages the investigation;
+              GenomiLab shows the work and pauses when your authorization must expand;
               the disclosed installed harness owns the agents, planning, and reasoning.
             </p>
 
@@ -403,50 +403,49 @@
                 <header class="work-card-heading">
                   <div><p class="eyebrow">Current work</p><h3 id="plan-heading">Plan and progress</h3></div>
                   <div class="status-stack">
-                    <span id="plan-review-status" class="mini-status">No plan to review</span>
+                    <span id="plan-review-status" class="mini-status">Waiting for a working plan</span>
                     <span id="progress-summary" class="mini-status">Waiting for a plan</span>
                   </div>
                 </header>
                 <p id="plan-summary" class="section-summary">The installed harness has not proposed a plan yet.</p>
                 <ol id="plan-list" class="plan-list"><li class="empty-row">No plan steps yet.</li></ol>
                 <div id="plan-review-actions" class="plan-review-actions" hidden>
-                  <p>Nothing in this plan runs until you accept it. You can ask the harness to revise the plan first.</p>
-                  <div class="button-row">
-                    <button id="plan-accept-button" class="primary-button" type="button">Accept this plan</button>
-                  </div>
+                  <p>The research team keeps this working plan current as evidence arrives. You can redirect it at any time.</p>
                   <form id="plan-change-form" class="plan-change-form">
                     <label for="plan-change-message">What should change?</label>
                     <textarea id="plan-change-message" rows="2" maxlength="20000" required placeholder="Example: focus first on the reported finding and add functional evidence only if needed."></textarea>
-                    <button id="plan-change-button" class="secondary-button" type="submit">Preview requested changes</button>
+                    <button id="plan-change-button" class="secondary-button" type="submit">Send requested changes</button>
                   </form>
                 </div>
               </section>
 
               <section class="work-card context-card" aria-labelledby="context-heading">
                 <header class="work-card-heading">
-                  <div><p class="eyebrow">Private context</p><h3 id="context-heading">Approve only what this investigation needs</h3></div>
-                  <span id="context-state" class="mini-status">Not approved</span>
+                  <div><p class="eyebrow">Research access</p><h3 id="context-heading">Start with only what this investigation needs</h3></div>
+                  <span id="context-state" class="mini-status">Not started</span>
                 </header>
                 <p class="section-summary">
-                  Choose the profile observations this disease question needs, then preview the exact
-                  observations and Active Genome Index revision. Nothing private is released until you approve.
+                  Choose the profile observations this disease question needs. One authorization starts
+                  the research team and covers routine planning, local evidence work, replanning, and
+                  follow-up messages within this exact scope. GenomiLab pauses before using an external
+                  provider, wider private context, or additional cost.
                 </p>
                 <fieldset id="context-observation-selector" class="context-observation-selector">
                   <legend>Profile observations for this investigation</legend>
-                  <p id="context-selection-help">Select at least one current observation before previewing private context.</p>
+                  <p id="context-selection-help">Select at least one current observation before reviewing research access.</p>
                   <ul id="context-observation-list" class="context-observation-list"><li class="empty-row">No profile observations are available.</li></ul>
                 </fieldset>
                 <div class="button-row">
-                  <button id="context-preview-button" class="secondary-button" type="button">Preview private context</button>
+                  <button id="context-preview-button" class="secondary-button" type="button">Review research access</button>
                   <button id="context-refresh-preview-button" class="secondary-button" type="button" hidden>Compare latest profile</button>
-                  <button id="context-revoke-button" class="danger-button" type="button" hidden>Revoke private context</button>
+                  <button id="context-revoke-button" class="danger-button" type="button" hidden>Revoke research access</button>
                 </div>
                 <div id="context-preview" class="approval-preview" aria-live="polite" hidden>
-                  <h4>Exact private context</h4>
+                  <h4>Research authorization</h4>
                   <p id="context-preview-purpose"></p>
                   <dl id="context-preview-list" class="preview-list"></dl>
-                  <p class="approval-warning">Approval is limited to this investigation, this browser session, and the revisions shown above.</p>
-                  <button id="context-approve-button" class="primary-button" type="button">Approve exactly this context</button>
+                  <p class="approval-warning">This authorization is limited to this investigation and the exact profile and genome revisions shown above. You can revoke it at any time.</p>
+                  <button id="context-approve-button" class="primary-button" type="button">Authorize and start investigation</button>
                 </div>
               </section>
 
@@ -456,27 +455,17 @@
                   <span id="harness-binding-state" class="mini-status">Not started</span>
                 </header>
                 <p class="section-summary">
-                  GenomiLab shows the exact question and approved context before anything is sent to the harness.
-                  Starting or messaging always requires a separate approval.
+                  The installed harness runs the authorized investigation. Routine plans, specialist
+                  handoffs, and follow-ups continue automatically within the research scope above.
                 </p>
                 <div class="button-row">
-                  <button id="harness-preview-button" class="secondary-button" type="button">Preview start disclosure</button>
-                  <button id="resume-preview-button" class="secondary-button" type="button" hidden>Replan with approved context</button>
-                  <button id="replace-harness-button" class="secondary-button" type="button" hidden>Replace harness task</button>
-                  <button id="cancel-harness-button" class="danger-button" type="button" hidden>Cancel harness work</button>
+                  <button id="cancel-harness-button" class="danger-button" type="button" hidden>Stop research</button>
                 </div>
                 <form id="harness-message-form" class="harness-message-form" hidden>
                   <label for="harness-message">Instruction to the installed harness</label>
                   <textarea id="harness-message" name="message" rows="2" maxlength="20000" required placeholder="Ask a follow-up or tell the harness what to investigate next."></textarea>
-                  <button id="message-preview-button" class="secondary-button" type="submit">Preview message disclosure</button>
+                  <button id="message-preview-button" class="secondary-button" type="submit">Send instruction</button>
                 </form>
-                <div id="harness-outbound-preview" class="approval-preview outbound-preview" aria-live="polite" hidden>
-                  <h4>Exact outbound disclosure</h4>
-                  <p id="harness-outbound-destination"></p>
-                  <dl id="harness-outbound-details" class="preview-list"></dl>
-                  <p class="approval-warning">Only the contents shown above will be sent to the disclosed harness destination.</p>
-                  <button id="harness-approve-button" class="primary-button" type="button">Approve and start harness</button>
-                </div>
               </section>
 
               <section class="work-card events-card" aria-labelledby="events-heading">

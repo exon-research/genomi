@@ -20,6 +20,7 @@ class HarnessToolBoundary:
     current_context: Callable[[], tuple[JsonObject, str]]
     accepted_plan: Callable[[str], JsonObject]
     active_context_receipt: Callable[[JsonObject, JsonObject], JsonObject]
+    require_authorized_disclosure: Callable[[str, str, str], JsonObject]
     execute_request: Callable[[str, JsonObject], JsonObject]
 
     def execute(self, call: object) -> JsonObject:
@@ -79,6 +80,11 @@ class HarnessToolBoundary:
             data_categories=list(receipt.get("data_categories") or []),
             payload=receipt.get("payload"),
             policy_versions={"harness_protocol": "genomilab.harness.v1"},
+        )
+        self.require_authorized_disclosure(
+            call.investigation_id,
+            receipt_id,
+            "execute_accepted_plan",
         )
         disclosed = receipt.get("payload")
         approved_context = (

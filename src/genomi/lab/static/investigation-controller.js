@@ -6,11 +6,9 @@ import {
   closeInvestigation,
   elements,
   hideContextCandidate,
-  hideOutboundPreview,
   renderContextCandidate,
   renderEvents,
   renderInvestigation,
-  renderOutboundPreview,
   renderWorkspace,
   setActivity,
   setBusy,
@@ -26,28 +24,11 @@ export function createInvestigationController({state, session, refresh, synchron
     elements.contextRefreshPreviewButton.addEventListener(
       "click", () => void previewPrivateContext({refresh: true})
     );
-    elements.contextApproveButton.addEventListener("click", () => void approvePrivateContext());
+    elements.contextApproveButton.addEventListener("click", () => void authorizeAndStart());
     elements.contextObservationList.addEventListener("change", invalidateContextCandidate);
     elements.contextRevokeButton.addEventListener("click", () => void revokePrivateContext());
-    elements.planAcceptButton.addEventListener("click", () => void acceptCurrentPlan());
-    elements.planChangeForm.addEventListener("submit", handlePlanChangePreview);
-    elements.harnessPreviewButton.addEventListener(
-      "click", () => void previewHarness("start_task_run")
-    );
-    elements.resumePreviewButton.addEventListener("click", () => void previewHarness(
-      "resume_task_run",
-      "Replan this investigation from the latest approved molecular profile, committed evidence, and open gaps.",
-      "",
-      "plan"
-    ));
-    elements.replaceHarnessButton.addEventListener("click", () => void previewHarness(
-      "replace_task_binding",
-      "",
-      "Replace the current installed-harness task while preserving this GenomiLab investigation.",
-      "plan"
-    ));
-    elements.harnessMessageForm.addEventListener("submit", handleHarnessMessagePreview);
-    elements.harnessApproveButton.addEventListener("click", () => void approveHarnessDisclosure());
+    elements.planChangeForm.addEventListener("submit", handlePlanChange);
+    elements.harnessMessageForm.addEventListener("submit", handleHarnessMessage);
     elements.cancelHarnessButton.addEventListener("click", () => void cancelHarnessWork());
     elements.reconnectEventsButton.addEventListener("click", () => void reconnectEvents());
     elements.capabilityApprovalList.addEventListener("click", handleCapabilityApproval);
@@ -65,7 +46,7 @@ export function createInvestigationController({state, session, refresh, synchron
       });
       elements.questionForm.reset();
       session.beginOpen(String(created.investigation_id || ""));
-      showAlert("Investigation created. Review what will be sent before starting the installed harness.", "success");
+      showAlert("Investigation created. Choose the profile context it may use, then authorize and start it once.", "success");
       await refresh();
     } catch (error) {
       showAlert(error.message || "The investigation could not be created.");
@@ -84,7 +65,6 @@ export function createInvestigationController({state, session, refresh, synchron
   function close() {
     session.close();
     hideContextCandidate();
-    hideOutboundPreview();
     closeInvestigation();
     if (state.workspace()) renderWorkspace(state.workspace());
     elements.investigationList.scrollIntoView({block: "start"});
@@ -95,7 +75,6 @@ export function createInvestigationController({state, session, refresh, synchron
     const openRequest = session.beginOpen(investigationId);
     const investigationLoad = session.beginInvestigationLoad(openRequest);
     hideContextCandidate();
-    hideOutboundPreview();
     setActivity("Opening the investigation and reconnecting its activity…");
     try {
       const investigation = await apiRequest(pathFor(investigationId));
@@ -120,17 +99,12 @@ export function createInvestigationController({state, session, refresh, synchron
   function invalidateContextCandidate() {
     session.invalidateContextSelection();
     hideContextCandidate();
-    setActivity("Profile selection changed. Preview the exact private context again before approval.");
+    setActivity("Profile selection changed. Review the updated research access before authorizing it.");
   }
 
   function discardContextCandidate() {
     session.discardContextCandidate();
     hideContextCandidate();
-  }
-
-  function discardOutboundCandidate() {
-    session.discardOutboundCandidate();
-    hideOutboundPreview();
   }
 
   async function previewPrivateContext({refresh: useCurrentAgi = false} = {}) {
@@ -150,7 +124,7 @@ export function createInvestigationController({state, session, refresh, synchron
       return;
     }
     setBusy(sourceButton, true, "Preparing preview…");
-    setActivity("Preparing the exact private context preview…");
+    setActivity("Preparing the exact research authorization…");
     try {
       const candidatePayload = {
         purpose: pinned
@@ -159,69 +133,73 @@ export function createInvestigationController({state, session, refresh, synchron
         use_current_agi: useCurrentAgi,
       };
       if (!pinned) candidatePayload.observation_revision_ids = selectedObservationRevisionIds;
-      let preparedCandidate;
-      let comparisonStatus = "";
-      if (useCurrentAgi && investigation.patient_molecular_snapshot_id) {
-        const compared = await postJson(session.path("/context-compare"), candidatePayload);
-        preparedCandidate = {...compared.candidate, refresh: true};
-        comparisonStatus = String(compared.status || "");
-      } else {
-        preparedCandidate = await postJson(session.path("/context-candidate"), candidatePayload);
+      const candidate = await postJson(
+        session.path("/authorization-candidate"),
+        candidatePayload
+      );
+      if (!candidate || !candidate.authorization_candidate_receipt || !candidate.authorization_scope) {
+        throw new Error("The research authorization preview is incomplete.");
       }
+      const preparedCandidate = useCurrentAgi && investigation.patient_molecular_snapshot_id
+        ? {...candidate, refresh: true}
+        : candidate;
       if (!session.acceptContextCandidate(previewRequest, preparedCandidate)) {
         if (session.isCurrent(previewRequest.open)) {
-          setActivity("The profile selection changed while the preview was prepared. Preview it again.");
+          setActivity("The profile selection changed while research access was prepared. Review it again.");
         }
         return;
       }
-      if (comparisonStatus) {
-        showAlert(
-          comparisonStatus === "changed"
-            ? "The latest profile differs from the pinned context. Approving will create a new immutable context version."
-            : "The latest profile matches the pinned context; approval will only renew this session.",
-          "success"
-        );
-      }
       renderContextCandidate(session.contextCandidate, profileObservations());
-      setActivity("Private context preview ready. Nothing has been approved yet.");
+      setActivity(
+        useCurrentAgi
+          ? "Updated research access is ready for review. Nothing has changed yet."
+          : "Research access is ready for review. The investigation has not started yet."
+      );
     } catch (error) {
       if (!session.isCurrentContextPreview(previewRequest)) return;
-      showAlert(error.message || "The private context preview could not be prepared.");
+      showAlert(error.message || "Research access could not be prepared.");
     } finally {
       setBusy(sourceButton, false, "");
     }
   }
 
-  async function approvePrivateContext() {
+  async function authorizeAndStart() {
     if (!session.contextCandidate) return;
-    const approvedCandidate = session.contextCandidate;
+    const authorizationCandidate = session.contextCandidate;
+    if (!authorizationCandidate.authorization_candidate_receipt) {
+      showAlert("Review research access again before starting the investigation.");
+      return;
+    }
     const openRequest = session.openRequest();
-    setBusy(elements.contextApproveButton, true, "Approving…");
-    setActivity("Recording consent for exactly the previewed context…");
+    setBusy(elements.contextApproveButton, true, "Starting…");
+    setActivity("Authorizing the exact research scope and starting the research team…");
     try {
-      const approval = {...approvedCandidate};
-      delete approval.status;
-      delete approval.requires_explicit_approval;
-      delete approval.user_id;
-      delete approval.investigation_id;
-      approval.approved = true;
-      const approvedContext = await postJson(session.path("/context-approval"), approval);
+      const authorization = {...authorizationCandidate};
+      delete authorization.status;
+      delete authorization.requires_explicit_approval;
+      delete authorization.user_id;
+      delete authorization.investigation_id;
+      authorization.approved = true;
+      const result = await postJson(session.path("/authorize-start"), authorization);
       if (!session.isCurrent(openRequest)) return;
-      const selectionChangedWhileApproving = session.contextCandidate !== approvedCandidate;
+      const selectionChangedWhileStarting = session.contextCandidate !== authorizationCandidate;
       discardContextCandidate();
       showAlert(
-        selectionChangedWhileApproving
-          ? "The exact context you approved was saved. Selection changes made while it was being saved were not included; compare the latest profile before replanning."
-          : approvedContext.context_change === "profile_refreshed"
-          ? "A new immutable profile context was approved. Replan to refresh evidence and the brief."
-          : "Private context approved for this investigation and local session.",
+        selectionChangedWhileStarting
+          ? "The reviewed research scope was authorized and started. Newer selection changes were not included; review them separately if you want to expand access."
+          : result.status === "in_progress"
+          ? "Investigation authorized. Your research team is working in the background."
+          : "Investigation authorized and started. Routine work will continue within this scope.",
         "success"
       );
-      await reloadCurrentInvestigation();
-      setActivity("Private context approved. Use Replan with approved context so the harness can choose targeted capabilities.");
+      await reloadCurrentInvestigation(openRequest);
+      await reconnectEvents({announce: false, openRequest});
+      if (session.isCurrent(openRequest)) {
+        setActivity("Research is underway. GenomiLab will pause only if authorization needs to expand.");
+      }
     } catch (error) {
-      if (session.isCurrent(openRequest) && session.contextCandidate === approvedCandidate) {
-        showAlert(error.message || "The private context could not be approved.");
+      if (session.isCurrent(openRequest) && session.contextCandidate === authorizationCandidate) {
+        showAlert(error.message || "The investigation could not be authorized and started.");
       }
     } finally {
       setBusy(elements.contextApproveButton, false, "");
@@ -230,203 +208,70 @@ export function createInvestigationController({state, session, refresh, synchron
 
   async function revokePrivateContext() {
     if (!session.investigation) return;
-    if (!window.confirm("Revoke this investigation's private molecular-profile access for the current session?")) return;
+    if (!window.confirm("Revoke this investigation's research access and stop future private-profile work?")) return;
     setBusy(elements.contextRevokeButton, true, "Revoking…");
     try {
       await postJson(session.path("/revoke-context"), {});
       discardContextCandidate();
-      showAlert("Private context access revoked. Stored evidence remains in the investigation ledger.", "success");
+      showAlert("Research access revoked. Stored evidence remains in the investigation ledger.", "success");
       await reloadCurrentInvestigation();
     } catch (error) {
-      showAlert(error.message || "Private context access could not be revoked.");
+      showAlert(error.message || "Research access could not be revoked.");
     } finally {
       setBusy(elements.contextRevokeButton, false, "");
     }
   }
 
-  async function previewHarness(
-    operation,
-    instruction = "",
-    reason = "",
-    artifactKind = "",
-    openRequest = session.openRequest()
-  ) {
-    if (!session.investigation || !session.isCurrent(openRequest)) return false;
-    const previewRequest = session.beginOutboundPreview(openRequest);
-    if (!previewRequest) return false;
-    hideOutboundPreview();
-    const button = {
-      start_task_run: elements.harnessPreviewButton,
-      resume_task_run: elements.resumePreviewButton,
-      replace_task_binding: elements.replaceHarnessButton,
-      cancel_task_work: elements.cancelHarnessButton,
-    }[operation] || elements.resumePreviewButton;
-    setBusy(button, true, "Preparing preview…");
-    setActivity("Preparing the exact outbound harness disclosure…");
-    try {
-      const candidate = await postJson(`${pathFor(openRequest.investigationId)}/harness-preview`, {
-        operation,
-        instruction: instruction || undefined,
-        reason: reason || undefined,
-        artifact_kind: artifactKind || (operation === "start_task_run" ? "plan" : "brief_draft"),
-      });
-      if (!session.acceptOutboundCandidate(previewRequest, candidate)) return false;
-      renderOutboundPreview(candidate);
-      setActivity("Outbound preview ready. Nothing has been sent to the harness yet.");
-      return true;
-    } catch (error) {
-      if (session.isCurrentOutboundPreview(previewRequest)) {
-        showAlert(error.message || "The harness disclosure preview could not be prepared.");
-      }
-      return false;
-    } finally {
-      setBusy(button, false, "");
-    }
-  }
-
-  function handleHarnessMessagePreview(event) {
+  function handleHarnessMessage(event) {
     event.preventDefault();
     if (!elements.harnessMessageForm.reportValidity()) return;
-    void previewHarnessMessage(elements.harnessMessage.value.trim());
+    void sendInstruction(elements.harnessMessage.value.trim());
   }
 
-  function handlePlanChangePreview(event) {
+  function handlePlanChange(event) {
     event.preventDefault();
     if (!elements.planChangeForm.reportValidity()) return;
-    void previewHarnessMessage(
+    void sendInstruction(
       elements.planChangeMessage.value.trim(),
       "plan",
       elements.planChangeButton
     );
   }
 
-  async function previewHarnessMessage(
+  async function sendInstruction(
     message,
     artifactKind = "brief_draft",
     sourceButton = elements.messagePreviewButton
   ) {
     if (!session.investigation) return;
-    const previewRequest = session.beginOutboundPreview();
-    hideOutboundPreview();
-    setBusy(sourceButton, true, "Preparing preview…");
-    setActivity("Preparing the exact message disclosure…");
+    const openRequest = session.openRequest();
+    setBusy(sourceButton, true, "Sending…");
+    setActivity("Sending this instruction within the authorized research scope…");
     try {
-      const candidate = await postJson(session.path("/harness-preview"), {
-        operation: "send_task_message",
-        instruction: message,
+      const result = await postJson(session.path("/messages"), {
+        message,
         artifact_kind: artifactKind,
       });
-      if (!session.acceptOutboundCandidate(previewRequest, candidate)) return;
-      renderOutboundPreview(candidate);
-      setActivity("Message preview ready. It has not been sent.");
-    } catch (error) {
-      if (session.isCurrentOutboundPreview(previewRequest)) {
-        showAlert(error.message || "The message disclosure preview could not be prepared.");
-      }
-    } finally {
-      setBusy(sourceButton, false, "");
-    }
-  }
-
-  async function acceptCurrentPlan() {
-    const investigation = session.investigation;
-    if (!investigation || !investigation.current_plan_version) return;
-    const openRequest = session.openRequest();
-    const planVersion = investigation.current_plan_version;
-    if (String(planVersion.review_status || "") === "accepted") return;
-    setBusy(elements.planAcceptButton, true, "Accepting…");
-    setActivity("Recording acceptance of the exact plan shown above…");
-    try {
-      const result = await postJson(`${pathFor(openRequest.investigationId)}/plan-accept`, {
-        approved: true,
-        plan_version_id: planVersion.plan_version_id,
-        plan_sha256: planVersion.plan_sha256,
-      });
       if (!session.isCurrent(openRequest)) return;
-      if (result.status !== "accepted") throw new Error("The plan could not be accepted.");
+      if (!["accepted", "in_progress", "completed"].includes(String(result.status || ""))) {
+        throw new Error(result.artifact_error || result.message || "The instruction was not accepted.");
+      }
+      if (artifactKind === "plan") elements.planChangeForm.reset();
+      else elements.harnessMessageForm.reset();
       showAlert(
-        "Plan accepted. Review the separate harness execution disclosure before any capability runs.",
+        result.status === "in_progress"
+          ? "Instruction sent. Your research team is working in the background."
+          : "Instruction sent within the existing research authorization.",
         "success"
       );
-      if (!await reloadCurrentInvestigation(openRequest)) return;
-      const next = result.next_harness_action;
-      if (next && next.requires_outbound_disclosure_approval) {
-        const previewed = await previewHarness(
-          next.operation,
-          next.instruction,
-          next.reason,
-          next.artifact_kind,
-          openRequest
-        );
-        if (!previewed || !session.isCurrent(openRequest)) return;
-        setActivity("Plan accepted. The exact harness execution disclosure is ready for your review; nothing has run yet.");
-      } else {
-        setActivity("Plan accepted. No capability request is ready to run yet.");
-      }
+      await reloadCurrentInvestigation(openRequest);
+      await reconnectEvents({announce: false, openRequest});
     } catch (error) {
       if (session.isCurrent(openRequest)) {
-        showAlert(error.message || "The plan could not be accepted.");
+        showAlert(error.message || "The instruction could not be sent.");
       }
     } finally {
-      if (session.isCurrent(openRequest)) setBusy(elements.planAcceptButton, false, "");
-    }
-  }
-
-  async function approveHarnessDisclosure() {
-    const candidate = session.outboundCandidate;
-    if (!candidate || !candidate.payload) return;
-    const openRequest = session.openRequest();
-    const operation = String(candidate.payload.operation || "");
-    const endpoint = {
-      start_task_run: "/start",
-      resume_task_run: "/resume",
-      send_task_message: "/messages",
-      replace_task_binding: "/replace-harness",
-      cancel_task_work: "/cancel",
-    }[operation];
-    if (!endpoint) {
-      showAlert("This harness action is not supported by the Research Desk.");
-      return;
-    }
-    setBusy(elements.harnessApproveButton, true, "Sending approved disclosure…");
-    setActivity("Sending exactly the approved payload to the installed harness…");
-    try {
-      const payload = {
-        approved: true,
-        payload_sha256: candidate.payload_sha256,
-        command_id: candidate.payload.command_context.command_id,
-        expected_revision: candidate.payload.command_context.expected_revision,
-        instruction: candidate.payload.instruction,
-        artifact_kind: candidate.payload.artifact_kind,
-        reason: candidate.payload.reason,
-      };
-      const result = await postJson(`${session.path()}${endpoint}`, payload);
-      if (!session.isCurrent(openRequest)) return;
-      if (!["accepted", "in_progress"].includes(result.status)) {
-        throw new Error(result.artifact_error || result.message || "The harness response was not accepted.");
-      }
-      const previewChangedWhileSending = session.outboundCandidate !== candidate;
-      discardOutboundCandidate();
-      if (operation === "send_task_message") {
-        elements.harnessMessageForm.reset();
-        elements.planChangeForm.reset();
-      }
-      showAlert(
-        previewChangedWhileSending
-          ? "The approved harness action was accepted. A newer preview prepared while it was sending is now stale and was cleared."
-          : result.status === "in_progress"
-          ? "The installed harness is working in the background. Live progress is connected."
-          : "The approved disclosure was accepted by the installed harness.",
-        "success"
-      );
-      await reloadCurrentInvestigation();
-      await reconnectEvents({announce: false});
-    } catch (error) {
-      if (session.isCurrent(openRequest) && session.outboundCandidate === candidate) {
-        showAlert(error.message || "The installed harness did not accept the approved action.");
-      }
-    } finally {
-      setBusy(elements.harnessApproveButton, false, "");
+      if (session.isCurrent(openRequest)) setBusy(sourceButton, false, "");
     }
   }
 
@@ -471,11 +316,11 @@ export function createInvestigationController({state, session, refresh, synchron
     }
     const provider = String(button.dataset.recipientProvider || "");
     const payloadSha256 = String(button.dataset.payloadSha256 || "");
-    if (!requestId || !provider || !payloadSha256) {
+    const approvalSha256 = String(button.dataset.approvalSha256 || "");
+    if (!requestId || !provider || !payloadSha256 || !approvalSha256) {
       showAlert("This evidence approval preview is incomplete. Ask the harness to replan.");
       return;
     }
-    if (!window.confirm("Approve exactly the displayed public-evidence query and destination?")) return;
     setBusy(button, true, "Retrieving…");
     setActivity("Retrieving the exactly approved evidence through the GenomiLab gateway…");
     try {
@@ -484,6 +329,7 @@ export function createInvestigationController({state, session, refresh, synchron
         approved: true,
         recipient_provider: provider,
         payload_sha256: payloadSha256,
+        approval_sha256: approvalSha256,
       });
       if (!["completed", "in_progress"].includes(result.status)) {
         throw new Error(result.result && result.result.message || "The evidence request did not complete.");
@@ -498,7 +344,7 @@ export function createInvestigationController({state, session, refresh, synchron
       setActivity(
         result.status === "in_progress"
           ? "Provider work recorded. Use Check recorded job; the original query will not be submitted again."
-          : "Evidence committed. Ask the harness to replan and assess it against the molecular profile."
+          : "Evidence committed. The research team will assess it within the current authorization."
       );
     } catch (error) {
       showAlert(error.message || "The approved evidence request could not be completed.");
@@ -509,12 +355,26 @@ export function createInvestigationController({state, session, refresh, synchron
 
   async function cancelHarnessWork() {
     if (!session.investigation) return;
-    if (!window.confirm("Ask the installed harness to cancel this investigation's current background work?")) return;
-    await previewHarness(
-      "cancel_task_work",
-      "",
-      "Cancelled by the local user from the GenomiLab Research Desk."
-    );
+    if (!window.confirm("Stop this investigation's current research work?")) return;
+    const openRequest = session.openRequest();
+    setBusy(elements.cancelHarnessButton, true, "Stopping…");
+    setActivity("Stopping the current research work…");
+    try {
+      const result = await postJson(session.path("/cancel"), {});
+      if (!session.isCurrent(openRequest)) return;
+      if (!["accepted", "in_progress", "completed", "cancelled"].includes(String(result.status || ""))) {
+        throw new Error(result.message || "The research work could not be stopped.");
+      }
+      showAlert("Stop request sent to the research team.", "success");
+      await reloadCurrentInvestigation(openRequest);
+      await reconnectEvents({announce: false, openRequest});
+    } catch (error) {
+      if (session.isCurrent(openRequest)) {
+        showAlert(error.message || "The research work could not be stopped.");
+      }
+    } finally {
+      if (session.isCurrent(openRequest)) setBusy(elements.cancelHarnessButton, false, "");
+    }
   }
 
   async function reconnectEvents({
@@ -592,7 +452,6 @@ export function createInvestigationController({state, session, refresh, synchron
     if (!session.isCurrentInvestigationLoad(investigationLoad)) return false;
     if (!session.acceptInvestigationLoad(investigationLoad, investigation)) return false;
     discardContextCandidate();
-    discardOutboundCandidate();
     if (
       workspacePayload
       && workspacePayload.status === "ready"

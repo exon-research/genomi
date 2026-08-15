@@ -13,6 +13,7 @@ from genomi.lab.harness import (
     HarnessArtifactKind,
     HarnessEventKind,
     HarnessEventStatus,
+    HarnessOperation,
     SimulatedHarnessAdapter,
 )
 from genomi.lab.harness_adapter import HostArtifact
@@ -128,7 +129,7 @@ class _ReportWithoutCapabilityCallsAdapter(SimulatedHarnessAdapter):
     """Return a complete-looking report without crossing the capability gateway."""
 
     def __init__(self) -> None:
-        super().__init__(adapter_id="report-without-capability-calls")
+        super().__init__(adapter_id="legacy-leaky-artifact-adapter")
 
     def _produce_artifact(  # type: ignore[override]
         self,
@@ -231,7 +232,7 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
                 "observation_revision_ids": [observation["observation_revision_id"]],
             },
         )
-        self.service.approve_investigation_context(
+        self.service._approve_context_for_conformance(
             self.investigation_id,
             {
                 key: candidate[key]
@@ -250,6 +251,20 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
             }
             | {"approved": True},
         )
+        context = self.service.investigation(self.investigation_id)
+        authorization = self.service.store.create_investigation_authorization(
+            "artifact-quarantine-user",
+            workspace_session_id=self.service.session_id,
+            investigation_id=self.investigation_id,
+            patient_molecular_snapshot_id=context["patient_molecular_snapshot_id"],
+            consent_receipt_id=context["active_consent_receipt_id"],
+            authorization_scope=(
+                self.service._investigation_authorizations._authorization_scope()
+            ),
+            candidate_receipt_sha256="b" * 64,
+            approved=True,
+        )
+        self.authorization_id = str(authorization["authorization_receipt_id"])
 
     def _approved_call(
         self,
@@ -280,10 +295,13 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
             request["message"] = instruction
         if reason is not None:
             request["reason"] = reason
-        if operation == "start_task_run":
-            return self.service.start_investigation(self.investigation_id, request)
-        request["artifact_kind"] = artifact_kind
-        return self.service.replace_harness_binding(self.investigation_id, request)
+        return self.service._execute_harness_command(
+            self.investigation_id,
+            request,
+            operation=HarnessOperation(operation),
+            artifact_kind=HarnessArtifactKind(artifact_kind),
+            authorization_receipt_id=self.authorization_id,
+        )
 
     def test_rejected_unsafe_brief_is_quarantined_from_durable_event_replay(
         self,
@@ -297,7 +315,7 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
         current_plan = self.service.investigation(self.investigation_id)[
             "current_plan_version"
         ]
-        self.service.accept_current_plan(
+        self.service._accept_plan_for_conformance(
             self.investigation_id,
             {
                 "approved": True,
@@ -346,7 +364,7 @@ class GenomiLabHarnessArtifactQuarantineTests(unittest.TestCase):
         current_plan = self.service.investigation(self.investigation_id)[
             "current_plan_version"
         ]
-        self.service.accept_current_plan(
+        self.service._accept_plan_for_conformance(
             self.investigation_id,
             {
                 "approved": True,

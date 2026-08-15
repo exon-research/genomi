@@ -136,6 +136,16 @@ class HarnessDynamicToolBoundaryTests(unittest.TestCase):
             }
 
         executions: list[tuple[str, object]] = []
+        authorization_checks: list[tuple[str, str, str]] = []
+        authorization_active = True
+
+        def require_authorized_disclosure(
+            investigation_id: str, receipt_id: str, intent: str
+        ) -> dict[str, object]:
+            authorization_checks.append((investigation_id, receipt_id, intent))
+            if not authorization_active:
+                raise ValueError("parent investigation authorization is revoked")
+            return {"authorization_receipt_id": "authorization-a"}
 
         def execute(
             investigation_id: str,
@@ -157,6 +167,7 @@ class HarnessDynamicToolBoundaryTests(unittest.TestCase):
             current_context=lambda: ({}, "user-a"),
             accepted_plan=lambda _investigation_id: investigation,
             active_context_receipt=active_context_receipt,
+            require_authorized_disclosure=require_authorized_disclosure,
             execute_request=lambda investigation_id, payload: execute(
                 investigation_id,
                 payload,
@@ -192,7 +203,17 @@ class HarnessDynamicToolBoundaryTests(unittest.TestCase):
             executions,
             [("investigation-a", {"request_id": "request-profile"})],
         )
+        self.assertEqual(
+            authorization_checks[-1],
+            ("investigation-a", "receipt-a", "execute_accepted_plan"),
+        )
         self.assertEqual(store.required_receipts, 2)
+
+        authorization_active = False
+        with self.assertRaisesRegex(ValueError, "authorization is revoked"):
+            boundary.execute(matched)
+        self.assertEqual(len(executions), 1)
+        authorization_active = True
 
         wrong_turn = HarnessDynamicToolCall(
             command_id="command-b",

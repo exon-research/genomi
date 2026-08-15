@@ -130,7 +130,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
             [added_phenotype["observation_revision_id"]],
         )
         candidate = comparison["candidate"]
-        refreshed_snapshot = renewed_service.approve_investigation_context(
+        refreshed_snapshot = renewed_service._approve_context_for_conformance(
             investigation_id,
             {
                 key: candidate[key]
@@ -148,6 +148,9 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
                 )
             }
             | {"approved": True, "refresh": True},
+        )
+        self._record_conformance_authorization(
+            renewed_service, investigation_id, candidate
         )
         self.assertEqual(refreshed_snapshot["context_change"], "profile_refreshed")
         self.assertEqual(refreshed_snapshot["version"], 2)
@@ -367,7 +370,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
                 "exclude_genome": True,
             },
         )
-        refreshed = self.service.approve_investigation_context(
+        refreshed = self.service._approve_context_for_conformance(
             investigation_id,
             {
                 key: candidate[key]
@@ -486,7 +489,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
             side_effect=fail_final_issuance,
         ):
             with self.assertRaises(LabError) as failed:
-                self.service.approve_investigation_context(
+                self.service._approve_context_for_conformance(
                     investigation_id, approval
                 )
         self.assertEqual(
@@ -507,7 +510,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
             self.service._agi_authorizations[investigation_id], initial_handle
         )
 
-        retried = self.service.approve_investigation_context(
+        retried = self.service._approve_context_for_conformance(
             investigation_id, approval
         )
         self.assertEqual(issue_count, 1)
@@ -610,7 +613,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
             ),
             self.assertRaisesRegex(RuntimeError, "synthetic late refresh failure"),
         ):
-            self.service.approve_investigation_context(investigation_id, approval)
+            self.service._approve_context_for_conformance(investigation_id, approval)
 
         self.assertEqual(len(staged_handles), 1)
         after_failure = self.service.investigation(investigation_id)
@@ -640,7 +643,7 @@ class GenomiLabContextRefreshEndToEndTests(GenomiLabEndToEndCase):
             "investigation_agi_authorization_revoked",
         )
 
-        retried = self.service.approve_investigation_context(
+        retried = self.service._approve_context_for_conformance(
             investigation_id, approval
         )
         self.assertEqual(retried["context_change"], "profile_refreshed")

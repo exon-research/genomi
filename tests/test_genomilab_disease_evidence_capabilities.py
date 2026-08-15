@@ -879,6 +879,7 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
                         "candidate": {
                             "selected_provider": "paperclip",
                             "payload_sha256": "a" * 64,
+                            "approval_sha256": "b" * 64,
                         }
                     },
                 }
@@ -891,12 +892,17 @@ class GenomiLabExternalDiseaseEvidenceCapabilityTests(unittest.TestCase):
                 "approved": True,
                 "recipient_provider": "paperclip",
                 "payload_sha256": "a" * 64,
+                "approval_sha256": "b" * 64,
             },
             execution,
         )
         self.assertEqual(
             binding,
-            {"recipient_provider": "paperclip", "payload_sha256": "a" * 64},
+            {
+                "recipient_provider": "paperclip",
+                "payload_sha256": "a" * 64,
+                "approval_sha256": "b" * 64,
+            },
         )
 
 

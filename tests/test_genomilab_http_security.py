@@ -29,6 +29,9 @@ class _SyntheticService:
         self.created_assays: list[dict[str, object]] = []
         self.revised_observations: list[tuple[str, dict[str, object]]] = []
         self.context_candidate_requests: list[tuple[str, dict[str, object]]] = []
+        self.authorization_requests: list[
+            tuple[str, str, dict[str, object]]
+        ] = []
         self.integration_requests: list[tuple[str, str, object]] = []
         self.bootstrap_error: Exception | None = None
 
@@ -100,6 +103,27 @@ class _SyntheticService:
                 "rsid": "rs123",
             },
         }
+
+    def investigation_authorization_candidate(
+        self, investigation_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        self.authorization_requests.append(
+            (investigation_id, "candidate", dict(payload))
+        )
+        return {
+            "status": "authorization_required",
+            "investigation_id": investigation_id,
+            "authorization_candidate_receipt": "signed-candidate",
+            "authorization_scope": {"harness": {}, "providers": []},
+        }
+
+    def authorize_and_start_investigation(
+        self, investigation_id: str, payload: dict[str, object]
+    ) -> dict[str, object]:
+        self.authorization_requests.append(
+            (investigation_id, "start", dict(payload))
+        )
+        return {"status": "in_progress", "investigation_id": investigation_id}
 
     def add_source_artifact(self, payload: dict[str, object]) -> dict[str, object]:
         self.created_source_artifacts.append(payload)
@@ -524,40 +548,39 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             [("biohub-esm", "verify", None)],
         )
 
-    def test_context_candidate_route_delegates_scope_compilation_to_the_domain(
+    def test_one_start_authorization_routes_delegate_exact_json_payloads(
         self,
     ) -> None:
-        body = json.dumps(
-            {
-                "purpose": "Investigate a synthetic condition",
-                "use_current_agi": True,
-                "observation_revision_ids": ["observation-revision-acde1234"],
-            }
-        ).encode("utf-8")
-        response = self.request(
+        investigation_id = "investigation-acde1234"
+        selection = {
+            "purpose": "Investigate a synthetic condition",
+            "observation_revision_ids": ["observation-revision-acde1234"],
+        }
+        candidate = self.request(
             "POST",
-            "/api/v1/investigations/investigation-acde1234/context-candidate",
+            f"/api/v1/investigations/{investigation_id}/authorization-candidate",
             headers=self.mutation_headers(),
-            body=body,
+            body=json.dumps(selection).encode("utf-8"),
         )
+        self.assertEqual(candidate.status, 200)
 
-        self.assertEqual(response.status, 200)
-        self.assertEqual(
-            self.service.context_candidate_requests,
-            [
-                (
-                    "investigation-acde1234",
-                    {
-                        "purpose": "Investigate a synthetic condition",
-                        "use_current_agi": True,
-                        "observation_revision_ids": ["observation-revision-acde1234"],
-                    },
-                )
-            ],
+        approval = {
+            "authorization_candidate_receipt": "signed-candidate",
+            "approved": True,
+        }
+        started = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/authorize-start",
+            headers=self.mutation_headers(),
+            body=json.dumps(approval).encode("utf-8"),
         )
+        self.assertEqual(started.status, 201)
         self.assertEqual(
-            response.json()["genomic_scope"],
-            {"operation": "variant.resolve", "rsid": "rs123"},
+            self.service.authorization_requests,
+            [
+                (investigation_id, "candidate", selection),
+                (investigation_id, "start", approval),
+            ],
         )
 
     def test_profile_entity_and_revision_routes_delegate_exact_json_payloads(
@@ -673,6 +696,28 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             body=b"{}",
         )
         self.assert_error(mutation, 404, "not_found")
+
+        for legacy_action in (
+            "context-candidate",
+            "context-approval",
+            "context-compare",
+            "harness-preview",
+            "start",
+            "resume",
+            "replace-harness",
+            "plan-accept",
+        ):
+            with self.subTest(legacy_action=legacy_action):
+                legacy = self.request(
+                    "POST",
+                    (
+                        "/api/v1/investigations/investigation-acde1234/"
+                        f"{legacy_action}"
+                    ),
+                    headers=self.mutation_headers(),
+                    body=b"{}",
+                )
+                self.assert_error(legacy, 404, "not_found")
 
         query = self.request(
             "GET",

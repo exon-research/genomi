@@ -310,32 +310,32 @@ class LiveCodexVerticalSliceTests(GenomiRuntimeTestCase):
         if reason is not None:
             request["reason"] = reason
         if operation == "start_task_run":
-            submitted = self.service.start_investigation(
+            submitted = self.service._start_harness_for_conformance(
                 investigation_id, request
             )
         elif operation == "send_task_message":
             request["artifact_kind"] = artifact_kind
-            submitted = self.service.send_investigation_message(
+            submitted = self.service._send_harness_message_for_conformance(
                 investigation_id, request
             )
         elif operation == "replace_task_binding":
             request["artifact_kind"] = artifact_kind
-            submitted = self.service.replace_harness_binding(
+            submitted = self.service._replace_harness_for_conformance(
                 investigation_id, request
             )
         else:
             self.fail(f"unsupported live operation: {operation}")
         if submitted.get("status") == "in_progress":
             if operation == "start_task_run":
-                duplicate = self.service.start_investigation(
+                duplicate = self.service._start_harness_for_conformance(
                     investigation_id, dict(request)
                 )
             elif operation == "send_task_message":
-                duplicate = self.service.send_investigation_message(
+                duplicate = self.service._send_harness_message_for_conformance(
                     investigation_id, dict(request)
                 )
             else:
-                duplicate = self.service.replace_harness_binding(
+                duplicate = self.service._replace_harness_for_conformance(
                     investigation_id, dict(request)
                 )
             self.assertEqual(duplicate.get("job_id"), submitted.get("job_id"))
@@ -374,7 +374,7 @@ class LiveCodexVerticalSliceTests(GenomiRuntimeTestCase):
             item["hypothesis_id"]
             for item in before_acceptance["current_hypotheses"]
         ]
-        accepted = self.service.accept_current_plan(
+        accepted = self.service._accept_plan_for_conformance(
             investigation_id,
             {
                 "approved": True,

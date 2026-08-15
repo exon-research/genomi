@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from .approval_store import disclosure_payload_sha256
 from .evidence_application_contract import EvidenceApplication
-from .models import JsonObject
+from .models import JsonObject, compact_json
 from .paperclip_contract import paperclip_operation_scope
 from .provider_policy import (
     PAPERCLIP_PROVIDER,
@@ -65,6 +67,15 @@ class EvidenceDisclosureApplicationMixin:
                 ProviderPolicyState.BLOCKED_MISSING_EXACT_DISCLOSURE_APPROVAL,
             }
         )
+        paperclip_policy_binding = live_provider_policy_binding(
+            PAPERCLIP_PROVIDER,
+            request,
+            deployment_authorization=adapter.deployment_authorization,
+            patient_data_contract=adapter.patient_data_contract,
+        )
+        paperclip_contract_present = bool(
+            paperclip_policy_binding.get("patient_data_contract_id")
+        )
         direct = direct_sources.get(request.source_family)
         routes: list[JsonObject] = [
             {
@@ -75,6 +86,20 @@ class EvidenceDisclosureApplicationMixin:
                 "request_in_transport_scope": paperclip_request_in_scope,
                 "eligible_after_exact_approval": paperclip_eligible_after_approval,
                 "requires_exact_approval": request.patient_influenced,
+                "policy_binding": paperclip_policy_binding,
+                "retention_training_state": (
+                    {
+                        "retention": "governed_by_pinned_patient_data_contract",
+                        "training": "prohibited_by_required_patient_data_contract",
+                    }
+                    if paperclip_contract_present
+                    else {
+                        "retention": "not_authorized_for_patient_investigations",
+                        "training": (
+                            "provider_terms_may_allow_service_improvement_or_training"
+                        ),
+                    }
+                ),
             }
         ]
         if direct is not None:
@@ -84,6 +109,10 @@ class EvidenceDisclosureApplicationMixin:
                     "access_mode": "direct_primary_source",
                     "eligible_after_exact_approval": True,
                     "requires_exact_approval": request.patient_influenced,
+                    "retention_training_state": {
+                        "retention": "not_disclosed_by_route",
+                        "training": "not_disclosed_by_route",
+                    },
                 }
             )
         if request.source_family in fixtures:
@@ -94,6 +123,10 @@ class EvidenceDisclosureApplicationMixin:
                     "access_mode": "fixture",
                     "eligible_after_exact_approval": True,
                     "requires_exact_approval": False,
+                    "retention_training_state": {
+                        "retention": "local_test_fixture_only",
+                        "training": "not_applicable",
+                    },
                 }
             )
         selected = (
@@ -106,19 +139,46 @@ class EvidenceDisclosureApplicationMixin:
             else None
         )
         outbound_payload = self._provider_payload(request, operation)
-        return {
+        query_origin = (
+            QueryOrigin.PATIENT_CONTEXT_DERIVED.value
+            if request.patient_influenced
+            else QueryOrigin.PUBLIC_ONLY.value
+        )
+        for route in routes:
+            route["approval_sha256"] = hashlib.sha256(
+                compact_json(
+                    {
+                        "investigation_id": investigation["investigation_id"],
+                        "query_origin": query_origin,
+                        "recipient_provider": route.get("provider"),
+                        "route": route,
+                        "payload": outbound_payload,
+                    }
+                ).encode("utf-8")
+            ).hexdigest()
+        candidate = {
             "status": "candidate",
             "investigation_id": investigation["investigation_id"],
-            "query_origin": (
-                QueryOrigin.PATIENT_CONTEXT_DERIVED.value
-                if request.patient_influenced
-                else QueryOrigin.PUBLIC_ONLY.value
-            ),
+            "query_origin": query_origin,
             "selected_provider": selected,
             "routes": routes,
             "payload": outbound_payload,
             "payload_sha256": disclosure_payload_sha256(outbound_payload),
         }
+        selected_route = next(
+            (
+                route
+                for route in routes
+                if route.get("provider") == selected
+            ),
+            None,
+        )
+        candidate["approval_sha256"] = (
+            selected_route.get("approval_sha256")
+            if isinstance(selected_route, dict)
+            else None
+        )
+        return candidate
 
     def approve_evidence_disclosure(
         self: EvidenceApplication, investigation_id: str, payload: JsonObject
@@ -138,6 +198,31 @@ class EvidenceDisclosureApplicationMixin:
                 http_status=409,
             )
         recipient = provider_name(payload.get("recipient_provider"))
+        reviewed_route = next(
+            (
+                route
+                for route in candidate["routes"]
+                if route.get("provider") == recipient
+            ),
+            None,
+        )
+        if not isinstance(reviewed_route, dict) or payload.get(
+            "approval_sha256"
+        ) != reviewed_route.get("approval_sha256"):
+            raise LabError(
+                "evidence_disclosure_changed",
+                (
+                    "The provider destination, policy, or data-handling terms "
+                    "changed after preview; review them again."
+                ),
+                http_status=409,
+            )
+        if reviewed_route.get("eligible_after_exact_approval") is not True:
+            raise LabError(
+                "evidence_provider_unavailable",
+                "That provider route is not eligible for this exact request.",
+                http_status=409,
+            )
         adapter, direct_sources, _fixtures = self._evidence_configuration()
         direct = direct_sources.get(request.source_family)
         if recipient == PAPERCLIP_PROVIDER:

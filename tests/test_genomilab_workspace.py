@@ -358,7 +358,7 @@ class GenomiLabWorkspaceTests(unittest.TestCase):
         ):
             with self.subTest(approval_field=next(iter(forbidden))):
                 with self.assertRaises(LabError) as raised:
-                    self.service.approve_investigation_context(
+                    self.service._approve_context_for_conformance(
                         investigation_id, {**approval, **forbidden}
                     )
                 self.assertEqual(raised.exception.code, "invalid_context_approval")

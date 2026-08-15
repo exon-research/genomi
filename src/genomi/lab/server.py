@@ -33,8 +33,8 @@ _INVESTIGATION_VIEW_ROUTE = re.compile(
 )
 _INVESTIGATION_ACTION_ROUTE = re.compile(
     r"^/api/v1/investigations/(investigation-[a-f0-9]+)/"
-    r"(context-candidate|context-approval|context-compare|harness-preview|start|resume|messages|"
-    r"replace-harness|cancel|revoke-context|review-packet|plan-accept|"
+    r"(authorization-candidate|authorize-start|messages|cancel|revoke-context|"
+    r"review-packet|"
     r"capability-execute|capability-check)$"
 )
 _OBSERVATION_REVISION_ROUTE = re.compile(
@@ -336,80 +336,38 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         if match:
             investigation_id, action = match.groups()
             payload = self._read_json()
-            if action == "context-candidate":
-                result = self.server.service.investigation_context_candidate(
+            if action == "authorization-candidate":
+                result = self.server.service.investigation_authorization_candidate(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
-            if action == "context-approval":
-                result = self.server.service.approve_investigation_context(
+            if action == "authorize-start":
+                result = self.server.service.authorize_and_start_investigation(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.CREATED, result)
                 return
-            if action == "context-compare":
-                result = self.server.service.compare_investigation_context_candidate(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "harness-preview":
-                result = self.server.service.harness_disclosure_candidate(
-                    investigation_id,
-                    operation=payload.get("operation", "start_task_run"),
-                    instruction=payload.get("instruction") or payload.get("message"),
-                    artifact_kind=payload.get("artifact_kind", "plan"),
-                    reason=payload.get("reason"),
-                    command_id=payload.get("command_id"),
-                    expected_revision=payload.get("expected_revision"),
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "plan-accept":
-                result = self.server.service.accept_current_plan(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
             if action == "capability-execute":
-                result = self.server.service.continue_harness_capability_after_approval(
+                result = self.server.service.approve_and_continue_harness_capability(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
             if action == "capability-check":
-                result = self.server.service.resume_harness_capability_job(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "start":
-                result = self.server.service.start_investigation(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "resume":
-                result = self.server.service.resume_investigation(
+                result = self.server.service.check_and_continue_harness_capability(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
             if action == "messages":
-                result = self.server.service.send_investigation_message(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "replace-harness":
-                result = self.server.service.replace_harness_binding(
+                result = self.server.service.send_authorized_investigation_message(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
             if action == "cancel":
-                result = self.server.service.cancel_background_work(
+                result = self.server.service.cancel_authorized_background_work(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)

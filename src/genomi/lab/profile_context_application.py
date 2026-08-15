@@ -173,7 +173,13 @@ class ProfileContextApplication:
         except (KeyError, ValueError) as exc:
             raise LabError("invalid_context_selection", str(exc)) from exc
 
-    def approve(self, investigation_id: str, payload: JsonObject) -> JsonObject:
+    def approve(
+        self,
+        investigation_id: str,
+        payload: JsonObject,
+        *,
+        authorization_before_commit: Callable[[JsonObject], JsonObject] | None = None,
+    ) -> JsonObject:
         self._validate_payload(
             payload,
             allowed_fields=_PROFILE_SNAPSHOT_APPROVAL_FIELDS,
@@ -212,23 +218,27 @@ class ProfileContextApplication:
                 scope_context = {"genome_build": genomic_scope["genome_build"]}
             genomic_scope = self._normalized_scope(genomic_scope, scope_context)
         staged_handle: AgiAuthorizationHandle | None = None
+        staged_authorization: JsonObject | None = None
         evidence_snapshot: JsonObject | None = None
 
         def issue_before_commit(claims: JsonObject) -> None:
-            nonlocal staged_handle
-            staged_handle = issue_investigation_agi_authorization(
-                workspace_session_id=str(claims["workspace_session_id"]),
-                user_id=str(claims["user_id"]),
-                investigation_id=str(claims["investigation_id"]),
-                patient_molecular_snapshot_id=str(
-                    claims["patient_molecular_snapshot_id"]
-                ),
-                consent_receipt_id=str(claims["consent_receipt_id"]),
-                agi_id=str(claims["agi_id"]),
-                agi_snapshot_id=str(claims["agi_snapshot_id"]),
-                purpose=str(claims["purpose"]),
-                genomic_scope=claims["genomic_scope"],
-            )
+            nonlocal staged_authorization, staged_handle
+            if requested_agi_id and requested_snapshot:
+                staged_handle = issue_investigation_agi_authorization(
+                    workspace_session_id=str(claims["workspace_session_id"]),
+                    user_id=str(claims["user_id"]),
+                    investigation_id=str(claims["investigation_id"]),
+                    patient_molecular_snapshot_id=str(
+                        claims["patient_molecular_snapshot_id"]
+                    ),
+                    consent_receipt_id=str(claims["consent_receipt_id"]),
+                    agi_id=str(claims["agi_id"]),
+                    agi_snapshot_id=str(claims["agi_snapshot_id"]),
+                    purpose=str(claims["purpose"]),
+                    genomic_scope=claims["genomic_scope"],
+                )
+            if authorization_before_commit is not None:
+                staged_authorization = authorization_before_commit(dict(claims))
 
         try:
             with self.store.atomic_write():
@@ -253,7 +263,11 @@ class ProfileContextApplication:
                     ),
                     authorization_before_commit=(
                         issue_before_commit
-                        if requested_agi_id and requested_snapshot
+                        if (
+                            requested_agi_id
+                            and requested_snapshot
+                            or authorization_before_commit is not None
+                        )
                         else None
                     ),
                 )
@@ -300,7 +314,7 @@ class ProfileContextApplication:
                 investigation_id=investigation_id,
             )
             self.authorizations.pop(investigation_id, None)
-        return {
+        result = {
             **snapshot,
             "previous_patient_molecular_snapshot_id": prior.get(
                 "patient_molecular_snapshot_id"
@@ -314,6 +328,9 @@ class ProfileContextApplication:
                 else "not_included"
             ),
         }
+        if staged_authorization is not None:
+            result["investigation_authorization"] = staged_authorization
+        return result
 
     def invoke_genome(
         self,

@@ -140,18 +140,19 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             "result": result,
         }
 
-    def continue_harness_capability_after_approval(
+    def _continue_harness_capability_after_approval(
         self: _CapabilityApplication,
         investigation_id: str,
         payload: JsonObject,
     ) -> JsonObject:
-        """Continue only a harness-created request paused for exact egress approval."""
+        """Continue one paused request after the application validates authority."""
 
         allowed = {
             "request_id",
             "approved",
             "recipient_provider",
             "payload_sha256",
+            "approval_sha256",
         }
         if not isinstance(payload, dict) or set(payload) != allowed:
             raise LabError(
@@ -185,12 +186,12 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             _authority=_HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
         )
 
-    def resume_harness_capability_job(
+    def _resume_harness_capability_job(
         self: _CapabilityApplication,
         investigation_id: str,
         payload: JsonObject,
     ) -> JsonObject:
-        """Check one persisted upstream job without retrying its original request."""
+        """Check one persisted upstream job without repeating its request."""
 
         allowed = {
             "request_id",
@@ -508,6 +509,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             "approved",
             "recipient_provider",
             "payload_sha256",
+            "approval_sha256",
         }
         if approval.get("approved") is not True or set(approval) != allowed:
             raise LabError(
@@ -554,9 +556,14 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         payload_hash = required_text(
             approval.get("payload_sha256"), "payload_sha256", 128
         )
+        approval_hash = required_text(
+            approval.get("approval_sha256"), "approval_sha256", 128
+        )
         if provider != candidate.get(
             "selected_provider"
-        ) or payload_hash != candidate.get("payload_sha256"):
+        ) or payload_hash != candidate.get(
+            "payload_sha256"
+        ) or approval_hash != candidate.get("approval_sha256"):
             raise LabError(
                 "evidence_disclosure_changed",
                 "The provider or evidence query changed after preview; review it again.",
@@ -565,6 +572,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         return {
             "recipient_provider": provider,
             "payload_sha256": payload_hash,
+            "approval_sha256": approval_hash,
         }
 
     @staticmethod

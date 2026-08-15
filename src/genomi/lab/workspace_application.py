@@ -478,14 +478,17 @@ class WorkspaceApplication:
                     plan_sha256=payload.get("plan_sha256"),
                     approved=payload.get("approved"),
                 )
-                next_status = (
-                    "awaiting_harness_execution"
-                    if investigation.get("patient_molecular_snapshot_id")
-                    else "awaiting_context_approval"
-                )
-                updated = self.store.set_investigation_status(
-                    investigation_id, next_status
-                )
+                if current.get("review_status") == "accepted":
+                    updated = investigation
+                else:
+                    next_status = (
+                        "awaiting_harness_execution"
+                        if investigation.get("patient_molecular_snapshot_id")
+                        else "awaiting_context_approval"
+                    )
+                    updated = self.store.set_investigation_status(
+                        investigation_id, next_status
+                    )
         except (KeyError, ValueError) as exc:
             raise LabError(
                 "invalid_plan_acceptance", str(exc), http_status=409

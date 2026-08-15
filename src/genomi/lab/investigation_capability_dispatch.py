@@ -124,6 +124,7 @@ class CapabilityDispatchMixin:
                 "approved": True,
                 "recipient_provider": approval.get("recipient_provider"),
                 "payload_sha256": approval.get("payload_sha256"),
+                "approval_sha256": approval.get("approval_sha256"),
             }
             approved = self.approve_evidence_disclosure(
                 investigation_id, approval_payload

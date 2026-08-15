@@ -47,7 +47,7 @@ class GenomiLabEndToEndTests(GenomiLabEndToEndCase):
         self.assertEqual(before["current_evidence_records"], [])
 
         with self.assertRaisesRegex(LabError, "plan changed"):
-            self.service.accept_current_plan(
+            self.service._accept_plan_for_conformance(
                 investigation_id,
                 {
                     "approved": True,
@@ -57,7 +57,7 @@ class GenomiLabEndToEndTests(GenomiLabEndToEndCase):
                     "plan_sha256": "0" * 64,
                 },
             )
-        accepted = self.service.accept_current_plan(
+        accepted = self.service._accept_plan_for_conformance(
             investigation_id,
             {
                 "approved": True,

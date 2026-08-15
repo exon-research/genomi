@@ -10,6 +10,10 @@ from typing import Callable, Iterator
 from ..runtime.paths import genomi_data_root
 from .encrypted_sqlite import EncryptedSQLiteDatabase, EncryptionKeyProvider
 from .approval_store import ApprovalStoreMixin
+from .authorization_derivation_store import (
+    InvestigationAuthorizationDerivationStoreMixin,
+)
+from .authorization_store import InvestigationAuthorizationStoreMixin
 from .capability_store import CapabilityExecutionStoreMixin
 from .disease_relations import DiseaseRelationStoreMixin
 from .evidence_store import EvidenceStoreMixin
@@ -39,6 +43,8 @@ def default_store_path(root: str | Path | None = None) -> Path:
 
 
 class GenomiLabStore(
+    InvestigationAuthorizationStoreMixin,
+    InvestigationAuthorizationDerivationStoreMixin,
     ApprovalStoreMixin,
     HealthRecordStoreMixin,
     ProfileEntityStoreMixin,
@@ -222,6 +228,8 @@ class GenomiLabStore(
             "profile_snapshots",
             "consent_receipts",
             "investigations",
+            "investigation_authorization_receipts",
+            "investigation_authorization_derivations",
             "evidence_records",
         }
         if table not in allowed:

@@ -251,8 +251,8 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
             command_id="command-adapter-exception",
         )
 
-        first = service.start_investigation(investigation_id, request)
-        same_process_retry = service.start_investigation(investigation_id, request)
+        first = service._start_harness_for_conformance(investigation_id, request)
+        same_process_retry = service._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(first, same_process_retry)
         self.assertEqual(first["status"], "harness_dispatch_outcome_unknown")
@@ -268,7 +268,7 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
         service.close()
         replacement_process_adapter = _CountingAdapter()
         restarted = self._service(replacement_process_adapter)
-        after_restart = restarted.start_investigation(investigation_id, request)
+        after_restart = restarted._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(after_restart, first)
         self.assertEqual(replacement_process_adapter.start_calls, 0)
@@ -298,7 +298,7 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
 
         service.store.complete_harness_command = fail_after_command_completion  # type: ignore[method-assign]
 
-        result = service.start_investigation(investigation_id, request)
+        result = service._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(result["status"], "harness_dispatch_outcome_unknown")
         self.assertEqual(
@@ -330,8 +330,8 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
             command_id="command-background-post-submission-failure",
         )
 
-        first = service.start_investigation(investigation_id, request)
-        replayed = service.start_investigation(investigation_id, request)
+        first = service._start_harness_for_conformance(investigation_id, request)
+        replayed = service._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(first, replayed)
         self.assertEqual(first["status"], "harness_dispatch_outcome_unknown")
@@ -376,7 +376,7 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
             fail_normal_and_fail_closed_completion
         )
 
-        started = service.start_investigation(investigation_id, request)
+        started = service._start_harness_for_conformance(investigation_id, request)
         terminal = adapter.controller.wait_for_background_job(
             str(started["job_id"]), timeout_seconds=1
         )
@@ -395,8 +395,8 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
         self.assertEqual(pending_job["job_state"], "running")
         self.assertIsNone(pending_job["terminal_response"])
 
-        recovered = service.start_investigation(investigation_id, request)
-        replayed = service.start_investigation(investigation_id, request)
+        recovered = service._start_harness_for_conformance(investigation_id, request)
+        replayed = service._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(recovered["status"], "accepted")
         self.assertEqual(replayed, recovered)
@@ -453,8 +453,8 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
         service.close()
         restarted_adapter = _CountingAdapter()
         restarted = self._service(restarted_adapter)
-        recovered = restarted.start_investigation(investigation_id, request)
-        replayed = restarted.start_investigation(investigation_id, request)
+        recovered = restarted._start_harness_for_conformance(investigation_id, request)
+        replayed = restarted._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(recovered, replayed)
         self.assertEqual(recovered["status"], "harness_dispatch_outcome_unknown")
@@ -473,14 +473,14 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
             service,
             command_id="command-process-local-job",
         )
-        started = service.start_investigation(investigation_id, request)
+        started = service._start_harness_for_conformance(investigation_id, request)
         self.assertEqual(started["status"], "in_progress")
         self.assertEqual(original_adapter.dispatch_count, 1)
 
         restarted_adapter = _ProcessLocalBackgroundAdapter()
         restarted = self._service(restarted_adapter)
-        recovered = restarted.start_investigation(investigation_id, request)
-        replayed = restarted.start_investigation(investigation_id, request)
+        recovered = restarted._start_harness_for_conformance(investigation_id, request)
+        replayed = restarted._start_harness_for_conformance(investigation_id, request)
 
         self.assertEqual(recovered, replayed)
         self.assertEqual(recovered["status"], "harness_job_recovery_failed")
@@ -507,7 +507,7 @@ class GenomiLabHarnessRecoveryTests(unittest.TestCase):
             command_id="command-process-local-replacement",
         )
         context = replacement_preview["payload"]["command_context"]
-        replacement = restarted.replace_harness_binding(
+        replacement = restarted._replace_harness_for_conformance(
             investigation_id,
             {
                 "approved": True,
