@@ -151,6 +151,7 @@ from .handlers_lab import (
 )
 from .handlers_external import (
     _biohub_compare_protein_embeddings,
+    _paperclip_retrieve_document_evidence,
     _paperclip_search_biomedical,
     _proto_describe_tool_schema,
     _proto_run_tool,
@@ -283,6 +284,7 @@ OPERATIONS: list[Operation] = [
     Operation('lab.capture_provider_result', _lab_capture_provider_result),
     Operation('lab.publish_brief', _lab_publish_brief),
     Operation('paperclip.search_biomedical', _paperclip_search_biomedical),
+    Operation('paperclip.retrieve_document_evidence', _paperclip_retrieve_document_evidence),
     Operation('biohub.compare_protein_embeddings', _biohub_compare_protein_embeddings),
     Operation('proto.search_tools', _proto_search_tools),
     Operation('proto.describe_tool_schema', _proto_describe_tool_schema),

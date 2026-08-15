@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ...capabilities.biohub import compare_protein_embeddings
-from ...capabilities.paperclip import search_biomedical
+from ...capabilities.paperclip import retrieve_document_evidence, search_biomedical
 from ...capabilities.proto import describe_tool_schema, run_tool, search_tools
 from .coerce import _bool, _int, _list_str, _str
 from .errors import JsonObject, OperationError
@@ -12,6 +12,15 @@ def _paperclip_search_biomedical(params: JsonObject) -> JsonObject:
         query=_str(params, "query"),
         sources=_list_str(params, "sources") or None,
         limit=_int(params, "limit", 10),
+    )
+
+
+def _paperclip_retrieve_document_evidence(params: JsonObject) -> JsonObject:
+    return retrieve_document_evidence(
+        document_id=_str(params, "document_id"),
+        collection=_str(params, "collection"),
+        patterns=_list_str(params, "patterns"),
+        max_excerpts=_int(params, "max_excerpts", 8),
     )
 
 
@@ -57,6 +66,7 @@ def _proto_run_tool(params: JsonObject) -> JsonObject:
 __all__ = [
     "_biohub_compare_protein_embeddings",
     "_paperclip_search_biomedical",
+    "_paperclip_retrieve_document_evidence",
     "_proto_describe_tool_schema",
     "_proto_run_tool",
     "_proto_search_tools",

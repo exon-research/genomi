@@ -5,7 +5,7 @@
       "start_when": "Use for focused public biomedical literature, regulatory-document, trial, preprint, or protein-record retrieval when broad web search is insufficient.",
       "skill_documents": ["skills/paperclip/SKILL.md"],
       "entry_operations": ["paperclip.search_biomedical"],
-      "operations": ["paperclip.search_biomedical"]
+      "operations": ["paperclip.search_biomedical", "paperclip.retrieve_document_evidence"]
     }
   },
   "operations": {
@@ -19,7 +19,7 @@
           "query": {"type": "string", "minLength": 1},
           "sources": {
             "type": "array",
-            "items": {"type": "string", "enum": ["pmc", "biorxiv", "medrxiv", "arxiv", "abstracts", "fda", "fda/jp", "fda/eu", "trials", "trials/us", "trials/eu", "trials/jp", "trials/cn", "proteins/uniprot"]},
+            "items": {"type": "string", "enum": ["pmc", "biorxiv", "medrxiv", "arxiv", "abstracts", "fda", "fda/jp", "fda/eu", "trials", "trials/us", "trials/eu", "trials/jp", "trials/cn", "proteins", "uniprot"]},
             "minItems": 1,
             "uniqueItems": true,
             "default": ["pmc", "abstracts"]
@@ -40,6 +40,39 @@
       "external_io": ["paperclip_api"],
       "data_access": ["selected_public_targets"],
       "discovery_role": "entry_tool"
+    },
+    "paperclip.retrieve_document_evidence": {
+      "capability": "paperclip",
+      "namespace": "paperclip",
+      "description": "Read bounded line-pinned evidence from one public Paperclip document selected from a previous search result.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "document_id": {"type": "string", "minLength": 1},
+          "collection": {"type": "string", "enum": ["papers", "fda", "trials"]},
+          "patterns": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "maxLength": 160},
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true
+          },
+          "max_excerpts": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8}
+        },
+        "required": ["document_id", "collection", "patterns"],
+        "additionalProperties": false
+      },
+      "skill": "skills/paperclip/SKILL.md",
+      "area": "paperclip",
+      "requires": ["paperclip_credentials", "paperclip_search_record"],
+      "produces": ["line_pinned_public_source_evidence", "citation_urls"],
+      "context_optional": ["evidence_terms"],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": ["paperclip_api"],
+      "data_access": ["selected_public_document"],
+      "discovery_role": "supporting_tool"
     }
   }
 }

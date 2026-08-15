@@ -22,7 +22,7 @@ JsonObject = dict[str, Any]
 _BINDING_KEY = "genomilab_binding"
 _SERVICE_LOCK = threading.Lock()
 _RESEARCH_PROVIDER_OPERATIONS = {
-    "paperclip": ("paperclip.search_biomedical",),
+    "paperclip": ("paperclip.search_biomedical", "paperclip.retrieve_document_evidence"),
     "biohub-esm": ("biohub.compare_protein_embeddings",),
     "proto": ("proto.search_tools", "proto.describe_tool_schema", "proto.run_tool"),
 }
