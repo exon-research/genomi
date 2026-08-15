@@ -53,6 +53,12 @@ investigation profile snapshot and consent binding atomically. The only mechanic
 selector is the Active Genome Index. Never pass its ID, snapshot ID, source
 path, genomic scope, or derived facts to this operation; it binds the currently
 selected, session-approved context internally.
+
+An unavailable, incomplete, or legacy selected Active Genome Index does not
+block saving health facts. Inspect the returned `agi_evidence_gap`, continue
+with public evidence where useful, and resume or rebuild the index before using
+sample-specific genome evidence. A later profile update binds the AGI only
+after the operation sees its complete immutable snapshot identity.
 The Main Orchestrator may call Genomi directly and capture the presented result
 with `lab.capture_evidence_result`.
 

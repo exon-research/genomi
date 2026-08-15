@@ -25,7 +25,7 @@
     "lab.update_health_profile": {
       "capability": "lab",
       "namespace": "lab",
-      "description": "Persist health facts extracted by the Main Orchestrator, refresh the approved profile snapshot, and bind the currently selected approved Active Genome Index context.",
+      "description": "Persist health facts extracted by the Main Orchestrator and refresh the approved profile snapshot. Bind a selected Active Genome Index only when it has a complete immutable snapshot; otherwise return a non-blocking AGI evidence gap.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -65,7 +65,7 @@
       "skill": "skills/lab/SKILL.md",
       "area": "lab",
       "requires": ["active_lab_workspace", "current_investigation"],
-      "produces": ["health_profile_facts", "profile_snapshot", "source_fact_ids", "consent_receipt", "investigation_revision"],
+      "produces": ["health_profile_facts", "profile_snapshot", "source_fact_ids", "agi_evidence_gap", "consent_receipt", "investigation_revision"],
       "context_optional": [],
       "privacy_scope": "local_private",
       "operation_scope": "write",

@@ -74,6 +74,54 @@ def _required(params: JsonObject, field: str) -> str:
     return value.strip()
 
 
+def _selected_agi_binding(
+    context: JsonObject,
+) -> tuple[JsonObject | None, JsonObject | None]:
+    """Return an immutable AGI binding or a typed, non-blocking evidence gap."""
+
+    active = context.get("active_genome_index")
+    access = context.get("active_genome_index_access")
+    if not isinstance(active, dict) or not (
+        isinstance(access, dict) and access.get("approved") is True
+    ):
+        return None, None
+
+    readiness_value = active.get("active_genome_index_readiness")
+    readiness = readiness_value if isinstance(readiness_value, dict) else {}
+    agi_id = str(context.get("active_agi_id") or active.get("agi_id") or "").strip()
+    agi_snapshot_id = str(active.get("agi_snapshot_id") or "").strip()
+    if agi_id and agi_snapshot_id and readiness.get("complete") is True:
+        return {
+            "access_approved": True,
+            "agi_id": agi_id,
+            "agi_snapshot_id": agi_snapshot_id,
+        }, None
+
+    if not agi_id:
+        gap_state = "selected_active_genome_index_unavailable"
+    elif not agi_snapshot_id:
+        gap_state = "selected_active_genome_index_missing_snapshot_identity"
+    else:
+        gap_state = "selected_active_genome_index_incomplete"
+    return None, {
+        "state": gap_state,
+        "blocked_evidence_scope": ["sample_specific_genome_evidence"],
+        "profile_snapshot_state": "health_facts_saved_without_genome_binding",
+        "readiness": {
+            "status": readiness.get("status") or "unknown",
+            "complete": bool(readiness.get("complete")),
+            "variants_ready": bool(readiness.get("variants_ready")),
+            "reason": readiness.get("reason"),
+        },
+        "next_actions": [
+            {
+                "action": "resume_or_rebuild_active_genome_index",
+                "operation": readiness.get("retry_operation") or "genomi.parse_source",
+            }
+        ],
+    }
+
+
 def _invoke_store_operation(method_name: str, params: JsonObject) -> JsonObject:
     investigation_id = _required(params, "investigation_id")
 
@@ -118,27 +166,8 @@ def update_health_profile(params: JsonObject) -> JsonObject:
     def update(store: GenomiLabStore, user_id: str, session_id: str) -> JsonObject:
         _owned(store, user_id, investigation_id)
         context = describe_context()
-        active = context.get("active_genome_index")
-        access = context.get("active_genome_index_access")
-        selected_agi_context = None
-        if (
-            isinstance(active, dict)
-            and isinstance(access, dict)
-            and access.get("approved") is True
-        ):
-            agi_id = str(context.get("active_agi_id") or active.get("agi_id") or "")
-            agi_snapshot_id = str(active.get("agi_snapshot_id") or "")
-            if not agi_id or not agi_snapshot_id:
-                raise OperationError(
-                    "invalid_selected_active_genome_index",
-                    "The selected approved Active Genome Index has no immutable snapshot binding.",
-                )
-            selected_agi_context = {
-                "access_approved": True,
-                "agi_id": agi_id,
-                "agi_snapshot_id": agi_snapshot_id,
-            }
-        return store.update_health_profile(
+        selected_agi_context, agi_evidence_gap = _selected_agi_binding(context)
+        result = store.update_health_profile(
             user_id,
             investigation_id,
             workspace_session_id=session_id,
@@ -148,6 +177,9 @@ def update_health_profile(params: JsonObject) -> JsonObject:
             command_id=params.get("command_id"),
             expected_revision=params.get("expected_revision"),
         )
+        if agi_evidence_gap is not None:
+            result["agi_evidence_gap"] = agi_evidence_gap
+        return result
 
     return _run(update)
 
