@@ -70,7 +70,7 @@ def serve_http(
         return 1
     actual_host, actual_port = server.server_address
     portal_url = portal_routes.portal_url(actual_host, actual_port)
-    print(f"[genomi] starting Genomi workspace on {portal_url}", file=error_stream, flush=True)
+    print(f"[genomi] starting GenomiLab workspace on {portal_url}", file=error_stream, flush=True)
     print(f"[genomi] starting MCP server on {portal_routes.mcp_url(actual_host, actual_port)}", file=error_stream, flush=True)
     if open_browser:
         try:

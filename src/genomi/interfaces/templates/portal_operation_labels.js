@@ -26,7 +26,7 @@ const NAMESPACE_LABELS = Object.freeze({
   pathway: 'Pathway',
   pharmacogenomics: 'Pharmacogenomics',
   phenotype: 'Phenotype',
-  portal: 'Portal',
+  portal: 'GenomiLab',
   prs: 'PRS',
   region: 'Region',
   research: 'Research',

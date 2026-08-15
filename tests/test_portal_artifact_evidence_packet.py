@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import textwrap
+import unittest
 from pathlib import Path
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase

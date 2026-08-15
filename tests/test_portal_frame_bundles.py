@@ -7,7 +7,6 @@ import re
 import tempfile
 import unittest
 import zipfile
-from pathlib import Path
 from unittest import mock
 
 from genomi.interfaces import portal_frame_bundles, portal_store

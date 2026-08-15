@@ -76,7 +76,7 @@ def welcome_message_markup() -> str:
     return "".join(
         (
             '<div class="message assistant">',
-            '<div class="role">Genomi Portal</div>',
+            '<div class="role">GenomiLab</div>',
             '<div class="body">',
             f"<p>{html.escape(WELCOME_INTRO)}</p>",
             '<div class="message-suggestions" data-testid="genomi-chat-suggestions">',

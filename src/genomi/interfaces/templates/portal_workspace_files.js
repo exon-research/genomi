@@ -478,7 +478,7 @@ function emptyWorkspaceFiles(query) {
   empty.querySelector('strong').textContent = query ? 'No matching files' : 'No project files yet';
   empty.querySelector('span').textContent = query
     ? 'Change the search to inspect another project file.'
-    : 'Imported files and generated research records in this Genomi workspace will appear here.';
+    : 'Imported files and generated research records in this GenomiLab workspace will appear here.';
   return empty;
 }
 

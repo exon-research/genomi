@@ -81,7 +81,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertTrue(server.closed)
         open_browser.assert_called_once_with("http://127.0.0.1:8768/")
-        self.assertIn("starting Genomi workspace", stderr.getvalue())
+        self.assertIn("starting GenomiLab workspace", stderr.getvalue())
         self.assertIn("http://127.0.0.1:8768/mcp", stderr.getvalue())
 
     def test_root_endpoint_serves_portal_workspace(self) -> None:
@@ -91,8 +91,8 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["content-type"])
         text = body.decode("utf-8")
-        self.assertIn("<title>Genomi Portal</title>", text)
-        self.assertIn("Ask Genomi", text)
+        self.assertIn("<title>GenomiLab</title>", text)
+        self.assertIn("Inquiry", text)
         self.assertIn("Conversations", text)
         self.assertIn("frame-list", text)
         self.assertIn('<button id="send" class="primary" type="submit">Send</button>', text)
@@ -126,7 +126,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["content-type"])
         text = body.decode("utf-8")
-        self.assertIn("<title>Genomi Portal</title>", text)
+        self.assertIn("<title>GenomiLab</title>", text)
         self.assertIn("/assets/portal.js", text)
         self.assertIn('data-nav-target="artifact-workspace"', text)
 
@@ -137,7 +137,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["content-type"])
         text = body.decode("utf-8")
-        self.assertIn("<title>Genomi Portal</title>", text)
+        self.assertIn("<title>GenomiLab</title>", text)
         self.assertIn("/assets/portal.js", text)
 
     def test_project_artifact_deep_link_serves_portal_workspace(self) -> None:
@@ -147,7 +147,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["content-type"])
         text = body.decode("utf-8")
-        self.assertIn("<title>Genomi Portal</title>", text)
+        self.assertIn("<title>GenomiLab</title>", text)
         self.assertIn("/assets/portal.js", text)
         self.assertIn('id="artifact-workspace"', text)
         self.assertIn('id="genomi-starter-cards" type="application/json"', text)
@@ -162,7 +162,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["content-type"])
         text = body.decode("utf-8")
-        self.assertIn("<title>Genomi Portal</title>", text)
+        self.assertIn("<title>GenomiLab</title>", text)
         self.assertIn("/assets/portal.js", text)
         self.assertIn('id="artifact-workspace"', text)
 
@@ -176,7 +176,7 @@ class MCPHTTPTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             template = Path(tmp) / "portal.html"
             template.write_text(
-                '<!doctype html><title>Genomi Portal</title><link rel="stylesheet" href="/assets/missing.css">'
+                '<!doctype html><title>GenomiLab</title><link rel="stylesheet" href="/assets/missing.css">'
                 '<style data-genomi-portal-css>{PORTAL_INLINE_CSS}</style>',
                 encoding="utf-8",
             )

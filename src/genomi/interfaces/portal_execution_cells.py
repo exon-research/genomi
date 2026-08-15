@@ -30,7 +30,6 @@ def execution_cells_from_records(records: list[JsonObject], *, run_id: str = "")
         event_name = portal_turns.prompt_safe_text(str(record.get("event") or "")).strip()
         data = record.get("data") if isinstance(record.get("data"), dict) else {}
         event_id = _event_id(record)
-        timestamp = _timestamp(record)
         project_id = portal_turns.prompt_safe_text(str(record.get("project_id") or "")).strip()
         frame_id = portal_turns.prompt_safe_text(str(record.get("frame_id") or "")).strip()
 

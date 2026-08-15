@@ -16,7 +16,7 @@ export function welcomeMessageMarkup(model = portalStarterModel()) {
   if (!data.intro && !data.cards.length) return '';
   return [
     '<div class="message assistant chat-welcome" data-testid="genomi-chat-welcome">',
-    '<div class="role">Genomi Portal</div>',
+    '<div class="role">GenomiLab</div>',
     '<div class="body">',
     data.intro ? '<p>' + escapeHtml(data.intro) + '</p>' : '',
     '<div class="message-suggestions" data-testid="genomi-chat-suggestions">',

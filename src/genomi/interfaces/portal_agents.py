@@ -112,10 +112,12 @@ class ClaudeStreamAdapter:
                 return _events_outcome([{"type": "text_delta", "delta": result}])
             return _ignored_structured_event()
         events: list[JsonObject] = []
-        for block in _claude_content_blocks(payload):
+        content_blocks = _claude_content_blocks(payload)
+        has_tool_use = any(str(block.get("type") or "") == "tool_use" for block in content_blocks)
+        for block in content_blocks:
             block_type = str(block.get("type") or "")
             if block_type == "text" and isinstance(block.get("text"), str):
-                events.append(_claude_status_event(block["text"]))
+                events.append(_text_or_diagnostic_event(block["text"]) if has_tool_use else _claude_status_event(block["text"]))
             elif block_type == "tool_use":
                 name = _clean_str(block.get("name")) or "tool"
                 events.append({"type": "tool_call", "id": _clean_str(block.get("id")), "name": name, "input": block.get("input") or {}})
@@ -400,7 +402,7 @@ def _permission_label(tool: str) -> str:
     if tool == "mcp__genomi__variant_resolve":
         return "Look up variant evidence"
     if tool.startswith("mcp__genomi__"):
-        return "Use Genomi workspace tools"
+        return "Use GenomiLab workspace tools"
     if tool.startswith("mcp__"):
         return "Use an external connector"
     if tool == "Write":
@@ -450,7 +452,7 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
         id="gemini",
         label="Gemini CLI",
         command="gemini",
-        summary="Detected for setup visibility; a runnable Genomi Portal driver needs a verified headless JSON stream contract.",
+        summary="Detected for setup visibility; a runnable GenomiLab driver needs a verified headless JSON stream contract.",
         invocation_args=("--output-format", "stream-json"),
         stream_adapter=GeminiStreamAdapter(),
         runnable=False,
@@ -459,7 +461,7 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
         id="opencode",
         label="OpenCode",
         command="opencode",
-        summary="Detected for setup visibility; a runnable Genomi Portal driver needs an explicit invocation and stream contract.",
+        summary="Detected for setup visibility; a runnable GenomiLab driver needs an explicit invocation and stream contract.",
         invocation_args=(),
         stream_adapter=PlainTextStreamAdapter(),
         runnable=False,

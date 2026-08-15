@@ -299,7 +299,7 @@
       event.preventDefault();
       const input = $('workspace-name-input');
       const name = input ? String(input.value || '').trim() : '';
-      const project = await api.createProject(name || 'Genomi Workspace');
+      const project = await api.createProject(name || 'GenomiLab Workspace');
       if (input) input.value = '';
       clearWorkspaceState();
       window.history.pushState(null, '', projectRoutePath(project.project_id));
@@ -1765,6 +1765,6 @@
       if (state.context || state.agents.length) {
         $('project-status').textContent = 'Workspace unavailable: ' + (error.message || 'request failed');
       } else {
-        $('agent-status').textContent = 'Portal API unavailable';
+        $('agent-status').textContent = 'GenomiLab API unavailable';
       }
     });

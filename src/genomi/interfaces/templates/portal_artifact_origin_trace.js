@@ -48,20 +48,28 @@ export function renderArtifactWorkTrace(container, artifact, options = {}) {
 export function artifactWorkTraceExecutionCells(artifact, executionCells) {
   const producingCell = artifactProducingWorkStepCell(artifact);
   const target = artifactTraceIdentity(artifact);
-  if (Array.isArray(executionCells)) return withProducingWorkStep(
-    executionCells.filter((cell) => keepArtifactTraceCell(cell, target)),
-    producingCell
-  );
+  if (Array.isArray(executionCells)) {
+    const items = withProducingWorkStep(
+      executionCells.filter((cell) => keepArtifactTraceCell(cell, target)),
+      producingCell
+    );
+    items.include_diagnostics = true;
+    return items;
+  }
   if (executionCells && typeof executionCells === 'object' && Array.isArray(executionCells.items)) {
     return {
       ...executionCells,
+      include_diagnostics: true,
       items: withProducingWorkStep(
         executionCells.items.filter((cell) => keepArtifactTraceCell(cell, target)),
         producingCell
       )
     };
   }
-  return producingCell ? [producingCell] : executionCells;
+  if (!producingCell) return executionCells;
+  const items = [producingCell];
+  items.include_diagnostics = true;
+  return items;
 }
 
 function metric(label, value) {

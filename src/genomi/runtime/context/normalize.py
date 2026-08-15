@@ -28,6 +28,10 @@ DEFAULT_CONTEXT_POLICY = "explicit"
 AGI_RECORD_FIELDS = frozenset(
     {
         "agi_id",
+        "agi_snapshot_id",
+        "agi_build_revision",
+        "agi_snapshot_created_at",
+        "agi_schema_version",
         "sample_slug",
         "status",
         "agi_intake_source_path",
@@ -43,6 +47,8 @@ AGI_RECORD_FIELDS = frozenset(
         "evidence_db",
         "shared_evidence_db",
         "agi_path",
+        "agi_build_path",
+        "agi_artifact_sha256",
         "matches",
         "candidate_inventory",
         "agi_comparable_variant_export",
@@ -52,6 +58,20 @@ AGI_RECORD_FIELDS = frozenset(
         "outputs",
         "created_at",
         "updated_at",
+    }
+)
+AGI_REVISION_RECORD_FIELDS = frozenset(
+    {
+        "agi_id",
+        "agi_snapshot_id",
+        "agi_build_revision",
+        "agi_snapshot_created_at",
+        "agi_schema_version",
+        "source_content_sha256",
+        "genome_build",
+        "agi_path",
+        "agi_artifact_sha256",
+        "created_at",
     }
 )
 DIGITIZATION_CONTRACT: JsonObject = {
@@ -117,6 +137,7 @@ def _normalize_context(value: JsonObject, root: str | Path | None) -> JsonObject
 
 def _normalize_registry(value: JsonObject) -> JsonObject:
     agis = _agi_map(value.get("agis"))
+    agi_revisions = _agi_revision_map(value.get("agi_revisions"))
     users = _user_map(value.get("users"))
     default_user_id = str(value.get("default_user_id") or "") or None
     if default_user_id and default_user_id in users:
@@ -127,6 +148,7 @@ def _normalize_registry(value: JsonObject) -> JsonObject:
                 user["default"] = False
         default_user_id = None
     value["agis"] = agis
+    value["agi_revisions"] = agi_revisions
     value["users"] = users
     value["default_user_id"] = default_user_id
     response_profile = value.get("response_profile")
@@ -162,6 +184,42 @@ def _normalize_agi_record(record: JsonObject, agi_id_hint: str | None = None) ->
     }
     agi_id = normalized.get("agi_id") or agi_id_hint or normalized.get("sample_slug")
     normalized["agi_id"] = str(agi_id) if agi_id not in (None, "") else ""
+    return normalized
+
+
+def _agi_revision_map(container: object) -> JsonObject:
+    revisions: JsonObject = {}
+    if not isinstance(container, dict):
+        return revisions
+    for key, item in container.items():
+        if not isinstance(item, dict):
+            continue
+        record = _normalize_agi_revision_record(
+            item,
+            agi_snapshot_id_hint=str(key),
+        )
+        snapshot_id = str(record.get("agi_snapshot_id") or "")
+        if snapshot_id and record.get("agi_id") and record.get("agi_path"):
+            revisions[snapshot_id] = record
+    return revisions
+
+
+def _normalize_agi_revision_record(
+    record: JsonObject,
+    *,
+    agi_snapshot_id_hint: str | None = None,
+) -> JsonObject:
+    normalized = {
+        key: value
+        for key, value in record.items()
+        if key in AGI_REVISION_RECORD_FIELDS
+    }
+    snapshot_id = normalized.get("agi_snapshot_id") or agi_snapshot_id_hint
+    normalized["agi_snapshot_id"] = (
+        str(snapshot_id) if snapshot_id not in (None, "") else ""
+    )
+    if normalized.get("agi_id") not in (None, ""):
+        normalized["agi_id"] = str(normalized["agi_id"])
     return normalized
 
 
@@ -347,6 +405,7 @@ def _empty_registry() -> JsonObject:
     now = _now()
     return {
         "agis": {},
+        "agi_revisions": {},
         "users": {},
         "default_user_id": None,
         "response_profile": None,

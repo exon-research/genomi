@@ -424,7 +424,7 @@ def compose_prompt(
     workspace_section = portal_workspaces.project_workspace_prompt_section(project_id)
     evidence_section = portal_turns.selected_evidence_prompt_section(selected_evidence)
     return (
-        "You are operating inside Genomi Portal, a local-first genomics workspace.\n"
+        "You are operating inside GenomiLab, a local-first genomics workspace.\n"
         "Use the Genomi MCP tools already installed in this assistant session when evidence is needed.\n"
         "Answer from evidence. Preserve Genomi privacy boundaries. Use informational medical language and recommend clinical confirmation for clinical decisions.\n\n"
         f"{context_section}"

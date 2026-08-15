@@ -13,6 +13,7 @@ from ...active_genome_index.active_genome_index import (
 from ...active_genome_index.active_genome_index import (
     ActiveGenomeIndexSchemaTooNew as _ActiveGenomeIndexSchemaTooNew,
 )
+from ...active_genome_index.revisions import ActiveGenomeIndexArtifactIntegrityError
 from ...capabilities.research import intent_research
 from .catalog_meta import (
     BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST,
@@ -24,6 +25,12 @@ from .catalog_meta import (
 )
 from .coerce import _int, _list_str, _str, _with_defaults_applied
 from .errors import JsonObject, OperationError
+from .execution import (
+    OperationExecutionContext,
+    OperationExecutionContextError,
+    activate_execution_context,
+    reset_execution_context,
+)
 from .model import Operation, _operation_capability
 from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
@@ -364,11 +371,59 @@ def _stamp_reference_pending_if_due(name: str, params: JsonObject, result: objec
     return result
 
 
-def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
-    operation = get_operation(name)
+def call_operation(
+    name: str,
+    params: JsonObject | None = None,
+    *,
+    execution_context: OperationExecutionContext | None = None,
+) -> JsonObject:
+    """Dispatch one operation with an optional explicit host context.
+
+    ``execution_context`` is intentionally absent from every tool schema and
+    keyword-only. Clearing/restoring it on every call prevents an embedded
+    host from accidentally lending its process-local resources to an
+    unannotated nested operation.
+    """
+
     safe_params = params or {}
     if not isinstance(safe_params, dict):
         raise OperationError("invalid_params", "operation params must be an object")
+    if execution_context is not None and not isinstance(
+        execution_context, OperationExecutionContext
+    ):
+        raise OperationError(
+            "invalid_operation_execution_context",
+            "execution_context must be an OperationExecutionContext issued by an embedded host.",
+        )
+    try:
+        if execution_context is not None:
+            execution_context.validate_call(name, safe_params)
+        execution_token = activate_execution_context(execution_context)
+    except OperationExecutionContextError as exc:
+        raise OperationError(exc.code, str(exc)) from exc
+
+    try:
+        result = _call_operation_bound(name, safe_params)
+        if execution_context is not None and isinstance(result, dict):
+            try:
+                annotations = execution_context.validate_call(name, safe_params)
+            except OperationExecutionContextError as exc:
+                raise OperationError(exc.code, str(exc)) from exc
+            for key, value in annotations.items():
+                if key in result:
+                    raise OperationError(
+                        "operation_execution_context_annotation_conflict",
+                        f"The execution context cannot overwrite result field {key!r}.",
+                    )
+                result[key] = value
+        return result
+    finally:
+        reset_execution_context(execution_token)
+
+
+def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
+    operation = get_operation(name)
+    safe_params = params
     try:
         result = operation.handler(safe_params)
     except OperationError:
@@ -381,6 +436,11 @@ def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
         # materialized yet. Surface it as a structured error so agents know
         # which file to produce.
         raise OperationError("needs_file", f"required file not found: {exc}") from exc
+    except ActiveGenomeIndexArtifactIntegrityError as exc:
+        raise OperationError(
+            "active_genome_index_artifact_integrity_failed",
+            str(exc),
+        ) from exc
     except ValueError as exc:
         # Library functions raise ValueError for missing/invalid required
         # inputs (e.g. "<op> requires gene or condition"). Convert to a

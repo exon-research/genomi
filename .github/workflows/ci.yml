@@ -19,6 +19,11 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install genomics CLI dependencies
         run: |
           sudo apt-get update
@@ -34,7 +39,7 @@ jobs:
           python -m pip install uv
           uv lock --locked
           python -m pip install -e .
-          python -m pip install pytest ruff
+          python -m pip install pytest ruff==0.16.2
 
       - name: Run lint
         run: ruff check src tests
@@ -43,3 +48,6 @@ jobs:
         env:
           PYTHONPATH: src:.
         run: python -m pytest -q -W error
+
+      - name: Run GenomiLab browser-module tests
+        run: node --test tests/js/*.mjs

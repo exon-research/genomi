@@ -36,7 +36,7 @@ function contextSourceLabel(item) {
     if (label && !label.includes(promptSafeText(sourceOperation).trim())) return contextSummary(label);
   }
   if (sourceOperation) return contextSummary(operationDisplayLabel(sourceOperation, 'Research step'));
-  return 'Portal selection';
+  return 'GenomiLab selection';
 }
 
 export function contextActionModel(value) {

@@ -10,7 +10,6 @@ from .portal_result_presentation_model import (
     array_value as _array,
     count_summary as _count_summary,
     empty as _empty,
-    entries as _entries,
     entry_lane as _entry_lane,
     evidence_state_lane as _evidence_state_lane,
     format_value as _format_value,

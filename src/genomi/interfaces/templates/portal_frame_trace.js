@@ -526,22 +526,26 @@ function finalizeTraceStep(step) {
 }
 
 function executionCellItems(executionCells) {
-  if (Array.isArray(executionCells)) return executionCells.filter((cell) => visibleExecutionCell(cell));
+  if (Array.isArray(executionCells)) {
+    const includeDiagnostics = Boolean(executionCells.include_diagnostics);
+    return executionCells.filter((cell) => visibleExecutionCell(cell, includeDiagnostics));
+  }
   if (executionCells && typeof executionCells === 'object' && Array.isArray(executionCells.items)) {
     const runId = String(executionCells.run_id || '').trim();
+    const includeDiagnostics = Boolean(executionCells.include_diagnostics);
     return executionCells.items
-      .filter((cell) => visibleExecutionCell(cell))
+      .filter((cell) => visibleExecutionCell(cell, includeDiagnostics))
       .map((cell) => ({ ...cell, run_id: cell.run_id || runId }));
   }
   return [];
 }
 
-function visibleExecutionCell(cell) {
+function visibleExecutionCell(cell, includeDiagnostics = false) {
   if (!cell || typeof cell !== 'object') return false;
   const visibility = String(cell.visibility || '').trim();
   if (visibility === 'technical') return false;
   const kind = String(cell.kind || '').trim();
-  if (kind === 'diagnostic' || kind === 'stdout' || kind === 'stderr') return false;
+  if (!includeDiagnostics && (kind === 'diagnostic' || kind === 'stdout' || kind === 'stderr')) return false;
   return true;
 }
 

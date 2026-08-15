@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +15,14 @@ from typing import Any
 from ..evidence import envelope as _env
 from .external import utc_now
 from .paths import genomi_data_root
+from .private_storage import (
+    atomic_write_private_json,
+    ensure_private_directory,
+    open_private_binary_append,
+    private_root_for_path,
+    read_private_json,
+    refuse_symlink,
+)
 
 JsonObject = dict[str, Any]
 JOBS_DIR_NAME = "jobs"
@@ -59,6 +68,9 @@ def jobs_dir(root: str | Path | None = None) -> Path:
 
 
 def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
+    private_root = genomi_data_root()
+    job_root = jobs_dir()
+    ensure_private_directory(job_root, private_root=private_root)
     safe_params = dict(params)
     digest = operation_params_digest(operation, safe_params)
     active = find_active_job(operation, digest)
@@ -71,8 +83,6 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
                 pass
         return active
 
-    job_root = jobs_dir()
-    job_root.mkdir(parents=True, exist_ok=True)
     job_id = _new_job_id(operation)
     job_path = job_root / f"{job_id}.json"
     log_path = job_root / f"{job_id}.log"
@@ -94,7 +104,7 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
     write_job(job_path, job)
 
     command = [sys.executable, "-m", "genomi.runtime.job_worker", "--job", str(job_path)]
-    log_handle = log_path.open("ab")
+    log_handle = open_private_binary_append(log_path, private_root=private_root)
     try:
         try:
             process = subprocess.Popen(
@@ -117,6 +127,7 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
             raise
     finally:
         log_handle.close()
+    _reap_detached_process(process)
 
     current = _read_job_file(job_path)
     if current.get("status") == "queued":
@@ -125,6 +136,23 @@ def start_operation_job(operation: str, params: JsonObject) -> JsonObject:
         return current
     current.setdefault("pid", process.pid)
     return current
+
+
+def _reap_detached_process(process: subprocess.Popen[bytes]) -> None:
+    """Retain and reap a detached worker without blocking its caller.
+
+    ``start_new_session`` detaches the worker from terminal control, but the
+    parent still owns its process handle. A daemon waiter keeps that handle
+    alive until exit and records the return code, avoiding zombies and Python's
+    unclosed-subprocess warning while the durable job file remains the public
+    status boundary.
+    """
+
+    threading.Thread(
+        target=process.wait,
+        name=f"genomi-job-reaper-{process.pid}",
+        daemon=True,
+    ).start()
 
 
 def wait_for_job(job_id: str, *, timeout_seconds: float | None = None) -> JsonObject:
@@ -283,6 +311,7 @@ def operation_context_fingerprint(operation: str, params: JsonObject) -> JsonObj
     return {
         "context_scope": runtime_context.context_scope(),
         "active_agi_id": run.get("agi_id"),
+        "agi_snapshot_id": run.get("agi_snapshot_id"),
         "sample_slug": run.get("sample_slug"),
         "agi_path": run.get("agi_path"),
     }
@@ -355,6 +384,7 @@ def find_active_job(operation: str, params_digest: str) -> JsonObject | None:
 
 def find_latest_job(operation: str, params_digest: str, *, statuses: set[str] | frozenset[str] | None = None) -> JsonObject | None:
     root = jobs_dir()
+    refuse_symlink(root)
     if not root.exists():
         return None
     candidates: list[JsonObject] = []
@@ -386,15 +416,17 @@ def resolve_job_path(*, job_id: str | None = None, job_path: str | Path | None =
 
 def write_job(path: str | Path, job: JsonObject) -> None:
     resolved = Path(path)
-    resolved.parent.mkdir(parents=True, exist_ok=True)
     payload = {**job, "updated_at": job.get("updated_at") or utc_now()}
-    tmp = resolved.with_suffix(resolved.suffix + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
-    tmp.replace(resolved)
+    atomic_write_private_json(
+        resolved,
+        payload,
+        private_root=private_root_for_path(resolved, genomi_data_root()),
+        default=str,
+    )
 
 
 def _read_job_file(path: str | Path) -> JsonObject:
-    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    value = read_private_json(path)
     if not isinstance(value, dict):
         raise ValueError("background job file must contain a JSON object")
     return value

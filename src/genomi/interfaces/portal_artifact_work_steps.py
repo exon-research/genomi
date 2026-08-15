@@ -112,7 +112,7 @@ def _source_label(origin: JsonObject | None) -> str:
         return "Assistant run"
     if _safe_text(clean_origin.get("frame_id")):
         return "Origin conversation"
-    return "Genomi workspace"
+    return "GenomiLab workspace"
 
 
 def _origin(origin: JsonObject | None) -> JsonObject:

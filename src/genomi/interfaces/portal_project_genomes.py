@@ -46,7 +46,7 @@ def _project_context_payload(binding: JsonObject | None) -> JsonObject:
             "approved": True,
             "approved_at": binding.get("approved_at"),
             "scope": "portal_project",
-            "reason": "User selected this Active Genome Index for the current Genomi Portal workspace.",
+            "reason": "User selected this Active Genome Index for the current GenomiLab workspace.",
         }
     return {
         "active_agi_id": agi_id or None,
@@ -71,4 +71,3 @@ def _write_json_atomically(path: Path, payload: JsonObject) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, path)
-

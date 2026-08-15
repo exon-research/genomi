@@ -63,7 +63,7 @@ def artifact_environment_snapshot(
             "items": _library_items(inventory.get("libraries")),
         },
         "limitations": [
-            "This captures the local Genomi portal runtime and library availability, not a full assistant process environment.",
+            "This captures the local GenomiLab runtime and library availability, not a full assistant process environment.",
         ],
     }
     agent_id = _safe_text(host_agent_id)
