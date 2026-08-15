@@ -109,6 +109,17 @@ export function specialistLaneModel(records = []) {
     registerIdentities(byIdentity, specialist);
   });
 
+  // A host turn is a hard runtime boundary. If it ends without a canonical
+  // completed/failed/cancelled transition, surface the assignment as an error
+  // instead of presenting stale spawned state as live work.
+  if (allRecords.some((record) => clean(record && record.runTerminalStatus))) {
+    specialists.forEach((specialist) => {
+      if (!['running', 'waiting'].includes(specialist.status)) return;
+      specialist.status = 'error';
+      specialist.summary = 'Turn ended before the assignment reached a durable terminal state';
+    });
+  }
+
   const counts = countStatuses(specialists);
   return {
     visible: specialists.length > 0,

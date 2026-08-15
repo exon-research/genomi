@@ -3,6 +3,7 @@
     {
       "id": "reasoning_only",
       "allowed_connectors": [],
+      "allowed_operations": [],
       "allowed_input_classes": ["deidentified_research_brief"],
       "inherit_environment": false,
       "inherit_mcp": false,
@@ -13,6 +14,7 @@
     {
       "id": "public_literature",
       "allowed_connectors": ["paperclip"],
+      "allowed_operations": ["paperclip.search_biomedical", "paperclip.retrieve_document_evidence"],
       "allowed_input_classes": ["deidentified_research_brief", "public_biomedical_concepts"],
       "inherit_environment": false,
       "inherit_mcp": false,
@@ -23,6 +25,7 @@
     {
       "id": "protein_model_research",
       "allowed_connectors": ["esm"],
+      "allowed_operations": ["biohub.compare_protein_embeddings"],
       "allowed_input_classes": ["deidentified_research_brief", "public_reference_sequence"],
       "inherit_environment": false,
       "inherit_mcp": false,
@@ -33,6 +36,7 @@
     {
       "id": "experiment_design",
       "allowed_connectors": ["proto"],
+      "allowed_operations": ["proto.search_tools", "proto.describe_tool_schema", "proto.run_tool"],
       "allowed_input_classes": ["deidentified_research_brief", "approved_public_research_artifact"],
       "inherit_environment": false,
       "inherit_mcp": false,

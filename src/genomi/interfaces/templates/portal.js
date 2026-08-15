@@ -1595,6 +1595,7 @@
         onEnd: (data) => {
           if (!isCurrentRun(runId, frameId)) return;
           assistantMessage?.classList.remove('streaming');
+          messageSurface.finishRun(runId, data.status || 'completed');
           if (data.status !== 'succeeded' && data.error) messageSurface.appendText(body, '\\n\\nRun ' + data.status + ': ' + data.error);
           loadFrames().catch(() => undefined);
           $('send').disabled = false;

@@ -253,6 +253,15 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
       if (message.role === 'assistant') pendingAssistantPresentationKind = '';
     });
     flushPendingStoredToolMessages();
+    plan.items.forEach((item) => {
+      const message = item.message || {};
+      if (
+        message.role === 'assistant'
+        && message.run_id
+        && message.stream_status
+        && message.stream_status !== 'streaming'
+      ) finishRun(message.run_id, message.stream_status);
+    });
   }
 
   function renderStoredMessage(message, replay = {}) {
@@ -294,6 +303,23 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     if (!(body.dataset.rawText || '').trim()) parent.classList.add('streaming');
     assistantMessagesByRunId.set(clean, parent);
     flushPendingStoredToolMessages(clean, parent);
+  }
+
+  function finishRun(runId, status) {
+    const clean = cleanRunId(runId);
+    if (!clean) return;
+    const records = Array.from(toolCards.values()).filter(
+      (record) => cleanRunId(record && record.scope && record.scope.runId) === clean
+    );
+    records.forEach((record) => { record.runTerminalStatus = String(status || 'completed'); });
+    const stacks = new Set(records.map((record) => record.stack).filter(Boolean));
+    stacks.forEach((stack) => {
+      renderSpecialistLane(
+        stack,
+        Array.from(toolCards.values()).filter((record) => record.stack === stack)
+      );
+      updateToolStackSummary(stack);
+    });
   }
 
   function focusRun(runId) {
@@ -882,7 +908,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
   }
 
   reset();
-  return { addMessage, addToolEvent, appendText, focusMessage, focusRun, registerAssistantRun, renderInlineArtifacts, renderStoredMessage, renderStoredMessages, reset, scrollBottom };
+  return { addMessage, addToolEvent, appendText, finishRun, focusMessage, focusRun, registerAssistantRun, renderInlineArtifacts, renderStoredMessage, renderStoredMessages, reset, scrollBottom };
 }
 
 export function storedMessageReplayPlan(messages) {

@@ -97,7 +97,7 @@ def build_outbound_specialist_brief(
             abstract_relations, "abstract_relations"
         ),
         "public_evidence": _object_array(public_evidence, "public_evidence"),
-        "allowed_tools": list(policy["allowed_connectors"]),
+        "allowed_tools": list(policy["allowed_operations"]),
         "privacy_constraints": list(PRIVACY_CONSTRAINTS),
     }
     validate_specialist_brief(outbound, policy=policy)
@@ -125,7 +125,7 @@ def validate_specialist_brief(
     if outbound.get("execution_policy") != resolved_policy["id"]:
         raise ValueError("outbound execution_policy does not match the selected policy")
     if tuple(outbound.get("allowed_tools") or ()) != tuple(
-        resolved_policy["allowed_connectors"]
+        resolved_policy["allowed_operations"]
     ):
         raise ValueError("outbound allowed_tools do not match the selected policy")
     if tuple(outbound.get("privacy_constraints") or ()) != PRIVACY_CONSTRAINTS:

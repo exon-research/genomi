@@ -17,6 +17,19 @@ EXPECTED_CONNECTORS: Mapping[str, tuple[str, ...]] = {
     "protein_model_research": ("esm",),
     "experiment_design": ("proto",),
 }
+EXPECTED_OPERATIONS: Mapping[str, tuple[str, ...]] = {
+    "reasoning_only": (),
+    "public_literature": (
+        "paperclip.search_biomedical",
+        "paperclip.retrieve_document_evidence",
+    ),
+    "protein_model_research": ("biohub.compare_protein_embeddings",),
+    "experiment_design": (
+        "proto.search_tools",
+        "proto.describe_tool_schema",
+        "proto.run_tool",
+    ),
+}
 ISOLATION_FIELDS = (
     "inherit_environment",
     "inherit_mcp",
@@ -70,6 +83,14 @@ def validate_policy_manifest(value: Mapping[str, object]) -> None:
             raise SpecialistPolicyError(
                 f"{profile_id} must expose exactly the declared connector inventory"
             )
+        operations = profile.get("allowed_operations")
+        if (
+            not isinstance(operations, list)
+            or tuple(operations) != EXPECTED_OPERATIONS[profile_id]
+        ):
+            raise SpecialistPolicyError(
+                f"{profile_id} must expose exactly the declared operation inventory"
+            )
         input_classes = profile.get("allowed_input_classes")
         if (
             not isinstance(input_classes, list)
@@ -100,6 +121,7 @@ def read_installed_policy(path: str | Path) -> JsonObject:
 
 __all__ = [
     "EXPECTED_CONNECTORS",
+    "EXPECTED_OPERATIONS",
     "ISOLATION_FIELDS",
     "SpecialistPolicyError",
     "policy_manifest",

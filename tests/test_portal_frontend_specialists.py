@@ -22,6 +22,51 @@ def _run_node(script: str) -> dict[str, object]:
 
 
 class PortalFrontendSpecialistTests(unittest.TestCase):
+    def test_terminal_host_turn_never_leaves_spawned_assignment_running(self) -> None:
+        module_url = (TEMPLATES / "portal_specialists.js").as_uri()
+        script = textwrap.dedent(
+            f"""
+            const specialists = await import({module_url!r});
+            const assignment = {{
+              call: {{
+                id: 'transition-1',
+                name: 'genomi.genomi.invoke',
+                input: {{ tool: 'lab.transition_specialist_assignment' }}
+              }},
+              result: {{
+                id: 'transition-1',
+                payload: {{
+                  dispatched_tool: 'lab.transition_specialist_assignment',
+                  assignment: {{
+                    specialist_assignment_id: 'assignment-1',
+                    native_agent_id: 'specialist-1',
+                    specialist_role: 'Public evidence reviewer',
+                    execution_policy: 'public_literature',
+                    revision: 2,
+                    state: 'spawned'
+                  }}
+                }}
+              }}
+            }};
+            const live = specialists.specialistLaneModel([assignment]);
+            assignment.runTerminalStatus = 'succeeded';
+            const terminal = specialists.specialistLaneModel([assignment]);
+            assignment.result.payload.assignment.state = 'completed';
+            assignment.result.payload.assignment.revision = 3;
+            const completed = specialists.specialistLaneModel([assignment]);
+            process.stdout.write(JSON.stringify({{ live, terminal, completed }}));
+            """
+        )
+
+        result = _run_node(script)
+        self.assertEqual(result["live"]["specialists"][0]["status"], "running")
+        self.assertEqual(result["terminal"]["specialists"][0]["status"], "error")
+        self.assertEqual(
+            result["terminal"]["specialists"][0]["summary"],
+            "Turn ended before the assignment reached a durable terminal state",
+        )
+        self.assertEqual(result["completed"]["specialists"][0]["status"], "completed")
+
     def test_live_collaboration_records_drive_multiple_specialists_and_parent_wait(self) -> None:
         module_url = (TEMPLATES / "portal_specialists.js").as_uri()
         script = textwrap.dedent(

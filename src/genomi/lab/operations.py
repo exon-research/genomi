@@ -15,6 +15,7 @@ from ..operations.registry.evidence_result_receipts import (
 )
 from ..runtime.context import context_authority_lock, context_scope, describe_context
 from .result_receipts import durable_genomi_result_receipt_id
+from .specialist_policies import policy_manifest
 from .store import GenomiLabStore
 
 
@@ -321,7 +322,88 @@ def capture_evidence_result(params: JsonObject) -> JsonObject:
 
 
 def capture_provider_result(params: JsonObject) -> JsonObject:
-    return _invoke_store_operation("capture_provider_result", params)
+    investigation_id = _required(params, "investigation_id")
+    process_receipt_id = _required(params, "result_receipt_id")
+    assignment_id = _required(params, "assignment_id")
+    specialist_brief_id = _required(params, "specialist_brief_id")
+
+    def capture(store: GenomiLabStore, user_id: str, session_id: str) -> JsonObject:
+        _owned(store, user_id, investigation_id)
+        with store._connect() as connection:
+            assignment = connection.execute(
+                "SELECT assignment.*, brief.execution_policy "
+                "FROM specialist_assignments AS assignment "
+                "JOIN specialist_briefs AS brief "
+                "ON brief.specialist_brief_id = assignment.specialist_brief_id "
+                "WHERE assignment.specialist_assignment_id = ? "
+                "AND assignment.investigation_id = ? "
+                "AND assignment.specialist_brief_id = ?",
+                (assignment_id, investigation_id, specialist_brief_id),
+            ).fetchone()
+        if assignment is None:
+            raise ValueError("assignment and specialist brief do not match this investigation")
+        policy_id = str(assignment["execution_policy"])
+        profile = next(
+            item
+            for item in policy_manifest()["profiles"]
+            if item["id"] == policy_id
+        )
+        allowed_operations = set(profile["allowed_operations"])
+        provider, result_kind = {
+            "public_literature": ("paperclip", "public_source_evidence"),
+            "protein_model_research": ("biohub-esm", "research_artifact"),
+            "experiment_design": ("proto", "research_artifact"),
+        }.get(policy_id, (None, None))
+        if provider is None or result_kind is None:
+            raise ValueError("this specialist policy does not allow provider results")
+
+        def persist(resolved: JsonObject) -> JsonObject:
+            operation = str(resolved.get("operation") or "")
+            exact_result = resolved.get("result")
+            if operation not in allowed_operations:
+                raise ValueError(
+                    "provider result operation is outside the specialist execution policy"
+                )
+            if not isinstance(exact_result, dict):
+                raise ValueError("provider result receipt contains an invalid result")
+            envelope = exact_result.get("evidence_envelope")
+            provenance = {
+                "operation": operation,
+                "coverage": (
+                    envelope.get("coverage")
+                    if isinstance(envelope, dict)
+                    and isinstance(envelope.get("coverage"), dict)
+                    else {}
+                ),
+            }
+            with store.atomic_write():
+                provider_receipt_id = store.issue_provider_result_receipt(
+                    provider=provider,
+                    result_kind=result_kind,
+                    operation=operation,
+                    exact_result=exact_result,
+                    specialist_assignment_id=assignment_id,
+                    specialist_brief_id=specialist_brief_id,
+                    provider_provenance=provenance,
+                )
+                return store.capture_provider_result(
+                    investigation_id,
+                    cycle_id=params.get("cycle_id"),
+                    assignment_id=assignment_id,
+                    specialist_brief_id=specialist_brief_id,
+                    provider_result_receipt_id=provider_receipt_id,
+                    purpose=params.get("purpose"),
+                    command_id=params.get("command_id"),
+                    expected_revision=params.get("expected_revision"),
+                )
+
+        return EVIDENCE_RESULT_RECEIPTS.redeem(
+            process_receipt_id,
+            session_id=session_id,
+            consumer=persist,
+        )
+
+    return _run(capture)
 
 
 def publish_brief(params: JsonObject) -> JsonObject:
