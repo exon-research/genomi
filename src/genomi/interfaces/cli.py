@@ -23,7 +23,7 @@ from . import mcp
 from .presentation import present_result
 
 # `genomi serve` (the GenomiLab workspace / MCP launcher), `genomi lab`
-# (the patient research portal), `genomi install` (setup install/update), and
+# (an explicit workspace alias), `genomi install` (setup install/update), and
 # `genomi --help` are available without GENOMI_CLI=1. The variable is
 # intentionally undocumented in agent-facing material.
 _AGENT_ONLY_SUBCOMMANDS = ("tools", "call", "workflow", "static")
@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     lab_parser = subparsers.add_parser(
         "lab",
-        help="Start the local GenomiLab patient research portal.",
+        help="Open the GenomiLab web workspace with its built-in Codex/Claude session.",
     )
     lab_parser.add_argument(
         "--host",
@@ -159,24 +159,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-open",
         action="store_true",
         help="Print the private launch link without opening a browser.",
-    )
-    lab_parser.add_argument(
-        "--harness-processing-destination",
-        help=(
-            "Exact user-visible destination for installed-harness reasoning, "
-            "for example 'remote: OpenAI Codex service'. The harness stays "
-            "unavailable when this is omitted."
-        ),
-    )
-    lab_parser.add_argument(
-        "--paperclip-authorization-config",
-        type=Path,
-        help=(
-            "Owner-controlled policy required for current Paperclip evidence "
-            "operations. It records deployment authorization and a separate "
-            "patient-data contract. Save and verify the API key in the portal; "
-            "the fixed probe does not establish either permission."
-        ),
     )
     lab_parser.set_defaults(func=_cmd_lab)
 
@@ -237,14 +219,13 @@ def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _cmd_lab(args: argparse.Namespace) -> None:
-    from ..lab.server import run_lab
-
-    run_lab(
+    # GenomiLab has one browser-owned host-agent boundary. Keep this alias on
+    # the established portal runner so an inquiry never launches a second
+    # GenomiLab process that launches another Codex thread.
+    mcp.serve_http(
         host=args.host,
         port=args.port,
         open_browser=not args.no_open,
-        harness_processing_destination=args.harness_processing_destination,
-        paperclip_authorization_config=args.paperclip_authorization_config,
     )
 
 

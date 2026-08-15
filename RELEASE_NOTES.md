@@ -1,8 +1,7 @@
 # Unreleased
 
-- Added `genomi lab`, a loopback-only GenomiLab developer preview with patient
-  workspaces, relevant health-context entry, reported findings, VCF/gVCF
-  intake, current-session consent, and research-only Investigation Briefs.
+- Added `genomi lab` as a loopback-only alias for the established GenomiLab web
+  workspace and its built-in Codex/Claude Code conversation runtime.
 - Added two disjoint synthetic patient fixtures and end-to-end isolation tests.
 - Default-user selection is metadata-only; previously imported Active Genome
   Index data now always requires explicit current-session read approval.

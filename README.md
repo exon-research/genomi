@@ -86,43 +86,23 @@ already packaged or otherwise present, the canonical install/update path is
 `genomi install` or the MCP operation `genomi.install`; the source bootstrap is
 only for hosts that do not have Genomi yet.
 
-## GenomiLab Local Research Workspaces (Developer Preview)
+## GenomiLab Local Research Workspace (Developer Preview)
 
-GenomiLab is the local research application built on Genomi. It has two views
-with deliberately different context scopes:
-
-- `genomi serve --app` opens the inquiry-led project workspace for
-  conversations, evidence, files, artifacts, provenance, and a project-scoped
-  Active Genome Index selection.
-- `genomi lab` opens the patient-specific molecular-details and disease-inquiry
-  view for reviewed observations, reports, specimens, assays, authorization,
-  hypotheses, gaps, and living briefs.
-
-Selecting a genome in a project workspace does not silently change the current
-patient. The patient view always binds the current Genomi user; use Genomi user
-and genome management, then refresh or compare the latest profile explicitly.
-
-The patient inquiry view opens the current local Genomi user and never creates
-a second patient selector:
+GenomiLab has one inquiry-led web workspace for conversations, evidence, files,
+artifacts, provenance, and project-scoped Active Genome Index selection. Both
+commands open that same application:
 
 ```bash
-genomi lab --harness-processing-destination "remote: OpenAI Codex service"
+genomi lab
+# equivalent explicit launcher
+genomi serve --app
 ```
 
-The destination label is deliberately explicit: it is shown in the exact
-disclosure preview before approved molecular context is sent. Omitting it still
-opens the local workspace, but remote harness work remains unavailable rather
-than silently assuming where reasoning will run.
-
-The web portal is the UI; GenomiLab itself owns the application workflow and
-durable patient-research records. The installed agent harness owns dynamic
-planning, agent execution, reasoning, and draft synthesis. A planning task is
-tool-free: accepting its exact plan records the decision but runs nothing. The
-patient then reviews a separate disclosure for a fresh execution task, where
-the harness alone can invoke the exact accepted GenomiLab disease-investigation
-capabilities. Genomi remains the source of truth for the current user, genome
-intake, and the reusable Active Genome Index. GenomiLab never creates a second
-patient selector, copies AGI rows, or asks for a new VCF for each case.
+The workspace owns the visible Codex or Claude Code conversation and launches
+that host agent directly with the full Genomi MCP capability surface. It does
+not route an inquiry through a second GenomiLab server or bootstrap nested Codex
+threads. Conversation history, selected context, evidence, files, and artifacts
+stay attached to the same browser workspace.
 
 Those GenomiLab capabilities go beyond both base Genomi and a general harness:
 they project an approved Patient Molecular Profile, preserve source-separated

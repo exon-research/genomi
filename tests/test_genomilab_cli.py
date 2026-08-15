@@ -25,7 +25,6 @@ class GenomiLabCLITests(unittest.TestCase):
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 0)
         self.assertFalse(args.no_open)
-        self.assertIsNone(args.paperclip_authorization_config)
         self.assertIs(args.func, cli._cmd_lab)
 
     def test_lab_parser_accepts_only_explicit_loopback_hosts(self) -> None:
@@ -47,60 +46,17 @@ class GenomiLabCLITests(unittest.TestCase):
     def test_lab_command_is_not_hidden_behind_agent_cli_gate(self) -> None:
         with (
             mock.patch.dict(os.environ, {}, clear=True),
-            mock.patch("genomi.lab.server.run_lab") as run_lab,
+            mock.patch("genomi.interfaces.mcp.serve_http", return_value=0) as serve_http,
         ):
             status = cli.main(
                 ["lab", "--host", "localhost", "--port", "4321", "--no-open"]
             )
 
         self.assertEqual(status, 0)
-        run_lab.assert_called_once_with(
+        serve_http.assert_called_once_with(
             host="localhost",
             port=4321,
             open_browser=False,
-            harness_processing_destination=None,
-            paperclip_authorization_config=None,
-        )
-
-    def test_lab_command_carries_the_explicit_harness_destination(self) -> None:
-        with mock.patch("genomi.lab.server.run_lab") as run_lab:
-            status = cli.main(
-                [
-                    "lab",
-                    "--no-open",
-                    "--harness-processing-destination",
-                    "remote: OpenAI Codex service",
-                ]
-            )
-
-        self.assertEqual(status, 0)
-        run_lab.assert_called_once_with(
-            host="127.0.0.1",
-            port=0,
-            open_browser=False,
-            harness_processing_destination="remote: OpenAI Codex service",
-            paperclip_authorization_config=None,
-        )
-
-    def test_lab_command_carries_explicit_owner_paperclip_policy_path(self) -> None:
-        path = Path("/owner-controlled/paperclip-authorization.json")
-        with mock.patch("genomi.lab.server.run_lab") as run_lab:
-            status = cli.main(
-                [
-                    "lab",
-                    "--no-open",
-                    "--paperclip-authorization-config",
-                    str(path),
-                ]
-            )
-
-        self.assertEqual(status, 0)
-        run_lab.assert_called_once_with(
-            host="127.0.0.1",
-            port=0,
-            open_browser=False,
-            harness_processing_destination=None,
-            paperclip_authorization_config=path,
         )
 
     def test_launcher_loads_and_injects_owner_paperclip_policy(self) -> None:
