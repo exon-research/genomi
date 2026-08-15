@@ -1,0 +1,441 @@
+{
+  "capabilities": {
+    "lab": {
+      "title": "GenomiLab Investigation State",
+      "start_when": "Use when the user's underlying intent requires a durable patient-specific investigation across observations or data sources, competing explanations, evidence gathered or revised over time, bounded specialist research, or an investigation brief. Infer the need semantically; never use keyword, phrase, prompt-template, or disease-specific matching. Do not start Lab for a simple self-contained factual question.",
+      "skill_documents": ["skills/lab/SKILL.md"],
+      "entry_operations": ["lab.create_investigation", "lab.read_investigation", "lab.create_cycle"],
+      "operations": [
+        "lab.capture_evidence_result",
+        "lab.capture_provider_result",
+        "lab.create_cycle",
+        "lab.create_investigation",
+        "lab.create_specialist_assignment",
+        "lab.create_hypothesis",
+        "lab.prepare_specialist_brief",
+        "lab.publish_brief",
+        "lab.read_investigation",
+        "lab.revise_hypothesis",
+        "lab.transition_specialist_assignment",
+        "lab.update_health_profile"
+      ]
+    }
+  },
+  "operations": {
+    "lab.update_health_profile": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Persist health facts extracted by the Main Orchestrator, refresh the approved profile snapshot, and bind the currently selected approved Active Genome Index context.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "facts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "modality": {"type": "string", "enum": ["condition", "phenotype", "family_history", "medication", "exposure", "measurement", "procedure", "allergy", "reported_germline_finding", "reported_somatic_finding", "pathology", "biomarker", "specimen", "assay"]},
+                "label": {"type": "string"},
+                "original_wording": {"type": "string"},
+                "source_class": {"type": "string", "enum": ["model_extracted"]},
+                "verification_state": {"type": "string", "enum": ["unreviewed"]},
+                "assertion_status": {"type": "string", "enum": ["present", "absent", "unknown"]},
+                "assertion_author": {"type": "string", "enum": ["model"]},
+                "coverage_state": {"type": "string", "enum": ["observed", "explicitly_not_detected_within_declared_assay_scope", "not_measured", "not_provided", "unavailable", "out_of_scope"]},
+                "normalized_code": {"type": "string"},
+                "value": {"oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "object"}, {"type": "array"}]},
+                "onset_or_event_time": {"type": "string"},
+                "gene": {"type": "string"},
+                "reported_classification": {"type": "string"},
+                "reported_variant": {"type": "string"}
+              },
+              "required": ["modality", "label", "original_wording", "source_class", "verification_state"],
+              "additionalProperties": false
+            }
+          },
+          "purpose": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "facts", "purpose", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_lab_workspace", "current_investigation"],
+      "produces": ["health_profile_facts", "profile_snapshot", "consent_receipt", "investigation_revision"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_health_profile", "selected_approved_active_genome_index_context"],
+      "discovery_role": "entry_tool"
+    },
+    "lab.create_investigation": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Create an investigation owned by the current Lab workspace and return its durable identifier.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {"type": "string"},
+          "disease_scope": {"type": "string"},
+          "public_only": {"type": "boolean", "default": false},
+          "command_id": {"type": "string"}
+        },
+        "required": ["question", "command_id"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_lab_workspace"],
+      "produces": ["investigation"],
+      "context_optional": ["disease_scope"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state"],
+      "discovery_role": "entry_tool"
+    },
+    "lab.read_investigation": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Read the authorized investigation's current cycles, hypothesis versions, evidence snapshots, specialist assignments, disclosure summaries, and published briefs.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "include_history": {"type": "boolean", "default": false}
+        },
+        "required": ["investigation_id"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization"],
+      "produces": ["investigation_state"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": ["lab_investigation_state"],
+      "discovery_role": "entry_tool"
+    },
+    "lab.create_cycle": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Create the next immutable investigation cycle under the current authorized patient context or as a declared public-only cycle.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "purpose": {"type": "string"},
+          "profile_snapshot_id": {"type": "string"},
+          "prior_cycle_id": {"type": "string"},
+          "public_only": {"type": "boolean"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "purpose", "public_only", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization"],
+      "produces": ["investigation_cycle"],
+      "context_optional": ["profile_snapshot_id", "prior_cycle_id"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_profile_snapshot_metadata"],
+      "discovery_role": "entry_tool"
+    },
+    "lab.create_hypothesis": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Create the first immutable version of a Main-Orchestrator-owned investigation hypothesis with explicit patient evidence and unresolved gaps.",
+      "input_schema": {
+        "type": "object",
+        "x_genomi_property_groups": ["lab_hypothesis_version"],
+        "properties": {
+          "status": {"type": "string", "enum": ["open"]}
+        },
+        "required": [
+          "investigation_id", "cycle_id", "statement", "status",
+          "supporting_evidence_record_ids", "contradicting_evidence_record_ids",
+          "contextual_evidence_record_ids", "unresolved_gaps",
+          "revision_rationale", "command_id", "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle"],
+      "produces": ["hypothesis_version"],
+      "context_optional": ["profile_snapshot_id", "evidence_snapshot_id", "parent_hypothesis_id", "category"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_profile_snapshot_metadata", "captured_evidence_records"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.revise_hypothesis": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Append an immutable version to a logical hypothesis after the Main Orchestrator assesses current patient-specific evidence.",
+      "input_schema": {
+        "type": "object",
+        "x_genomi_property_groups": ["lab_hypothesis_version"],
+        "properties": {
+          "logical_hypothesis_id": {"type": "string"},
+          "status": {
+            "type": "string",
+            "enum": ["open", "strengthened", "weakened", "retained", "rejected", "resolved"]
+          }
+        },
+        "required": [
+          "investigation_id", "cycle_id", "logical_hypothesis_id", "statement", "status",
+          "supporting_evidence_record_ids", "contradicting_evidence_record_ids",
+          "contextual_evidence_record_ids", "unresolved_gaps",
+          "revision_rationale", "command_id", "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "existing_logical_hypothesis"],
+      "produces": ["hypothesis_version"],
+      "context_optional": ["profile_snapshot_id", "evidence_snapshot_id", "parent_hypothesis_id", "category"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_profile_snapshot_metadata", "captured_evidence_records"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.prepare_specialist_brief": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Validate and record a de-identified public research brief, preserving the private derivation separately and returning only the outbound specialist object for delegation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "specialist_role": {"type": "string"},
+          "execution_policy": {
+            "type": "string",
+            "enum": ["reasoning_only", "public_literature", "protein_model_research", "experiment_design"]
+          },
+          "research_question": {"type": "string"},
+          "public_concepts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {"type": "string"},
+                "identifier": {"type": "string"},
+                "label": {"type": "string"}
+              },
+              "required": ["type", "identifier"],
+              "additionalProperties": false
+            }
+          },
+          "abstract_event_relations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event_class_a": {"type": "string"},
+                "relation": {"type": "string"},
+                "event_class_b": {"type": "string"}
+              },
+              "required": ["event_class_a", "relation", "event_class_b"],
+              "additionalProperties": false
+            }
+          },
+          "public_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "source_fact_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "purpose": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": [
+          "investigation_id", "cycle_id", "specialist_role", "execution_policy",
+          "research_question", "public_concepts", "abstract_event_relations",
+          "public_evidence_record_ids", "source_fact_ids", "purpose",
+          "command_id", "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "verified_specialist_execution_policy"],
+      "produces": ["internal_derivation_record", "outbound_specialist_brief", "disclosure_receipt"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_patient_facts", "captured_public_evidence"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.create_specialist_assignment": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Create a proposed specialist assignment from a validated de-identified specialist brief.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "specialist_brief_id": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "cycle_id", "specialist_brief_id", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "validated_specialist_brief"],
+      "produces": ["specialist_assignment"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_specialist_assignments", "deidentified_specialist_briefs"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.transition_specialist_assignment": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Apply one legal specialist-assignment state transition; completing an assignment atomically records its general finding and closes the assignment.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "assignment_id": {"type": "string"},
+          "to_state": {"type": "string", "enum": ["spawned", "completed", "failed", "cancelled"]},
+          "native_agent_id": {"type": "string"},
+          "general_finding": {"type": "object", "additionalProperties": true},
+          "failure": {"type": "object", "additionalProperties": true},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "assignment_id", "to_state", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "existing_specialist_assignment"],
+      "produces": ["specialist_assignment"],
+      "context_optional": ["native_agent_id"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_specialist_assignments", "deidentified_specialist_findings"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.capture_evidence_result": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Capture a durable, tamper-checked Genomi result receipt as patient investigation evidence without accepting caller-supplied replacement evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "result_receipt_id": {"type": "string"},
+          "purpose": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "cycle_id", "result_receipt_id", "purpose", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "durable_genomi_result_receipt"],
+      "produces": ["investigation_evidence_record", "evidence_snapshot"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["durable_genomi_result_receipt", "lab_investigation_state"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.capture_provider_result": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Capture a provider result receipt bound to its de-identified specialist brief and disclosure receipt as public evidence or a nonclinical research artifact.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "assignment_id": {"type": "string"},
+          "specialist_brief_id": {"type": "string"},
+          "provider_result_receipt_id": {"type": "string"},
+          "purpose": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": [
+          "investigation_id", "cycle_id", "assignment_id", "specialist_brief_id",
+          "provider_result_receipt_id", "purpose", "command_id", "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "provider_result_bound_to_specialist_disclosure"],
+      "produces": ["public_source_evidence_record", "nonclinical_research_artifact"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["provider_result_receipt", "specialist_disclosure_receipt", "lab_investigation_state"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.publish_brief": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Publish an immutable clinician-brief version from current investigation state and explicitly cited patient and public evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "brief": {"type": "object", "additionalProperties": true},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        },
+        "required": ["investigation_id", "cycle_id", "brief", "command_id", "expected_revision"],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "current_evidence_snapshot"],
+      "produces": ["clinician_brief_version"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "captured_evidence_records", "approved_patient_facts"],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

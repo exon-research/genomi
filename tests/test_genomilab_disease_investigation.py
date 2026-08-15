@@ -10,7 +10,6 @@ from genomi.evidence import envelope as evidence_envelope
 from genomi.lab.disease_relation_contract import REGISTER_DISEASE_RELATION
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
 
 
 class _DiseaseInvestigationTestSupport:
@@ -28,7 +27,7 @@ class _DiseaseInvestigationTestSupport:
         )
         self._environment.start()
         self.addCleanup(self._environment.stop)
-        self.store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        self.store = GenomiLabStore()
         self.store.open_workspace("user-a", "Synthetic user")
         self.condition = self.store.add_profile_observation(
             "user-a",

@@ -28,6 +28,7 @@ CATALOG_FRAGMENT_PACKAGES = (
     "genomi.capabilities.research",
     "genomi.capabilities.journal",
     "genomi.capabilities.decode",
+    "genomi.capabilities.lab",
 )
 
 

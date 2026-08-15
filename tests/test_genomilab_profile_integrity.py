@@ -11,7 +11,6 @@ from unittest import mock
 
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
 
 
 class GenomiLabProfileIntegrityTests(unittest.TestCase):
@@ -29,7 +28,7 @@ class GenomiLabProfileIntegrityTests(unittest.TestCase):
         )
         self._environment.start()
         self.addCleanup(self._environment.stop)
-        self.store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        self.store = GenomiLabStore()
         self.store.open_workspace("user-a", "Synthetic user")
 
     def _phenotype(self, label: str, **updates: object) -> dict[str, object]:
@@ -231,7 +230,7 @@ class GenomiLabProfileIntegrityTests(unittest.TestCase):
         barrier = threading.Barrier(2)
 
         def supersede(label: str) -> tuple[str, object]:
-            store = GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER)
+            store = GenomiLabStore(self.store.path)
             barrier.wait(timeout=5)
             try:
                 result = store.add_profile_observation(
@@ -274,7 +273,7 @@ class GenomiLabProfileIntegrityTests(unittest.TestCase):
         barrier = threading.Barrier(2)
 
         def create_root(label: str) -> tuple[str, object]:
-            store = GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER)
+            store = GenomiLabStore(self.store.path)
             barrier.wait(timeout=5)
             try:
                 return (
@@ -389,7 +388,7 @@ class GenomiLabProfileIntegrityTests(unittest.TestCase):
                 ),
             )
 
-        reopened = GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER)
+        reopened = GenomiLabStore(self.store.path)
         heads = reopened.list_profile_observations("user-a", current_only=True)
         self.assertEqual(len(heads), 2)
         self.assertEqual(len({row["logical_observation_id"] for row in heads}), 2)
@@ -483,7 +482,7 @@ class GenomiLabProfileIntegrityTests(unittest.TestCase):
             connection.execute("DROP TRIGGER specimens_immutable")
             connection.execute("DROP TRIGGER assays_immutable")
 
-        reopened = GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER)
+        reopened = GenomiLabStore(self.store.path)
         self.assertEqual(reopened.list_workspace_user_ids(), ["user-a"])
         self.assertIn(
             "idx_observations_one_successor",

@@ -133,6 +133,24 @@
       }
     },
     "property_groups": {
+      "lab_hypothesis_version": {
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "statement": {"type": "string"},
+          "category": {"type": "string"},
+          "parent_hypothesis_id": {"type": "string"},
+          "profile_snapshot_id": {"type": "string"},
+          "evidence_snapshot_id": {"type": "string"},
+          "supporting_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "contradicting_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "contextual_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
+          "unresolved_gaps": {"$ref": "#/schema_fragments/properties/string_array"},
+          "revision_rationale": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        }
+      },
       "decode_dashboard_options": {
         "properties": {
           "panels": {
@@ -364,7 +382,8 @@
     "sequence",
     "analytical-grounding",
     "journal",
-    "decode"
+    "decode",
+    "lab"
   ],
   "namespace_order": [
     "genomi",
@@ -386,6 +405,7 @@
     "pathway",
     "region",
     "journal",
-    "decode"
+    "decode",
+    "lab"
   ]
 }

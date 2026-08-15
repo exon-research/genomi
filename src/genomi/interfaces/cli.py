@@ -147,13 +147,18 @@ def build_parser() -> argparse.ArgumentParser:
         "lab_command",
         nargs="?",
         choices=["setup"],
-        help="Initialize GenomiLab records and reconcile its normally installed skill.",
+        help="Install or verify the focused Lab skill and specialist policies.",
+    )
+    lab_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="With `setup`, verify readiness without changing local state.",
     )
     lab_parser.add_argument(
         "--host",
         choices=["127.0.0.1", "localhost"],
         default="127.0.0.1",
-        help="Loopback bind host. GenomiLab never binds to the local network.",
+        help="Loopback host for the unified web workspace.",
     )
     lab_parser.add_argument(
         "--port",
@@ -164,19 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     lab_parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Print the private launch link without opening a browser.",
-    )
-    lab_parser.add_argument(
-        "--check",
-        action="store_true",
-        help="With `setup`, validate readiness without changing local state.",
-    )
-    lab_parser.add_argument(
-        "--demo",
-        nargs="?",
-        const="ctla4",
-        choices=["ctla4"],
-        help="With `setup`, create or refresh the clearly synthetic CTLA4 demo.",
+        help="Start the workspace without opening a browser.",
     )
     lab_parser.set_defaults(func=_cmd_lab)
 
@@ -240,12 +233,11 @@ def _cmd_lab(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.lab_command == "setup":
         from ..lab.setup import run_lab_setup
 
-        return run_lab_setup(check=bool(args.check), demo=args.demo or False)
-    if args.check or args.demo:
-        raise ValueError("--check and --demo require `genomi lab setup`")
-    # GenomiLab has one browser-owned host-agent boundary. Keep this alias on
-    # the established portal runner so an inquiry never launches a second
-    # GenomiLab process that launches another Codex thread.
+        return run_lab_setup(check=bool(args.check))
+    if args.check:
+        raise ValueError("--check requires `genomi lab setup`")
+    # This is an alias for the existing Genomi web workspace, not a second Lab
+    # runtime or orchestration thread.
     mcp.serve_http(
         host=args.host,
         port=args.port,
@@ -253,8 +245,6 @@ def _cmd_lab(args: argparse.Namespace) -> dict[str, Any] | None:
         portal_session_auth=True,
     )
     return None
-
-
 def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     area = subparsers.add_parser(
         "static",

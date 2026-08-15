@@ -9,8 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from ..operations import OperationError, operation_discovery_payload
 from ..runtime import portal_routes
-from ..lab.encrypted_sqlite import EncryptedSQLiteError
-from ..lab.service_errors import LabError
+from ..lab.local_sqlite import LocalSQLiteError
 from . import portal_active_context, portal_agents, portal_artifact_bundles, portal_artifact_exports, portal_artifact_renderers, portal_assets, portal_bundle_files, portal_context, portal_file_imports, portal_frame_bundles, portal_genomes, portal_genomilab, portal_project_events, portal_prompt_suggestions, portal_router, portal_run_event_pages, portal_run_events, portal_run_packages, portal_run_service, portal_source_lookups, portal_state, portal_store, portal_turns, portal_workspace_files
 
 JsonObject = dict[str, Any]
@@ -1041,10 +1040,7 @@ def _send_genomilab_result(
     except portal_genomilab.PortalGenomiLabError as exc:
         _send_json(handler, exc.http_status, exc.to_json())
         return
-    except LabError as exc:
-        _send_json(handler, exc.http_status, exc.to_json())
-        return
-    except EncryptedSQLiteError:
+    except LocalSQLiteError:
         _send_json(
             handler,
             HTTPStatus.SERVICE_UNAVAILABLE,
@@ -1052,7 +1048,7 @@ def _send_genomilab_result(
                 "error": {
                     "code": "genomilab_storage_unavailable",
                     "message": (
-                        "GenomiLab could not unlock its local encrypted records. "
+                        "Genomi Lab could not open its local records. "
                         "Check the private Genomi data directory and retry."
                     ),
                 }

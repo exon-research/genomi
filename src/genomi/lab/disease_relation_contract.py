@@ -6,7 +6,6 @@ import math
 
 from ..evidence import envelope as canonical_evidence_envelope
 from .models import JsonObject, required_text
-from .provider_policy import SourceFamily
 
 
 REGISTER_DISEASE_RELATION = "investigation.register_disease_relation"
@@ -50,7 +49,12 @@ UNCERTAINTY_KINDS = frozenset(
 )
 PUBLIC_SOURCE_FAMILIES = frozenset(
     {
-        *(item.value for item in SourceFamily),
+        "literature",
+        "regulatory",
+        "trial_registry",
+        "uniprot",
+        "pdb",
+        "chembl",
         "gencc",
         "hpo",
         "msigdb_hallmark",
@@ -106,7 +110,7 @@ _CONFLICT_FIELDS = frozenset(
 
 
 def disease_relation_parameter_contract() -> JsonObject:
-    """Return the fixed vocabulary exposed to the installed harness."""
+    """Return the fixed vocabulary for evidence relation records."""
 
     return {
         "relation_kind": sorted(RELATION_KINDS),

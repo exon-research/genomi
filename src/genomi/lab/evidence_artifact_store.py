@@ -1,20 +1,17 @@
-"""Persistence for versioned investigation plans and briefs."""
+"""Persistence for versioned investigation briefs."""
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from typing import Any, ContextManager, Protocol
 
-from .models import JsonObject, compact_json, required_text, row_dict, utc_now
+from .models import JsonObject, compact_json, row_dict, utc_now
 
 
 class _ArtifactStore(Protocol):
     def _connect(self) -> ContextManager[Any]: ...
 
     def atomic_write(self) -> ContextManager[None]: ...
-
-    def validate_plan(self, investigation_id: str, plan: JsonObject) -> None: ...
 
     def validate_brief(self, investigation_id: str, brief: JsonObject) -> None: ...
 
@@ -24,128 +21,7 @@ class _ArtifactStore(Protocol):
 
 
 class EvidenceArtifactStoreMixin:
-    """Write user-reviewed plans, acceptances, and brief versions."""
-
-    def commit_plan(
-        self: _ArtifactStore,
-        investigation_id: str,
-        plan: JsonObject,
-    ) -> JsonObject:
-        self.validate_plan(investigation_id, plan)
-        with self._connect() as connection:
-            target = connection.execute(
-                "SELECT patient_molecular_snapshot_id FROM investigations "
-                "WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchone()
-            if target is None:
-                raise KeyError(investigation_id)
-            current = connection.execute(
-                "SELECT COALESCE(MAX(version), 0) AS version FROM plan_versions "
-                "WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchone()
-            version = int(current["version"]) + 1
-            plan_id = f"plan-{uuid.uuid4().hex}"
-            connection.execute(
-                "INSERT INTO plan_versions(plan_version_id, investigation_id, "
-                "patient_molecular_snapshot_id, version, plan_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    plan_id,
-                    investigation_id,
-                    target["patient_molecular_snapshot_id"],
-                    version,
-                    compact_json(plan),
-                    utc_now(),
-                ),
-            )
-            row = connection.execute(
-                "SELECT * FROM plan_versions WHERE plan_version_id = ?", (plan_id,)
-            ).fetchone()
-        return row_dict(row)
-
-    def accept_plan(
-        self: _ArtifactStore,
-        investigation_id: str,
-        *,
-        plan_version_id: object,
-        user_id: object,
-        workspace_session_id: object,
-        plan_sha256: object,
-        approved: object,
-    ) -> JsonObject:
-        """Record explicit acceptance of the exact current harness plan."""
-
-        if approved is not True:
-            raise ValueError("plan acceptance requires explicit approval")
-        plan_version = required_text(plan_version_id, "plan_version_id", 200)
-        user = required_text(user_id, "user_id", 300)
-        session = required_text(workspace_session_id, "workspace_session_id", 300)
-        supplied_hash = required_text(plan_sha256, "plan_sha256", 128)
-        with self._connect() as connection:
-            investigation = connection.execute(
-                "SELECT user_id, patient_molecular_snapshot_id FROM investigations "
-                "WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchone()
-            if investigation is None:
-                raise KeyError(investigation_id)
-            if str(investigation["user_id"]) != user:
-                raise ValueError("the plan does not belong to the current Genomi user")
-            current = connection.execute(
-                "SELECT * FROM plan_versions WHERE investigation_id = ? "
-                "AND patient_molecular_snapshot_id IS ? ORDER BY version DESC LIMIT 1",
-                (
-                    investigation_id,
-                    investigation["patient_molecular_snapshot_id"],
-                ),
-            ).fetchone()
-            if current is None or str(current["plan_version_id"]) != plan_version:
-                raise ValueError(
-                    "only the current molecular-context plan can be accepted"
-                )
-            expected_hash = hashlib.sha256(
-                str(current["plan_json"]).encode("utf-8")
-            ).hexdigest()
-            if supplied_hash != expected_hash:
-                raise ValueError("the plan changed after it was reviewed")
-            existing = connection.execute(
-                "SELECT * FROM plan_acceptances WHERE plan_version_id = ?",
-                (plan_version,),
-            ).fetchone()
-            if existing is not None:
-                saved = row_dict(existing)
-                if any(
-                    saved.get(key) != value
-                    for key, value in {
-                        "investigation_id": investigation_id,
-                        "user_id": user,
-                        "plan_sha256": supplied_hash,
-                    }.items()
-                ):
-                    raise ValueError("the saved plan acceptance does not match")
-                return saved
-            acceptance_id = f"plan-acceptance-{uuid.uuid4().hex}"
-            connection.execute(
-                "INSERT INTO plan_acceptances(plan_acceptance_id, plan_version_id, "
-                "investigation_id, user_id, workspace_session_id, plan_sha256, accepted_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    acceptance_id,
-                    plan_version,
-                    investigation_id,
-                    user,
-                    session,
-                    supplied_hash,
-                    utc_now(),
-                ),
-            )
-            row = connection.execute(
-                "SELECT * FROM plan_acceptances WHERE plan_acceptance_id = ?",
-                (acceptance_id,),
-            ).fetchone()
-        return row_dict(row)
+    """Write evidence-pinned brief versions."""
 
     def commit_brief(
         self: _ArtifactStore, investigation_id: str, brief: JsonObject

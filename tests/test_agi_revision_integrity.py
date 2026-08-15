@@ -9,6 +9,8 @@ import stat
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from genomi.active_genome_index.active_genome_index import create_active_genome_index
 from genomi.active_genome_index.identity import read_agi_snapshot_identity
 from genomi.active_genome_index.revisions import compute_agi_artifact_sha256
@@ -17,7 +19,6 @@ from genomi.active_genome_index.reader import ActiveGenomeIndexNeed, open_reader
 from genomi.operations import call_operation
 from genomi.operations.registry.errors import OperationError
 from genomi.runtime import context as runtime_context
-from genomi.lab import agi_authority
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
 
@@ -25,10 +26,6 @@ from tests.support.runtime.genomi import GenomiRuntimeTestCase
 class ActiveGenomeIndexRevisionIntegrityTests(GenomiRuntimeTestCase):
     def setUp(self) -> None:
         super().setUp()
-        agi_authority._reset_investigation_agi_authorization_epoch_for_testing()
-        self.addCleanup(
-            agi_authority._reset_investigation_agi_authorization_epoch_for_testing
-        )
         source_path = self.genomi_home / "integrity-patient.vcf"
         source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text(
@@ -95,46 +92,9 @@ class ActiveGenomeIndexRevisionIntegrityTests(GenomiRuntimeTestCase):
         self._tamper_variant_row()
 
         assert read_agi_snapshot_identity(self.revision_path) == identity_before
-        with self.assertRaises(OperationError) as raised:
+        with pytest.raises(OperationError) as raised:
             call_operation("variant.resolve", {"rsid": "rs900000001"})
-        assert raised.exception.code == "active_genome_index_artifact_integrity_failed"
-
-    def test_investigation_authorization_rechecks_bytes_before_use(self) -> None:
-        handle = agi_authority.issue_investigation_agi_authorization(
-            workspace_session_id="workspace-integrity",
-            user_id=self.user_id,
-            investigation_id="investigation-integrity",
-            patient_molecular_snapshot_id="molecular-snapshot-integrity",
-            consent_receipt_id="consent-integrity",
-            agi_id=self.agi_id,
-            agi_snapshot_id=self.snapshot_id,
-            purpose="Investigate a synthetic disease",
-            genomic_scope={
-                "operation": "variant.resolve",
-                "rsid": "rs900000001",
-            },
-        )
-        identity_before = read_agi_snapshot_identity(self.revision_path)
-        self._tamper_variant_row()
-
-        assert read_agi_snapshot_identity(self.revision_path) == identity_before
-        with self.assertRaises(
-            agi_authority.InvestigationAgiAuthorizationError
-        ) as raised:
-            params = {"rsid": "rs900000001"}
-            execution_context = (
-                agi_authority.execution_context_for_investigation_authorization(
-                    handle,
-                    operation="variant.resolve",
-                    params=params,
-                )
-            )
-            call_operation(
-                "variant.resolve",
-                params,
-                execution_context=execution_context,
-            )
-        assert raised.exception.code == "investigation_agi_authorization_context_mismatch"
+        assert raised.value.code == "active_genome_index_artifact_integrity_failed"
 
     def _tamper_variant_row(self) -> None:
         tampered_path = self.revision_path.with_suffix(".tampered.sqlite")

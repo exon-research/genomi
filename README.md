@@ -86,7 +86,7 @@ already packaged or otherwise present, the canonical install/update path is
 `genomi install` or the MCP operation `genomi.install`; the source bootstrap is
 only for hosts that do not have Genomi yet.
 
-## GenomiLab Local Research Workspace (Developer Preview)
+## Genomi Lab (Developer Preview)
 
 GenomiLab has one inquiry-led web workspace for conversations, evidence, files,
 artifacts, provenance, and project-scoped Active Genome Index selection. Both
@@ -104,26 +104,21 @@ not route an inquiry through a second GenomiLab server or bootstrap nested Codex
 threads. Conversation history, selected context, evidence, files, and artifacts
 stay attached to the same browser workspace.
 
-Those GenomiLab capabilities go beyond both base Genomi and a general harness:
-they project an approved Patient Molecular Profile, preserve source-separated
-disease evidence, relate public findings to exact patient observations, and
-maintain hypotheses, counterevidence, gaps, confirmation needs, and versioned
-patient/clinician briefs. A Paperclip API key can be saved securely and checked
-explicitly with a fixed public `TP53`/PMC/one-result probe. That check does not
-enable evidence retrieval. Every Paperclip evidence operation in this release
-is investigation-scoped and remains closed until separate deployment
-authorization, an independent patient-data contract, and approval of the exact
-disclosure are all present. An API key does not establish those permissions.
-Proto and ESM remain disabled unless a narrow, independently validated
-scientific task makes them appropriate.
+Lab is a focused investigation capability inside that existing conversation.
+The Main agent infers when durable longitudinal investigation is useful, loads
+the `lab` skill, and calls `lab.*` through `genomi.invoke`. It does not use a
+keyword router, second planner, or separate execution runtime. Install or verify
+the focused skill and local policy assets with:
 
-The portal binds to a random loopback-only address and opens with a one-time
-private launch link. Each investigation uses an immutable, consented molecular
-profile snapshot, an exact AGI revision, and a bounded genomic scope. Access is
-revoked when the portal stops or the current Genomi user changes. Optional
-external providers and biological models are behind explicit eligibility and
-patient-data disclosure gates; connection verification never opens a
-patient-informed route, and unavailable capabilities fail closed.
+```bash
+genomi lab setup --check
+```
+
+The operations persist health-profile snapshots,
+investigation cycles, source-separated evidence receipts, hypotheses,
+de-identified specialist assignments, and versioned research briefs. Genomi
+remains the source of truth for the current user and Active Genome Index; Lab
+does not create a second patient selector, planner, router, or execution runtime.
 
 This remains a research-support developer preview, not a diagnosis or treatment
 product. Findings and proposed clinical implications require appropriate

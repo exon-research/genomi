@@ -1,4 +1,4 @@
-"""GenomiLab encrypted records used by the unified science workspace."""
+"""Durable contracts for the focused Genomi Lab capability."""
 
 from .store import GenomiLabStore
 

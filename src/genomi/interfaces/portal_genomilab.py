@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 
-from ..lab.service_errors import LabError
 from ..lab.store import GenomiLabStore
 from . import portal_project_events, portal_state, portal_store
 
@@ -72,7 +71,7 @@ def project_board(
     if binding:
         try:
             active = application.investigation(str(binding["investigation_id"]))
-        except LabError as exc:
+        except PortalGenomiLabError as exc:
             if exc.code != "investigation_not_found":
                 raise
             binding = None
@@ -360,7 +359,7 @@ def project_binding(
 
 
 class _PortalGenomiLabApplication:
-    """Project-bound projection over the encrypted GenomiLab record domain.
+    """Project-bound projection over the local Genomi Lab record domain.
 
     This adapter deliberately owns no assistant runner and no credential store.
     Provider connection operations are supplied by the host-neutral Lab backend;
@@ -382,7 +381,7 @@ class _PortalGenomiLabApplication:
     def _current_user(self) -> Iterator[str]:
         expected = str(self._context_provider().get("active_user_id") or "").strip()
         if not expected:
-            raise LabError(
+            raise PortalGenomiLabError(
                 "genomi_user_required",
                 "Select a Genomi user and Active Genome Index for this workspace.",
                 http_status=409,
@@ -393,7 +392,7 @@ class _PortalGenomiLabApplication:
                 self._context_provider().get("active_user_id") or ""
             ).strip()
             if current != expected:
-                raise LabError(
+                raise PortalGenomiLabError(
                     "genomi_user_changed",
                     "The workspace user changed during this operation.",
                     http_status=409,
@@ -449,7 +448,7 @@ class _PortalGenomiLabApplication:
         with self._current_user() as user_id:
             investigation = self.store.get_investigation(investigation_id)
             if str(investigation.get("user_id") or "") != user_id:
-                raise LabError(
+                raise PortalGenomiLabError(
                     "investigation_not_found",
                     "Investigation not found.",
                     http_status=404,
@@ -482,9 +481,9 @@ class _PortalGenomiLabApplication:
 
     def connect_integration(self, provider: str, payload: JsonObject) -> JsonObject:
         del provider, payload
-        raise LabError(
+        raise PortalGenomiLabError(
             "provider_connection_backend_unavailable",
-            "Encrypted local provider connections are not available in this build.",
+            "Provider connections are not available in this build.",
             http_status=503,
         )
 

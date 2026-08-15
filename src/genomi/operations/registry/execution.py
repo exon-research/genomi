@@ -21,6 +21,7 @@ from ...active_genome_index.active_genome_index import ActiveGenomeIndexReader
 
 JsonObject = dict[str, Any]
 RevalidateExecution = Callable[[], Mapping[str, object]]
+IssueEvidenceResultReceipt = Callable[..., str]
 
 
 class OperationExecutionContextError(RuntimeError):
@@ -84,6 +85,9 @@ class OperationExecutionContext:
     params: Mapping[str, object]
     agi_read_lease: AgiReadLease | None = None
     revalidate: RevalidateExecution | None = field(default=None, repr=False)
+    evidence_result_receipt_issuer: IssueEvidenceResultReceipt | None = field(
+        default=None, repr=False
+    )
 
     def __post_init__(self) -> None:
         operation = str(self.operation or "").strip()
@@ -107,6 +111,38 @@ class OperationExecutionContext:
         if self.revalidate is None:
             return {}
         return dict(self.revalidate())
+
+    def issue_evidence_result_receipt(
+        self,
+        *,
+        operation: str,
+        params: Mapping[str, object],
+        presented_result: Mapping[str, object],
+    ) -> str | None:
+        """Ask the embedding host to durably bind the exact presented result."""
+
+        if self.evidence_result_receipt_issuer is None:
+            return None
+        try:
+            receipt_id = self.evidence_result_receipt_issuer(
+                operation=operation,
+                params=copy.deepcopy(dict(params)),
+                presented_result=copy.deepcopy(dict(presented_result)),
+            )
+        except OperationExecutionContextError:
+            raise
+        except (KeyError, ValueError) as exc:
+            raise OperationExecutionContextError(
+                "evidence_result_receipt_rejected",
+                "The host rejected the evidence-result receipt binding.",
+            ) from exc
+        identifier = str(receipt_id or "").strip()
+        if not identifier:
+            raise OperationExecutionContextError(
+                "invalid_evidence_result_receipt",
+                "The host evidence-result receipt issuer returned no receipt identifier.",
+            )
+        return identifier
 
 
 _CURRENT_EXECUTION_CONTEXT: contextvars.ContextVar[

@@ -1,4 +1,4 @@
-"""Canonical validation for harness-proposed GenomiLab artifacts."""
+"""Canonical validation for evidence-grounded Genomi Lab briefs."""
 
 from __future__ import annotations
 
@@ -25,76 +25,6 @@ CLAIM_ROLES = {
     "counterevidence",
     "limitation",
 }
-def validate_plan_artifact(plan: JsonObject) -> None:
-    validate_private_payload(plan)
-    validate_research_narrative(
-        plan.get("summary"), "plan summary", kind="plan_summary"
-    )
-    roles = plan.get("proposed_agent_roles")
-    if roles is not None:
-        if not isinstance(roles, list):
-            raise ValueError("proposed_agent_roles must be an array")
-        for role in roles:
-            if not isinstance(role, dict):
-                raise ValueError("every proposed agent role must be an object")
-            required_text(role.get("role"), "proposed agent role", 200)
-            if role.get("objective") is not None:
-                validate_research_narrative(
-                    role.get("objective"),
-                    "proposed agent objective",
-                    kind="plan_role_objective",
-                )
-    steps = plan.get("steps")
-    if not isinstance(steps, list) or not steps:
-        raise ValueError("plan steps must be a non-empty array")
-    step_by_id: dict[str, JsonObject] = {}
-    for step in steps:
-        if not isinstance(step, dict):
-            raise ValueError("every plan step must be an object")
-        step_id = required_text(step.get("id"), "plan step id", 200)
-        if step_id in step_by_id:
-            raise ValueError("plan step identifiers must be unique")
-        step_by_id[step_id] = step
-        validate_research_narrative(
-            step.get("title"), "plan step title", kind="plan_step_title"
-        )
-        if step.get("rationale") is not None:
-            validate_research_narrative(
-                step.get("rationale"),
-                "plan step rationale",
-                kind="plan_step_rationale",
-            )
-        capabilities = step.get("capabilities")
-        if not isinstance(capabilities, list) or not all(
-            isinstance(value, str) and value.strip() for value in capabilities
-        ):
-            raise ValueError("plan step capabilities must be an array of names")
-    requests = plan.get("capability_requests")
-    if not isinstance(requests, list):
-        raise ValueError("plan capability_requests must be an array")
-    request_ids: set[str] = set()
-    for request in requests:
-        if not isinstance(request, dict):
-            raise ValueError("every capability request must be an object")
-        request_id = required_text(request.get("id"), "capability request id", 200)
-        if request_id in request_ids:
-            raise ValueError("capability request identifiers must be unique")
-        request_ids.add(request_id)
-        step_id = required_text(request.get("step_id"), "capability step id", 200)
-        role = required_text(
-            request.get("assigned_agent_role"), "capability agent role", 200
-        )
-        capability = required_text(request.get("capability"), "capability", 200)
-        parameters = request.get("parameters")
-        if not isinstance(parameters, dict):
-            raise ValueError("capability parameters must be an object")
-        step = step_by_id.get(step_id)
-        if step is None or capability not in step["capabilities"]:
-            raise ValueError("capability request must reference a declaring plan step")
-        if role != step.get("proposed_agent_role"):
-            raise ValueError("capability request role must match its plan step")
-
-
 def validate_brief_artifact(
     brief: JsonObject,
     *,
@@ -103,7 +33,7 @@ def validate_brief_artifact(
     validate_private_payload(brief)
     if str(brief.get("clinical_stage") or "") not in AGENT_CLINICAL_STAGES:
         raise ValueError(
-            "harness briefs may use only research_observation or candidate_hypothesis; "
+            "research briefs may use only research_observation or candidate_hypothesis; "
             "clinical stages require a separately attributed clinical workflow"
         )
     title = required_text(brief.get("title"), "brief title", 500)

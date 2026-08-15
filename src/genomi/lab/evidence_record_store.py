@@ -19,7 +19,7 @@ from .models import (
 
 
 class EvidenceCommitGuardError(ValueError):
-    """A current-plan or live-approval precondition changed before commit."""
+    """A live consent or disclosure precondition changed before commit."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -43,7 +43,6 @@ class EvidenceRecordStoreMixin:
         operation: object,
         evidence: JsonObject,
         deduplication_key: object,
-        expected_plan_version_id: object = None,
         expected_disclosure_receipt_id: object = None,
         expected_consent_receipt_id: object = None,
         _reserved_operation_token: object = None,
@@ -61,11 +60,6 @@ class EvidenceRecordStoreMixin:
         operation_value = required_text(operation, "operation", 200)
         validate_reserved_relation_commit(operation_value, _reserved_operation_token)
         dedup = required_text(deduplication_key, "deduplication_key", 300)
-        expected_plan = (
-            required_text(expected_plan_version_id, "expected_plan_version_id", 200)
-            if expected_plan_version_id not in (None, "")
-            else None
-        )
         expected_disclosure = (
             required_text(
                 expected_disclosure_receipt_id,
@@ -99,28 +93,6 @@ class EvidenceRecordStoreMixin:
             if investigation is None:
                 raise KeyError(investigation_id)
             profile_snapshot_id = investigation["patient_molecular_snapshot_id"]
-            if expected_plan is not None:
-                current_plan = connection.execute(
-                    "SELECT plan_version_id FROM plan_versions "
-                    "WHERE investigation_id = ? "
-                    "AND patient_molecular_snapshot_id IS ? "
-                    "ORDER BY version DESC LIMIT 1",
-                    (investigation_id, profile_snapshot_id),
-                ).fetchone()
-                accepted = (
-                    connection.execute(
-                        "SELECT 1 FROM plan_acceptances WHERE plan_version_id = ?",
-                        (expected_plan,),
-                    ).fetchone()
-                    if current_plan is not None
-                    and str(current_plan["plan_version_id"]) == expected_plan
-                    else None
-                )
-                if accepted is None:
-                    raise EvidenceCommitGuardError(
-                        "plan_superseded",
-                        "evidence result no longer belongs to the current accepted plan",
-                    )
             if expected_disclosure is not None:
                 disclosure = connection.execute(
                     "SELECT 1 FROM outbound_disclosure_receipts "

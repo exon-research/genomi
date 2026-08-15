@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from .orchestrator_schema import install_orchestrator_schema
 from .schema import SCHEMA_SQL
 
 
@@ -83,36 +84,7 @@ def upgrade_lab_schema(connection: Any) -> None:
 
     repair_observation_logical_roots(connection)
     connection.executescript(SCHEMA_SQL)
-    _add_column_if_missing(
-        connection,
-        "hypotheses",
-        "parent_logical_hypothesis_id",
-        "TEXT",
-    )
-    _add_column_if_missing(
-        connection,
-        "hypotheses",
-        "evidence_snapshot_id",
-        "TEXT REFERENCES evidence_snapshots(evidence_snapshot_id)",
-    )
-    _add_column_if_missing(connection, "hypotheses", "title", "TEXT")
-    _add_column_if_missing(
-        connection,
-        "specialist_packets",
-        "projection_kind",
-        "TEXT NOT NULL DEFAULT 'claim_and_counterevidence_projection'",
-    )
-
-
-def _add_column_if_missing(
-    connection: Any, table: str, column: str, declaration: str
-) -> None:
-    columns = {
-        str(row["name"])
-        for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-    if column not in columns:
-        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+    install_orchestrator_schema(connection)
 
 
 def _root_logical_observation_id(user_id: str, revision_id: str) -> str:
@@ -120,9 +92,9 @@ def _root_logical_observation_id(user_id: str, revision_id: str) -> str:
         suffix = revision_id.removeprefix(_REVISION_PREFIX)
         if suffix:
             return f"{_LOGICAL_PREFIX}{suffix}"
-    digest = hashlib.sha256(f"{user_id}\x1f{revision_id}".encode("utf-8")).hexdigest()[
-        :24
-    ]
+    digest = hashlib.sha256(
+        f"{user_id}\x1f{revision_id}".encode("utf-8")
+    ).hexdigest()[:24]
     return f"{_LOGICAL_PREFIX}{digest}"
 
 

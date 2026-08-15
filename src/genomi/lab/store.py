@@ -8,19 +8,11 @@ import threading
 from typing import Callable, Iterator
 
 from ..runtime.paths import genomi_data_root
-from .encrypted_sqlite import EncryptedSQLiteDatabase, EncryptionKeyProvider
-from .approval_store import ApprovalStoreMixin
-from .authorization_derivation_store import (
-    InvestigationAuthorizationDerivationStoreMixin,
-)
-from .authorization_store import InvestigationAuthorizationStoreMixin
-from .capability_store import CapabilityExecutionStoreMixin
+from .local_sqlite import LocalSQLiteDatabase
 from .disease_relations import DiseaseRelationStoreMixin
 from .evidence_store import EvidenceStoreMixin
 from .health_store import HealthRecordStoreMixin
 from .investigation_store import InvestigationStoreMixin
-from .investigation_cycle_store import InvestigationCycleStoreMixin
-from .investigation_panel_store import InvestigationPanelStoreMixin
 from .models import (
     DISPLAY_NAME_MAX,
     JsonObject,
@@ -29,10 +21,14 @@ from .models import (
     stable_id,
     utc_now,
 )
+from .orchestrator_state_store import OrchestratorStateStoreMixin
+from .orchestrator_brief_store import OrchestratorBriefStoreMixin
+from .orchestrator_hypothesis_store import OrchestratorHypothesisStoreMixin
 from .profile_entities import ProfileEntityStoreMixin
-from .report_store import ReportStoreMixin
+from .result_receipts import ResultReceiptStoreMixin
 from .schema_migrations import upgrade_lab_schema
 from .snapshot_store import SnapshotStoreMixin
+from .specialist_store import SpecialistStoreMixin
 
 
 def lab_root(root: str | Path | None = None) -> Path:
@@ -40,34 +36,30 @@ def lab_root(root: str | Path | None = None) -> Path:
 
 
 def default_store_path(root: str | Path | None = None) -> Path:
-    return lab_root(root) / "genomilab.sqlite3"
+    return lab_root(root) / "lab.sqlite3"
 
 
 class GenomiLabStore(
-    InvestigationAuthorizationStoreMixin,
-    InvestigationAuthorizationDerivationStoreMixin,
-    ApprovalStoreMixin,
+    OrchestratorStateStoreMixin,
+    OrchestratorHypothesisStoreMixin,
+    OrchestratorBriefStoreMixin,
+    ResultReceiptStoreMixin,
+    SpecialistStoreMixin,
     HealthRecordStoreMixin,
     ProfileEntityStoreMixin,
     SnapshotStoreMixin,
     InvestigationStoreMixin,
-    InvestigationCycleStoreMixin,
-    InvestigationPanelStoreMixin,
-    CapabilityExecutionStoreMixin,
     DiseaseRelationStoreMixin,
     EvidenceStoreMixin,
-    ReportStoreMixin,
 ):
     """SQLite-backed GenomiLab domain state with one connection per operation."""
 
     def __init__(
         self,
         path: str | Path | None = None,
-        *,
-        key_provider: EncryptionKeyProvider | None = None,
     ) -> None:
         self.path = Path(path) if path is not None else default_store_path()
-        self._database = EncryptedSQLiteDatabase(self.path, key_provider=key_provider)
+        self._database = LocalSQLiteDatabase(self.path)
         self._authority_local = threading.local()
         self._transaction_local = threading.local()
         self._initialize()
@@ -83,14 +75,13 @@ class GenomiLabStore(
         self._require_current_user_authority()
         with self._database.connect() as connection:
             yield connection
-            # This check runs before EncryptedSQLiteDatabase serializes and
-            # commits the transaction.  A user switch while a store call is
-            # blocked therefore rolls the mutation back.
+            # This check runs before SQLite commits the transaction, so a user
+            # switch while a call is blocked rolls the mutation back.
             self._require_current_user_authority()
 
     @contextmanager
     def atomic_write(self) -> Iterator[None]:
-        """Commit a complete domain transition as one encrypted DB replacement.
+        """Commit a complete domain transition as one SQLite transaction.
 
         Store methods normally own one short transaction each. Application
         workflows that must update several aggregates can enter this boundary;
@@ -230,8 +221,6 @@ class GenomiLabStore(
             "profile_snapshots",
             "consent_receipts",
             "investigations",
-            "investigation_authorization_receipts",
-            "investigation_authorization_derivations",
             "evidence_records",
         }
         if table not in allowed:

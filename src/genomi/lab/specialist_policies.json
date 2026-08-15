@@ -1,0 +1,44 @@
+{
+  "profiles": [
+    {
+      "id": "reasoning_only",
+      "allowed_connectors": [],
+      "allowed_input_classes": ["deidentified_research_brief"],
+      "inherit_environment": false,
+      "inherit_mcp": false,
+      "inherit_project": false,
+      "inherit_skills": false,
+      "inherit_workspace": false
+    },
+    {
+      "id": "public_literature",
+      "allowed_connectors": ["paperclip"],
+      "allowed_input_classes": ["deidentified_research_brief", "public_biomedical_concepts"],
+      "inherit_environment": false,
+      "inherit_mcp": false,
+      "inherit_project": false,
+      "inherit_skills": false,
+      "inherit_workspace": false
+    },
+    {
+      "id": "protein_model_research",
+      "allowed_connectors": ["esm"],
+      "allowed_input_classes": ["deidentified_research_brief", "public_reference_sequence"],
+      "inherit_environment": false,
+      "inherit_mcp": false,
+      "inherit_project": false,
+      "inherit_skills": false,
+      "inherit_workspace": false
+    },
+    {
+      "id": "experiment_design",
+      "allowed_connectors": ["proto"],
+      "allowed_input_classes": ["deidentified_research_brief", "approved_public_research_artifact"],
+      "inherit_environment": false,
+      "inherit_mcp": false,
+      "inherit_project": false,
+      "inherit_skills": false,
+      "inherit_workspace": false
+    }
+  ]
+}

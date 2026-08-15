@@ -34,8 +34,6 @@ from .execution import (
 from ...runtime.context import context_scope
 from .evidence_result_receipts import EVIDENCE_RESULT_RECEIPTS
 from .model import Operation, _operation_capability
-from .application_model import ApplicationOperation
-from .handlers_genomilab import GENOMILAB_OPERATIONS
 from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
     _genomi_assign_user_genome,
@@ -136,6 +134,20 @@ from .handlers_sequence import (
     _sequence_restriction_sites,
     _sequence_translate,
 )
+from .handlers_lab import (
+    _lab_capture_evidence_result,
+    _lab_capture_provider_result,
+    _lab_create_cycle,
+    _lab_create_hypothesis,
+    _lab_create_investigation,
+    _lab_create_specialist_assignment,
+    _lab_prepare_specialist_brief,
+    _lab_publish_brief,
+    _lab_read_investigation,
+    _lab_revise_hypothesis,
+    _lab_transition_specialist_assignment,
+    _lab_update_health_profile,
+)
 from .handlers_vcf_variant import (
     _agi_callability,
     _agi_build_reference_pass,
@@ -150,7 +162,7 @@ _AGI_REFERENCE = "reference"
 _AGI_VARIANT = "variant"
 
 
-OPERATIONS: list[Operation | ApplicationOperation] = [
+OPERATIONS: list[Operation] = [
     Operation('genomi.check_background_job', _runtime_check_background_job),
     Operation('genomi.install', _genomi_install),
     Operation('genomi.describe_context', _genomi_describe_context),
@@ -250,7 +262,18 @@ OPERATIONS: list[Operation | ApplicationOperation] = [
     Operation('functional_genomics.compare_gene_perturbation', _screen_answer_gene),
     Operation('decode.build_dashboard_evidence', _decode_build_dashboard_evidence, agi_need=_AGI_REFERENCE),
     Operation('decode.render_dashboard', _decode_render_dashboard, agi_need=_AGI_REFERENCE),
-    *GENOMILAB_OPERATIONS,
+    Operation('lab.create_investigation', _lab_create_investigation),
+    Operation('lab.update_health_profile', _lab_update_health_profile),
+    Operation('lab.read_investigation', _lab_read_investigation),
+    Operation('lab.create_cycle', _lab_create_cycle),
+    Operation('lab.create_hypothesis', _lab_create_hypothesis),
+    Operation('lab.revise_hypothesis', _lab_revise_hypothesis),
+    Operation('lab.prepare_specialist_brief', _lab_prepare_specialist_brief),
+    Operation('lab.create_specialist_assignment', _lab_create_specialist_assignment),
+    Operation('lab.transition_specialist_assignment', _lab_transition_specialist_assignment),
+    Operation('lab.capture_evidence_result', _lab_capture_evidence_result),
+    Operation('lab.capture_provider_result', _lab_capture_provider_result),
+    Operation('lab.publish_brief', _lab_publish_brief),
 ]
 
 _OPERATION_BY_NAME = {operation.name: operation for operation in OPERATIONS}
@@ -413,17 +436,51 @@ def call_operation(
                         f"The execution context cannot overwrite result field {key!r}.",
                     )
                 result[key] = value
+            receipt_subject = _evidence_receipt_subject(name, safe_params)
+            if receipt_subject is not None:
+                receipt_operation, receipt_params = receipt_subject
+                try:
+                    receipt_id = execution_context.issue_evidence_result_receipt(
+                        operation=receipt_operation,
+                        params=receipt_params,
+                        presented_result=result,
+                    )
+                except OperationExecutionContextError as exc:
+                    raise OperationError(exc.code, str(exc)) from exc
+                if receipt_id is not None:
+                    if "result_receipt_id" in result:
+                        raise OperationError(
+                            "operation_execution_context_annotation_conflict",
+                            "The operation result already contains 'result_receipt_id'.",
+                        )
+                    result["result_receipt_id"] = receipt_id
         return result
     finally:
         reset_execution_context(execution_token)
+
+
+def _evidence_receipt_subject(
+    name: str, params: JsonObject
+) -> tuple[str, JsonObject] | None:
+    if name in EVIDENCE_PRODUCING_OPERATIONS:
+        return name, params
+    if name != "genomi.invoke":
+        return None
+    dispatched_name = params.get("tool")
+    dispatched_params = params.get("params")
+    if (
+        isinstance(dispatched_name, str)
+        and dispatched_name in EVIDENCE_PRODUCING_OPERATIONS
+        and isinstance(dispatched_params, dict)
+    ):
+        return dispatched_name, dispatched_params
+    return None
 
 
 def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
     operation = get_operation(name)
     safe_params = params
     try:
-        if isinstance(operation, ApplicationOperation):
-            operation.validate_params(safe_params)
         result = operation.handler(safe_params)
     except OperationError:
         # Already structured — pass through so MCP/job_worker emits a clean

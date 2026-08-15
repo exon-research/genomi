@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, ContextManager, Protocol
 
 from ..evidence import envelope as canonical_evidence_envelope
-from .artifact_validation import validate_brief_artifact, validate_plan_artifact
+from .artifact_validation import validate_brief_artifact
 from .brief_provenance import derive_brief_modality_badges
 from .disease_relation_contract import is_qualifying_supporting_relation
 from .evidence_artifact_store import EvidenceArtifactStoreMixin
@@ -26,8 +26,6 @@ class _StoreContract(Protocol):
 
     def get_profile_snapshot(self, snapshot_id: str) -> JsonObject: ...
 
-    def validate_plan(self, investigation_id: str, plan: JsonObject) -> None: ...
-
     def validate_brief(self, investigation_id: str, brief: JsonObject) -> None: ...
 
     def _validate_claim_anchors(
@@ -45,19 +43,7 @@ class EvidenceStoreMixin(
     EvidenceSnapshotStoreMixin,
     EvidenceArtifactStoreMixin,
 ):
-    """Compose evidence ledgers with plan and brief anchor validation."""
-
-    def validate_plan(
-        self: _StoreContract, investigation_id: str, plan: JsonObject
-    ) -> None:
-        validate_plan_artifact(plan)
-        with self._connect() as connection:
-            target = connection.execute(
-                "SELECT 1 FROM investigations WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchone()
-        if target is None:
-            raise KeyError(investigation_id)
+    """Compose evidence ledgers with brief anchor validation."""
 
     def validate_brief(
         self: _StoreContract, investigation_id: str, brief: JsonObject

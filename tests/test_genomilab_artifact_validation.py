@@ -345,7 +345,7 @@ class GenomiLabArtifactValidationTests(unittest.TestCase):
                         kind="professional_question",
                     )
 
-    def test_positive_contract_accepts_real_harness_research_forms(self) -> None:
+    def test_positive_contract_accepts_evidence_grounded_research_forms(self) -> None:
         cases = (
             (
                 "brief_title",
@@ -385,27 +385,6 @@ class GenomiLabArtifactValidationTests(unittest.TestCase):
                 "Evidence gap: the approved context does not establish that the "
                 "reported muscle-weakness episodes are caused by SYNTH1 or "
                 "rs900000001.",
-            ),
-            (
-                "plan_summary",
-                "Tool-free plan only; no domain capability was invoked. "
-                "Independent request, evidence-separation, and schema audits "
-                "were synthesized. Current source evidence establishes only "
-                "that an issued laboratory record reported rs900000001 in "
-                "SYNTH1 as a research finding. No model inference or conflict "
-                "is established yet. Variant identity, consequence, disease "
-                "relevance, and clinical significance remain unresolved, and "
-                "no diagnosis or treatment directive is proposed.",
-            ),
-            (
-                "plan_step_rationale",
-                "Patient observation: the issued report records rs900000001 in "
-                "SYNTH1. Source evidence: the eligible registered relation "
-                "supports a variant–disease association while explicitly "
-                "retaining association-not-causation and "
-                "unestablished-clinical-significance uncertainty. Model "
-                "inference: record only a candidate mechanism, not a diagnosis "
-                "or causal conclusion. Conflicts: none are recorded.",
             ),
             (
                 "confirmation_need",

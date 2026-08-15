@@ -4,9 +4,6 @@ import unittest
 
 from genomi.evidence import envelope as evidence_envelope
 from genomi.lab.disease_relation_contract import REGISTER_DISEASE_RELATION
-from genomi.lab.evidence_normalization import normalize_fixture_response
-from genomi.lab.evidence_types import SourceDocumentState
-from genomi.lab.provider_policy import EvidenceRequest, SourceFamily
 from tests.test_genomilab_disease_investigation import (
     _DiseaseInvestigationTestSupport,
 )
@@ -215,38 +212,33 @@ class GenomiLabDiseaseRelationContractTests(
         self,
     ) -> None:
         cases = (
-            (SourceDocumentState.ABSTRACT_ONLY, SourceFamily.LITERATURE),
-            (SourceDocumentState.PREPRINT, SourceFamily.LITERATURE),
-            (SourceDocumentState.TRIAL_REGISTRATION, SourceFamily.TRIAL_REGISTRY),
+            ("abstract_only", "literature"),
+            ("preprint", "literature"),
+            ("trial_registration", "trial_registry"),
         )
         for document_state, source_family in cases:
-            with self.subTest(document_state=document_state.value):
-                request = EvidenceRequest(
-                    query="synthetic disease mechanism",
-                    source_family=source_family,
-                    purpose="Investigate a possible disease relation",
-                    operation="search",
-                )
-                normalized = normalize_fixture_response(
-                    request,
-                    {
-                        "status": "data_returned",
-                        "source_family": source_family.value,
-                        "records": [
-                            {
-                                "source_id": f"synthetic:{document_state.value}",
-                                "title": "Synthetic weak source",
-                                "source_document_state": document_state.value,
-                            }
-                        ],
-                    },
-                ).to_dict()
+            with self.subTest(document_state=document_state):
+                normalized = {
+                    "status": "data_returned",
+                    "source_family": source_family,
+                    "records": [
+                        {
+                            "source_id": f"synthetic:{document_state}",
+                            "title": "Synthetic weak source",
+                            "source_document_state": document_state,
+                        }
+                    ],
+                    "evidence_envelope": evidence_envelope.evidence_present(
+                        operation="public_evidence.search",
+                        answer_readiness=evidence_envelope.NEEDS_CLINICAL_CONFIRMATION,
+                    ),
+                }
                 weak = self.store.commit_evidence(
                     self.investigation["investigation_id"],
-                    source_family=source_family.value,
+                    source_family=source_family,
                     operation="public_evidence.search",
                     evidence=normalized,
-                    deduplication_key=f"weak-source:{document_state.value}",
+                    deduplication_key=f"weak-source:{document_state}",
                 )
 
                 with self.assertRaisesRegex(
@@ -480,55 +472,3 @@ class GenomiLabDiseaseRelationContractTests(
             self.store.commit_brief(
                 other_investigation["investigation_id"], non_actionable
             )
-
-    def test_binding_and_events_are_idempotent_ordered_and_replayable(self) -> None:
-        binding = self.store.bind_harness_task(
-            self.investigation["investigation_id"],
-            command_id="command-create-a",
-            host_id="simulated-harness",
-            task_id="task-a",
-            run_id="run-a",
-        )
-        same = self.store.bind_harness_task(
-            self.investigation["investigation_id"],
-            command_id="command-create-a",
-            host_id="simulated-harness",
-            task_id="task-a",
-            run_id="run-a",
-        )
-        self.assertEqual(binding["binding_id"], same["binding_id"])
-        first = self.store.commit_harness_event(
-            self.investigation["investigation_id"],
-            binding["binding_id"],
-            event_id="event-a",
-            sequence=1,
-            event_type="plan_proposed",
-            payload={"summary": "Check profile and public evidence"},
-        )
-        replay = self.store.commit_harness_event(
-            self.investigation["investigation_id"],
-            binding["binding_id"],
-            event_id="event-a",
-            sequence=1,
-            event_type="plan_proposed",
-            payload={"summary": "Check profile and public evidence"},
-        )
-        self.assertEqual(first["event_id"], replay["event_id"])
-        with self.assertRaisesRegex(ValueError, "out of order"):
-            self.store.commit_harness_event(
-                self.investigation["investigation_id"],
-                binding["binding_id"],
-                event_id="event-c",
-                sequence=3,
-                event_type="failed",
-                payload={"code": "out_of_order"},
-            )
-        self.assertEqual(
-            [
-                row["event_id"]
-                for row in self.store.replay_harness_events(
-                    self.investigation["investigation_id"]
-                )
-            ],
-            ["event-a"],
-        )

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from typing import Any, ContextManager, Protocol
 
 from .models import (
     QUESTION_MAX,
     JsonObject,
-    compact_json,
     optional_text,
     required_text,
     row_dict,
@@ -47,7 +45,7 @@ class InvestigationStoreMixin:
                 INSERT INTO investigations(
                     investigation_id, user_id, question, disease_scope, status,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'awaiting_plan', ?, ?)
+                ) VALUES (?, ?, ?, ?, 'running', ?, ?)
                 """,
                 (
                     investigation_id,
@@ -87,89 +85,8 @@ class InvestigationStoreMixin:
                 "ORDER BY version",
                 (investigation_id,),
             ).fetchall()
-            capability_executions = connection.execute(
-                "SELECT * FROM capability_executions WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            capability_attempts = connection.execute(
-                "SELECT attempts.* FROM capability_execution_attempts AS attempts "
-                "JOIN capability_executions AS executions "
-                "ON executions.capability_execution_id = attempts.capability_execution_id "
-                "WHERE executions.investigation_id = ? "
-                "ORDER BY attempts.capability_execution_id, attempts.attempt_number",
-                (investigation_id,),
-            ).fetchall()
             briefs = connection.execute(
                 "SELECT * FROM brief_versions WHERE investigation_id = ? ORDER BY version",
-                (investigation_id,),
-            ).fetchall()
-            plans = connection.execute(
-                "SELECT * FROM plan_versions WHERE investigation_id = ? ORDER BY version",
-                (investigation_id,),
-            ).fetchall()
-            plan_acceptances = connection.execute(
-                "SELECT * FROM plan_acceptances WHERE investigation_id = ?",
-                (investigation_id,),
-            ).fetchall()
-            bindings = connection.execute(
-                "SELECT * FROM harness_bindings WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            events = connection.execute(
-                "SELECT * FROM harness_events WHERE investigation_id = ? "
-                "ORDER BY sequence",
-                (investigation_id,),
-            ).fetchall()
-            cycles = connection.execute(
-                "SELECT * FROM investigation_cycles WHERE investigation_id = ? "
-                "ORDER BY cycle_number",
-                (investigation_id,),
-            ).fetchall()
-            packets = connection.execute(
-                "SELECT * FROM specialist_packets WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            panel_assignments = connection.execute(
-                "SELECT * FROM panel_assignments WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            specialist_findings = connection.execute(
-                "SELECT * FROM specialist_findings WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            research_artifacts = connection.execute(
-                "SELECT * FROM research_artifacts WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            evidence_references = connection.execute(
-                "SELECT * FROM investigation_evidence_references "
-                "WHERE investigation_id = ? ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            information_gaps = connection.execute(
-                "SELECT * FROM information_gaps WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            patient_questions = connection.execute(
-                "SELECT * FROM patient_questions WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            recommended_next_steps = connection.execute(
-                "SELECT * FROM recommended_next_steps WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            work_events = connection.execute(
-                "SELECT * FROM investigation_work_events WHERE investigation_id = ? "
-                "ORDER BY cycle_id, sequence",
                 (investigation_id,),
             ).fetchall()
         result = row_dict(row)
@@ -181,20 +98,21 @@ class InvestigationStoreMixin:
             for item in evidence
             if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
         ]
-        latest_hypothesis_by_logical_id: dict[str, object] = {}
-        for item in hypotheses:
-            logical_id = str(item["logical_hypothesis_id"])
-            prior = latest_hypothesis_by_logical_id.get(logical_id)
-            if prior is None or int(item["version"]) > int(prior["version"]):
-                latest_hypothesis_by_logical_id[logical_id] = item
-        current_hypothesis_rows = list(latest_hypothesis_by_logical_id.values())
-        result["current_hypotheses"] = []
-        for item in current_hypothesis_rows:
-            hypothesis = row_dict(item)
-            hypothesis["current_profile_context"] = (
-                item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-            )
-            result["current_hypotheses"].append(hypothesis)
+        current_hypothesis_rows = [
+            item
+            for item in hypotheses
+            if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
+        ]
+        superseded = {
+            str(item["supersedes_hypothesis_id"])
+            for item in current_hypothesis_rows
+            if item["supersedes_hypothesis_id"]
+        }
+        result["current_hypotheses"] = [
+            row_dict(item)
+            for item in current_hypothesis_rows
+            if str(item["hypothesis_id"]) not in superseded
+        ]
         result["current_evidence_records"] = current_evidence
         result["profile_snapshot_history"] = [
             row_dict(item) for item in profile_snapshots
@@ -211,66 +129,12 @@ class InvestigationStoreMixin:
             None,
         )
         result["current_evidence_snapshot"] = current_evidence_snapshot
-        attempts_by_execution: dict[str, list[JsonObject]] = {}
-        for item in capability_attempts:
-            attempt = row_dict(item)
-            attempts_by_execution.setdefault(
-                str(attempt["capability_execution_id"]), []
-            ).append(attempt)
-        execution_views = []
-        for item in capability_executions:
-            execution = row_dict(item)
-            execution["attempts"] = attempts_by_execution.get(
-                str(execution["capability_execution_id"]), []
-            )
-            execution_views.append(execution)
-        result["capability_executions"] = execution_views
         result["brief_versions"] = [row_dict(item) for item in briefs]
-        acceptance_by_plan = {
-            str(item["plan_version_id"]): row_dict(item) for item in plan_acceptances
-        }
-        plan_views: list[JsonObject] = []
-        for item in plans:
-            plan_view = row_dict(item)
-            plan_view["plan_sha256"] = hashlib.sha256(
-                compact_json(plan_view["plan"]).encode("utf-8")
-            ).hexdigest()
-            acceptance = acceptance_by_plan.get(str(plan_view["plan_version_id"]))
-            plan_view["review_status"] = "accepted" if acceptance else "proposed"
-            plan_view["acceptance"] = acceptance
-            plan_views.append(plan_view)
-        result["plan_versions"] = plan_views
-        current_plan = next(
-            (
-                item
-                for item in reversed(plan_views)
-                if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-            ),
-            None,
-        )
-        result["current_plan_version"] = current_plan
-        result["plan"] = current_plan.get("plan") if current_plan else None
-        current_plan_version_id = (
-            current_plan.get("plan_version_id") if current_plan else None
-        )
-        result["current_capability_executions"] = (
-            [
-                item
-                for item in execution_views
-                if item["plan_version_id"] == current_plan_version_id
-            ]
-            if current_plan_version_id
-            else []
-        )
         current_evidence_ids = {
             str(item["evidence_record_id"]) for item in current_evidence
         }
         current_hypothesis_created = max(
-            (
-                str(item["created_at"])
-                for item in current_hypothesis_rows
-                if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-            ),
+            (str(item["created_at"]) for item in current_hypothesis_rows),
             default="",
         )
         current_brief = None
@@ -300,30 +164,7 @@ class InvestigationStoreMixin:
             current_hypotheses=result["current_hypotheses"],
             historical_briefs=result["brief_versions"],
             current_brief=current_brief,
-            current_plan=current_plan,
         )
-        result["harness_bindings"] = [row_dict(item) for item in bindings]
-        result["harness_events"] = [row_dict(item) for item in events]
-        result["cycles"] = [row_dict(item) for item in cycles]
-        result["specialist_packets"] = [row_dict(item) for item in packets]
-        result["panel_assignments"] = [row_dict(item) for item in panel_assignments]
-        result["specialist_findings"] = [row_dict(item) for item in specialist_findings]
-        result["research_artifacts"] = [row_dict(item) for item in research_artifacts]
-        result["evidence_references"] = [row_dict(item) for item in evidence_references]
-        result["information_gaps"] = [row_dict(item) for item in information_gaps]
-        result["patient_questions"] = [row_dict(item) for item in patient_questions]
-        result["recommended_next_steps"] = [
-            row_dict(item) for item in recommended_next_steps
-        ]
-        result["work_events"] = [row_dict(item) for item in work_events]
-        for item in result["panel_assignments"]:
-            item["progress_source"] = "reported_by_main_agent"
-        for item in result["specialist_findings"]:
-            item["record_kind"] = "specialist_analysis"
-            item["progress_source"] = "reported_by_main_agent"
-        for item in result["work_events"]:
-            item["progress_source"] = "reported_by_main_agent"
-        result["progress_source"] = "reported_by_main_agent"
         return result
 
     @staticmethod
@@ -336,7 +177,6 @@ class InvestigationStoreMixin:
         current_hypotheses: list[JsonObject],
         historical_briefs: list[JsonObject],
         current_brief: JsonObject | None,
-        current_plan: JsonObject | None,
     ) -> JsonObject:
         context_version = (
             int(profile_snapshots[-1]["version"]) if profile_snapshots else None
@@ -355,16 +195,6 @@ class InvestigationStoreMixin:
             not current_hypotheses
             or latest_evidence_created > latest_hypothesis_created
         )
-        current_plan_created = (
-            str(current_plan.get("created_at") or "") if current_plan else ""
-        )
-        requires_replan = refreshed and (
-            current_plan is None
-            or (
-                requires_hypothesis_refresh
-                and latest_evidence_created > current_plan_created
-            )
-        )
         requires_new_brief = bool(
             profile_snapshots
             and current_brief is None
@@ -374,8 +204,6 @@ class InvestigationStoreMixin:
         )
         if not profile_snapshots:
             state = "context_not_approved"
-        elif requires_replan:
-            state = "replan_required"
         elif requires_evidence_rerun or requires_hypothesis_refresh:
             state = "evidence_and_hypothesis_rerun_required"
         elif requires_new_brief:
@@ -387,7 +215,6 @@ class InvestigationStoreMixin:
         return {
             "state": state,
             "profile_context_version": context_version,
-            "requires_replan": requires_replan,
             "requires_evidence_rerun": requires_evidence_rerun,
             "requires_hypothesis_refresh": requires_hypothesis_refresh,
             "requires_new_brief": requires_new_brief,
@@ -417,10 +244,7 @@ class InvestigationStoreMixin:
         expected_revision: int | None = None,
     ) -> JsonObject:
         allowed = {
-            "awaiting_plan",
-            "awaiting_plan_review",
             "awaiting_context_approval",
-            "awaiting_harness_execution",
             "approved",
             "running",
             "needs_user_input",

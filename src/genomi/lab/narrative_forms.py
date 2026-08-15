@@ -107,7 +107,6 @@ _RESEARCH_OPERATION_WORDS = _RESEARCH_OPERATION_VERBS | {
     "genomilab",
     "grounded",
     "guidance",
-    "harness",
     "help",
     "hypothesis",
     "hypotheses",

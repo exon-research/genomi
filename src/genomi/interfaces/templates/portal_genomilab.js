@@ -181,7 +181,7 @@ export function createGenomiLabController({ api, getProjectId }) {
     const projectId = getProjectId();
     if (!projectId) return;
     renderConnections(null);
-    setStatus('research-connections-status', 'Checking the encrypted local Lab store…');
+    setStatus('research-connections-status', 'Checking research connections…');
     try {
       const payload = await api.loadGenomiLabIntegrations(projectId);
       renderConnections(payload);
@@ -372,7 +372,7 @@ export function createGenomiLabController({ api, getProjectId }) {
     setOnboardingState(
       'onboarding-connections-state',
       readyCount
-        ? `${readyCount} checked · ${storedCount} credentials encrypted locally`
+        ? `${readyCount} checked · ${storedCount} credentials held for this session`
         : storedCount
           ? `${storedCount} configured · run an explicit connection check`
           : 'Not configured'
@@ -384,7 +384,7 @@ export function createGenomiLabController({ api, getProjectId }) {
     if (!container) return;
     container.replaceChildren();
     if (!payload || !Array.isArray(payload.integrations)) {
-      container.append(card('Connection state', 'Waiting for the encrypted local Lab backend. No credentials can be entered while connection state is unavailable.'));
+      container.append(card('Connection state', 'Waiting for the Lab connection backend. No credentials can be entered while connection state is unavailable.'));
       return;
     }
     const records = connectionRecords(payload);
@@ -504,7 +504,7 @@ function connectionCard(definition, record) {
   if (connectionState === 'backend_unavailable') {
     const unavailable = document.createElement('p');
     unavailable.className = 'genomilab-connection-unavailable';
-    unavailable.textContent = 'This connection is not available in the current encrypted Lab backend. No credential can be entered or sent.';
+    unavailable.textContent = 'This connection is not available in the current Lab backend. No credential can be entered or sent.';
     article.append(unavailable);
     return article;
   }
@@ -526,7 +526,7 @@ function connectionCard(definition, record) {
   const save = document.createElement('button');
   save.className = 'primary';
   save.type = 'submit';
-  save.textContent = record.credential_state === 'stored' ? 'Replace credentials' : 'Save encrypted';
+  save.textContent = record.credential_state === 'stored' ? 'Replace for session' : 'Use for session';
   form.append(save);
   article.append(form);
   if (record.credential_state === 'stored' || record.credential_state === 'corrupt') {

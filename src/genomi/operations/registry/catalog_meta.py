@@ -42,6 +42,17 @@ WRITE_OPERATIONS = {
     "journal.append_entry",
     "decode.build_dashboard_evidence",
     "decode.render_dashboard",
+    "lab.create_investigation",
+    "lab.update_health_profile",
+    "lab.create_cycle",
+    "lab.create_hypothesis",
+    "lab.revise_hypothesis",
+    "lab.prepare_specialist_brief",
+    "lab.create_specialist_assignment",
+    "lab.transition_specialist_assignment",
+    "lab.capture_evidence_result",
+    "lab.capture_provider_result",
+    "lab.publish_brief",
 }
 
 

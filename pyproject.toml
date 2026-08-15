@@ -14,14 +14,6 @@ authors = [
 ]
 dependencies = [
   "biopython>=1.87",
-  # GenomiLab persists its in-memory SQLite state as an authenticated encrypted
-  # container with Genomi-owned private local key material.
-  "cryptography>=42",
-  "google-genai>=2.0.1",
-  # Optional provider backends remain available to ordinary Genomi capabilities;
-  # GenomiLab does not execute them directly in the host-neutral milestone.
-  "gxl-paperclip @ git+https://github.com/GXL-ai/paperclip.git@b5571365f0b36847dce42c5d66d2b158a0f871f9",
-  "modal==1.5.1",
   "numpy>=1.26",
   "openpyxl>=3.1.5",
   # htslib bindings: parse_source writes a bgzip-compressed canonical VCF
@@ -51,7 +43,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "genomi" = ["assets/*.png"]
-"genomi.interfaces" = ["templates/*.html", "templates/*.css", "templates/*.js"]
 "genomi.operations" = ["catalog_base.json"]
 "genomi.runtime" = ["tool_catalog.json", "host_response_profiles.json"]
 "genomi.active_genome_index" = ["tool_catalog.json", "panels/*.json"]
@@ -60,6 +51,7 @@ where = ["src"]
 "genomi.capabilities.clinvar" = ["tool_catalog.json"]
 "genomi.capabilities.decode" = ["tool_catalog.json", "templates/*.html", "templates/vendor/*.js"]
 "genomi.capabilities.functional_genomics" = ["tool_catalog.json"]
+"genomi.capabilities.lab" = ["tool_catalog.json"]
 "genomi.capabilities.gnomad" = ["tool_catalog.json"]
 "genomi.capabilities.gwas" = ["tool_catalog.json"]
 "genomi.capabilities.journal" = ["tool_catalog.json"]
@@ -70,7 +62,7 @@ where = ["src"]
 "genomi.capabilities.research" = ["tool_catalog.json"]
 "genomi.capabilities.sequence" = ["tool_catalog.json"]
 "genomi.capabilities.variant" = ["tool_catalog.json"]
-"genomi.lab" = ["static/*.html", "static/*.css", "static/*.js"]
+"genomi.lab" = ["static/*.html", "static/*.css", "static/*.js", "*.json"]
 
 [tool.ruff]
 required-version = "==0.16.2"

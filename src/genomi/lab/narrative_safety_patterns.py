@@ -431,7 +431,7 @@ _DECLARATIVE_CLAUSE_START = re.compile(
 
 # Positive, typed narrative forms.  The deny rules above remain useful as
 # defence in depth, but acceptance is decided by these forms.  This matters at
-# the harness boundary: a novel way of making a clinical claim must fail closed
+# the research boundary: a novel way of making a clinical claim must fail closed
 # instead of being accepted merely because it missed a blacklist expression.
 _NARRATIVE_UNIT_BOUNDARY = re.compile(
     r"(?<=[.!?;])(?:[\"'\u201d\u2019])?\s+(?=[A-Z0-9\"'\u201c\u2018])|[\r\n]+"
@@ -640,18 +640,6 @@ _RESEARCH_GUARDRAIL = re.compile(
     r"^(?:retrieved|returned|reported|source-scoped|approved)\s+(?:claims?|"
     r"results?|findings?|evidence|observations?)\s+must\s+remain\s+"
     r"(?:source\s+evidence|research\s+observations?|candidate\s+hypotheses?)\b",
-    re.IGNORECASE,
-)
-_EXECUTION_FORM = re.compile(
-    r"^(?:The\s+installed\s+harness\s+)?(?:invoked|executed|completed|"
-    r"returned|paused|failed)\s+(?:all\s+|the\s+)?(?:exact\s+)?"
-    r"(?:accepted[- ]plan\s+|accepted\s+)?(?:request|requests|capability\s+"
-    r"requests|calls)(?:\s+(?:successfully|with\s+(?:completed|failed|paused|"
-    r"approval-required)\s+status))?$|"
-    r"^(?:All|The|An?|Exactly\s+\d+|\d+)\s+(?:exact\s+)?(?:accepted[- ]plan\s+|"
-    r"accepted\s+)?(?:request|requests|capability\s+requests|calls)\s+"
-    r"(?:was|were|has\s+been|have\s+been)?\s*(?:invoked|executed|completed|"
-    r"returned|paused|failed|succeeded)(?:\s+successfully)?$",
     re.IGNORECASE,
 )
 _CONFIRMATION_ACTION = re.compile(

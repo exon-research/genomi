@@ -50,14 +50,11 @@ class HypothesisStoreMixin:
         investigation_id: str,
         *,
         kind: object,
-        title: object = None,
         statement: object,
         evidence_record_ids: object,
         profile_revision_ids: object,
         status: object = "candidate",
         supersedes_hypothesis_id: object = None,
-        parent_logical_hypothesis_id: object = None,
-        expected_plan_version_id: object = None,
         expected_consent_receipt_id: object = None,
     ) -> JsonObject:
         if not isinstance(evidence_record_ids, list) or not isinstance(
@@ -86,11 +83,8 @@ class HypothesisStoreMixin:
             "candidate",
             "open",
             "supported",
-            "strengthened",
             "weakened",
             "rejected",
-            "retained",
-            "unresolved",
             "resolved",
         }
         if kind_value not in allowed_kinds:
@@ -113,16 +107,6 @@ class HypothesisStoreMixin:
                 if kind_value == "uncertainty"
                 else "hypothesis_gap"
             ),
-        )
-        title_value = (
-            required_text(title, "hypothesis title", 160)
-            if title not in (None, "")
-            else statement_value
-        )
-        expected_plan = (
-            required_text(expected_plan_version_id, "expected_plan_version_id", 200)
-            if expected_plan_version_id not in (None, "")
-            else None
         )
         expected_consent = (
             required_text(
@@ -202,7 +186,7 @@ class HypothesisStoreMixin:
         hypothesis_id = f"hypothesis-{uuid.uuid4().hex}"
         with self._connect() as connection:
             investigation = connection.execute(
-                "SELECT user_id, patient_molecular_snapshot_id, evidence_snapshot_id, "
+                "SELECT user_id, patient_molecular_snapshot_id, "
                 "active_consent_receipt_id FROM investigations "
                 "WHERE investigation_id = ?",
                 (investigation_id,),
@@ -214,33 +198,6 @@ class HypothesisStoreMixin:
                 raise ValueError(
                     "a hypothesis requires an approved molecular-profile snapshot"
                 )
-            evidence_snapshot_id = str(investigation["evidence_snapshot_id"] or "")
-            if not evidence_snapshot_id:
-                raise ValueError(
-                    "a hypothesis version requires a current evidence snapshot"
-                )
-            if expected_plan is not None:
-                current_plan = connection.execute(
-                    "SELECT plan_version_id FROM plan_versions "
-                    "WHERE investigation_id = ? "
-                    "AND patient_molecular_snapshot_id IS ? "
-                    "ORDER BY version DESC LIMIT 1",
-                    (investigation_id, profile_snapshot_id),
-                ).fetchone()
-                accepted = (
-                    connection.execute(
-                        "SELECT 1 FROM plan_acceptances WHERE plan_version_id = ?",
-                        (expected_plan,),
-                    ).fetchone()
-                    if current_plan is not None
-                    and str(current_plan["plan_version_id"]) == expected_plan
-                    else None
-                )
-                if accepted is None:
-                    raise EvidenceCommitGuardError(
-                        "plan_superseded",
-                        "hypothesis no longer belongs to the current accepted plan",
-                    )
             if expected_consent is not None:
                 consent = connection.execute(
                     "SELECT 1 FROM consent_receipts "
@@ -264,35 +221,23 @@ class HypothesisStoreMixin:
                     )
             existing = connection.execute(
                 "SELECT * FROM hypotheses WHERE investigation_id = ? AND kind = ? "
-                "AND title = ? AND statement = ? AND status = ? "
-                "AND evidence_record_ids_json = ? "
+                "AND statement = ? AND status = ? AND evidence_record_ids_json = ? "
                 "AND profile_revision_ids_json = ? "
-                "AND patient_molecular_snapshot_id = ? AND evidence_snapshot_id = ?",
+                "AND patient_molecular_snapshot_id = ?",
                 (
                     investigation_id,
                     kind_value,
-                    title_value,
                     statement_value,
                     status_value,
                     compact_json(evidence_ids),
                     compact_json(revision_ids),
                     profile_snapshot_id,
-                    evidence_snapshot_id,
                 ),
             ).fetchone()
             if existing is not None:
                 return row_dict(existing)
             supersedes = None
             logical_hypothesis_id = f"hypothesis-thread-{uuid.uuid4().hex}"
-            parent_logical_id = (
-                required_text(
-                    parent_logical_hypothesis_id,
-                    "parent_logical_hypothesis_id",
-                    200,
-                )
-                if parent_logical_hypothesis_id not in (None, "")
-                else None
-            )
             version = 1
             if supersedes_hypothesis_id not in (None, ""):
                 supersedes = required_text(
@@ -300,20 +245,15 @@ class HypothesisStoreMixin:
                 )
                 prior = connection.execute(
                     "SELECT * FROM hypotheses WHERE hypothesis_id = ? "
-                    "AND investigation_id = ?",
-                    (supersedes, investigation_id),
+                    "AND investigation_id = ? "
+                    "AND patient_molecular_snapshot_id = ?",
+                    (supersedes, investigation_id, profile_snapshot_id),
                 ).fetchone()
                 if prior is None:
                     raise ValueError(
-                        "supersedes_hypothesis_id must belong to this investigation"
+                        "supersedes_hypothesis_id must belong to this investigation's current profile context"
                     )
                 logical_hypothesis_id = str(prior["logical_hypothesis_id"])
-                prior_parent = str(prior["parent_logical_hypothesis_id"] or "") or None
-                if parent_logical_id is not None and parent_logical_id != prior_parent:
-                    raise ValueError(
-                        "a hypothesis revision must retain its parent logical identity"
-                    )
-                parent_logical_id = prior_parent
                 version = int(prior["version"]) + 1
                 newer = connection.execute(
                     "SELECT 1 FROM hypotheses WHERE supersedes_hypothesis_id = ?",
@@ -323,40 +263,25 @@ class HypothesisStoreMixin:
                     raise ValueError(
                         "a newer revision already supersedes this hypothesis"
                     )
-            if parent_logical_id is not None:
-                parent = connection.execute(
-                    "SELECT 1 FROM hypotheses WHERE investigation_id = ? "
-                    "AND logical_hypothesis_id = ?",
-                    (investigation_id, parent_logical_id),
-                ).fetchone()
-                if parent is None or parent_logical_id == logical_hypothesis_id:
-                    raise ValueError(
-                        "parent_logical_hypothesis_id must name another hypothesis in this investigation"
-                    )
             connection.execute(
                 """
                 INSERT INTO hypotheses(
-                    hypothesis_id, logical_hypothesis_id,
-                    parent_logical_hypothesis_id, investigation_id,
-                    patient_molecular_snapshot_id, evidence_snapshot_id,
+                    hypothesis_id, logical_hypothesis_id, investigation_id,
+                    patient_molecular_snapshot_id,
                     supersedes_hypothesis_id, version, kind, statement, status,
-                    title,
                     evidence_record_ids_json, profile_revision_ids_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     hypothesis_id,
                     logical_hypothesis_id,
-                    parent_logical_id,
                     investigation_id,
                     profile_snapshot_id,
-                    evidence_snapshot_id,
                     supersedes,
                     version,
                     kind_value,
                     statement_value,
                     status_value,
-                    title_value,
                     compact_json(evidence_ids),
                     compact_json(revision_ids),
                     utc_now(),

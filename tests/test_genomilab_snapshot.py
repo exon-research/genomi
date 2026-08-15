@@ -11,7 +11,6 @@ from unittest import mock
 
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
 
 
 class GenomiLabSnapshotTests(unittest.TestCase):
@@ -30,7 +29,7 @@ class GenomiLabSnapshotTests(unittest.TestCase):
         )
         self._environment.start()
         self.addCleanup(self._environment.stop)
-        self.store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        self.store = GenomiLabStore()
         self.store.open_workspace("user-a", "Synthetic user")
         self.observation = self.store.add_profile_observation(
             "user-a",
@@ -122,9 +121,9 @@ class GenomiLabSnapshotTests(unittest.TestCase):
             candidate_sha256=candidate["candidate_sha256"],
             approved=True,
         )
-        reopened = GenomiLabStore(
-            self.store.path, key_provider=TEST_LAB_KEY_PROVIDER
-        ).get_profile_snapshot(snapshot["patient_molecular_snapshot_id"])
+        reopened = GenomiLabStore(self.store.path).get_profile_snapshot(
+            snapshot["patient_molecular_snapshot_id"]
+        )
         self.assertEqual(reopened["agi_id"], "agi-a")
         self.assertEqual(reopened["agi_snapshot_id"], "agi-snapshot-a")
         self.assertEqual(
@@ -260,8 +259,8 @@ class GenomiLabSnapshotTests(unittest.TestCase):
             for selection in selections
         ]
         stores = (
-            GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER),
-            GenomiLabStore(self.store.path, key_provider=TEST_LAB_KEY_PROVIDER),
+            GenomiLabStore(self.store.path),
+            GenomiLabStore(self.store.path),
         )
         barrier = threading.Barrier(2)
 

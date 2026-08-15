@@ -1,7 +1,7 @@
 """Fail-closed grammar checks for patient-visible GenomiLab research prose.
 
-The installed harness chooses wording, while GenomiLab owns the boundary
-between research artifacts and unsupported diagnosis or care decisions.  The
+GenomiLab owns the boundary between research artifacts and unsupported
+diagnosis or care decisions.  The
 checks below use grammatical claim classes rather than disease or drug lists,
 so unfamiliar names receive the same treatment as familiar ones.
 """
@@ -114,14 +114,6 @@ def _uses_declared_research_form(text: str, *, kind: NarrativeKind) -> bool:
         )
     if kind == "confirmation_need":
         return all(_confirmation_form(unit) for unit in units)
-    if kind in {"plan_role_objective", "plan_step_title"}:
-        return all(_meta_form(unit) for unit in units)
-    if kind in {"plan_summary", "plan_step_rationale"}:
-        return all(
-            _meta_form(unit) or _assertion_form(unit) for unit in units
-        )
-    if kind == "execution_summary":
-        return all(_execution_form(unit) for unit in units)
     if kind == "brief_summary":
         return all(_research_claim_form(unit) for unit in units)
     if kind == "change_summary":
@@ -389,16 +381,6 @@ def _meta_form(text: str) -> bool:
     if _safety._RESEARCH_GUARDRAIL.search(plain):
         return True
     return _operation_form(plain) or _change_form(plain) or _assertion_form(plain)
-
-
-def _execution_form(text: str) -> bool:
-    plain = _without_terminal_punctuation(text)
-    if plain.casefold() in {
-        "synthetic host-neutral execution report",
-        "the exact accepted request was paused for approval",
-    }:
-        return True
-    return bool(_safety._EXECUTION_FORM.fullmatch(plain))
 
 
 def _change_form(text: str) -> bool:

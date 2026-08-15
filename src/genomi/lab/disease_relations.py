@@ -41,7 +41,6 @@ class _StoreContract(Protocol):
         operation: object,
         evidence: JsonObject,
         deduplication_key: object,
-        expected_plan_version_id: object = None,
         expected_consent_receipt_id: object = None,
         _reserved_operation_token: object = None,
     ) -> JsonObject: ...
@@ -65,7 +64,6 @@ class DiseaseRelationStoreMixin:
         investigation_id: str,
         parameters: object,
         *,
-        expected_plan_version_id: object = None,
         expected_consent_receipt_id: object = None,
     ) -> JsonObject:
         relation = validate_disease_relation_parameters(parameters)
@@ -165,7 +163,6 @@ class DiseaseRelationStoreMixin:
             operation=REGISTER_DISEASE_RELATION,
             evidence=evidence,
             deduplication_key=f"disease-relation:{identity}",
-            expected_plan_version_id=expected_plan_version_id,
             expected_consent_receipt_id=expected_consent_receipt_id,
             _reserved_operation_token=_DISEASE_RELATION_COMMIT_TOKEN,
         )

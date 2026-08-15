@@ -1,4 +1,0 @@
-interface:
-  display_name: "GenomiLab Investigations"
-  short_description: "Monitor private longitudinal investigations"
-  default_prompt: "Use $genomilab to continue this investigation in the current task."

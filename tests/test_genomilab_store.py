@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import stat
 import tempfile
 import unittest
@@ -10,7 +9,6 @@ from unittest import mock
 
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
 
 
 class GenomiLabStoreTests(unittest.TestCase):
@@ -32,9 +30,9 @@ class GenomiLabStoreTests(unittest.TestCase):
         self.addCleanup(self._environment.stop)
 
     def test_workspace_is_stable_and_keyed_only_to_genomi_user(self) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store = GenomiLabStore()
         created = store.open_workspace("user-a", "Synthetic user A")
-        reopened = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER).open_workspace(
+        reopened = GenomiLabStore().open_workspace(
             "user-a", "Renamed display"
         )
 
@@ -44,84 +42,8 @@ class GenomiLabStoreTests(unittest.TestCase):
         self.assertFalse(hasattr(store, "create_profile"))
         self.assertFalse(hasattr(store, "list_profiles"))
 
-    def test_provider_connection_command_and_event_persist_atomically_redacted(
-        self,
-    ) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
-        result = {
-            "provider": "paperclip",
-            "connection_state": "configured_unverified",
-            "credential_state": "stored",
-            "execution_location": "remote",
-            "policy_state": "blocked_missing_deployment_authorization",
-            "investigation_operations": [],
-            "investigation_routes": [],
-            "investigation_purposes": [],
-            "last_verified_at": None,
-            "use_scope": "fixed_public_connection_probe",
-            "verification_kind": "fixed_public_search",
-            "verification_may_consume_credits": True,
-            "verification_available": True,
-        }
-
-        command_id = store.record_provider_connection_command(
-            workspace_session_id="genomilab-store-tests",
-            provider="paperclip",
-            action="connect",
-            result=result,
-        )
-        persisted = store.list_provider_connection_commands("genomilab-store-tests")
-        events = store.list_provider_connection_events("genomilab-store-tests")
-
-        self.assertEqual(persisted[0]["command_id"], command_id)
-        self.assertEqual(persisted[0]["result"], result)
-        self.assertEqual(events[0]["command_id"], command_id)
-        self.assertEqual(
-            events[0]["event_type"], "provider_connection_connect_recorded"
-        )
-        self.assertEqual(events[0]["payload"], result)
-        self.assertNotIn("api_key", repr([persisted, events]))
-        with self.assertRaisesRegex(ValueError, "not redacted"):
-            store.record_provider_connection_command(
-                workspace_session_id="genomilab-store-tests",
-                provider="paperclip",
-                action="connect",
-                result={"provider": "paperclip", "api_key": "must-not-persist"},
-            )
-
-    def test_provider_connection_event_failure_rolls_back_command(self) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
-        with store._connect() as connection:
-            connection.execute(
-                """
-                CREATE TRIGGER reject_provider_connection_event
-                BEFORE INSERT ON provider_connection_events
-                BEGIN
-                    SELECT RAISE(ABORT, 'synthetic event failure');
-                END
-                """
-            )
-
-        with self.assertRaisesRegex(sqlite3.IntegrityError, "synthetic event failure"):
-            store.record_provider_connection_command(
-                workspace_session_id="genomilab-store-tests",
-                provider="paperclip",
-                action="connect",
-                result={
-                    "provider": "paperclip",
-                    "connection_state": "configured_unverified",
-                },
-            )
-
-        self.assertEqual(
-            store.list_provider_connection_commands("genomilab-store-tests"), []
-        )
-        self.assertEqual(
-            store.list_provider_connection_events("genomilab-store-tests"), []
-        )
-
     def test_observation_revisions_preserve_history_and_current_view(self) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store = GenomiLabStore()
         store.open_workspace("user-a", "Synthetic user A")
         original = store.add_profile_observation(
             "user-a",
@@ -200,14 +122,13 @@ class GenomiLabStoreTests(unittest.TestCase):
                     },
                 )
 
-    def test_store_uses_encrypted_private_storage_and_declared_indexes(self) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+    def test_store_uses_private_sqlite_storage_and_declared_indexes(self) -> None:
+        store = GenomiLabStore()
         store.open_workspace("user-a", "Synthetic user")
 
-        self.assertEqual(store.path, self.genomi_home / "lab" / "genomilab.sqlite3")
-        ciphertext = store.path.read_bytes()
-        self.assertFalse(ciphertext.startswith(b"SQLite format 3\x00"))
-        self.assertNotIn(b"Synthetic user", ciphertext)
+        self.assertEqual(store.path, self.genomi_home / "lab" / "lab.sqlite3")
+        database = store.path.read_bytes()
+        self.assertTrue(database.startswith(b"SQLite format 3\x00"))
         self.assertFalse(store.path.with_name(f"{store.path.name}-wal").exists())
         self.assertFalse(store.path.with_name(f"{store.path.name}-shm").exists())
         expected = {
@@ -227,7 +148,7 @@ class GenomiLabStoreTests(unittest.TestCase):
     def test_atomic_write_rolls_back_the_complete_multi_repository_transition(
         self,
     ) -> None:
-        store = GenomiLabStore(key_provider=TEST_LAB_KEY_PROVIDER)
+        store = GenomiLabStore()
         store.open_workspace("user-a", "Synthetic user A")
 
         with self.assertRaisesRegex(RuntimeError, "late transition failure"):
