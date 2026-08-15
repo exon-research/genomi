@@ -15,8 +15,6 @@ from typing import Iterable, Mapping
 
 
 PAPERCLIP_PROVIDER = "paperclip"
-PAPERCLIP_CONNECTION_PROBE_QUERY = "TP53"
-PAPERCLIP_CONNECTION_PROBE_PURPOSE = "Verify public Paperclip connection"
 
 
 class SourceFamily(str, Enum):
@@ -79,6 +77,7 @@ class ProviderPolicyState(str, Enum):
     BLOCKED_PATIENT_DATA_CONTRACT_EXPIRED = "blocked_patient_data_contract_expired"
     BLOCKED_PATIENT_DATA_CONTRACT_REVOKED = "blocked_patient_data_contract_revoked"
     BLOCKED_REQUEST_OPERATION_MISMATCH = "blocked_request_operation_mismatch"
+    BLOCKED_UNTRUSTED_PUBLIC_CONTEXT = "blocked_untrusted_public_context"
     BLOCKED_MISSING_EXACT_DISCLOSURE_APPROVAL = (
         "blocked_missing_exact_disclosure_approval"
     )
@@ -525,6 +524,10 @@ def evaluate_live_provider_request(
         return ProviderPolicyDecision(
             ProviderPolicyState.BLOCKED_REQUEST_OPERATION_MISMATCH
         )
+    if normalized_provider == PAPERCLIP_PROVIDER and not request.patient_influenced:
+        return ProviderPolicyDecision(
+            ProviderPolicyState.BLOCKED_UNTRUSTED_PUBLIC_CONTEXT
+        )
     if (
         deployment_authorization is None
         or not deployment_authorization.live_use_authorized
@@ -596,28 +599,6 @@ def evaluate_live_provider_request(
             ProviderPolicyState.BLOCKED_MISSING_EXACT_DISCLOSURE_APPROVAL
         )
     return ProviderPolicyDecision(ProviderPolicyState.ALLOWED)
-
-
-def evaluate_paperclip_connection_probe(
-    *,
-    deployment_authorization: DeploymentAuthorization | None,
-    current_time: datetime,
-) -> ProviderPolicyDecision:
-    """Evaluate the exact fixed public query used to verify Paperclip access."""
-
-    request = EvidenceRequest(
-        query=PAPERCLIP_CONNECTION_PROBE_QUERY,
-        source_family=SourceFamily.LITERATURE,
-        purpose=PAPERCLIP_CONNECTION_PROBE_PURPOSE,
-        operation="search",
-    )
-    return evaluate_live_provider_request(
-        PAPERCLIP_PROVIDER,
-        request,
-        operation="search",
-        current_time=current_time,
-        deployment_authorization=deployment_authorization,
-    )
 
 
 def evaluate_paperclip_patient_route(

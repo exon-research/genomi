@@ -32,11 +32,12 @@ primitive evidence, libraries/jobs, and canonical Genomi evidence envelopes.
 
 The completed system SHALL give one patient an enduring **Research Desk** and
 Patient Molecular Profile with many resumable disease investigations over one
-reusable, local AGI. It SHALL use **GXL Paperclip** through GenomiLab's evidence
-gateway whenever an investigation needs evidence within Paperclip's scope and
-the request passes the contractual, privacy, consent, and source-quality gates
-in this specification. It SHALL use **Proto** and **Biohub ESM** only for the
-narrow analytical or experimental tasks for which those systems are suited,
+reusable, local AGI. It SHALL support secure **GXL Paperclip** API-key setup and
+a fixed public connection probe. Every Paperclip evidence operation in this
+release is investigation-scoped and SHALL pass the deployment-authorization,
+patient-data-contract, exact-disclosure, privacy, consent, and source-quality
+gates in this specification. It SHALL use **Proto** and **Biohub ESM** only for
+the narrow analytical or experimental tasks for which those systems are suited,
 never as generic patient-interpretation or treatment engines.
 
 The system succeeds when a nontechnical patient can ask or resume a question,
@@ -189,7 +190,7 @@ flowchart LR
     D <--> G["Authorized Genomi MCP capabilities\nuser, AGI, genomic evidence"]
     G <--> AGI["Genomi-owned Active Genome Index"]
     D --> EG["GenomiLab policy and evidence gateway"]
-    EG --> PC["GXL Paperclip or primary sources\nwhen approved"]
+    EG --> PC["GXL Paperclip or primary sources\nfixed probe or patient-approved evidence"]
     D --> MG["GenomiLab model gateway"]
     MG --> M["Allowlisted Proto / ESM\nonly when relevant"]
 ```
@@ -542,8 +543,9 @@ messages, environment, URLs, logs, errors, and API responses. Connection
 listing SHALL be network-free. Only an explicit verify action MAY make one of
 the fixed connection probes below:
 
-- Paperclip SHALL use a fixed, public, non-patient search and SHALL be labeled
-  before invocation as potentially using API credits.
+- Paperclip SHALL search PMC for `TP53` with a one-result limit. The probe is
+  fixed, public, and non-patient, and SHALL be labeled before invocation as
+  potentially using API credits.
 - Biohub ESM MAY call the exact pinned JSON `/api/v1/encode` route with
   GenomiLab's fixed synthetic 20-residue amino-acid alphabet and compare the
   response with the exact pinned token sequence. Redirects, alternate response
@@ -567,16 +569,23 @@ Saving any provider credential SHALL NOT run a network or compute probe.
 Credential presence and validity SHALL be displayed separately from deployment,
 contract, patient-data, task-validation, expert-mode, and per-request disclosure
 eligibility. No setup route SHALL perform user-directed scientific research or
-use patient data. Credits or an ambiently importable SDK/runtime alone SHALL NOT
-establish operation readiness. ESM and Proto scientific operations remain
-unavailable until their P3 gates are met.
+use patient data. For Paperclip, a saved API key plus a successful explicit
+fixed probe establishes credential validity for connection setup only; it does
+not enable a general public-evidence operation or establish authorization for
+patient-informed egress. An ambiently importable SDK/runtime alone establishes
+no readiness. ESM and Proto scientific operations remain unavailable until
+their P3 gates are met.
 
-For a ready Paperclip connection, the portal SHALL display the exact eligible
-`source_family -> operations` routes and the purposes shared by deployment and
-patient-data policy. It SHALL NOT flatten a restricted route into a generic
-operation or use static copy that implies unapproved literature, regulatory, or
-trial coverage. Reconciliation or any non-ready state SHALL advertise no route
-or purpose.
+For Paperclip, the portal SHALL display connection-verification state separately
+from investigation capability. There is no general API-key-only evidence lane
+in this release. The investigation manifest SHALL display only the routes and
+purposes shared by the installed transport, deployment authorization, and
+independent patient-data contract. Exact disclosure approval is evaluated for
+each request and SHALL NOT be represented as part of the manifest intersection.
+The UI SHALL NOT flatten a restricted route into a generic operation or use
+static copy that implies unapproved literature, regulatory, or trial coverage.
+A non-ready connection or closed organizational gate SHALL advertise no
+investigation route or purpose.
 
 The internal stateless harness adapter SHALL implement a separate versioned,
 host-neutral protocol with operations equivalent to `start_task_run`,
@@ -799,64 +808,86 @@ gate.
 ### 6.5 Evidence and GXL Paperclip requirements
 
 GXL Paperclip SHALL be implemented as a first-class provider behind GenomiLab's
-provider-neutral public-evidence gateway. When Paperclip is installed,
-authorized, covers the requested source family, and passes the gates below, the
-harness SHOULD select the GenomiLab public-evidence capability and the gateway
-SHALL prefer Paperclip for the typed source-operation routes that the installed
-transport actually declares. The initial transport covers literature search
-and lookup plus regulatory and trial search. UniProt, PDB, ChEMBL, full-text,
-figure, and claim-verification routes remain unavailable until separately typed
-and validated. Direct primary-source adapters SHALL remain available for
-validation, gaps, and provider failure.
+provider-neutral public-evidence gateway. Connection setup and evidence use are
+separate states.
+
+The user MAY save an API key in the approved secret store and explicitly run
+the fixed public probe in Section 6.1 without a deployment-authorization file,
+patient-data contract, or disclosure receipt. That operation verifies the
+credential against one fixed public request; it is not a general evidence
+capability and SHALL NOT expose caller-selected search or lookup.
+
+Every actual Paperclip evidence operation in this release is
+investigation-scoped and SHALL be treated as patient-informed, even when the
+final query contains only public disease, gene, variant, drug, or publication
+terms. The gateway SHALL keep those operations closed until all patient gates
+below pass.
+
+A future API-key-only public-evidence capability requires a separate trusted
+execution context that has never received a patient profile, AGI context,
+patient report, private-investigation context, or terms derived from them.
+Caller-provided labels or lineage assertions SHALL NOT be sufficient to classify
+a request as public-only. That future capability is outside this release.
+
+When the investigation lane is ready and Paperclip covers the requested source
+family, the harness SHOULD select the GenomiLab public-evidence capability and
+the gateway SHALL prefer Paperclip for the typed source-operation routes that
+the installed transport actually declares. The initial transport covers
+literature search and lookup, plus regulatory and trial search. UniProt, PDB,
+ChEMBL, full-text, figure, and claim-verification routes remain unavailable
+until separately typed and validated. Direct primary-source adapters SHALL
+remain available for validation, gaps, and provider failure.
 
 An appropriate Paperclip use is one in which:
 
 1. the task is public scientific evidence retrieval, document inspection,
    figure inspection, source collection, or textual-support checking;
 2. the necessary source type is within Paperclip's declared coverage;
-3. the proposed query and any document sent are permitted under the active
-   privacy, consent, contract, and egress policy;
+3. the proposed query and any document pass every patient privacy, consent,
+   contract, and egress gate;
 4. provider output can be traced back to an original source; and
 5. the harness—not Paperclip—will judge relevance, reconcile other evidence,
    and synthesize the brief.
 
-While the patient-data gate is closed, Paperclip SHALL NOT receive any query,
-document, entity, paraphrase, or derived term influenced by an AGI, Personal
-Molecular Profile, patient report, or private investigation. This prohibition does
-not depend on whether a developer believes the payload is identifiable.
+While the patient-investigation lane is closed, Paperclip SHALL NOT receive any
+query, document, entity, paraphrase, or derived term influenced by an AGI,
+Patient Molecular Profile, patient report, or private investigation. This rule
+does not depend on whether a developer believes the payload is identifiable.
 
-As of this requirements snapshot, GXL's standard public terms do not by
-themselves authorize the required product-development, commercial integration,
-local retention, transformation, display, export, or third-party sharing. Live
-Paperclip use—including public or synthetic development/evaluation use—SHALL
-therefore fail closed unless GenomiLab has written GXL authorization or a
-documented legal determination covering that exact use. Without that approval,
-the adapter SHALL be developed and tested with contract fixtures/mocks and
-direct-primary-source paths, and the live provider SHALL remain disabled.
+An API key authenticates technical access to Paperclip and may incur API
+credits; it does not grant GenomiLab authorization to disclose patient-informed
+material. As of this requirements snapshot, GXL's public terms restrict
+commercial and third-party use and permit provider use of interactions or
+content for service improvement or model training. Those terms and the public
+privacy notice are insufficient for patient-informed product use under this
+specification, so evidence operations SHALL fail closed even when the same
+credential has passed the fixed public connection probe.
 
-Patient-facing use requires a separately approved agreement that expressly
-authorizes automated API integration; permitted data classes and purposes;
-commercial use; local caching and audit retention; normalized/derivative
-records; patient and clinician display; report export and third-party sharing;
-and portability. It SHALL also include an appropriate DPA and processing role,
-contractual no-training/no-secondary-use terms, retention/deletion including
-backups, subprocessors and international transfers, security and incident
-notification, service expectations, and a BAA where applicable. These provider
-rights do not override copyright or license restrictions on an underlying
-paper, figure, database, or regulatory document.
+Every patient-informed request requires all three independent gates:
 
-Two independent gates SHALL pass before any future patient-derived request:
-
-1. a deployment-owner-controlled, fail-closed contract policy for the exact
-   provider, feature, data classes, purposes, and terms; and
-2. just-in-time patient approval of the exact provider, payload/query, purpose,
+1. deployment-owner-controlled authorization for the exact provider, product
+   feature, permitted source-operation routes, data classes, purposes, and
+   applicable terms;
+2. a separately approved patient-data agreement that covers automated API
+   integration, processing roles, permitted data and purposes, commercial use,
+   local caching and audit retention, normalized/derivative records, patient
+   and clinician display, export and third-party sharing, portability,
+   no-training/no-secondary-use commitments, retention/deletion including
+   backups, subprocessors and transfers, security and incident notification,
+   service expectations, and a BAA where applicable; and
+3. just-in-time patient approval of the exact provider, payload/query, purpose,
    data categories, destination, and disclosed retention/training state.
 
-The receipt SHALL record the contract, privacy-notice, and acceptable-use-policy
-versions. Patient consent SHALL NOT override a missing organizational contract.
-Expiry, revocation, or a material provider-policy change SHALL automatically
-close the gate until it is reviewed; any expansion of provider, payload,
-purpose, data class, or policy requires renewed approval.
+The receipt SHALL record the deployment authorization, patient-data contract,
+privacy-notice, and acceptable-use-policy versions. Patient consent and a valid
+API key SHALL NOT override either missing organizational gate. Expiry,
+revocation, or a material provider-policy change SHALL automatically close the
+patient-investigation lane until review; any expansion of provider, payload,
+purpose, data class, route, or policy requires renewed approval. Closing the
+investigation lane need not erase the stored credential or its verification
+state, but that state SHALL enable no evidence operation. These provider rights
+do not override copyright or license restrictions on an underlying paper,
+figure, database, or regulatory document.
 
 The Paperclip adapter SHALL:
 
@@ -905,9 +936,9 @@ NOT imply absence from the wider literature.
 Paperclip's documented source and repo capabilities are described in the
 [official documentation](https://paperclip.gxl.ai/docs). Its current public
 [terms](https://gxl.ai/terms-of-service/) and
-[privacy notice](https://gxl.ai/privacy-notice/) are the basis for the shipping
-gate above. The Apache-2.0 client license does not grant rights to the hosted
-corpus, service, or output.
+[privacy notice](https://gxl.ai/privacy-notice/) are the basis for the
+patient-investigation gate above. The Apache-2.0 client license does not grant
+rights to the hosted corpus, service, or output.
 
 ### 6.6 Investigation Brief and evidence presentation
 
@@ -990,7 +1021,7 @@ fitness test:
 
 | Task | Appropriate system | Requirement |
 | --- | --- | --- |
-| Public literature, trials, regulatory or protein/drug records | GXL Paperclip | Use when source, contract, and disclosure gates pass |
+| Public literature, trials, regulatory or protein/drug records | GXL Paperclip | Current release: investigation-scoped only and all patient gates required; API-key-only access is limited to the fixed connection probe |
 | Personal genome observation and established genetics evidence | Genomi | Use Genomi capabilities and AGI reader |
 | Analytical representation or predicted-structure artifact for an exact, already established candidate protein/isoform | Local ESMC or ESMFold2 | Optional model-prediction modality; an interpretation requires a named downstream readout and exact-task validation |
 | Generation or optimization of DNA/RNA/protein sequences for a defined experimental program | Proto, optionally with ESM models | Separate expert/researcher mode only |
@@ -1139,10 +1170,13 @@ generic harness.
 11. Implement the GXL Paperclip provider adapter inside the GenomiLab evidence
    gateway and exercise its full contract
    with mocks/fixtures and direct-source fallbacks, including provenance,
-   provider failures, licensing, and prompt-injection tests. Run a live public
-   or synthetic evaluation only if the exact development use has written GXL
-   authorization or a documented legal determination; otherwise prove the live
-   provider is hard-disabled.
+   provider failures, licensing, and prompt-injection tests. Prove that an API
+   key can be saved without network activity and explicitly verified with the
+   fixed public probe without deployment policy, that verification enables no
+   evidence route by itself, and that every investigation-scoped request
+   remains closed without all three patient gates. Any future public-only route
+   requires a separately trusted context with no patient or investigation
+   lineage.
 12. Add baseline application/portal/adapter security: loopback-only binding,
     workspace-session authentication, CSRF protection, path and user isolation,
     at-rest encryption with tested key handling, OS credential storage, explicit
@@ -1183,7 +1217,9 @@ generic harness.
 - A somatic/multi-omic oncology data model and research workflow that does not
   conflate tumor data with the germline AGI.
 - Professional molecular tumor-board packet and sign-off workflow.
-- Patient-facing GXL Paperclip use only after the shipping gate is satisfied.
+- Patient-informed GXL Paperclip use only after deployment authorization, an
+  independent patient-data contract, and exact disclosure approval are all
+  satisfied.
 
 ### 8.4 P3 — mechanism and experimental lab
 
@@ -1275,8 +1311,8 @@ part of the active goal only when that phase is explicitly brought into scope.
 | **AC-10** | P0 | At least one real harness adapter and a simulated second adapter pass the same factory-driven host-adapter conformance suite for manifest, identity, idempotency, revision conflict, event ordering/deduplication/replay, cancellation and typed failure behavior. |
 | **AC-11** | P0 | With a synthetic user, reviewed phenotype/condition context, reported germline finding and AGI snapshot, one end-to-end disease investigation executed through the installed harness produces an approved pinned Molecular Profile Snapshot, targeted profile projection, source-separated evidence ledger containing each targeted Genomi result exactly once, hypothesis/gap register and versioned Investigation Brief. |
 | **AC-12** | P0 | Every molecular-profile observation and brief/hypothesis claim resolves to immutable evidence and profile revisions; every Genomi record retains its original envelope and returned, empty, out-of-scope, blocked, unavailable and running states remain distinct. |
-| **AC-13** | P0 | The Paperclip adapter passes its provider contract with fixtures/mocks, direct-source fallback, local evidence retention, and a verified hard-disabled live state. If the exact evaluation use is authorized, a representative live public/synthetic call must additionally retain provenance and survive provider loss; lack of that authorization does not fail P0. |
-| **AC-14** | P0 | Call audits prove the portal and harness have no provider credentials/direct route and all provider traffic crosses the GenomiLab gateway. Data-flow tests prove no query, entity, paraphrase, document or derived term influenced by patient data reaches Paperclip while its patient gate is closed. |
+| **AC-13** | P0 | Paperclip contract tests prove credential save is network-free; explicit fixed `TP53`/PMC/one-result verification requires only the saved API key; verification exposes no general evidence route; and investigation evidence retains provenance and survives provider loss. Absence of a live credential does not fail P0. |
+| **AC-14** | P0 | Call audits prove the portal and harness have no provider credentials/direct route and all provider traffic crosses the GenomiLab gateway. Data-flow tests prove the only key-only network call is the fixed non-patient probe and no query, entity, paraphrase, document or derived term influenced by patient data reaches Paperclip while any patient gate is closed. |
 | **AC-15** | P0 | Fixture tests prove that abstract-only, preprint, trial-registration, unavailable, no-hit, and model-verification states cannot independently become answer-ready clinical claims. |
 | **AC-16** | P0 | Retrieved prompt-injection content cannot change consent, tools, agent policy, or system instructions; a static capability manifest exposes only typed allowlisted provider operations and no arbitrary shell/execute path or ambient credential fallback. |
 | **AC-17** | P0 | A patient-workflow sequence-design request is refused or explicitly routed to unavailable expert mode, and any synthetic design artifact is ineligible for AGI ingestion, patient evidence, treatment content, or clinician export. |
@@ -1285,7 +1321,7 @@ part of the active goal only when that phase is explicitly brought into scope.
 | **AC-20** | P1 | A nontechnical participant can ask, follow, resume, inspect, and selectively export the supported investigation without knowing genomic file formats, identifiers, MCP, optional libraries, Paperclip, Proto, ESM, or the harness architecture. |
 | **AC-21** | P1 | Keyboard-only and screen-reader testing passes the Research Desk, investigation, consent, evidence, and sharing workflows at WCAG 2.2 AA. |
 | **AC-22** | P0 | Automated security tests cover loopback-only binding, workspace-session authentication, CSRF, cross-user/path/profile isolation, at-rest encryption and key handling, OS credential storage, explicit secret injection and log/event redaction; switching Genomi users exposes no prior user's profile, snapshots, investigations or artifacts. |
-| **AC-23** | P1 | Future patient-provider use requires both a valid deployment contract policy and just-in-time payload approval; policy expiry/change closes access, consent cannot override a missing contract, and receipts pin the applicable contract/privacy/AUP versions. |
+| **AC-23** | P0 | Every Paperclip evidence request in this release requires current deployment authorization, an independent patient-data contract, and just-in-time approval of the exact payload. An API key or consent cannot replace either organizational gate; expiry or policy change closes evidence operations without invalidating connection state, and receipts pin the applicable authorization, contract, privacy, and AUP versions. |
 | **AC-24** | P1 | Every consequential provider-derived claim is rechecked against the current primary record with index/retrieval dates, source license, corrections/retractions, regulatory/trial versions, preprint-publication linkage, and conflicts retained. |
 | **AC-25** | P1 | A patient can preview and selectively export/share or request deletion of GenomiLab-owned profile/investigation artifacts without deleting the Genomi user or AGI. The deletion coordinator inventories and routes deletion across the domain store, harness conversations/checkpoints/attachments, provider retention, temporary/model artifacts, exports and backups, and receipts deleted, retained-by-choice-or-law, pending and unreachable copies. Genome export/deletion uses separate explicit Genomi operations with dependent-investigation impact preview. |
 | **AC-26** | P3 | An enabled ESM task has a predeclared endpoint, named readout, held-out/time-split benchmark, baseline, reproducibility tolerance, calibration/OOD/failure thresholds, and independent review; inference is local and provenance-complete, and a negative control proves it cannot create pathogenicity, actionability, or answer-readiness without orthogonal evidence. |
@@ -1323,9 +1359,12 @@ Patient-release gates beyond P0:
    SHALL run through the real installed harness rather than substituting the
    simulated adapter or calling the capability executor directly.
 7. Add GXL Paperclip through the GenomiLab evidence gateway as the preferred
-   gated provider contract for covered public evidence, with primary-source
-   normalization and fallback. Keep live calls disabled unless the exact use is
-   authorized under Section 6.5.
+   provider for covered public evidence, with primary-source normalization and
+   fallback. Allow secure API-key setup and the fixed explicit connection probe
+   without policy authorization, but enable no evidence operation from that
+   state alone. Keep every investigation call disabled until deployment
+   authorization, an independent patient-data contract, and exact disclosure
+   approval all pass under Section 6.5.
 8. Implement privacy, disclosure, provider mediation, prompt-injection,
    resumption, accessibility and patient-comprehension evaluations.
 9. Run independent functionality reviews for molecular-profile behavior, AGI
@@ -1340,7 +1379,7 @@ Patient-release gates beyond P0:
 
 | System | Decision |
 | --- | --- |
-| **GXL Paperclip** | Build inside GenomiLab's evidence gateway as the preferred, first-class public-evidence provider contract. Live public/synthetic development use is conditional on authorization for that exact use; patient-facing use has the additional contract and consent gates in Section 6.5. |
+| **GXL Paperclip** | Build inside GenomiLab's evidence gateway as a preferred, first-class public-evidence provider. A saved API key permits only explicit fixed connection verification. Every evidence operation in this release is investigation-scoped and requires deployment authorization, an independent patient-data contract, and exact disclosure approval; the API key does not establish those rights. A future key-only public route requires a separate trusted context with no patient, AGI, or investigation lineage. |
 | **Proto / proto-tools** | Permit only an explicit-credential Modal account/environment check during onboarding; it runs no Proto tool. Use scientific operations only in P3 through a reviewed allowlist or a separate expert experimental-design mode. Not part of the default patient investigation. |
 | **Biohub ESM** | Permit only the fixed synthetic JSON encode check during onboarding. Use local ESMC/ESMFold2 for a validated candidate-protein question in P3. Keep ESM3 and generative ESM/Proto design in expert mode. No hosted patient data under this specification. |
 | **BenchFlow** | Suitable as development/evaluation infrastructure for agent trajectories, privacy, evidence correctness, recovery, and task completion using public/synthetic fixtures. It is not a patient feature. |

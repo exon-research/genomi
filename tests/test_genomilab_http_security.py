@@ -54,9 +54,11 @@ class _SyntheticService:
                     "credential_state": "missing",
                     "execution_location": "remote",
                     "policy_state": "blocked_missing_deployment_authorization",
-                    "available_operations": [],
+                    "investigation_operations": [],
+                    "investigation_routes": [],
+                    "investigation_purposes": [],
                     "last_verified_at": None,
-                    "use_scope": "public_evidence",
+                    "use_scope": "fixed_public_connection_probe",
                 }
             ],
         }

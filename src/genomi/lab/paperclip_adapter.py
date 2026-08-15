@@ -25,7 +25,6 @@ from .provider_policy import (
     ProviderPolicyState,
     SourceFamily,
     current_policy_time,
-    deployment_authorization_lifecycle_state,
     disclosure_fingerprint,
     evaluate_paperclip_patient_route,
     paperclip_patient_route_eligible,
@@ -60,11 +59,13 @@ PAPERCLIP_JOB_RESUME_OPERATION = "paperclip.check_background_job"
 
 @dataclass(frozen=True)
 class PaperclipCapabilityManifest:
-    live_state: str
-    operations: tuple[PaperclipOperation, ...] = ()
-    source_families: tuple[SourceFamily, ...] = ()
-    routes: tuple[tuple[SourceFamily, tuple[PaperclipOperation, ...]], ...] = ()
-    purposes: tuple[str, ...] = ()
+    investigation_live_state: str
+    investigation_operations: tuple[PaperclipOperation, ...] = ()
+    investigation_source_families: tuple[SourceFamily, ...] = ()
+    investigation_routes: tuple[
+        tuple[SourceFamily, tuple[PaperclipOperation, ...]], ...
+    ] = ()
+    investigation_purposes: tuple[str, ...] = ()
     arbitrary_execute_available: bool = False
     ambient_credentials_allowed: bool = False
     credential_source: str = "explicit_secret_provider_only"
@@ -78,17 +79,21 @@ class PaperclipCapabilityManifest:
     def to_dict(self) -> dict[str, object]:
         return {
             "provider": PAPERCLIP_PROVIDER,
-            "live_state": self.live_state,
-            "operations": [operation.value for operation in self.operations],
-            "source_families": [family.value for family in self.source_families],
-            "routes": [
+            "investigation_live_state": self.investigation_live_state,
+            "investigation_operations": [
+                operation.value for operation in self.investigation_operations
+            ],
+            "investigation_source_families": [
+                family.value for family in self.investigation_source_families
+            ],
+            "investigation_routes": [
                 {
                     "source_family": family.value,
                     "operations": [operation.value for operation in operations],
                 }
-                for family, operations in self.routes
+                for family, operations in self.investigation_routes
             ],
-            "purposes": list(self.purposes),
+            "investigation_purposes": list(self.investigation_purposes),
             "arbitrary_execute_available": self.arbitrary_execute_available,
             "ambient_credentials_allowed": self.ambient_credentials_allowed,
             "credential_source": self.credential_source,
@@ -131,7 +136,6 @@ class PaperclipAdapter:
             )
             for family, operations in (live_routes or {}).items()
         }
-        self._live_source_families = tuple(self._live_routes)
         self._live_operations = tuple(
             dict.fromkeys(
                 operation
@@ -147,13 +151,7 @@ class PaperclipAdapter:
     def capability_manifest(self) -> PaperclipCapabilityManifest:
         now = self._clock()
         authorization = self.deployment_authorization
-        authorized = bool(
-            authorization
-            and authorization.live_use_authorized
-            and authorization.provider == PAPERCLIP_PROVIDER
-            and deployment_authorization_lifecycle_state(authorization, now) is None
-        )
-        permitted_routes = tuple(
+        investigation_routes = tuple(
             (
                 family,
                 tuple(
@@ -172,19 +170,19 @@ class PaperclipAdapter:
             )
             for family, operations in self._live_routes.items()
         )
-        permitted_routes = tuple(
+        investigation_routes = tuple(
             (family, operations)
-            for family, operations in permitted_routes
+            for family, operations in investigation_routes
             if operations
         )
-        permitted_operations = tuple(
+        investigation_operations = tuple(
             dict.fromkeys(
                 operation
-                for _family, operations in permitted_routes
+                for _family, operations in investigation_routes
                 for operation in operations
             )
         )
-        permitted_purposes = tuple(
+        investigation_purposes = tuple(
             sorted(
                 authorization.permitted_purposes.intersection(
                     self.patient_data_contract.permitted_purposes
@@ -192,34 +190,45 @@ class PaperclipAdapter:
             )
             if authorization is not None
             and self.patient_data_contract is not None
-            and permitted_routes
+            and investigation_routes
             else ()
         )
-        credential_configured = bool(permitted_routes) and (
+        credential_configured = (
             self._credential_configured()
             if self._credential_configured is not None
             else self._secret_provider is not None
         )
-        connection_ready = bool(
+        credential_ready = bool(
             credential_configured
             and self._connection_ready is not None
             and self._connection_ready()
         )
-        configured = bool(connection_ready and self._live_transport is not None)
+        provider_ready = bool(
+            credential_ready and self._live_transport is not None and self._live_routes
+        )
+        investigation_ready = bool(investigation_routes and provider_ready)
         return PaperclipCapabilityManifest(
-            live_state=(
+            investigation_live_state=(
                 "authorized"
-                if authorized and configured
+                if investigation_ready
                 else "authorized_unavailable"
-                if authorized
+                if investigation_routes
                 else "hard_disabled"
             ),
-            operations=permitted_operations,
-            source_families=tuple(family for family, _operations in permitted_routes),
-            routes=permitted_routes,
-            purposes=permitted_purposes,
+            investigation_operations=(
+                investigation_operations if investigation_ready else ()
+            ),
+            investigation_source_families=(
+                tuple(family for family, _operations in investigation_routes)
+                if investigation_ready
+                else ()
+            ),
+            investigation_routes=(investigation_routes if investigation_ready else ()),
+            investigation_purposes=(
+                investigation_purposes if investigation_ready else ()
+            ),
             background_job_check_available=bool(
-                configured and self._live_job_transport is not None
+                investigation_ready and self._live_job_transport is not None
             ),
         )
 
@@ -392,14 +401,3 @@ class PaperclipAdapter:
             patient_data_contract=self.patient_data_contract,
             disclosure_approval=disclosure_approval,
         )
-
-
-def hard_disabled_paperclip_result(request: EvidenceRequest) -> EvidenceResult:
-    return blocked_result(
-        provider=PAPERCLIP_PROVIDER,
-        access_mode=AccessMode.LIVE_PROVIDER,
-        request=request,
-        policy=ProviderPolicyDecision(
-            ProviderPolicyState.BLOCKED_MISSING_DEPLOYMENT_AUTHORIZATION
-        ),
-    )

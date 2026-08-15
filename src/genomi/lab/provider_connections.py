@@ -26,9 +26,8 @@ from .provider_credentials import (
 from .provider_policy import (
     DeploymentAuthorization,
     PatientDataContract,
-    ProviderPolicyDecision,
+    ProviderPolicyState,
     SourceFamily,
-    evaluate_paperclip_connection_probe,
     evaluate_paperclip_patient_route,
     paperclip_patient_route_eligible,
 )
@@ -61,11 +60,32 @@ class _ProviderSpec:
     verification_available: bool = True
 
 
+@dataclass(frozen=True)
+class _PaperclipInvestigationSnapshot:
+    policy_state: str
+    routes: tuple[tuple[SourceFamily, tuple[str, ...]], ...]
+    purposes: tuple[str, ...]
+
+
+_PATIENT_CONTRACT_GATE_STATES = frozenset(
+    {
+        ProviderPolicyState.BLOCKED_MISSING_PATIENT_DATA_CONTRACT,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_SCOPE,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_OPERATION_SCOPE,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_DATA_CLASS_SCOPE,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_PURPOSE_SCOPE,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_NOT_YET_EFFECTIVE,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_EXPIRED,
+        ProviderPolicyState.BLOCKED_PATIENT_DATA_CONTRACT_REVOKED,
+    }
+)
+
+
 _SPECS = {
     PAPERCLIP_PROVIDER_ID: _ProviderSpec(
         provider=PAPERCLIP_PROVIDER_ID,
         execution_location="remote",
-        use_scope="public_evidence",
+        use_scope="fixed_public_connection_probe",
         policy_state="blocked_missing_deployment_authorization",
         operations=("search", "lookup"),
         verification_kind="fixed_public_search",
@@ -199,11 +219,6 @@ class ProviderConnections:
             state, verified_at = "configured_unverified", None
         if not configured:
             state, verified_at = "not_configured", None
-        elif (
-            provider_id == PAPERCLIP_PROVIDER_ID
-            and not self._paperclip_probe_authorized()
-        ):
-            state, verified_at = "configured_unverified", None
         manifest = self._manifest(
             provider_id,
             configured=configured,
@@ -239,11 +254,6 @@ class ProviderConnections:
 
     def verify(self, provider: str) -> dict[str, object]:
         provider_id = self._provider(provider)
-        if (
-            provider_id == PAPERCLIP_PROVIDER_ID
-            and not self._paperclip_probe_authorized()
-        ):
-            return self.integration(provider_id)
         try:
             with self._lock:
                 loaded = self.credential_store.get_with_revision(provider_id)
@@ -335,8 +345,6 @@ class ProviderConnections:
         """Return the Paperclip key only for its exact verified revision."""
 
         provider_id = PAPERCLIP_PROVIDER_ID
-        if not self._paperclip_probe_authorized():
-            return ""
         with self._lock:
             try:
                 loaded = self.credential_store.get_with_revision(provider_id)
@@ -436,75 +444,76 @@ class ProviderConnections:
             )
         return provider  # type: ignore[return-value]
 
-    def _paperclip_probe_authorized(self) -> bool:
-        return evaluate_paperclip_connection_probe(
-            deployment_authorization=self._paperclip_authorization,
-            current_time=self._clock(),
-        ).allowed
+    def _paperclip_investigation_snapshot(
+        self,
+    ) -> _PaperclipInvestigationSnapshot:
+        """Evaluate policy and advertised routes against one instant in time."""
 
-    def _policy_state(self, provider: ProviderId) -> str:
-        if provider == PAPERCLIP_PROVIDER_ID:
-            return self._paperclip_policy_state()
-        return _SPECS[provider].policy_state
-
-    def _paperclip_policy_state(self) -> str:
-        decisions = self._paperclip_route_decisions()
-        if any(paperclip_patient_route_eligible(item) for item in decisions):
-            return "authorized"
-        if decisions:
-            return decisions[0].state.value
-        baseline = evaluate_paperclip_patient_route(
-            source_family=SourceFamily.LITERATURE,
-            operation="search",
-            deployment_authorization=self._paperclip_authorization,
-            patient_data_contract=self._paperclip_patient_data_contract,
-            current_time=self._clock(),
-        )
-        return (
-            "authorized_unavailable"
-            if paperclip_patient_route_eligible(baseline)
-            else baseline.state.value
-        )
-
-    def _paperclip_route_decisions(self) -> tuple[ProviderPolicyDecision, ...]:
         now = self._clock()
-        return tuple(
-            evaluate_paperclip_patient_route(
-                source_family=family,
-                operation=operation,
+        decisions = []
+        routes = []
+        for family, operations in self._paperclip_routes.items():
+            eligible_operations = []
+            for operation in operations:
+                decision = evaluate_paperclip_patient_route(
+                    source_family=family,
+                    operation=operation,
+                    deployment_authorization=self._paperclip_authorization,
+                    patient_data_contract=self._paperclip_patient_data_contract,
+                    current_time=now,
+                )
+                decisions.append(decision)
+                if paperclip_patient_route_eligible(decision):
+                    eligible_operations.append(operation)
+            if eligible_operations:
+                routes.append((family, tuple(eligible_operations)))
+
+        if routes:
+            policy_state = "authorized"
+        elif decisions:
+            representative = next(
+                (
+                    decision
+                    for decision in decisions
+                    if decision.state in _PATIENT_CONTRACT_GATE_STATES
+                ),
+                decisions[0],
+            )
+            policy_state = representative.state.value
+        else:
+            baseline = evaluate_paperclip_patient_route(
+                source_family=SourceFamily.LITERATURE,
+                operation="search",
                 deployment_authorization=self._paperclip_authorization,
                 patient_data_contract=self._paperclip_patient_data_contract,
                 current_time=now,
             )
-            for family, operations in self._paperclip_routes.items()
-            for operation in operations
-        )
+            policy_state = (
+                "authorized_unavailable"
+                if paperclip_patient_route_eligible(baseline)
+                else baseline.state.value
+            )
 
-    def _paperclip_available_routes(
-        self,
-    ) -> tuple[tuple[SourceFamily, tuple[str, ...]], ...]:
-        now = self._clock()
-        return tuple(
-            (family, eligible_operations)
-            for family, operations in self._paperclip_routes.items()
-            if (
-                eligible_operations := tuple(
-                    operation
-                    for operation in operations
-                    if paperclip_patient_route_eligible(
-                        evaluate_paperclip_patient_route(
-                            source_family=family,
-                            operation=operation,
-                            deployment_authorization=self._paperclip_authorization,
-                            patient_data_contract=self._paperclip_patient_data_contract,
-                            current_time=now,
-                        )
+        purposes: tuple[str, ...] = ()
+        if (
+            routes
+            and self._paperclip_authorization is not None
+            and self._paperclip_patient_data_contract is not None
+        ):
+            purposes = tuple(
+                sorted(
+                    self._paperclip_authorization.permitted_purposes.intersection(
+                        self._paperclip_patient_data_contract.permitted_purposes
                     )
                 )
             )
+        return _PaperclipInvestigationSnapshot(
+            policy_state=policy_state,
+            routes=tuple(routes),
+            purposes=purposes,
         )
 
-    def _paperclip_available_operations(
+    def _paperclip_operations(
         self,
         routes: Sequence[tuple[SourceFamily, Sequence[str]]],
     ) -> tuple[str, ...]:
@@ -517,20 +526,6 @@ class ProviderConnections:
             if operation in routed_operations
         )
 
-    def _paperclip_available_purposes(self) -> tuple[str, ...]:
-        if (
-            self._paperclip_authorization is None
-            or self._paperclip_patient_data_contract is None
-        ):
-            return ()
-        return tuple(
-            sorted(
-                self._paperclip_authorization.permitted_purposes.intersection(
-                    self._paperclip_patient_data_contract.permitted_purposes
-                )
-            )
-        )
-
     def _manifest(
         self,
         provider: ProviderId,
@@ -541,24 +536,33 @@ class ProviderConnections:
         last_verified_at: str | None,
     ) -> dict[str, object]:
         spec = _SPECS[provider]
-        routes = (
-            self._paperclip_available_routes()
-            if provider == PAPERCLIP_PROVIDER_ID and connection_state == "ready"
+        paperclip_snapshot = (
+            self._paperclip_investigation_snapshot()
+            if provider == PAPERCLIP_PROVIDER_ID
+            else None
+        )
+        investigation_routes = (
+            paperclip_snapshot.routes
+            if paperclip_snapshot is not None and connection_state == "ready"
             else ()
         )
-        operations = list(self._paperclip_available_operations(routes))
-        available_routes = [
-            {
-                "source_family": family.value,
-                "operations": list(route_operations),
-            }
-            for family, route_operations in routes
-        ]
-        available_purposes = (
-            list(self._paperclip_available_purposes()) if routes else []
+
+        def serialized_routes(
+            routes: Sequence[tuple[SourceFamily, Sequence[str]]],
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    "source_family": family.value,
+                    "operations": list(route_operations),
+                }
+                for family, route_operations in routes
+            ]
+
+        investigation_operations = list(
+            self._paperclip_operations(investigation_routes)
         )
-        verification_available = spec.verification_available and (
-            provider != PAPERCLIP_PROVIDER_ID or self._paperclip_probe_authorized()
+        investigation_purposes = (
+            list(paperclip_snapshot.purposes) if investigation_routes else []
         )
         return {
             "provider": provider,
@@ -566,15 +570,19 @@ class ProviderConnections:
             "credential_state": credential_state
             or ("stored" if configured else "missing"),
             "execution_location": spec.execution_location,
-            "policy_state": self._policy_state(provider),
-            "available_operations": operations,
-            "available_routes": available_routes,
-            "available_purposes": available_purposes,
+            "policy_state": (
+                paperclip_snapshot.policy_state
+                if paperclip_snapshot is not None
+                else spec.policy_state
+            ),
+            "investigation_operations": investigation_operations,
+            "investigation_routes": serialized_routes(investigation_routes),
+            "investigation_purposes": investigation_purposes,
             "last_verified_at": last_verified_at,
             "use_scope": spec.use_scope,
             "verification_kind": spec.verification_kind,
             "verification_may_consume_credits": (spec.verification_may_consume_credits),
-            "verification_available": verification_available,
+            "verification_available": spec.verification_available,
         }
 
     @staticmethod
@@ -584,9 +592,9 @@ class ProviderConnections:
         return {
             **manifest,
             "connection_state": "reconciliation_required",
-            "available_operations": [],
-            "available_routes": [],
-            "available_purposes": [],
+            "investigation_operations": [],
+            "investigation_routes": [],
+            "investigation_purposes": [],
             "last_verified_at": None,
         }
 

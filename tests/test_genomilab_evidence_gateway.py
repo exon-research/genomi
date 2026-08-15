@@ -26,11 +26,13 @@ from genomi.lab.paperclip_adapter import PaperclipAdapter, PaperclipOperation
 from genomi.lab.provider_policy import (
     AuthorizationBasis,
     DeploymentAuthorization,
+    DisclosureApproval,
     EvidenceDataClass,
     EvidenceRequest,
     PAPERCLIP_PROVIDER,
     PatientDataContract,
     SourceFamily,
+    disclosure_fingerprint,
 )
 from genomi.lab.service import GenomiLabService, LabError
 from genomi.lab.store import GenomiLabStore
@@ -130,6 +132,14 @@ def _request(*, patient_influenced: bool = False) -> EvidenceRequest:
         purpose=PUBLIC_EVIDENCE_PURPOSE,
         operation="search",
         patient_influenced=patient_influenced,
+    )
+
+
+def _paperclip_approval(request: EvidenceRequest) -> DisclosureApproval:
+    return DisclosureApproval(
+        provider=PAPERCLIP_PROVIDER,
+        approval_id="paperclip-exact-disclosure-approval",
+        request_fingerprint=disclosure_fingerprint(PAPERCLIP_PROVIDER, request),
     )
 
 
@@ -240,12 +250,13 @@ class EvidenceGatewayContractTests(unittest.TestCase):
     def test_in_progress_provider_job_is_not_replaced_by_fallback_evidence(
         self,
     ) -> None:
-        request = _request()
+        request = _request(patient_influenced=True)
         direct_calls: list[str] = []
         adapter = PaperclipAdapter(
-            deployment_authorization=_public_deployment(
+            deployment_authorization=_patient_deployment(
                 "written-public-use-authorization"
             ),
+            patient_data_contract=_patient_contract(),
             secret_provider=lambda: "explicit-test-secret",
             credential_configured=lambda: True,
             connection_ready=lambda: True,
@@ -262,10 +273,12 @@ class EvidenceGatewayContractTests(unittest.TestCase):
         result = adapter.retrieve(
             operation=PaperclipOperation.SEARCH,
             request=request,
+            disclosure_approval=_paperclip_approval(request),
             direct_source_provider="pubmed",
             direct_source_transport=lambda _operation, _request: (
                 direct_calls.append("called") or _rich_response()
             ),
+            direct_source_egress_approved=True,
             fixture=_rich_response(),
         )
 
@@ -401,10 +414,12 @@ class EvidenceGatewayContractTests(unittest.TestCase):
         self,
     ) -> None:
         direct_calls: list[PaperclipOperation] = []
+        request = _request(patient_influenced=True)
         adapter = PaperclipAdapter(
-            deployment_authorization=_public_deployment(
+            deployment_authorization=_patient_deployment(
                 "written-public-use-authorization"
             ),
+            patient_data_contract=_patient_contract(),
             secret_provider=lambda: "explicit-test-secret",
             credential_configured=lambda: True,
             connection_ready=lambda: True,
@@ -416,11 +431,13 @@ class EvidenceGatewayContractTests(unittest.TestCase):
 
         result = adapter.retrieve(
             operation=PaperclipOperation.SEARCH,
-            request=_request(),
+            request=request,
+            disclosure_approval=_paperclip_approval(request),
             direct_source_provider="pubmed",
             direct_source_transport=lambda operation, _request: (
                 direct_calls.append(operation) or _rich_response()
             ),
+            direct_source_egress_approved=True,
         )
 
         self.assertEqual(result.provider, "pubmed")

@@ -38,7 +38,7 @@ class EvidenceDisclosureApplicationMixin:
             patient_data_contract=adapter.patient_data_contract,
         )
         paperclip_manifest = adapter.capability_manifest()
-        paperclip_state = paperclip_manifest.live_state
+        paperclip_state = paperclip_manifest.investigation_live_state
         paperclip_scope = paperclip_operation_scope(
             request.source_family, operation.value
         )
@@ -46,7 +46,7 @@ class EvidenceDisclosureApplicationMixin:
             request.operation == operation.value
             and any(
                 family is request.source_family and operation in operations
-                for family, operations in paperclip_manifest.routes
+                for family, operations in paperclip_manifest.investigation_routes
             )
             and paperclip_scope
             and paperclip_scope.accepts(
@@ -155,7 +155,8 @@ class EvidenceDisclosureApplicationMixin:
                     ProviderPolicyState.ALLOWED,
                     ProviderPolicyState.BLOCKED_MISSING_EXACT_DISCLOSURE_APPROVAL,
                 }
-                or adapter.capability_manifest().live_state != "authorized"
+                or adapter.capability_manifest().investigation_live_state
+                != "authorized"
             ):
                 raise LabError(
                     "paperclip_live_unavailable",

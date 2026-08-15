@@ -162,9 +162,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--paperclip-authorization-config",
         type=Path,
         help=(
-            "Owner-controlled JSON policy file recording written Paperclip "
-            "deployment authorization and, when applicable, a separate "
-            "patient-data contract. API keys do not belong in this file."
+            "Owner-controlled policy required for current Paperclip evidence "
+            "operations. It records deployment authorization and a separate "
+            "patient-data contract. Save and verify the API key in the portal; "
+            "the fixed probe does not establish either permission."
         ),
     )
     lab_parser.set_defaults(func=_cmd_lab)
