@@ -1,0 +1,45 @@
+{
+  "capabilities": {
+    "paperclip": {
+      "title": "Paperclip Biomedical Search",
+      "start_when": "Use for focused public biomedical literature, regulatory-document, trial, preprint, or protein-record retrieval when broad web search is insufficient.",
+      "skill_documents": ["skills/paperclip/SKILL.md"],
+      "entry_operations": ["paperclip.search_biomedical"],
+      "operations": ["paperclip.search_biomedical"]
+    }
+  },
+  "operations": {
+    "paperclip.search_biomedical": {
+      "capability": "paperclip",
+      "namespace": "paperclip",
+      "description": "Search selected Paperclip biomedical source families and return normalized public source records.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "sources": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["pmc", "biorxiv", "medrxiv", "arxiv", "abstracts", "fda", "fda/jp", "fda/eu", "trials", "trials/us", "trials/eu", "trials/jp", "trials/cn", "proteins/uniprot"]},
+            "minItems": 1,
+            "uniqueItems": true,
+            "default": ["pmc", "abstracts"]
+          },
+          "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "skill": "skills/paperclip/SKILL.md",
+      "area": "paperclip",
+      "requires": ["paperclip_credentials"],
+      "produces": ["public_biomedical_source_records"],
+      "context_optional": ["source_families"],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": ["paperclip_api"],
+      "data_access": ["selected_public_targets"],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

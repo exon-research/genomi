@@ -1,0 +1,41 @@
+{
+  "capabilities": {
+    "biohub": {
+      "title": "Biohub ESMC Protein Model",
+      "start_when": "Use for a bounded nonclinical comparison of approved public reference or research protein sequences.",
+      "skill_documents": ["skills/biohub/SKILL.md"],
+      "entry_operations": ["biohub.compare_protein_embeddings"],
+      "operations": ["biohub.compare_protein_embeddings"]
+    }
+  },
+  "operations": {
+    "biohub.compare_protein_embeddings": {
+      "capability": "biohub",
+      "namespace": "biohub",
+      "description": "Compare mean ESMC embeddings for two approved public research protein sequences through Biohub.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "reference_sequence": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "alternate_sequence": {"type": "string", "minLength": 1, "maxLength": 4096},
+          "sequence_scope": {"type": "string", "enum": ["public_reference_or_approved_research_artifact"]},
+          "external_transfer_approved": {"type": "boolean", "enum": [true]},
+          "model": {"type": "string", "enum": ["esmc-600m-2024-12"], "default": "esmc-600m-2024-12"}
+        },
+        "required": ["reference_sequence", "alternate_sequence", "sequence_scope", "external_transfer_approved"],
+        "additionalProperties": false
+      },
+      "skill": "skills/biohub/SKILL.md",
+      "area": "biohub",
+      "requires": ["biohub_credentials", "approved_public_sequence_transfer"],
+      "produces": ["nonclinical_protein_embedding_comparison"],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": ["biohub_api"],
+      "data_access": ["approved_public_research_sequences"],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

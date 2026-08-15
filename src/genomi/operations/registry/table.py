@@ -149,6 +149,13 @@ from .handlers_lab import (
     _lab_transition_specialist_assignment,
     _lab_update_health_profile,
 )
+from .handlers_external import (
+    _biohub_compare_protein_embeddings,
+    _paperclip_search_biomedical,
+    _proto_describe_tool_schema,
+    _proto_run_tool,
+    _proto_search_tools,
+)
 from .handlers_vcf_variant import (
     _agi_callability,
     _agi_build_reference_pass,
@@ -275,6 +282,11 @@ OPERATIONS: list[Operation] = [
     Operation('lab.capture_evidence_result', _lab_capture_evidence_result),
     Operation('lab.capture_provider_result', _lab_capture_provider_result),
     Operation('lab.publish_brief', _lab_publish_brief),
+    Operation('paperclip.search_biomedical', _paperclip_search_biomedical),
+    Operation('biohub.compare_protein_embeddings', _biohub_compare_protein_embeddings),
+    Operation('proto.search_tools', _proto_search_tools),
+    Operation('proto.describe_tool_schema', _proto_describe_tool_schema),
+    Operation('proto.run_tool', _proto_run_tool),
 ]
 
 _OPERATION_BY_NAME = {operation.name: operation for operation in OPERATIONS}

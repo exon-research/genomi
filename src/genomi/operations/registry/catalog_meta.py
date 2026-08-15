@@ -101,6 +101,9 @@ EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
         "prs.calculate_score",
         "decode.build_dashboard_evidence",
         "decode.render_dashboard",
+        "paperclip.search_biomedical",
+        "biohub.compare_protein_embeddings",
+        "proto.run_tool",
     }
 )
 

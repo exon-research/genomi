@@ -383,7 +383,10 @@
     "analytical-grounding",
     "journal",
     "decode",
-    "lab"
+    "lab",
+    "paperclip",
+    "biohub",
+    "proto"
   ],
   "namespace_order": [
     "genomi",
@@ -406,6 +409,9 @@
     "region",
     "journal",
     "decode",
-    "lab"
+    "lab",
+    "paperclip",
+    "biohub",
+    "proto"
   ]
 }

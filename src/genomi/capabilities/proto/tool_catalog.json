@@ -1,0 +1,89 @@
+{
+  "capabilities": {
+    "proto": {
+      "title": "Proto Computational Biology Tools",
+      "start_when": "Use for focused discovery and execution of Proto's typed computational-biology tools on approved public research inputs.",
+      "skill_documents": ["skills/proto/SKILL.md"],
+      "entry_operations": ["proto.search_tools", "proto.run_tool"],
+      "operations": ["proto.search_tools", "proto.describe_tool_schema", "proto.run_tool"]
+    }
+  },
+  "operations": {
+    "proto.search_tools": {
+      "capability": "proto",
+      "namespace": "proto",
+      "description": "Search the executable Proto tool catalogue by research intent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 10},
+          "category": {"type": "string"}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "skill": "skills/proto/SKILL.md",
+      "area": "proto",
+      "requires": ["proto_tools", "modal_credentials"],
+      "produces": ["proto_tool_matches"],
+      "context_optional": ["category"],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": ["proto_tools_modal"],
+      "data_access": ["public_catalog_metadata"],
+      "discovery_role": "entry_tool"
+    },
+    "proto.describe_tool_schema": {
+      "capability": "proto",
+      "namespace": "proto",
+      "description": "Return the native typed input, configuration, and output schemas for one Proto tool key.",
+      "input_schema": {
+        "type": "object",
+        "properties": {"tool_key": {"type": "string", "minLength": 1}},
+        "required": ["tool_key"],
+        "additionalProperties": false
+      },
+      "skill": "skills/proto/SKILL.md",
+      "area": "proto",
+      "requires": ["proto_tools"],
+      "produces": ["proto_tool_schema"],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": ["public_catalog_metadata"],
+      "discovery_role": "support_tool"
+    },
+    "proto.run_tool": {
+      "capability": "proto",
+      "namespace": "proto",
+      "description": "Run one native Proto tool in the configured Modal workspace on approved public research inputs.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tool_key": {"type": "string", "minLength": 1},
+          "inputs": {"type": "object"},
+          "config": {"type": "object", "default": {}},
+          "input_scope": {"type": "string", "enum": ["public_or_approved_research_artifact"]},
+          "external_transfer_approved": {"type": "boolean", "enum": [true]}
+        },
+        "required": ["tool_key", "inputs", "input_scope", "external_transfer_approved"],
+        "additionalProperties": false
+      },
+      "skill": "skills/proto/SKILL.md",
+      "area": "proto",
+      "requires": ["proto_tools", "modal_credentials", "approved_public_input_transfer"],
+      "produces": ["nonclinical_computational_research_artifact"],
+      "context_optional": [],
+      "privacy_scope": "public_target_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": ["proto_tools_modal"],
+      "data_access": ["approved_public_research_inputs"],
+      "discovery_role": "entry_tool"
+    }
+  }
+}

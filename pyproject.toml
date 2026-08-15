@@ -29,6 +29,7 @@ dependencies = [
   # stdlib gzip when unavailable.
   "isal>=1.1",
   "duckdb>=1.0",
+  "proto-tools @ git+https://github.com/evo-design/proto-tools.git@1e0bd8f5a8f4525eb5e5c736cbf25c1366929e73",
 ]
 
 [project.urls]
@@ -52,6 +53,9 @@ where = ["src"]
 "genomi.capabilities.decode" = ["tool_catalog.json", "templates/*.html", "templates/vendor/*.js"]
 "genomi.capabilities.functional_genomics" = ["tool_catalog.json"]
 "genomi.capabilities.lab" = ["tool_catalog.json"]
+"genomi.capabilities.paperclip" = ["tool_catalog.json"]
+"genomi.capabilities.biohub" = ["tool_catalog.json"]
+"genomi.capabilities.proto" = ["tool_catalog.json"]
 "genomi.capabilities.gnomad" = ["tool_catalog.json"]
 "genomi.capabilities.gwas" = ["tool_catalog.json"]
 "genomi.capabilities.journal" = ["tool_catalog.json"]
