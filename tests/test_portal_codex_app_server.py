@@ -68,6 +68,36 @@ class CodexAppServerSessionTests(unittest.TestCase):
             Path(portal_codex_runtime.__file__).resolve().parents[2],
         )
 
+    def test_portal_runtime_mcp_config_carries_only_run_scoped_genomi_context(self) -> None:
+        environment = {
+            "GENOMI_CONTEXT": "/private/project/context.json",
+            "GENOMI_CONTEXT_POLICY": "explicit",
+            "GENOMI_SESSION_ID": "portal:project:frame",
+            "GENOMILAB_PORTAL_PROJECT_ID": "project",
+            "GENOMILAB_PORTAL_FRAME_ID": "frame",
+            "UNRELATED_SECRET": "must-not-cross-the-mcp-boundary",
+        }
+        config = portal_codex_runtime.genomi_mcp_server_config(environment)
+
+        self.assertEqual(
+            {
+                key: value
+                for key, value in config["env"].items()
+                if key != "PYTHONPATH"
+            },
+            {
+                "GENOMI_CONTEXT": "/private/project/context.json",
+                "GENOMI_CONTEXT_POLICY": "explicit",
+                "GENOMI_SESSION_ID": "portal:project:frame",
+                "GENOMILAB_PORTAL_PROJECT_ID": "project",
+                "GENOMILAB_PORTAL_FRAME_ID": "frame",
+            },
+        )
+        exec_args = " ".join(portal_codex_runtime.exec_config_args(environment))
+        self.assertIn("mcp_servers.genomi.env.GENOMI_CONTEXT", exec_args)
+        self.assertIn("mcp_servers.genomi.env.GENOMI_SESSION_ID", exec_args)
+        self.assertNotIn("UNRELATED_SECRET", exec_args)
+
     def test_completed_message_supplies_text_when_no_delta_arrived(self) -> None:
         output = io.StringIO(
             "".join(
@@ -178,6 +208,45 @@ class CodexAppServerSessionTests(unittest.TestCase):
 
 
 class CodexAppServerPortalRunTests(unittest.TestCase):
+    def test_consumer_passes_selected_portal_context_to_nested_genomi_mcp(self) -> None:
+        class Process:
+            stdin = io.StringIO()
+            stdout = io.StringIO()
+
+            def poll(self) -> int:
+                return 0
+
+        presentation = mock.Mock()
+        environment = {
+            "GENOMI_CONTEXT": "/private/project/context.json",
+            "GENOMI_CONTEXT_POLICY": "explicit",
+            "GENOMI_SESSION_ID": "portal:project:frame",
+        }
+
+        with mock.patch.object(
+            portal_codex_app_server.CodexAppServerSession,
+            "run",
+        ) as app_server_run:
+            portal_runs._consume_codex_app_server(
+                Process(),
+                "Question",
+                Path("/tmp/workspace"),
+                presentation,
+                environment,
+            )
+
+        nested_environment = app_server_run.call_args.kwargs[
+            "genomi_mcp_server"
+        ]["env"]
+        self.assertEqual(
+            nested_environment["GENOMI_CONTEXT"],
+            "/private/project/context.json",
+        )
+        self.assertEqual(
+            nested_environment["GENOMI_SESSION_ID"],
+            "portal:project:frame",
+        )
+
     def test_live_deltas_are_emitted_in_order_before_terminal_completion(self) -> None:
         run = portal_run_events.create_run(kind="host_agent", agent_id="codex", message="Question")
         self.addCleanup(portal_run_events.discard_run, run.id)

@@ -258,8 +258,6 @@ def run_agent(run: PortalRun) -> None:
         presentation.fail_process_exit(message)
         run.finish("failed", error=message)
         return
-    if agent_id == "codex" and Path(command[0]).name == "codex":
-        command = [*command, *portal_codex_runtime.exec_config_args()]
     prompt = _run_prompt(run)
     try:
         presentation.emit_diagnostic("spawn_agent", agent_id=agent_id)
@@ -274,6 +272,11 @@ def run_agent(run: PortalRun) -> None:
         workspace_snapshot = portal_workspace_files.workspace_file_snapshot(cwd) if run.project_id else {}
         presentation.configure_workspace_tracking(cwd, workspace_snapshot)
         environment = _run_environment(run.project_id, run.frame_id)
+        if agent_id == "codex" and Path(command[0]).name == "codex":
+            command = [
+                *command,
+                *portal_codex_runtime.exec_config_args(environment),
+            ]
         use_codex_app_server = agent_id == "codex" and Path(command[0]).name == "codex"
         try:
             process = _spawn_agent_process(
@@ -304,7 +307,13 @@ def run_agent(run: PortalRun) -> None:
         try:
             if use_codex_app_server:
                 try:
-                    _consume_codex_app_server(process, prompt, cwd, presentation)
+                    _consume_codex_app_server(
+                        process,
+                        prompt,
+                        cwd,
+                        presentation,
+                        environment,
+                    )
                     code = 0
                 except portal_codex_app_server.CodexAppServerUnavailable as exc:
                     _terminate_process(process)
@@ -369,6 +378,7 @@ def _consume_codex_app_server(
     prompt: str,
     cwd: Path,
     presentation: HostAgentRunPresentation,
+    environment: dict[str, str],
 ) -> None:
     if process.stdin is None or process.stdout is None:
         raise portal_codex_app_server.CodexAppServerUnavailable(
@@ -382,7 +392,9 @@ def _consume_codex_app_server(
     session.run(
         prompt=prompt,
         cwd=str(cwd),
-        genomi_mcp_server=portal_codex_runtime.genomi_mcp_server_config(),
+        genomi_mcp_server=portal_codex_runtime.genomi_mcp_server_config(
+            environment
+        ),
     )
     _terminate_process(process)
 
