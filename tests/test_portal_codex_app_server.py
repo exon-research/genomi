@@ -137,6 +137,45 @@ class CodexAppServerSessionTests(unittest.TestCase):
         messages = [json.loads(line) for line in sent.getvalue().splitlines()]
         self.assertIn({"id": 1, "result": {"decision": "decline"}}, messages)
 
+    def test_genomi_mcp_tool_call_is_authorized_by_submitted_portal_turn(self) -> None:
+        output = io.StringIO(
+            "".join(
+                [
+                    _line(
+                        {
+                            "id": 91,
+                            "method": "mcpServer/elicitation/request",
+                            "params": {
+                                "serverName": "genomi",
+                                "mode": "form",
+                                "message": "Approve Genomi tool call",
+                                "requestedSchema": {"type": "object", "properties": {}},
+                                "_meta": {
+                                    "codex_approval_kind": "mcp_tool_call",
+                                    "tool_params": {
+                                        "tool": "lab.create_investigation",
+                                        "params": {"title": "Immune history review"},
+                                    },
+                                },
+                            },
+                        }
+                    ),
+                    _line({"id": 1, "result": {}}),
+                    _line({"id": 2, "result": {"thread": {"id": "thread-1"}}}),
+                    _line({"id": 3, "result": {"turn": {"id": "turn-1"}}}),
+                    _line({"method": "turn/completed", "params": {"turn": {"id": "turn-1", "items": [], "status": "completed"}}}),
+                ]
+            )
+        )
+        sent = io.StringIO()
+        events: list[dict[str, object]] = []
+
+        portal_codex_app_server.CodexAppServerSession(sent, output, events.append).run(prompt="Question", cwd="/tmp")
+
+        self.assertEqual(events, [])
+        messages = [json.loads(line) for line in sent.getvalue().splitlines()]
+        self.assertIn({"id": 91, "result": {"action": "accept", "content": {}}}, messages)
+
 
 class CodexAppServerPortalRunTests(unittest.TestCase):
     def test_live_deltas_are_emitted_in_order_before_terminal_completion(self) -> None:

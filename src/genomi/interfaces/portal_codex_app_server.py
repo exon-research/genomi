@@ -132,6 +132,20 @@ class CodexAppServerSession:
         return message
 
     def _handle_server_request(self, request_id: Any, method: str, params: JsonObject) -> None:
+        metadata = params.get("_meta")
+        requested_schema = params.get("requestedSchema")
+        if (
+            method == "mcpServer/elicitation/request"
+            and params.get("serverName") == "genomi"
+            and params.get("mode") == "form"
+            and isinstance(metadata, dict)
+            and metadata.get("codex_approval_kind") == "mcp_tool_call"
+            and isinstance(metadata.get("tool_params"), dict)
+            and requested_schema == {"type": "object", "properties": {}}
+        ):
+            self._write({"id": request_id, "result": {"action": "accept", "content": {}}})
+            return
+
         approval_tools = {
             "item/commandExecution/requestApproval": ("Bash", "Run a command"),
             "item/fileChange/requestApproval": ("Write", "Create or update project files"),
