@@ -122,6 +122,17 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertNotIn("[Selected evidence 1]", prompt)
         _assert_prompt_has_no_private_paths(prompt)
 
+    def test_compose_prompt_preloads_complete_focused_lab_contract(self) -> None:
+        prompt = portal_runs.compose_prompt("Help me investigate a changing health picture.")
+
+        self.assertIn("# Focused Genomi Lab capability guidance", prompt)
+        self.assertIn("Do not read or search for a Lab skill file", prompt)
+        self.assertIn('"lab.create_investigation"', prompt)
+        self.assertIn('"lab.publish_brief"', prompt)
+        self.assertIn('genomi.invoke with {"tool": "lab.<operation>"', prompt)
+        self.assertIn("There is no lab.help operation", prompt)
+        self.assertIn("# User request\nHelp me investigate a changing health picture.\n", prompt)
+
     def test_compose_prompt_includes_active_view_as_non_evidence_orientation(self) -> None:
         active_context = portal_active_context.update_project_active_context(
             "proj_1",

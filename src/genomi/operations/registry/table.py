@@ -323,7 +323,6 @@ def _select_operations(
         selected = [
             operation for operation in OPERATIONS
             if _operation_capability(operation) in BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST
-            or _operation_namespace(operation.name) == "lab"
         ]
     else:
         selected = list(OPERATIONS)

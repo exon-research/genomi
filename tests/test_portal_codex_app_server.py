@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from genomi.interfaces import (
     portal_codex_app_server,
+    portal_codex_runtime,
     portal_run_events,
     portal_runs,
 )
@@ -37,6 +40,7 @@ class CodexAppServerSessionTests(unittest.TestCase):
         portal_codex_app_server.CodexAppServerSession(sent, output, events.append).run(
             prompt="Research CTLA4",
             cwd="/tmp/workspace",
+            genomi_mcp_server={"command": "/python", "args": ["-m", "genomi"]},
         )
 
         self.assertEqual(events, [{"type": "text_delta", "delta": "Live "}, {"type": "text_delta", "delta": "answer"}])
@@ -45,9 +49,24 @@ class CodexAppServerSessionTests(unittest.TestCase):
         self.assertNotIn("jsonrpc", requests[0])
         self.assertEqual(requests[-1]["params"]["input"], [{"type": "text", "text": "Research CTLA4"}])
         self.assertNotIn("params", requests[1])
-        self.assertEqual(requests[2]["params"]["runtimeWorkspaceRoots"], ["/tmp/workspace"])
+        self.assertNotIn("runtimeWorkspaceRoots", requests[2]["params"])
         self.assertEqual(requests[2]["params"]["approvalPolicy"], "on-request")
         self.assertEqual(requests[2]["params"]["sandbox"], "workspace-write")
+        self.assertEqual(
+            requests[2]["params"]["config"]["mcp_servers"]["genomi"],
+            {"command": "/python", "args": ["-m", "genomi"]},
+        )
+
+    def test_portal_runtime_mcp_config_uses_current_python_and_source_tree(self) -> None:
+        config = portal_codex_runtime.genomi_mcp_server_config()
+
+        self.assertEqual(config["args"], ["-m", "genomi", "serve", "--transport", "stdio"])
+        self.assertTrue(Path(config["command"]).is_absolute())
+        configured_roots = config["env"]["PYTHONPATH"].split(os.pathsep)
+        self.assertEqual(
+            Path(configured_roots[0]).resolve(),
+            Path(portal_codex_runtime.__file__).resolve().parents[2],
+        )
 
     def test_completed_message_supplies_text_when_no_delta_arrived(self) -> None:
         output = io.StringIO(
@@ -219,7 +238,9 @@ class CodexAppServerPortalRunTests(unittest.TestCase):
         ):
             portal_runs.run_agent(run)
 
-        self.assertEqual(commands, [["/usr/bin/codex", "app-server"], ["/usr/bin/codex", "exec", "--json"]])
+        self.assertEqual(commands[0], ["/usr/bin/codex", "app-server"])
+        self.assertEqual(commands[1][:3], ["/usr/bin/codex", "exec", "--json"])
+        self.assertIn("mcp_servers.genomi.command", " ".join(commands[1]))
         self.assertTrue(app_process.terminated)
         self.assertEqual(run.status, "succeeded")
         self.assertEqual(run.output, "Fallback answer")

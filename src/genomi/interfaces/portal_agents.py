@@ -57,7 +57,11 @@ def detect_agents() -> list[JsonObject]:
 
 
 def default_agent_id() -> str | None:
-    for agent in detect_agents():
+    agents = detect_agents()
+    codex = next((agent for agent in agents if agent.get("id") == "codex"), None)
+    if codex and codex.get("runnable"):
+        return "codex"
+    for agent in agents:
         if agent.get("runnable"):
             return str(agent["id"])
     return None
@@ -429,10 +433,18 @@ def _compact_json(value: Any, *, limit: int) -> str:
 
 AGENT_DRIVERS: tuple[AgentDriver, ...] = (
     AgentDriver(
+        id="codex",
+        label="Codex CLI",
+        command="codex",
+        summary="Runs `codex exec --json` with Genomi tools available from the host install.",
+        invocation_args=("exec", "--json", "--skip-git-repo-check"),
+        stream_adapter=CodexStreamAdapter(),
+    ),
+    AgentDriver(
         id="claude",
         label="Claude Code",
         command="claude",
-        summary="Best structured stream support; uses the Genomi MCP server installed in Claude Code.",
+        summary="Available as an alternate host; the unified WebUI defaults to Codex.",
         invocation_args=(
             "-p",
             "--output-format",
@@ -442,14 +454,6 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
             "mcp__genomi__*",
         ),
         stream_adapter=ClaudeStreamAdapter(),
-    ),
-    AgentDriver(
-        id="codex",
-        label="Codex CLI",
-        command="codex",
-        summary="Runs `codex exec --json` with Genomi tools available from the host install.",
-        invocation_args=("exec", "--json", "--skip-git-repo-check"),
-        stream_adapter=CodexStreamAdapter(),
     ),
     AgentDriver(
         id="gemini",

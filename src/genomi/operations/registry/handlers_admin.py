@@ -594,10 +594,7 @@ def _genomi_invoke(params: JsonObject) -> JsonObject:
         TOOL_CATALOG_OPERATIONS.get(tool_name, {}).get("capability")
         or _operation_capability(target)
     )
-    if (
-        target_capability in BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST
-        or tool_name.startswith("lab.")
-    ):
+    if target_capability in BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST:
         raise OperationError(
             "tool_not_dispatchable",
             f"{tool_name!r} is a base tool (capability={target_capability!r}); call it directly via MCP rather than through genomi.invoke",

@@ -12,8 +12,10 @@ from . import (
     portal_active_context,
     portal_agents,
     portal_codex_app_server,
+    portal_codex_runtime,
     portal_context,
     portal_conversation_reviews,
+    portal_lab_skill_context,
     portal_project_genomes,
     portal_run_events,
     portal_store,
@@ -256,6 +258,8 @@ def run_agent(run: PortalRun) -> None:
         presentation.fail_process_exit(message)
         run.finish("failed", error=message)
         return
+    if agent_id == "codex" and Path(command[0]).name == "codex":
+        command = [*command, *portal_codex_runtime.exec_config_args()]
     prompt = _run_prompt(run)
     try:
         presentation.emit_diagnostic("spawn_agent", agent_id=agent_id)
@@ -375,7 +379,11 @@ def _consume_codex_app_server(
         stdout=process.stdout,
         on_event=presentation.handle_agent_event,
     )
-    session.run(prompt=prompt, cwd=str(cwd))
+    session.run(
+        prompt=prompt,
+        cwd=str(cwd),
+        genomi_mcp_server=portal_codex_runtime.genomi_mcp_server_config(),
+    )
     _terminate_process(process)
 
 
@@ -498,11 +506,13 @@ def compose_prompt(
     active_context_section = portal_active_context.active_context_prompt_section(active_context)
     workspace_section = portal_workspaces.project_workspace_prompt_section(project_id)
     evidence_section = portal_turns.selected_evidence_prompt_section(selected_evidence)
+    lab_skill_section = portal_lab_skill_context.prompt_section()
     return (
         "You are operating inside GenomiLab, a local-first genomics workspace.\n"
         "Use the Genomi MCP tools already installed in this assistant session when evidence is needed.\n"
-        "When the underlying intent requires durable patient-specific synthesis across observations or data sources, competing explanations, evidence revised over time, bounded specialist research, or a versioned brief, load the focused lab skill and invoke canonical lab.* operations through genomi.invoke in this same conversation. Decide this semantically; never use keyword, phrase, prompt-template, or disease-name matching. Do not start another orchestration thread or Lab runner.\n"
+        "When the underlying intent requires durable patient-specific synthesis across observations or data sources, competing explanations, evidence revised over time, bounded specialist research, or a versioned brief, use the focused Lab guidance already included below and invoke canonical lab.* operations through genomi.invoke in this same conversation. Decide this semantically; never use keyword, phrase, prompt-template, or disease-name matching. Do not start another orchestration thread or Lab runner.\n"
         "Answer from evidence. Preserve Genomi privacy boundaries. Use informational medical language and recommend clinical confirmation for clinical decisions.\n\n"
+        f"{lab_skill_section}"
         f"{context_section}"
         f"{history_section}"
         f"{genome_boundary_section}"

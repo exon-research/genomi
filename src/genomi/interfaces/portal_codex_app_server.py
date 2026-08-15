@@ -31,7 +31,13 @@ class CodexAppServerSession:
     _message_deltas: dict[str, str] = field(default_factory=dict)
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def run(self, *, prompt: str, cwd: str) -> None:
+    def run(
+        self,
+        *,
+        prompt: str,
+        cwd: str,
+        genomi_mcp_server: JsonObject | None = None,
+    ) -> None:
         self._request(
             "initialize",
             {
@@ -43,15 +49,19 @@ class CodexAppServerSession:
             },
         )
         self._notify("initialized")
+        thread_params: JsonObject = {
+            "cwd": cwd,
+            "ephemeral": True,
+            "approvalPolicy": "on-request",
+            "sandbox": "workspace-write",
+        }
+        if genomi_mcp_server:
+            thread_params["config"] = {
+                "mcp_servers": {"genomi": genomi_mcp_server}
+            }
         thread_result = self._request(
             "thread/start",
-            {
-                "cwd": cwd,
-                "runtimeWorkspaceRoots": [cwd],
-                "ephemeral": True,
-                "approvalPolicy": "on-request",
-                "sandbox": "workspace-write",
-            },
+            thread_params,
         )
         thread = thread_result.get("thread")
         thread_id = str(thread.get("id") or "") if isinstance(thread, dict) else ""

@@ -30,6 +30,16 @@ class GenomiInvokeDispatcherTests(unittest.TestCase):
         self.assertNotEqual(raised.exception.code, "unknown_tool")
         self.assertNotEqual(raised.exception.code, "tool_not_dispatchable")
 
+    def test_invoke_dispatches_to_focused_lab_tool(self) -> None:
+        with self.assertRaises(OperationError) as raised:
+            call_operation(
+                "genomi.invoke",
+                {"tool": "lab.create_investigation", "params": {}},
+            )
+
+        self.assertNotEqual(raised.exception.code, "unknown_tool")
+        self.assertNotEqual(raised.exception.code, "tool_not_dispatchable")
+
     def test_invoke_rejects_unknown_tool_name(self) -> None:
         with self.assertRaises(OperationError) as raised:
             call_operation(

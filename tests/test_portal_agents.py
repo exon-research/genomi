@@ -8,6 +8,18 @@ from genomi.interfaces import portal_agents
 
 
 class PortalAgentDriverTests(unittest.TestCase):
+    def test_codex_is_default_when_codex_and_claude_are_both_runnable(self) -> None:
+        with mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: f"/usr/local/bin/{command}" if command in {"codex", "claude"} else None,
+        ):
+            agents = portal_agents.detect_agents()
+
+            self.assertEqual(portal_agents.default_agent_id(), "codex")
+
+        runnable_ids = [agent["id"] for agent in agents if agent["runnable"]]
+        self.assertEqual(runnable_ids, ["codex", "claude"])
+
     def test_detected_setup_only_agent_is_not_runnable_or_selectable_default(self) -> None:
         def fake_which(command: str) -> str | None:
             if command in {"codex", "gemini", "opencode"}:

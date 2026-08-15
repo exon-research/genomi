@@ -641,7 +641,9 @@
       $('prompt').focus();
     }
     function selectedAgent() {
-      return state.agents.find((agent) => agent.runnable) || { id: 'server-default', label: 'Assistant runtime' };
+      return state.agents.find((agent) => agent.id === 'codex' && agent.runnable)
+        || state.agents.find((agent) => agent.runnable)
+        || { id: 'server-default', label: 'Assistant runtime' };
     }
     function handleToolRecord(record) {
       if (!record) evidenceLedger.reset();
