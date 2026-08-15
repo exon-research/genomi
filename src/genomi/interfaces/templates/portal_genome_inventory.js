@@ -49,9 +49,11 @@ export function activeGenomeHeaderModel(payload = {}, fallback = {}) {
   const active = activeGenomeItem(model);
   if (active) {
     return headerWithControls({
-      status: 'ready',
+      status: active.queryReady ? 'ready' : 'needs_rebuild',
       title: activeHeaderTitle(active),
-      subtitle: activeHeaderSubtitle(active, model),
+      subtitle: active.queryReady
+        ? activeHeaderSubtitle(active, model)
+        : 'This genome needs rebuilding before it can be used. Open to choose another ready genome or add the source again.',
       activeAgiId: active.agiId,
       activeUserId: active.userId
     }, model);
@@ -150,7 +152,21 @@ function genomeRow(item, options) {
     badges.appendChild(el);
   });
   const actions = row.querySelector('.genome-inventory-actions');
-  if (item.active) {
+  if (!item.queryReady) {
+    const state = document.createElement('span');
+    state.className = 'genome-inventory-current warning';
+    state.textContent = item.readinessText || 'Not ready';
+    actions.appendChild(state);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.textContent = 'Add source to rebuild';
+    button.setAttribute('data-testid', 'genomi-genome-rebuild');
+    button.addEventListener('click', () => {
+      if (typeof options.onAddGenome === 'function') options.onAddGenome();
+    });
+    actions.appendChild(button);
+  } else if (item.active) {
     const current = document.createElement('span');
     current.className = 'genome-inventory-current';
     current.textContent = 'Current';
@@ -192,7 +208,7 @@ function genomeItem(item) {
     sourceLabel,
     readinessText,
     shortId: shortIdentifier(agiId),
-    queryReady: Boolean(agiId) || genomeQueryReady(readinessStatus, readiness),
+    queryReady: genomeQueryReady(readinessStatus, readiness),
     title: displayName || genomeIdTitle(agiId) || 'Genome',
     active: Boolean(item.active),
     userId: firstText(users.find((user) => user.active)?.userId, users[0]?.userId),
@@ -200,7 +216,8 @@ function genomeItem(item) {
     summary: summary || 'Genome metadata available',
     badges: [
       build,
-      sourceLabel
+      sourceLabel,
+      readinessText
     ].filter(Boolean).map((value) => compactLine(value, 36))
   };
 }
@@ -344,13 +361,21 @@ function selectionFor(item) {
 }
 
 function readinessLabel(value) {
-  return '';
+  const clean = firstText(value).toLowerCase().replace(/[\s-]+/g, '_');
+  if (/^(complete|completed|query_ready|ready)$/.test(clean)) return 'Ready';
+  if (/^(building|in_progress|pending)$/.test(clean)) return 'Building';
+  if (/^(needs_reparse|needs_rebuild|incomplete|stale)$/.test(clean)) return 'Needs rebuild';
+  return clean ? 'Not ready' : 'Readiness unknown';
 }
 
 function genomeQueryReady(status, readiness) {
-  if (readiness && readiness.complete === true) return true;
   const clean = firstText(status).toLowerCase().replace(/[\s-]+/g, '_');
-  return /^(complete|completed|query_ready|ready)$/.test(clean);
+  return Boolean(
+    readiness
+    && readiness.complete === true
+    && readiness.snapshot_bound === true
+    && /^(complete|completed|query_ready|ready)$/.test(clean)
+  );
 }
 
 function sourceDisplayLabel(value) {

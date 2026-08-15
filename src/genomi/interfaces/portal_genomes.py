@@ -42,6 +42,11 @@ def select_active_genome(payload: JsonObject, *, project_id: str) -> JsonObject:
     target_agi_id = _public_text(target.get("agi_id"))
     if not target_agi_id:
         raise OperationError("missing_context", "That genome is no longer available. Refresh the genome list and choose another genome.")
+    if not _query_ready(target):
+        raise OperationError(
+            "active_genome_index_not_ready",
+            "That genome must be rebuilt from its source before it can be selected. Choose another ready genome or add the source again.",
+        )
     target_user_id = _selection_user_id(
         inventory,
         target,
@@ -198,8 +203,19 @@ def _safe_genome(genome: JsonObject, active: JsonObject) -> JsonObject:
             "status": _public_text(readiness.get("status")),
             "complete": bool(readiness.get("complete")),
             "variants_ready": bool(readiness.get("variants_ready")),
+            "snapshot_bound": bool(genome.get("agi_snapshot_id")),
         },
     }
+
+
+def _query_ready(genome: JsonObject) -> bool:
+    readiness = _object(genome.get("active_genome_index_readiness"))
+    status = _public_text(readiness.get("status")).lower().replace("-", "_").replace(" ", "_")
+    return bool(
+        genome.get("agi_snapshot_id")
+        and readiness.get("complete") is True
+        and status in {"complete", "completed", "query_ready", "ready"}
+    )
 
 
 def _safe_user_ref(user: JsonObject, active: JsonObject) -> JsonObject:

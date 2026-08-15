@@ -24,6 +24,7 @@ class PortalGenomesTests(unittest.TestCase):
             "active_genome_indexes": [
                 {
                     "agi_id": "agi_active",
+                    "agi_snapshot_id": "snapshot_active",
                     "sample_slug": "alex-vcf",
                     "names": {"display": "Alex genome", "sample_slug": "alex-vcf"},
                     "source": {"format": "vcf", "kind": "local_path", "provider": "Genomi"},
@@ -44,6 +45,7 @@ class PortalGenomesTests(unittest.TestCase):
         self.assertEqual(payload["summary"], {"genome_count": 1, "profile_count": 1})
         self.assertEqual(payload["genomes"][0]["display_name"], "Alex genome")
         self.assertEqual(payload["genomes"][0]["source"]["format"], "vcf")
+        self.assertTrue(payload["genomes"][0]["readiness"]["snapshot_bound"])
         self.assertTrue(payload["genomes"][0]["active"])
         self.assertTrue(payload["users"][0]["active"])
         text = json.dumps(payload)
@@ -61,7 +63,12 @@ class PortalGenomesTests(unittest.TestCase):
                     "status": "completed",
                     "active": {"agi_id": "agi_other", "user_id": "user_other"},
                     "users": [{"user_id": "user_alex", "nickname": "Alex", "active_agi_id": "agi_alex", "agi_ids": ["agi_alex"]}],
-                    "active_genome_indexes": [{"agi_id": "agi_alex", "users": [{"user_id": "user_alex", "nickname": "Alex"}]}],
+                    "active_genome_indexes": [{
+                        "agi_id": "agi_alex",
+                        "agi_snapshot_id": "snapshot_alex",
+                        "active_genome_index_readiness": {"status": "completed", "complete": True},
+                        "users": [{"user_id": "user_alex", "nickname": "Alex"}],
+                    }],
                 }
             raise AssertionError(operation)
 
@@ -123,8 +130,8 @@ class PortalGenomesTests(unittest.TestCase):
                 {"user_id": "user-b", "nickname": "B", "agi_ids": ["agi-b"]},
             ],
             "active_genome_indexes": [
-                {"agi_id": "agi-a", "users": [{"user_id": "user-a"}]},
-                {"agi_id": "agi-b", "users": [{"user_id": "user-b"}]},
+                {"agi_id": "agi-a", "agi_snapshot_id": "snapshot-a", "active_genome_index_readiness": {"status": "completed", "complete": True}, "users": [{"user_id": "user-a"}]},
+                {"agi_id": "agi-b", "agi_snapshot_id": "snapshot-b", "active_genome_index_readiness": {"status": "completed", "complete": True}, "users": [{"user_id": "user-b"}]},
             ],
         }
         with (
@@ -146,6 +153,35 @@ class PortalGenomesTests(unittest.TestCase):
         ):
             portal_genomes.select_active_genome(
                 {"agiId": "agi-a", "userId": "user-b"},
+                project_id="proj-a",
+            )
+
+        bind.assert_not_called()
+
+    def test_select_active_genome_rejects_incomplete_agi_before_binding(self) -> None:
+        inventory = {
+            "status": "completed",
+            "users": [{"user_id": "user-a", "nickname": "A", "agi_ids": ["agi-a"]}],
+            "active_genome_indexes": [{
+                "agi_id": "agi-a",
+                "active_genome_index_readiness": {
+                    "status": "needs_reparse",
+                    "complete": False,
+                },
+                "users": [{"user_id": "user-a"}],
+            }],
+        }
+        with (
+            mock.patch("genomi.interfaces.portal_genomes.call_operation", return_value=inventory),
+            mock.patch("genomi.interfaces.portal_genomes.portal_store.get_project", return_value={"project_id": "proj-a"}),
+            mock.patch("genomi.interfaces.portal_genomes.portal_store.bind_project_genome") as bind,
+            self.assertRaisesRegex(
+                portal_genomes.OperationError,
+                "must be rebuilt from its source",
+            ),
+        ):
+            portal_genomes.select_active_genome(
+                {"agiId": "agi-a", "userId": "user-a"},
                 project_id="proj-a",
             )
 

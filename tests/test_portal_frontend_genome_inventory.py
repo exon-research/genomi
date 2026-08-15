@@ -27,7 +27,7 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
                 users: [{{ user_id: 'user_alex', nickname: 'Alex', active: true }}],
                 genome_build: 'GRCh38',
                 source: {{ format: 'vcf' }},
-                readiness: {{ status: 'completed', complete: true, variants_ready: true }}
+                readiness: {{ status: 'completed', complete: true, variants_ready: true, snapshot_bound: true }}
               }}]
             }});
             process.stdout.write(JSON.stringify(model));
@@ -61,7 +61,7 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
                 users: [{{ user_id: 'user_alex', nickname: 'Alex', active: true }}],
                 genome_build: 'GRCh38',
                 source: {{ format: 'vcf' }},
-                readiness: {{ status: 'completed', complete: true, variants_ready: true }}
+                readiness: {{ status: 'completed', complete: true, variants_ready: true, snapshot_bound: true }}
               }}]
             }}, {{
               status: 'ready',
@@ -103,7 +103,7 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
                 users: [{{ user_id: 'user_alex', nickname: 'Alex', active: true }}],
                 genome_build: 'GRCh38',
                 source: {{ format: 'vcf' }},
-                readiness: {{ status: 'completed', complete: true, variants_ready: true }}
+                readiness: {{ status: 'completed', complete: true, variants_ready: true, snapshot_bound: true }}
               }}]
             }}, {{
               status: 'ready',
@@ -245,7 +245,7 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
                   users: [{ user_id: 'user_alex', nickname: 'Alex', active: true }],
                   genome_build: 'GRCh38',
                   source: { format: 'vcf' },
-                  readiness: { status: 'completed', complete: true }
+                  readiness: { status: 'completed', complete: true, snapshot_bound: true }
                 },
                 {
                   agi_id: 'agi_2',
@@ -254,7 +254,7 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
                   users: [{ user_id: 'user_taylor', nickname: 'Taylor', active: false }],
                   genome_build: 'GRCh37',
                   source: { format: '23andme' },
-                  readiness: { status: 'completed', complete: true }
+                  readiness: { status: 'completed', complete: true, snapshot_bound: true }
                 }
               ]
             }, {
@@ -285,6 +285,61 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
         self.assertEqual(result["secondTitle"], "Taylor genome")
         self.assertEqual(result["selected"], [{"userId": "user_taylor", "agiId": "agi_2"}])
         self.assertEqual(result["add"], ["add"])
+
+    def test_incomplete_genome_cannot_be_selected_and_offers_rebuild(self) -> None:
+        module_url = (
+            Path(__file__).resolve().parents[1]
+            / "src/genomi/interfaces/templates/portal_genome_inventory.js"
+        ).as_uri()
+        script = textwrap.dedent(
+            """
+            const inventory = await import(__MODULE_URL__);
+            __DOM_SHIM__
+
+            globalThis.document = { createElement: (tagName) => new Element(tagName) };
+            const container = document.createElement('div');
+            const selected = [];
+            const rebuild = [];
+            const payload = {
+              active: { agi_id: 'agi_legacy', user_id: 'user_alex' },
+              users: [{ user_id: 'user_alex', nickname: 'Alex', active_agi_id: 'agi_legacy', active: true }],
+              genomes: [{
+                agi_id: 'agi_legacy',
+                display_name: 'Alex genome',
+                active: true,
+                users: [{ user_id: 'user_alex', nickname: 'Alex', active: true }],
+                genome_build: 'GRCh38',
+                source: { format: 'gvcf' },
+                readiness: { status: 'needs_reparse', complete: false, snapshot_bound: false }
+              }]
+            };
+            inventory.renderGenomeInventory(container, payload, {
+              onSelectGenome: (selection) => selected.push(selection),
+              onAddGenome: () => rebuild.push('rebuild')
+            });
+            const select = container.querySelector('[data-testid="genomi-genome-select"]');
+            const rebuildButton = container.querySelector('[data-testid="genomi-genome-rebuild"]');
+            if (rebuildButton) rebuildButton.eventListeners.click[0]();
+            process.stdout.write(JSON.stringify({
+              model: inventory.genomeInventoryModel(payload),
+              header: inventory.activeGenomeHeaderModel(payload),
+              hasSelect: Boolean(select),
+              rebuildLabel: rebuildButton && rebuildButton.textContent,
+              selected,
+              rebuild
+            }));
+            """
+        ).replace("__MODULE_URL__", json.dumps(module_url)).replace("__DOM_SHIM__", _dom_shim_script())
+
+        result = _run_node_json(self, script)
+
+        self.assertFalse(result["model"]["genomes"][0]["queryReady"])
+        self.assertEqual(result["header"]["status"], "needs_rebuild")
+        self.assertIn("needs rebuilding", result["header"]["subtitle"])
+        self.assertFalse(result["hasSelect"])
+        self.assertEqual(result["rebuildLabel"], "Add source to rebuild")
+        self.assertEqual(result["selected"], [])
+        self.assertEqual(result["rebuild"], ["rebuild"])
 
     def test_genome_inventory_render_distinguishes_error_from_empty_library(self) -> None:
         module_url = (
