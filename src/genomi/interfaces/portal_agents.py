@@ -166,6 +166,9 @@ class CodexStreamAdapter:
         if event_type == "item.completed" and isinstance(event.get("item"), dict):
             item = event["item"]
             item_type = str(item.get("type") or "")
+            if item_type == "agent_message":
+                text = item.get("text")
+                return _events_outcome([_text_or_diagnostic_event(text)]) if isinstance(text, str) and text else _ignored_structured_event()
             if item_type == "function_call":
                 return _events_outcome([_codex_tool_call(item)])
             if item_type == "function_call_output":

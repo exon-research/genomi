@@ -79,7 +79,11 @@ class PortalGenomesTests(unittest.TestCase):
 
         self.assertTrue(calls)
         self.assertEqual({operation for operation, _params in calls}, {"active_genome_index.list"})
-        bind.assert_called_once_with("proj_alex", agi_id="agi_alex")
+        bind.assert_called_once_with(
+            "proj_alex",
+            agi_id="agi_alex",
+            user_id="user_alex",
+        )
         ensure_context.assert_called_once_with("proj_alex")
         self.assertEqual(payload["selection"]["active_agi_id"], "agi_alex")
         self.assertTrue(payload["selection"]["access"]["approved"])
@@ -110,6 +114,42 @@ class PortalGenomesTests(unittest.TestCase):
         self.assertFalse(by_id["agi_global"]["active"])
         self.assertTrue(by_id["agi_project"]["active"])
         self.assertTrue(by_id["agi_project"]["users"][0]["active"])
+
+    def test_select_active_genome_rejects_a_user_who_does_not_own_it(self) -> None:
+        inventory = {
+            "status": "completed",
+            "users": [
+                {"user_id": "user-a", "nickname": "A", "agi_ids": ["agi-a"]},
+                {"user_id": "user-b", "nickname": "B", "agi_ids": ["agi-b"]},
+            ],
+            "active_genome_indexes": [
+                {"agi_id": "agi-a", "users": [{"user_id": "user-a"}]},
+                {"agi_id": "agi-b", "users": [{"user_id": "user-b"}]},
+            ],
+        }
+        with (
+            mock.patch(
+                "genomi.interfaces.portal_genomes.call_operation",
+                return_value=inventory,
+            ),
+            mock.patch(
+                "genomi.interfaces.portal_genomes.portal_store.get_project",
+                return_value={"project_id": "proj-a"},
+            ),
+            mock.patch(
+                "genomi.interfaces.portal_genomes.portal_store.bind_project_genome"
+            ) as bind,
+            self.assertRaisesRegex(
+                portal_genomes.OperationError,
+                "does not own the selected Active Genome Index",
+            ),
+        ):
+            portal_genomes.select_active_genome(
+                {"agiId": "agi-a", "userId": "user-b"},
+                project_id="proj-a",
+            )
+
+        bind.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -141,7 +141,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     lab_parser = subparsers.add_parser(
         "lab",
-        help="Open the GenomiLab web workspace with its built-in Codex/Claude session.",
+        help="Open or initialize the unified GenomiLab workspace.",
+    )
+    lab_parser.add_argument(
+        "lab_command",
+        nargs="?",
+        choices=["setup"],
+        help="Initialize GenomiLab records and reconcile its normally installed skill.",
     )
     lab_parser.add_argument(
         "--host",
@@ -159,6 +165,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-open",
         action="store_true",
         help="Print the private launch link without opening a browser.",
+    )
+    lab_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="With `setup`, validate readiness without changing local state.",
+    )
+    lab_parser.add_argument(
+        "--demo",
+        nargs="?",
+        const="ctla4",
+        choices=["ctla4"],
+        help="With `setup`, create or refresh the clearly synthetic CTLA4 demo.",
     )
     lab_parser.set_defaults(func=_cmd_lab)
 
@@ -218,7 +236,13 @@ def _cmd_install(args: argparse.Namespace) -> dict[str, Any]:
     return call_operation("genomi.install", params)
 
 
-def _cmd_lab(args: argparse.Namespace) -> None:
+def _cmd_lab(args: argparse.Namespace) -> dict[str, Any] | None:
+    if args.lab_command == "setup":
+        from ..lab.setup import run_lab_setup
+
+        return run_lab_setup(check=bool(args.check), demo=args.demo or False)
+    if args.check or args.demo:
+        raise ValueError("--check and --demo require `genomi lab setup`")
     # GenomiLab has one browser-owned host-agent boundary. Keep this alias on
     # the established portal runner so an inquiry never launches a second
     # GenomiLab process that launches another Codex thread.
@@ -226,7 +250,9 @@ def _cmd_lab(args: argparse.Namespace) -> None:
         host=args.host,
         port=args.port,
         open_browser=not args.no_open,
+        portal_session_auth=True,
     )
+    return None
 
 
 def _add_static(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

@@ -191,6 +191,9 @@ def _operation_parameter_defaults(operation: Operation) -> list[JsonObject]:
 
 
 def _operation_capability(operation: Operation) -> str:
+    explicit = getattr(operation, "tool_capability", None)
+    if explicit:
+        return str(explicit)
     return str(_operation_catalog_entry(operation.name).get("capability") or _operation_namespace(operation.name))
 
 
@@ -266,11 +269,6 @@ _DISPLAY_TITLE_OVERRIDES: dict[str, str] = {
     "sequence.check_primers": "Using Genomi to check a primer pair",
     "genomi.describe_context": "Using Genomi to describe the current context",
     "genomi.describe_portal_workspace": "Using Genomi to describe the portal workspace",
-    "genomi.start_portal_run": "Using Genomi to start a portal run",
-    "genomi.check_portal_run": "Using Genomi to check a portal run",
-    "genomi.cancel_portal_run": "Using Genomi to cancel a portal run",
-    "genomi.retrieve_portal_run_event_page": "Using Genomi to retrieve portal run events",
-    "genomi.retrieve_portal_run_result_package": "Using Genomi to retrieve a portal run package",
     "genomi.set_response_profile": "Using Genomi to set the response tone",
     "genomi.install": "Using Genomi to install or update setup",
     "active_genome_index.select_user": "Using Genomi to select a user",
@@ -299,11 +297,6 @@ _PORTAL_LABEL_OVERRIDES: dict[str, str] = {
     "decode.render_dashboard": "Analysis report",
     "genomi.describe_context": "Active genome",
     "genomi.describe_portal_workspace": "Portal workspace",
-    "genomi.start_portal_run": "Start portal run",
-    "genomi.check_portal_run": "Portal run status",
-    "genomi.cancel_portal_run": "Cancel portal run",
-    "genomi.retrieve_portal_run_event_page": "Portal run events",
-    "genomi.retrieve_portal_run_result_package": "Portal run package",
     "pharmacogenomics.review_medication": "Medication-response review",
     "research.build_target_packet": "Target evidence report",
     "variant.resolve": "Variant lookup",

@@ -13,12 +13,17 @@ from tests.support.runtime.genomi import GenomiRuntimeTestCase
 class PortalProjectGenomesTests(GenomiRuntimeTestCase):
     def test_project_context_contains_only_binding_and_project_grant(self) -> None:
         project = portal_store.create_project(name="Subject A")
-        portal_store.bind_project_genome(project["project_id"], agi_id="agi_subject_a")
+        portal_store.bind_project_genome(
+            project["project_id"],
+            agi_id="agi_subject_a",
+            user_id="user_subject_a",
+        )
 
         path = portal_project_genomes.ensure_project_context(project["project_id"])
         payload = json.loads(path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["active_agi_id"], "agi_subject_a")
+        self.assertEqual(payload["active_user_id"], "user_subject_a")
         self.assertFalse(payload["default_user_auto_selection"])
         self.assertEqual(payload["agi_access"]["agi_subject_a"]["scope"], "portal_project")
         self.assertEqual(payload["agis"], {})

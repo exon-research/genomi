@@ -6,10 +6,12 @@ import secrets
 import sys
 import webbrowser
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
+from threading import Lock
 from typing import Any, TextIO
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from ..operations import (
     OperationError,
@@ -55,11 +57,14 @@ def serve_http(
     host: str = DEFAULT_HTTP_HOST,
     port: int = DEFAULT_HTTP_PORT,
     open_browser: bool = False,
+    portal_session_auth: bool = False,
     stderr: TextIO | None = None,
 ) -> int:
     error_stream = stderr or sys.stderr
     try:
-        server = make_http_server(host, port)
+        server = make_http_server(
+            host, port, portal_session_auth=portal_session_auth
+        )
     except OSError as exc:
         print(
             "[genomi] portal port unavailable at "
@@ -69,7 +74,11 @@ def serve_http(
         )
         return 1
     actual_host, actual_port = server.server_address
-    portal_url = portal_routes.portal_url(actual_host, actual_port)
+    portal_url = (
+        server.portal_launch_url
+        if portal_session_auth
+        else portal_routes.portal_url(actual_host, actual_port)
+    )
     print(f"[genomi] starting GenomiLab workspace on {portal_url}", file=error_stream, flush=True)
     print(f"[genomi] starting MCP server on {portal_routes.mcp_url(actual_host, actual_port)}", file=error_stream, flush=True)
     if open_browser:
@@ -89,8 +98,14 @@ def serve_http(
 def make_http_server(
     host: str = DEFAULT_HTTP_HOST,
     port: int = DEFAULT_HTTP_PORT,
+    *,
+    portal_session_auth: bool = False,
 ) -> ThreadingHTTPServer:
-    return _GenomiMCPHTTPServer((host, port), _GenomiMCPHTTPRequestHandler)
+    return _GenomiMCPHTTPServer(
+        (host, port),
+        _GenomiMCPHTTPRequestHandler,
+        portal_session_auth=portal_session_auth,
+    )
 
 
 def handle_request(request: JsonObject) -> JsonObject | None:
@@ -208,9 +223,25 @@ def handle_http_payload(payload: Any) -> tuple[int, JsonObject | list[JsonObject
 class _GenomiMCPHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, server_address: tuple[str, int], RequestHandlerClass: type[BaseHTTPRequestHandler]) -> None:
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        RequestHandlerClass: type[BaseHTTPRequestHandler],
+        *,
+        portal_session_auth: bool = False,
+    ) -> None:
         super().__init__(server_address, RequestHandlerClass)
         self.portal_csrf_token = secrets.token_urlsafe(32)
+        self.portal_session_auth = portal_session_auth
+        self.portal_launch_token = secrets.token_urlsafe(32)
+        self.portal_launch_token_consumed = False
+        self.portal_launch_token_lock = Lock()
+        self.portal_session_token = secrets.token_urlsafe(32)
+        host, port = self.server_address
+        base_url = portal_routes.portal_url(str(host), int(port))
+        self.portal_launch_url = (
+            f"{base_url}#token={quote(self.portal_launch_token, safe='')}"
+        )
 
 
 class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -234,6 +265,16 @@ class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
         if portal.is_portal_get_path(path) and not self._portal_request_allowed():
             self.send_error(HTTPStatus.FORBIDDEN, "Forbidden")
             return
+        if (
+            path.startswith("/api/")
+            and self.server.portal_session_auth
+            and not self._portal_session_allowed()
+        ):
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": {"code": "authentication_required", "message": "Open GenomiLab from its private launch link."}},
+            )
+            return
         if portal.handle_get(self, path, parsed.query):
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
@@ -248,9 +289,21 @@ class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/api/session" and self.server.portal_session_auth:
+            self._exchange_portal_session()
+            return
         if path not in {portal_routes.MCP_ENDPOINT, f"{portal_routes.MCP_ENDPOINT}/"}:
             if portal.is_portal_post_path(path) and not self._portal_request_allowed():
                 self.send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+                return
+            if (
+                self.server.portal_session_auth
+                and not self._portal_session_allowed()
+            ):
+                self._send_json(
+                    HTTPStatus.UNAUTHORIZED,
+                    {"error": {"code": "authentication_required", "message": "Open GenomiLab from its private launch link."}},
+                )
                 return
             if portal.handle_post_request(self, path):
                 return
@@ -314,6 +367,80 @@ class _GenomiMCPHTTPRequestHandler(BaseHTTPRequestHandler):
         if candidate == "localhost":
             return True
         return _is_loopback_host(candidate)
+
+    def _portal_session_allowed(self) -> bool:
+        token = str(self.headers.get("X-Genomi-Session") or "")
+        if not token:
+            cookies = SimpleCookie()
+            try:
+                cookies.load(str(self.headers.get("Cookie") or ""))
+            except Exception:
+                cookies = SimpleCookie()
+            morsel = cookies.get("genomi_portal_session")
+            token = morsel.value if morsel is not None else ""
+        return bool(token) and secrets.compare_digest(
+            token, self.server.portal_session_token
+        )
+
+    def _exchange_portal_session(self) -> None:
+        if not self._portal_request_allowed() or not self._portal_origin_allowed():
+            self.send_error(HTTPStatus.FORBIDDEN, "Forbidden")
+            return
+        content_length = self.headers.get("Content-Length")
+        try:
+            length = int(content_length or "")
+        except ValueError:
+            length = -1
+        if length < 1 or length > 4096:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": {"code": "invalid_request", "message": "Invalid session request."}},
+            )
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = None
+        supplied = str(payload.get("launch_token") or "") if isinstance(payload, dict) else ""
+        with self.server.portal_launch_token_lock:
+            valid = (
+                not self.server.portal_launch_token_consumed
+                and bool(supplied)
+                and secrets.compare_digest(supplied, self.server.portal_launch_token)
+            )
+            if valid:
+                self.server.portal_launch_token_consumed = True
+        if not valid:
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": {"code": "invalid_launch_token", "message": "This GenomiLab launch link is invalid or has already been used."}},
+            )
+            return
+        body = (
+            json.dumps(
+                {
+                    "status": "ready",
+                    "session_token": self.server.portal_session_token,
+                },
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self._send_common_headers(str(len(body)))
+        self.send_header(
+            "Set-Cookie",
+            "genomi_portal_session="
+            f"{self.server.portal_session_token}; Path=/api/; HttpOnly; SameSite=Strict",
+        )
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _portal_origin_allowed(self) -> bool:
+        origin = urlparse(str(self.headers.get("Origin") or ""))
+        return origin.scheme == "http" and origin.netloc.lower() == str(
+            self.headers.get("Host") or ""
+        ).lower()
 
 
 def _background_enabled() -> bool:

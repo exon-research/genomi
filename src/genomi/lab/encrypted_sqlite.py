@@ -3,14 +3,12 @@
 The SQLite database is never opened from a filesystem path.  Each operation
 decrypts the persisted database into an in-memory connection and atomically
 replaces the encrypted container only after the transaction commits.  The
-encryption key is obtained from a caller-supplied provider; the production
-provider below stores it in the operating system's configured secret store,
-never beside the database.
+encryption key is obtained from a caller-supplied provider. Production keys are
+Genomi-owned local files with private POSIX permissions.
 """
 
 from __future__ import annotations
 
-import base64
 import errno
 import os
 import secrets
@@ -34,11 +32,6 @@ from ..runtime.private_storage import (
     PRIVATE_FILE_MODE,
     ensure_private_directory,
     refuse_symlink,
-)
-from .native_keyring import (
-    NativeKeyringBackend,
-    NativeKeyringUnavailableError,
-    resolve_native_keyring_backend,
 )
 
 _MAGIC = b"GENOMILAB-ENCRYPTED-SQLITE\x00"
@@ -91,65 +84,63 @@ class EncryptionKeyProvider(Protocol):
         """Return exactly 32 key bytes for ``key_id``."""
 
 
-class OSKeyringKeyProvider:
-    """Store database keys in the operating system's configured secret store.
+class LocalFileEncryptionKeyProvider:
+    """Persist opaque database keys in a Genomi-owned private directory."""
 
-    ``keyring`` selects the native secure backend (for example macOS Keychain,
-    Windows Credential Locker, or Secret Service).  A missing/non-functional
-    backend is an error: this provider never falls back to a file next to the
-    encrypted database.
-    """
-
-    def __init__(
-        self,
-        service_name: str = "com.genomi.genomilab",
-        *,
-        keyring_backend: NativeKeyringBackend | None = None,
-    ) -> None:
-        self.service_name = service_name
-        self._keyring_backend = keyring_backend
-        self._lock = threading.Lock()
+    def __init__(self, directory: str | Path) -> None:
+        self.directory = Path(directory).absolute()
+        self._lock = threading.RLock()
 
     def get_or_create_key(self, key_id: str) -> bytes:
-        try:
-            keyring_backend = self._keyring_backend or resolve_native_keyring_backend()
-            self._keyring_backend = keyring_backend
-        except NativeKeyringUnavailableError as exc:
+        if len(key_id) != _KEY_ID_BYTES or any(
+            character not in "0123456789abcdef" for character in key_id
+        ):
             raise EncryptionKeyUnavailableError(
-                "The OS secret-store integration is unavailable."
-            ) from exc
-
-        account = f"database:{key_id}"
+                "The database encryption key identifier is invalid."
+            )
+        ensure_private_directory(self.directory)
+        key_path = self.directory / f"{key_id}.key"
+        refuse_symlink(key_path)
         with self._lock:
             try:
-                encoded = keyring_backend.get_password(self.service_name, account)
-            except Exception as exc:
-                raise EncryptionKeyUnavailableError(
-                    "The operating-system secret store could not be read."
-                ) from exc
+                descriptor = os.open(
+                    key_path,
+                    os.O_RDONLY
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NOFOLLOW", 0),
+                )
+            except FileNotFoundError:
+                return self._create_key(key_path)
+            try:
+                os.fchmod(descriptor, PRIVATE_FILE_MODE)
+                with os.fdopen(descriptor, "rb") as handle:
+                    descriptor = -1
+                    return _validated_key(handle.read())
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
 
-            if encoded is None:
-                key = secrets.token_bytes(_AES_KEY_BYTES)
-                encoded = base64.urlsafe_b64encode(key).decode("ascii")
-                try:
-                    keyring_backend.set_password(self.service_name, account, encoded)
-                    encoded = keyring_backend.get_password(self.service_name, account)
-                except Exception as exc:
-                    raise EncryptionKeyUnavailableError(
-                        "The operating-system secret store could not save the database key."
-                    ) from exc
-                if encoded is None:
-                    raise EncryptionKeyUnavailableError(
-                        "The operating-system secret store did not retain the database key."
-                    )
-
+    def _create_key(self, key_path: Path) -> bytes:
+        key = secrets.token_bytes(_AES_KEY_BYTES)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
-            key = base64.b64decode(encoded, altchars=b"-_", validate=True)
-        except (ValueError, TypeError) as exc:
-            raise EncryptionKeyUnavailableError(
-                "The operating-system secret store returned an invalid database key."
-            ) from exc
-        return _validated_key(key)
+            descriptor = os.open(key_path, flags, PRIVATE_FILE_MODE)
+        except FileExistsError:
+            return self.get_or_create_key(key_path.stem)
+        try:
+            os.fchmod(descriptor, PRIVATE_FILE_MODE)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(key)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        _fsync_directory(self.directory)
+        return key
 
 
 class StaticEncryptionKeyProvider:
@@ -176,7 +167,9 @@ class EncryptedSQLiteDatabase:
         self.path = Path(path).absolute()
         ensure_private_directory(self.path.parent)
         refuse_symlink(self.path)
-        self._key_provider = key_provider or OSKeyringKeyProvider()
+        self._key_provider = key_provider or LocalFileEncryptionKeyProvider(
+            self.path.parent / ".keys"
+        )
         self._timeout_seconds = timeout_seconds
         self._lock_path = self.path.with_name(f".{self.path.name}.lock")
         self._key_id: str | None = None

@@ -433,6 +433,7 @@ class PortalFrontendAssetTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates"
         html = portal_assets._portal_html("test-csrf-token")
         portal = (root / "portal.js").read_text()
+        genomilab = (root / "portal_genomilab.js").read_text()
         messages = (root / "portal_messages.js").read_text()
         starter_cards = (root / "portal_starter_cards.js").read_text()
         operation_labels = (root / "portal_operation_labels.js").read_text()
@@ -471,8 +472,6 @@ class PortalFrontendAssetTests(unittest.TestCase):
         self.assertNotIn('Use active genome when relevant', html)
         self.assertIn('id="context-summary-action"', html)
         self.assertIn('id="context-detail"', html)
-        self.assertIn('id="context-switch-genome"', html)
-        self.assertIn('id="context-add-genome"', html)
         self.assertIn('id="add-genome"', html)
         self.assertIn('id="switch-genome"', html)
         self.assertIn('<details class="rail-card runtime-card">', html)
@@ -547,7 +546,15 @@ class PortalFrontendAssetTests(unittest.TestCase):
         self.assertIn('id="work-trace-pane" class="pane" data-nav-section="work-trace-pane" hidden', html)
         self.assertIn('id="genome-index" class="pane" data-nav-section="genome-index" hidden', html)
         self.assertIn('id="tool-launcher" class="pane" data-nav-section="tool-launcher" hidden', html)
-        self.assertIn("new Set(['evidence-ledger-pane', 'work-trace-pane', 'genome-index', 'tool-launcher'])", portal)
+        self.assertIn('data-genomilab-open="health-testing-step"', html)
+        self.assertIn('data-genomilab-open="research-connections-step"', html)
+        self.assertIn('id="genomilab-case-board"', html)
+        self.assertIn("mountJourney();", genomilab)
+        self.assertIn("await Promise.all([loadProfile(), loadConnections(), loadBoard()]);", genomilab)
+        self.assertIn(
+            "new Set(['evidence-ledger-pane', 'work-trace-pane', 'genome-index', 'tool-launcher'])",
+            portal,
+        )
         self.assertIn("document.querySelectorAll('[data-workspace-nav]').forEach", portal)
         self.assertIn("document.querySelectorAll('[data-evidence-ledger-nav]').forEach", portal)
         self.assertIn("onStateChange: updateWorkspaceDetailNavVisibility", portal)

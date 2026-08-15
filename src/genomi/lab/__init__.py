@@ -1,7 +1,5 @@
-"""GenomiLab's local patient research workspace."""
+"""GenomiLab encrypted records used by the unified science workspace."""
 
-from .server import run_lab
-from .service import GenomiLabService
 from .store import GenomiLabStore
 
-__all__ = ["GenomiLabService", "GenomiLabStore", "run_lab"]
+__all__ = ["GenomiLabStore"]

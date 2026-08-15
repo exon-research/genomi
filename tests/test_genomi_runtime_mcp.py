@@ -214,13 +214,10 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         self.assertIn("in_progress:poll_runtime_check_background_job", payload["evidence_envelope"]["guidance"])
         self.assertEqual(payload["evidence_envelope"]["next_actions"][0]["operation"], "genomi.check_background_job")
 
-    def test_mcp_start_portal_run_executes_inline_when_background_enabled(self) -> None:
+    def test_mcp_lab_record_operation_executes_inline_when_background_enabled(self) -> None:
         inline_result = {
-            "schema": "genomi_portal_run_start",
-            "status": "running",
-            "terminal": False,
-            "run_id": "portal-run-inline",
-            "run": {"id": "portal-run-inline", "status": "running", "terminal": False},
+            "status": "ready",
+            "investigations": [],
         }
         with (
             mock.patch.dict(os.environ, {"GENOMI_MCP_BACKGROUND": "1"}),
@@ -232,18 +229,17 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
                     "jsonrpc": "2.0",
                     "id": 56,
                     "method": "tools/call",
-                    "params": {"name": "genomi.start_portal_run", "arguments": {"message": "Build an APOE report"}},
+                    "params": {"name": "lab.describe_workspace", "arguments": {}},
                 }
             )
 
         start_job.assert_not_called()
-        call_inline.assert_called_once_with("genomi.start_portal_run", {"message": "Build an APOE report"})
+        call_inline.assert_called_once_with("lab.describe_workspace", {})
         self.assertIsNotNone(response)
         assert response is not None
         payload = json.loads(response["result"]["content"][0]["text"])
-        self.assertEqual(payload["status"], "running")
-        self.assertEqual(payload["run_id"], "portal-run-inline")
-        self.assertEqual(payload["run"]["id"], "portal-run-inline")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["investigations"], [])
 
     def test_operation_error_json_uses_evidence_envelope_contract(self) -> None:
         payload = OperationError("invalid_params", "missing required input").to_json(operation="genomi.list_resources")

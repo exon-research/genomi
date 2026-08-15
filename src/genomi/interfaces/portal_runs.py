@@ -7,9 +7,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from ..runtime.context import GENOMI_SESSION_ENV
 from . import (
     portal_active_context,
     portal_agents,
+    portal_codex_app_server,
     portal_context,
     portal_conversation_reviews,
     portal_project_genomes,
@@ -23,6 +25,8 @@ from . import (
 JsonObject = dict[str, Any]
 PortalRun = portal_run_events.PortalRun
 _EMPTY_SUCCESS_DIAGNOSTIC = "The assistant finished successfully but did not return output."
+GENOMILAB_PORTAL_PROJECT_ENV = "GENOMILAB_PORTAL_PROJECT_ID"
+GENOMILAB_PORTAL_FRAME_ENV = "GENOMILAB_PORTAL_FRAME_ID"
 
 
 class HostAgentRunPresentation:
@@ -265,16 +269,24 @@ def run_agent(run: PortalRun) -> None:
         cwd = _run_working_directory(run)
         workspace_snapshot = portal_workspace_files.workspace_file_snapshot(cwd) if run.project_id else {}
         presentation.configure_workspace_tracking(cwd, workspace_snapshot)
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(cwd),
-            env=_run_environment(run.project_id),
-            bufsize=1,
-        )
+        environment = _run_environment(run.project_id, run.frame_id)
+        use_codex_app_server = agent_id == "codex" and Path(command[0]).name == "codex"
+        try:
+            process = _spawn_agent_process(
+                [command[0], "app-server"] if use_codex_app_server else command,
+                cwd=cwd,
+                environment=environment,
+            )
+        except OSError as exc:
+            if not use_codex_app_server:
+                raise
+            presentation.emit_diagnostic(
+                "codex_app_server_fallback",
+                agent_id=agent_id,
+                message=str(exc),
+            )
+            use_codex_app_server = False
+            process = _spawn_agent_process(command, cwd=cwd, environment=environment)
     except Exception as exc:
         run.emit("agent", {"type": "error", "message": str(exc)})
         presentation.fail_process_exit(str(exc))
@@ -286,18 +298,24 @@ def run_agent(run: PortalRun) -> None:
     code: int | None = None
     try:
         try:
-            if process.stdin:
-                process.stdin.write(prompt)
-                process.stdin.close()
-            assert process.stdout is not None
-            for line in process.stdout:
-                parsed_line = portal_agents.parse_agent_line(agent_id, line)
-                if parsed_line.events:
-                    for event in parsed_line.events:
-                        presentation.handle_agent_event(event)
-                elif parsed_line.kind == "plain_text_fallback":
-                    presentation.handle_plain_text_fallback(parsed_line.stdout or line)
-            code = process.wait()
+            if use_codex_app_server:
+                try:
+                    _consume_codex_app_server(process, prompt, cwd, presentation)
+                    code = 0
+                except portal_codex_app_server.CodexAppServerUnavailable as exc:
+                    _terminate_process(process)
+                    presentation.emit_diagnostic(
+                        "codex_app_server_fallback",
+                        agent_id=agent_id,
+                        message=str(exc),
+                    )
+                    process = _spawn_agent_process(command, cwd=cwd, environment=environment)
+                    run.process = process
+                    stderr_queue = queue.Queue()
+                    threading.Thread(target=_read_stderr, args=(process, stderr_queue), daemon=True).start()
+                    code = _consume_exec_stream(process, agent_id, prompt, presentation)
+            else:
+                code = _consume_exec_stream(process, agent_id, prompt, presentation)
         finally:
             presentation.drain_stderr(stderr_queue)
     except Exception as exc:
@@ -322,6 +340,63 @@ def run_agent(run: PortalRun) -> None:
             run.finish("failed", error=message)
     except Exception as exc:
         _terminalize_internal_exception(run, presentation, process, exc)
+
+
+def _spawn_agent_process(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(cwd),
+        env=environment,
+        bufsize=1,
+    )
+
+
+def _consume_codex_app_server(
+    process: subprocess.Popen[str],
+    prompt: str,
+    cwd: Path,
+    presentation: HostAgentRunPresentation,
+) -> None:
+    if process.stdin is None or process.stdout is None:
+        raise portal_codex_app_server.CodexAppServerUnavailable(
+            "Codex app-server did not expose stdio"
+        )
+    session = portal_codex_app_server.CodexAppServerSession(
+        stdin=process.stdin,
+        stdout=process.stdout,
+        on_event=presentation.handle_agent_event,
+    )
+    session.run(prompt=prompt, cwd=str(cwd))
+    _terminate_process(process)
+
+
+def _consume_exec_stream(
+    process: subprocess.Popen[str],
+    agent_id: str,
+    prompt: str,
+    presentation: HostAgentRunPresentation,
+) -> int:
+    if process.stdin:
+        process.stdin.write(prompt)
+        process.stdin.close()
+    assert process.stdout is not None
+    for line in process.stdout:
+        parsed_line = portal_agents.parse_agent_line(agent_id, line)
+        if parsed_line.events:
+            for event in parsed_line.events:
+                presentation.handle_agent_event(event)
+        elif parsed_line.kind == "plain_text_fallback":
+            presentation.handle_plain_text_fallback(parsed_line.stdout or line)
+    return process.wait()
 
 
 def _run_working_directory(run: PortalRun) -> Path:
@@ -451,10 +526,20 @@ def _genome_context_mode_prompt_section(mode: str | None) -> str:
     )
 
 
-def _run_environment(project_id: str | None) -> dict[str, str]:
+def _run_environment(project_id: str | None, frame_id: str | None = None) -> dict[str, str]:
     environment = dict(os.environ)
     if project_id:
         environment.update(portal_project_genomes.agent_environment(project_id))
+        # Portal conversations are the durable user-facing session boundary.
+        # Host CLIs may be recreated for each turn, but Genomi and GenomiLab
+        # approvals must remain scoped to the same project/frame rather than to
+        # a transient child-process identifier.
+        environment[GENOMI_SESSION_ENV] = (
+            f"portal:{project_id}:{frame_id}" if frame_id else f"portal:{project_id}"
+        )
+        environment[GENOMILAB_PORTAL_PROJECT_ENV] = project_id
+        if frame_id:
+            environment[GENOMILAB_PORTAL_FRAME_ENV] = frame_id
     return environment
 
 
@@ -490,5 +575,15 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
         return
     try:
         process.terminate()
+    except Exception:
+        return
+    try:
+        process.wait(timeout=2)
+        return
+    except Exception:
+        pass
+    try:
+        process.kill()
+        process.wait(timeout=2)
     except Exception:
         pass

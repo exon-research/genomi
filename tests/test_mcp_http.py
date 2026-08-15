@@ -98,6 +98,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertIn('<button id="send" class="primary" type="submit">Send</button>', text)
         self.assertIn('name="genomi-csrf-token"', text)
         self.assertNotIn("fonts.googleapis.com", text)
+
         self.assertIn("/assets/portal.css", text)
         self.assertIn("/assets/portal_selection_states.css", text)
         self.assertIn("/assets/portal_artifact_actions.css", text)
@@ -118,6 +119,67 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertIn('id="artifact-import-file"', text)
         self.assertIn("Import file", text)
         self.assertIn('type="module"', text)
+
+    def test_lab_portal_exchanges_one_time_launch_token_for_api_session(self) -> None:
+        server = mcp.make_http_server(
+            "127.0.0.1", 0, portal_session_auth=True
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        address = server.server_address
+        origin = f"http://{address[0]}:{address[1]}"
+        try:
+            status, _, _ = _request_raw("GET", address, "/api/projects")
+            self.assertEqual(status, 401)
+
+            status, response_headers, body = _request_raw(
+                "POST",
+                address,
+                "/api/session",
+                json.dumps(
+                    {"launch_token": server.portal_launch_token}
+                ).encode("utf-8"),
+                {"Content-Type": "application/json", "Origin": origin},
+            )
+            self.assertEqual(status, 200)
+            session_token = json.loads(body)["session_token"]
+            session_cookie = response_headers["set-cookie"].split(";", 1)[0]
+            self.assertEqual(
+                session_cookie, f"genomi_portal_session={session_token}"
+            )
+            self.assertIn("HttpOnly", response_headers["set-cookie"])
+            self.assertIn("SameSite=Strict", response_headers["set-cookie"])
+
+            status, _, _ = _request_raw(
+                "GET",
+                address,
+                "/api/projects",
+                headers={"X-Genomi-Session": session_token},
+            )
+            self.assertEqual(status, 200)
+
+            status, _, _ = _request_raw(
+                "GET",
+                address,
+                "/api/projects",
+                headers={"Cookie": session_cookie},
+            )
+            self.assertEqual(status, 200)
+
+            status, _, _ = _request_raw(
+                "POST",
+                address,
+                "/api/session",
+                json.dumps(
+                    {"launch_token": server.portal_launch_token}
+                ).encode("utf-8"),
+                {"Content-Type": "application/json", "Origin": origin},
+            )
+            self.assertEqual(status, 401)
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
 
     def test_project_deep_link_serves_portal_workspace(self) -> None:
         with _running_server() as address:

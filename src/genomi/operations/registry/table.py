@@ -31,7 +31,11 @@ from .execution import (
     activate_execution_context,
     reset_execution_context,
 )
+from ...runtime.context import context_scope
+from .evidence_result_receipts import EVIDENCE_RESULT_RECEIPTS
 from .model import Operation, _operation_capability
+from .application_model import ApplicationOperation
+from .handlers_genomilab import GENOMILAB_OPERATIONS
 from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
     _genomi_assign_user_genome,
@@ -56,12 +60,7 @@ from .handlers_admin import (
     _runtime_check_background_job,
 )
 from .handlers_portal import (
-    _genomi_cancel_portal_run,
-    _genomi_check_portal_run,
     _genomi_describe_portal_workspace,
-    _genomi_retrieve_portal_run_event_page,
-    _genomi_retrieve_portal_run_result_package,
-    _genomi_start_portal_run,
 )
 from .handlers_ancestry_prs import (
     _ancestry_build_source_context,
@@ -151,16 +150,11 @@ _AGI_REFERENCE = "reference"
 _AGI_VARIANT = "variant"
 
 
-OPERATIONS: list[Operation] = [
+OPERATIONS: list[Operation | ApplicationOperation] = [
     Operation('genomi.check_background_job', _runtime_check_background_job),
     Operation('genomi.install', _genomi_install),
     Operation('genomi.describe_context', _genomi_describe_context),
     Operation('genomi.describe_portal_workspace', _genomi_describe_portal_workspace),
-    Operation('genomi.start_portal_run', _genomi_start_portal_run),
-    Operation('genomi.check_portal_run', _genomi_check_portal_run),
-    Operation('genomi.cancel_portal_run', _genomi_cancel_portal_run),
-    Operation('genomi.retrieve_portal_run_event_page', _genomi_retrieve_portal_run_event_page),
-    Operation('genomi.retrieve_portal_run_result_package', _genomi_retrieve_portal_run_result_package),
     Operation('genomi.invoke', _genomi_invoke),
     Operation('genomi.check_libraries', _resources_libraries),
     Operation('genomi.list_resources', _resources_list),
@@ -256,6 +250,7 @@ OPERATIONS: list[Operation] = [
     Operation('functional_genomics.compare_gene_perturbation', _screen_answer_gene),
     Operation('decode.build_dashboard_evidence', _decode_build_dashboard_evidence, agi_need=_AGI_REFERENCE),
     Operation('decode.render_dashboard', _decode_render_dashboard, agi_need=_AGI_REFERENCE),
+    *GENOMILAB_OPERATIONS,
 ]
 
 _OPERATION_BY_NAME = {operation.name: operation for operation in OPERATIONS}
@@ -305,6 +300,7 @@ def _select_operations(
         selected = [
             operation for operation in OPERATIONS
             if _operation_capability(operation) in BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST
+            or _operation_namespace(operation.name) == "lab"
         ]
     else:
         selected = list(OPERATIONS)
@@ -328,8 +324,9 @@ def _optional_namespace(namespace: Any) -> str | None:
     if namespace in (None, ""):
         return None
     namespace_key = str(namespace)
-    if namespace_key not in NAMESPACE_ORDER:
-        raise OperationError("invalid_params", f"namespace must be one of: {', '.join(NAMESPACE_ORDER)}")
+    if namespace_key not in {*NAMESPACE_ORDER, "lab"}:
+        choices = [*NAMESPACE_ORDER, "lab"]
+        raise OperationError("invalid_params", f"namespace must be one of: {', '.join(choices)}")
     return namespace_key
 
 
@@ -425,6 +422,8 @@ def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
     operation = get_operation(name)
     safe_params = params
     try:
+        if isinstance(operation, ApplicationOperation):
+            operation.validate_params(safe_params)
         result = operation.handler(safe_params)
     except OperationError:
         # Already structured — pass through so MCP/job_worker emits a clean
@@ -464,7 +463,20 @@ def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
         raise OperationError("active_genome_index_incomplete", str(exc)) from exc
     result = _with_defaults_applied(name, safe_params, result)
     result = _stamp_reference_pending_if_due(name, safe_params, result)
-    return _ensure_envelope(name, result)
+    result = _ensure_envelope(name, result)
+    if (
+        name in EVIDENCE_PRODUCING_OPERATIONS
+        and isinstance(result, dict)
+        and isinstance(result.get("evidence_envelope"), dict)
+    ):
+        session_id = str(context_scope().get("id") or "").strip()
+        if session_id:
+            result["result_receipt_id"] = EVIDENCE_RESULT_RECEIPTS.issue(
+                session_id=session_id,
+                operation=name,
+                result=result,
+            )
+    return result
 
 
 def _ensure_envelope(name: str, result: object) -> object:

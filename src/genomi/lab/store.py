@@ -17,9 +17,10 @@ from .authorization_store import InvestigationAuthorizationStoreMixin
 from .capability_store import CapabilityExecutionStoreMixin
 from .disease_relations import DiseaseRelationStoreMixin
 from .evidence_store import EvidenceStoreMixin
-from .harness_store import HarnessStoreMixin
 from .health_store import HealthRecordStoreMixin
 from .investigation_store import InvestigationStoreMixin
+from .investigation_cycle_store import InvestigationCycleStoreMixin
+from .investigation_panel_store import InvestigationPanelStoreMixin
 from .models import (
     DISPLAY_NAME_MAX,
     JsonObject,
@@ -29,7 +30,7 @@ from .models import (
     utc_now,
 )
 from .profile_entities import ProfileEntityStoreMixin
-from .provider_connection_store import ProviderConnectionStoreMixin
+from .report_store import ReportStoreMixin
 from .schema_migrations import upgrade_lab_schema
 from .snapshot_store import SnapshotStoreMixin
 
@@ -50,11 +51,12 @@ class GenomiLabStore(
     ProfileEntityStoreMixin,
     SnapshotStoreMixin,
     InvestigationStoreMixin,
-    HarnessStoreMixin,
+    InvestigationCycleStoreMixin,
+    InvestigationPanelStoreMixin,
     CapabilityExecutionStoreMixin,
     DiseaseRelationStoreMixin,
     EvidenceStoreMixin,
-    ProviderConnectionStoreMixin,
+    ReportStoreMixin,
 ):
     """SQLite-backed GenomiLab domain state with one connection per operation."""
 

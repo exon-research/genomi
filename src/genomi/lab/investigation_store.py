@@ -122,6 +122,56 @@ class InvestigationStoreMixin:
                 "ORDER BY sequence",
                 (investigation_id,),
             ).fetchall()
+            cycles = connection.execute(
+                "SELECT * FROM investigation_cycles WHERE investigation_id = ? "
+                "ORDER BY cycle_number",
+                (investigation_id,),
+            ).fetchall()
+            packets = connection.execute(
+                "SELECT * FROM specialist_packets WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            panel_assignments = connection.execute(
+                "SELECT * FROM panel_assignments WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            specialist_findings = connection.execute(
+                "SELECT * FROM specialist_findings WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            research_artifacts = connection.execute(
+                "SELECT * FROM research_artifacts WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            evidence_references = connection.execute(
+                "SELECT * FROM investigation_evidence_references "
+                "WHERE investigation_id = ? ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            information_gaps = connection.execute(
+                "SELECT * FROM information_gaps WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            patient_questions = connection.execute(
+                "SELECT * FROM patient_questions WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            recommended_next_steps = connection.execute(
+                "SELECT * FROM recommended_next_steps WHERE investigation_id = ? "
+                "ORDER BY created_at",
+                (investigation_id,),
+            ).fetchall()
+            work_events = connection.execute(
+                "SELECT * FROM investigation_work_events WHERE investigation_id = ? "
+                "ORDER BY cycle_id, sequence",
+                (investigation_id,),
+            ).fetchall()
         result = row_dict(row)
         result["evidence_records"] = [row_dict(item) for item in evidence]
         result["hypotheses"] = [row_dict(item) for item in hypotheses]
@@ -131,21 +181,20 @@ class InvestigationStoreMixin:
             for item in evidence
             if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
         ]
-        current_hypothesis_rows = [
-            item
-            for item in hypotheses
-            if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-        ]
-        superseded = {
-            str(item["supersedes_hypothesis_id"])
-            for item in current_hypothesis_rows
-            if item["supersedes_hypothesis_id"]
-        }
-        result["current_hypotheses"] = [
-            row_dict(item)
-            for item in current_hypothesis_rows
-            if str(item["hypothesis_id"]) not in superseded
-        ]
+        latest_hypothesis_by_logical_id: dict[str, object] = {}
+        for item in hypotheses:
+            logical_id = str(item["logical_hypothesis_id"])
+            prior = latest_hypothesis_by_logical_id.get(logical_id)
+            if prior is None or int(item["version"]) > int(prior["version"]):
+                latest_hypothesis_by_logical_id[logical_id] = item
+        current_hypothesis_rows = list(latest_hypothesis_by_logical_id.values())
+        result["current_hypotheses"] = []
+        for item in current_hypothesis_rows:
+            hypothesis = row_dict(item)
+            hypothesis["current_profile_context"] = (
+                item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
+            )
+            result["current_hypotheses"].append(hypothesis)
         result["current_evidence_records"] = current_evidence
         result["profile_snapshot_history"] = [
             row_dict(item) for item in profile_snapshots
@@ -217,7 +266,11 @@ class InvestigationStoreMixin:
             str(item["evidence_record_id"]) for item in current_evidence
         }
         current_hypothesis_created = max(
-            (str(item["created_at"]) for item in current_hypothesis_rows),
+            (
+                str(item["created_at"])
+                for item in current_hypothesis_rows
+                if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
+            ),
             default="",
         )
         current_brief = None
@@ -251,6 +304,26 @@ class InvestigationStoreMixin:
         )
         result["harness_bindings"] = [row_dict(item) for item in bindings]
         result["harness_events"] = [row_dict(item) for item in events]
+        result["cycles"] = [row_dict(item) for item in cycles]
+        result["specialist_packets"] = [row_dict(item) for item in packets]
+        result["panel_assignments"] = [row_dict(item) for item in panel_assignments]
+        result["specialist_findings"] = [row_dict(item) for item in specialist_findings]
+        result["research_artifacts"] = [row_dict(item) for item in research_artifacts]
+        result["evidence_references"] = [row_dict(item) for item in evidence_references]
+        result["information_gaps"] = [row_dict(item) for item in information_gaps]
+        result["patient_questions"] = [row_dict(item) for item in patient_questions]
+        result["recommended_next_steps"] = [
+            row_dict(item) for item in recommended_next_steps
+        ]
+        result["work_events"] = [row_dict(item) for item in work_events]
+        for item in result["panel_assignments"]:
+            item["progress_source"] = "reported_by_main_agent"
+        for item in result["specialist_findings"]:
+            item["record_kind"] = "specialist_analysis"
+            item["progress_source"] = "reported_by_main_agent"
+        for item in result["work_events"]:
+            item["progress_source"] = "reported_by_main_agent"
+        result["progress_source"] = "reported_by_main_agent"
         return result
 
     @staticmethod

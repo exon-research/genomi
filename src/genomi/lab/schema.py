@@ -21,6 +21,23 @@ CREATE TABLE IF NOT EXISTS source_artifacts (
     created_at TEXT NOT NULL,
     UNIQUE(user_id, content_sha256)
 );
+CREATE TABLE IF NOT EXISTS source_artifact_contents (
+    artifact_id TEXT PRIMARY KEY REFERENCES source_artifacts(artifact_id) ON DELETE CASCADE,
+    media_type TEXT NOT NULL,
+    byte_size INTEGER NOT NULL CHECK (byte_size > 0),
+    content_bytes BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS report_fact_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    artifact_id TEXT NOT NULL REFERENCES source_artifacts(artifact_id) ON DELETE CASCADE,
+    proposal_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'accepted', 'rejected')),
+    accepted_observation_revision_id TEXT REFERENCES molecular_observations(observation_revision_id),
+    created_at TEXT NOT NULL,
+    reviewed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS specimens (
     specimen_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
@@ -99,7 +116,7 @@ CREATE TABLE IF NOT EXISTS modality_coverage (
 CREATE TABLE IF NOT EXISTS profile_snapshots (
     patient_molecular_snapshot_id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
-    investigation_id TEXT NOT NULL,
+    investigation_id TEXT,
     version INTEGER NOT NULL,
     prior_patient_molecular_snapshot_id TEXT REFERENCES profile_snapshots(patient_molecular_snapshot_id),
     diff_json TEXT NOT NULL,
@@ -117,13 +134,13 @@ CREATE TABLE IF NOT EXISTS profile_snapshots (
     created_at TEXT NOT NULL,
     CHECK ((agi_id IS NULL AND agi_snapshot_id IS NULL) OR
            (agi_id IS NOT NULL AND agi_snapshot_id IS NOT NULL)),
-    UNIQUE(investigation_id, version)
+    UNIQUE(user_id, manifest_hash)
 );
 CREATE TABLE IF NOT EXISTS consent_receipts (
     consent_receipt_id TEXT PRIMARY KEY,
     workspace_session_id TEXT NOT NULL,
     user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
-    investigation_id TEXT NOT NULL,
+    investigation_id TEXT,
     patient_molecular_snapshot_id TEXT,
     purpose TEXT NOT NULL,
     observation_revision_ids_json TEXT NOT NULL,
@@ -166,6 +183,169 @@ CREATE TABLE IF NOT EXISTS investigations (
     domain_revision INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS investigation_commands (
+    command_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    operation TEXT NOT NULL,
+    command_fingerprint TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS investigation_portal_bindings (
+    binding_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL UNIQUE REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    portal_project_id TEXT NOT NULL,
+    frame_id TEXT NOT NULL,
+    frame_json TEXT NOT NULL,
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id, portal_project_id, frame_id)
+);
+CREATE TABLE IF NOT EXISTS investigation_cycles (
+    cycle_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    cycle_number INTEGER NOT NULL CHECK (cycle_number > 0),
+    objective TEXT NOT NULL,
+    patient_molecular_snapshot_id TEXT REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'cancelled')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    UNIQUE(investigation_id, cycle_number)
+);
+CREATE TABLE IF NOT EXISTS specialist_packets (
+    packet_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    specialist_role TEXT NOT NULL,
+    projection_kind TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    allowed_provider TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    selected_profile_fact_ids_json TEXT NOT NULL,
+    selected_evidence_ids_json TEXT NOT NULL,
+    packet_json TEXT NOT NULL,
+    payload_sha256 TEXT NOT NULL,
+    disclosure_receipt_id TEXT NOT NULL UNIQUE REFERENCES outbound_disclosure_receipts(disclosure_receipt_id),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_artifacts (
+    research_artifact_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (provider IN ('biohub-esm', 'proto', 'genomi-sequence')),
+    artifact_kind TEXT NOT NULL,
+    nonclinical INTEGER NOT NULL CHECK (nonclinical = 1),
+    artifact_json TEXT NOT NULL,
+    source_evidence_ids_json TEXT NOT NULL,
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS panel_assignments (
+    assignment_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    packet_id TEXT NOT NULL REFERENCES specialist_packets(packet_id),
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    specialist_role TEXT NOT NULL,
+    agent_profile TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    native_subagent_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'spawned', 'completed', 'failed', 'cancelled')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS specialist_findings (
+    finding_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    assignment_id TEXT NOT NULL REFERENCES panel_assignments(assignment_id),
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    finding_json TEXT NOT NULL,
+    evidence_record_ids_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('recorded', 'accepted', 'rejected')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS investigation_evidence_references (
+    investigation_evidence_reference_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    evidence_record_id TEXT NOT NULL REFERENCES evidence_records(evidence_record_id),
+    relationship TEXT NOT NULL,
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(cycle_id, evidence_record_id, relationship)
+);
+CREATE TABLE IF NOT EXISTS information_gaps (
+    gap_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    importance TEXT,
+    status TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'dismissed')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS patient_questions (
+    patient_question_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    rationale TEXT,
+    status TEXT NOT NULL CHECK (status IN ('open', 'answered', 'dismissed')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recommended_next_steps (
+    next_step_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    recommendation TEXT NOT NULL,
+    rationale TEXT,
+    priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high')),
+    status TEXT NOT NULL CHECK (status IN ('proposed', 'accepted', 'completed', 'dismissed')),
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS investigation_work_events (
+    work_event_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    command_id TEXT NOT NULL UNIQUE,
+    command_fingerprint TEXT NOT NULL,
+    sequence INTEGER NOT NULL CHECK (sequence > 0),
+    created_at TEXT NOT NULL,
+    UNIQUE(cycle_id, sequence)
 );
 CREATE TABLE IF NOT EXISTS investigation_authorization_receipts (
     authorization_receipt_id TEXT PRIMARY KEY,
@@ -275,11 +455,14 @@ CREATE TABLE IF NOT EXISTS evidence_records (
 CREATE TABLE IF NOT EXISTS hypotheses (
     hypothesis_id TEXT PRIMARY KEY,
     logical_hypothesis_id TEXT NOT NULL,
+    parent_logical_hypothesis_id TEXT,
     investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
     patient_molecular_snapshot_id TEXT NOT NULL REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    evidence_snapshot_id TEXT NOT NULL REFERENCES evidence_snapshots(evidence_snapshot_id),
     supersedes_hypothesis_id TEXT REFERENCES hypotheses(hypothesis_id),
     version INTEGER NOT NULL,
     kind TEXT NOT NULL,
+    title TEXT NOT NULL,
     statement TEXT NOT NULL,
     status TEXT NOT NULL,
     evidence_record_ids_json TEXT NOT NULL,
@@ -545,6 +728,8 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_investigation_version
     ON profile_snapshots(investigation_id, version);
 CREATE INDEX IF NOT EXISTS idx_artifacts_user_created
     ON source_artifacts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_report_fact_proposals_artifact
+    ON report_fact_proposals(artifact_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_specimens_user_created
     ON specimens(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_assays_user_created
@@ -568,6 +753,8 @@ CREATE INDEX IF NOT EXISTS idx_investigations_user_created
     ON investigations(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_evidence_investigation_created
     ON evidence_records(investigation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_research_artifacts_investigation_created
+    ON research_artifacts(investigation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_investigation_profile
     ON evidence_records(investigation_id, patient_molecular_snapshot_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_snapshots_investigation_version

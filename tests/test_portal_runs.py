@@ -34,7 +34,9 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         project = portal_store.create_project(name="Project boundary")
         portal_store.bind_project_genome(project["project_id"], agi_id="agi_project")
 
-        environment = portal_runs._run_environment(project["project_id"])
+        environment = portal_runs._run_environment(
+            project["project_id"], "frame_project"
+        )
 
         self.assertEqual(environment["GENOMI_CONTEXT_POLICY"], "explicit")
         context_path = Path(environment["GENOMI_CONTEXT"])
@@ -42,6 +44,14 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         payload = json.loads(context_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["active_agi_id"], "agi_project")
         self.assertFalse(payload["default_user_auto_selection"])
+        self.assertEqual(
+            environment["GENOMI_SESSION_ID"],
+            f"portal:{project['project_id']}:frame_project",
+        )
+        self.assertEqual(
+            environment["GENOMILAB_PORTAL_PROJECT_ID"], project["project_id"]
+        )
+        self.assertEqual(environment["GENOMILAB_PORTAL_FRAME_ID"], "frame_project")
 
     def test_permission_request_survives_live_and_persisted_tool_presentation(self) -> None:
         event = {

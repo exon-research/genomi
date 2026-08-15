@@ -5,6 +5,7 @@ import { sourceOperation } from './portal_tool_result_presentation.js';
 import { promptSafeText, selectedEvidencePayload as buildSelectedEvidencePayload } from './portal_selected_evidence.js';
 import { artifactsForRun, renderInlineArtifactStrip } from './portal_artifacts.js';
 import { welcomeMessageMarkup } from './portal_starter_cards.js';
+import { isSpecialistToolName, renderSpecialistLane } from './portal_specialists.js';
 import { markdownContentElement } from './portal_workspace_file_previews.js';
 
 export function toolWorkGroupSummary(statuses = []) {
@@ -290,6 +291,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const parent = body && typeof body.closest === 'function' ? body.closest('.message') : null;
     if (!clean || !parent) return;
     parent.dataset.runId = clean;
+    if (!(body.dataset.rawText || '').trim()) parent.classList.add('streaming');
     assistantMessagesByRunId.set(clean, parent);
     flushPendingStoredToolMessages(clean, parent);
   }
@@ -447,6 +449,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
 
   function appendText(body, text) {
     if (text) {
+      body.closest('.message.assistant')?.classList.remove('streaming');
       if (body.closest('.message.assistant')) {
         body.dataset.rawText = (body.dataset.rawText || '') + text;
         renderAssistantBody(body, visibleMessageText(
@@ -490,6 +493,10 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
         onAskFollowUp
       });
     }
+    renderSpecialistLane(
+      record.stack,
+      Array.from(toolCards.values()).filter((item) => item.stack === record.stack)
+    );
     updateToolStackSummary(record.stack);
   }
 
@@ -514,6 +521,14 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const name = sourceOperation(record) || 'tool';
     const summary = record.result ? toolResultSummary(record.result) : toolInputSummary(record.call && record.call.input);
     const recoveredOperation = recoveredOperationFromSummary(summary);
+    if (isSpecialistToolName(name)) {
+      return {
+        title: 'Specialist collaboration',
+        status: record.result ? (record.result.isError ? 'error' : 'done') : 'running',
+        summary,
+        technical: true
+      };
+    }
     if (isPermissionRequestRecord(record)) {
       return {
         title: 'Permission needed',
@@ -794,18 +809,23 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const chips = Array.from(stack.querySelectorAll('.tool-chip')).filter((chip) => !chip.hidden);
     const allChips = Array.from(stack.querySelectorAll('.tool-chip'));
     const diagnosticOnly = chips.length > 0 && chips.every((chip) => chip.classList && chip.classList.contains('tool-chip-diagnostic'));
-    stack.hidden = !chips.length || diagnosticOnly || (allChips.length > 0 && !chips.length);
+    const specialistLane = stack.querySelector('.specialist-lane');
+    stack.hidden = !specialistLane && (!chips.length || diagnosticOnly || (allChips.length > 0 && !chips.length));
     const model = toolWorkGroupSummary(chips.map(toolChipStatus));
+    const specialistOnly = Boolean(specialistLane && !chips.length);
     const statusNode = stack.querySelector('.tool-stack-head .tool-status');
     const head = stack.querySelector('.tool-stack-head');
     const toggle = stack.querySelector('.tool-stack-toggle');
     const title = stack.querySelector('.tool-stack-title');
     const summary = stack.querySelector('.tool-stack-summary');
-    if (statusNode) statusNode.className = 'tool-status ' + model.status;
-    if (head) head.setAttribute('aria-label', model.title + ': ' + model.summary);
-    if (toggle) toggle.setAttribute('aria-label', model.title + ': ' + model.summary);
-    if (title) title.textContent = model.title;
-    if (summary) summary.textContent = model.summary;
+    const titleText = specialistOnly ? 'Specialists' : model.title;
+    const summaryText = specialistOnly ? (specialistLane.dataset.summary || 'Coordinating specialists') : model.summary;
+    const statusText = specialistOnly ? (specialistLane.dataset.status === 'completed' ? 'done' : specialistLane.dataset.status) : model.status;
+    if (statusNode) statusNode.className = 'tool-status ' + statusText;
+    if (head) head.setAttribute('aria-label', titleText + ': ' + summaryText);
+    if (toggle) toggle.setAttribute('aria-label', titleText + ': ' + summaryText);
+    if (title) title.textContent = titleText;
+    if (summary) summary.textContent = summaryText;
   }
 
   function toolStackContextPayload(stack) {

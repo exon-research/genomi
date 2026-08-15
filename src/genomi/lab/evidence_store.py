@@ -295,11 +295,13 @@ class EvidenceStoreMixin(
                 rows = connection.execute(
                     f"SELECT * FROM hypotheses "
                     f"WHERE investigation_id = ? "
-                    f"AND patient_molecular_snapshot_id = "
-                    f"(SELECT patient_molecular_snapshot_id FROM investigations "
-                    f"WHERE investigation_id = ?) "
-                    f"AND hypothesis_id IN ({placeholders})",
-                    (investigation_id, investigation_id, *sorted(requested)),
+                    f"AND hypothesis_id IN ({placeholders}) "
+                    f"AND NOT EXISTS ("
+                    f"SELECT 1 FROM hypotheses newer "
+                    f"WHERE newer.investigation_id = hypotheses.investigation_id "
+                    f"AND newer.logical_hypothesis_id = hypotheses.logical_hypothesis_id "
+                    f"AND newer.version > hypotheses.version)",
+                    (investigation_id, *sorted(requested)),
                 ).fetchall()
         records = {str(row["hypothesis_id"]): row_dict(row) for row in rows}
         by_id = {
@@ -308,7 +310,8 @@ class EvidenceStoreMixin(
         }
         if set(by_id) != requested:
             raise ValueError(
-                "brief hypothesis_ids and gap_ids must belong to the investigation's current profile context"
+                "brief hypothesis_ids and gap_ids must be the latest versions of "
+                "logical hypotheses in this investigation"
             )
         if any(by_id[value] in GAP_KINDS for value in hypothesis_ids):
             raise ValueError("brief hypothesis_ids cannot refer to evidence gaps")

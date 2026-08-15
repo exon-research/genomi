@@ -1,5 +1,7 @@
+import { portalSessionHeaders } from './portal_session.js';
+
 export async function fetchJson(path) {
-  const response = await fetch(path);
+  const response = await fetch(path, { headers: portalSessionHeaders() });
   return parseJsonResponse(response);
 }
 
@@ -83,6 +85,52 @@ export async function loadActiveContext(projectId) {
 
 export async function updateActiveContext(projectId, payload = {}) {
   return postJson(activeContextEndpoint(projectId), payload);
+}
+
+export async function loadGenomiLabBoard(projectId) {
+  return fetchJson(genomiLabEndpoint(projectId, 'board'));
+}
+
+export async function loadGenomiLabProfile(projectId) {
+  return fetchJson(genomiLabEndpoint(projectId, 'profile'));
+}
+
+export async function addGenomiLabObservation(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'profile/observations'), payload);
+}
+
+export async function addGenomiLabSourceArtifact(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'profile/source-artifacts'), payload);
+}
+
+export async function addGenomiLabSpecimen(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'profile/specimens'), payload);
+}
+
+export async function addGenomiLabAssay(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'profile/assays'), payload);
+}
+
+export async function loadGenomiLabIntegrations(projectId) {
+  return fetchJson(genomiLabEndpoint(projectId, 'integrations'));
+}
+
+export async function changeGenomiLabIntegration(projectId, provider, action, payload = {}) {
+  return postJson(
+    genomiLabEndpoint(
+      projectId,
+      'integrations/' + encodeURIComponent(provider) + '/' + encodeURIComponent(action)
+    ),
+    payload
+  );
+}
+
+export async function createGenomiLabInvestigation(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'investigations'), payload);
+}
+
+export async function bindGenomiLabInvestigation(projectId, payload = {}) {
+  return postJson(genomiLabEndpoint(projectId, 'binding'), payload);
 }
 
 export async function importProjectFile(projectId, payload = {}) {
@@ -261,6 +309,13 @@ function activeContextEndpoint(projectId) {
   return '/api/projects/' + encodeURIComponent(projectId) + '/active-context';
 }
 
+function genomiLabEndpoint(projectId, suffix) {
+  const cleanProjectId = firstText(projectId);
+  const cleanSuffix = firstText(suffix).replace(/^\/+/, '');
+  if (!cleanProjectId || !cleanSuffix) return '';
+  return '/api/projects/' + encodeURIComponent(cleanProjectId) + '/genomilab/' + cleanSuffix;
+}
+
 function projectArtifactEndpoint(projectId, artifactId) {
   const cleanProjectId = firstText(projectId);
   const cleanArtifactId = firstText(artifactId);
@@ -307,7 +362,7 @@ async function parseJsonResponse(response) {
 }
 
 function postHeaders() {
-  const headers = { 'content-type': 'application/json' };
+  const headers = { 'content-type': 'application/json', ...portalSessionHeaders() };
   const token = document.querySelector('meta[name="genomi-csrf-token"]')?.getAttribute('content') || '';
   if (token) headers['x-genomi-csrf'] = token;
   return headers;

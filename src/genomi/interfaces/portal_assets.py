@@ -42,8 +42,15 @@ def template_asset_names() -> tuple[str, ...]:
 
 def send_portal_html(handler: BaseHTTPRequestHandler) -> None:
     token = str(getattr(handler.server, "portal_csrf_token", ""))
+    launch_token = ""
+    if bool(getattr(handler.server, "portal_session_auth", False)):
+        lock = getattr(handler.server, "portal_launch_token_lock", None)
+        if lock is not None:
+            with lock:
+                if not bool(getattr(handler.server, "portal_launch_token_consumed", False)):
+                    launch_token = str(getattr(handler.server, "portal_launch_token", ""))
     try:
-        body = _portal_html(token)
+        body = _portal_html(token, launch_token=launch_token)
     except OSError:
         handler.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, "Portal asset unavailable")
         return
@@ -139,7 +146,7 @@ def _send_file(
     handler.wfile.write(raw)
 
 
-def _portal_html(token: str) -> str:
+def _portal_html(token: str, *, launch_token: str = "") -> str:
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
     inline_css = _portal_inline_css(template)
     version = html.escape(__version__)
@@ -147,6 +154,7 @@ def _portal_html(token: str) -> str:
         template.replace("{{GENOMI_VERSION}}", version)
         .replace("{GENOMI_VERSION}", version)
         .replace("{PORTAL_CSRF_TOKEN}", html.escape(token))
+        .replace("{PORTAL_LAUNCH_TOKEN}", html.escape(launch_token))
         .replace("{PORTAL_INLINE_CSS}", inline_css)
         .replace("{PORTAL_STARTER_CARDS_JSON}", portal_starter_cards.welcome_model_json())
         .replace("{PORTAL_WELCOME_MESSAGE}", portal_starter_cards.welcome_message_markup())

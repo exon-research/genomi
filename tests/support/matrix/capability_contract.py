@@ -165,20 +165,15 @@ EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS = EXTERNAL_SOURCE_OPERATIONS
 
 STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "genomi.check_background_job": "background job polling state",
-    "genomi.cancel_portal_run": "portal run cancellation mutation",
     "genomi.check_libraries": "installed library inventory state",
-    "genomi.check_portal_run": "portal run polling state",
     "genomi.describe_context": "active session context",
     "genomi.describe_portal_workspace": "portal workspace state",
     "genomi.install": "runtime installation mutation",
     "genomi.invoke": "dispatcher wrapper, not a capability behavior",
     "genomi.list_resources": "runtime resource inventory",
     "genomi.parse_source": "source-format setup operation",
-    "genomi.retrieve_portal_run_event_page": "portal run event state",
-    "genomi.retrieve_portal_run_result_package": "portal run result state",
     "genomi.search_indexes": "runtime metadata index search",
     "genomi.set_response_profile": "runtime profile mutation",
-    "genomi.start_portal_run": "portal run state mutation",
     "journal.append_entry": "journal store mutation",
     "journal.export_memory": "journal state export",
     "journal.search_entries": "journal state search",
@@ -191,13 +186,8 @@ STATEFUL_RUNTIME_OPERATION_RATIONALES = {
 }
 STATEFUL_RUNTIME_OPERATIONS = frozenset(STATEFUL_RUNTIME_OPERATION_RATIONALES)
 STATEFUL_RUNTIME_EXECUTABLE_OPERATIONS = STATEFUL_RUNTIME_OPERATIONS - {
-    "genomi.cancel_portal_run",
-    "genomi.check_portal_run",
     "genomi.describe_portal_workspace",
     "genomi.install",
-    "genomi.retrieve_portal_run_event_page",
-    "genomi.retrieve_portal_run_result_package",
-    "genomi.start_portal_run",
 }
 
 def _empty_params(_ctx: MatrixCaseContext) -> JsonObject:

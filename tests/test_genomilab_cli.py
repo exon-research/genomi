@@ -2,19 +2,11 @@ from __future__ import annotations
 
 import io
 import os
-import tempfile
 import unittest
 from contextlib import redirect_stderr
-from pathlib import Path
 from unittest import mock
 
 from genomi.interfaces import cli
-from genomi.lab import server as lab_server
-from genomi.lab.paperclip_authorization_config import (
-    PaperclipAuthorizationConfigError,
-)
-from genomi.operations import call_operation
-from genomi.runtime import context as runtime_context
 
 
 class GenomiLabCLITests(unittest.TestCase):
@@ -57,174 +49,45 @@ class GenomiLabCLITests(unittest.TestCase):
             host="localhost",
             port=4321,
             open_browser=False,
+            portal_session_auth=True,
         )
 
-    def test_launcher_loads_and_injects_owner_paperclip_policy(self) -> None:
-        path = Path("/owner-controlled/paperclip-authorization.json")
-        deployment_authorization = object()
-        patient_data_contract = object()
-        policy = mock.Mock(
-            deployment_authorization=deployment_authorization,
-            patient_data_contract=patient_data_contract,
-        )
-        harness_adapter = object()
-        service = object()
+    def test_lab_setup_uses_the_normal_nested_command(self) -> None:
+        payload = {"status": "ready", "mode": "check", "read_only": True}
+        with mock.patch(
+            "genomi.lab.setup.run_lab_setup", return_value=payload
+        ) as setup:
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                status = cli.main(["lab", "setup", "--check"])
 
-        class _StoppingServer:
-            launch_url = "http://127.0.0.1:1/#token=synthetic"
+        self.assertEqual(status, 0)
+        setup.assert_called_once_with(check=True, demo=False)
+        self.assertIn('"mode": "check"', stdout.getvalue())
 
-            def serve_forever(self, *, poll_interval: float) -> None:
-                self.poll_interval = poll_interval
-
-            def server_close(self) -> None:
-                return None
-
-        stopping_server = _StoppingServer()
+    def test_lab_setup_demo_is_forwarded_without_starting_the_portal(self) -> None:
         with (
             mock.patch(
-                "genomi.lab.server.load_paperclip_authorization_config",
-                return_value=policy,
-            ) as load_policy,
-            mock.patch(
-                "genomi.lab.server.call_operation",
-                return_value={"active_user_id": None},
-            ),
-            mock.patch.object(
-                lab_server.InstalledCodexAppServerAdapter,
-                "discover",
-                return_value=harness_adapter,
-            ),
-            mock.patch(
-                "genomi.lab.server.GenomiLabService", return_value=service
-            ) as service_factory,
-            mock.patch(
-                "genomi.lab.server.create_lab_server",
-                return_value=stopping_server,
-            ) as create_server,
-            redirect_stderr(io.StringIO()),
+                "genomi.lab.setup.run_lab_setup",
+                return_value={"status": "completed", "mode": "demo"},
+            ) as setup,
+            mock.patch("genomi.interfaces.mcp.serve_http") as serve_http,
         ):
-            lab_server.run_lab(
-                open_browser=False,
-                paperclip_authorization_config=path,
-            )
+            status = cli.main(["lab", "setup", "--demo"])
 
-        load_policy.assert_called_once_with(path)
-        service_factory.assert_called_once_with(
-            harness_adapter=harness_adapter,
-            paperclip_deployment_authorization=deployment_authorization,
-            paperclip_patient_data_contract=patient_data_contract,
-        )
-        create_server.assert_called_once_with(host="127.0.0.1", port=0, service=service)
-        self.assertEqual(stopping_server.poll_interval, 0.25)
+        self.assertEqual(status, 0)
+        setup.assert_called_once_with(check=False, demo="ctla4")
+        serve_http.assert_not_called()
 
-    def test_launcher_rejects_invalid_paperclip_policy_before_patient_context(
-        self,
-    ) -> None:
-        path = Path("/owner-controlled/invalid-paperclip-authorization.json")
-        with (
-            mock.patch(
-                "genomi.lab.server.load_paperclip_authorization_config",
-                side_effect=PaperclipAuthorizationConfigError(
-                    "Paperclip authorization configuration is invalid."
-                ),
-            ),
-            mock.patch("genomi.lab.server.call_operation") as call_operation_mock,
-            self.assertRaisesRegex(
-                PaperclipAuthorizationConfigError,
-                "authorization configuration is invalid",
-            ),
-        ):
-            lab_server.run_lab(
-                open_browser=False,
-                paperclip_authorization_config=path,
-            )
+    def test_lab_setup_accepts_the_named_ctla4_demo(self) -> None:
+        with mock.patch(
+            "genomi.lab.setup.run_lab_setup",
+            return_value={"status": "completed", "mode": "demo"},
+        ) as setup:
+            status = cli.main(["lab", "setup", "--demo", "ctla4"])
 
-        call_operation_mock.assert_not_called()
-
-    def test_launcher_hands_off_exact_user_without_reusing_agi_access(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            genomi_home = Path(temporary) / "genomi-home"
-            vcf = Path(temporary) / "patient.vcf"
-            vcf.write_text(
-                "##fileformat=VCFv4.2\n"
-                "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tPatient\n"
-                "1\t100\trs900000001\tA\tG\t.\tPASS\t.\tGT\t0/1\n",
-                encoding="utf-8",
-            )
-            environment = {
-                "GENOMI_HOME": str(genomi_home),
-                "GENOMI_CONTEXT": "",
-                "GENOMI_SESSION_ID": "assistant-explicit-session",
-                **{name: "" for name in runtime_context.AGENT_SESSION_ENVS},
-            }
-            with mock.patch.dict(os.environ, environment, clear=False):
-                call_operation(
-                    "genomi.parse_source",
-                    {
-                        "source": str(vcf),
-                        "user_nickname": "Explicit non-default patient",
-                    },
-                )
-                prior = call_operation("genomi.describe_context", {})
-                user_id = str(prior["active_user_id"])
-                call_operation(
-                    "active_genome_index.approve_access",
-                    {
-                        "approved_by_user": True,
-                        "user_id": user_id,
-                        "reason": "Approve only in the assistant session.",
-                    },
-                )
-                self.assertTrue(
-                    call_operation("genomi.describe_context", {})[
-                        "active_genome_index_access"
-                    ]["approved"]
-                )
-                captured: dict[str, object] = {}
-
-                class _StoppingServer:
-                    launch_url = "http://127.0.0.1:1/?token=synthetic"
-
-                    def serve_forever(self, *, poll_interval: float) -> None:
-                        del poll_interval
-                        current = call_operation("genomi.describe_context", {})
-                        captured["context"] = current
-
-                    def server_close(self) -> None:
-                        return None
-
-                with (
-                    mock.patch(
-                        "genomi.lab.server.create_lab_server",
-                        return_value=_StoppingServer(),
-                    ),
-                    mock.patch(
-                        "genomi.lab.server.GenomiLabService",
-                        return_value=object(),
-                    ),
-                    mock.patch.object(
-                        lab_server.InstalledCodexAppServerAdapter,
-                        "discover",
-                        return_value=mock.Mock(
-                            bind_dynamic_tool_handler=lambda _handler: None
-                        ),
-                    ),
-                ):
-                    lab_server.run_lab(open_browser=False)
-
-                launched = captured["context"]
-                self.assertEqual(launched["active_user_id"], user_id)
-                self.assertEqual(
-                    launched["active_user"]["nickname"],
-                    "Explicit non-default patient",
-                )
-                self.assertFalse(launched["active_genome_index_access"]["approved"])
-                # The caller's explicit session and its private grant are
-                # restored unchanged after the portal stops.
-                restored = call_operation("genomi.describe_context", {})
-                self.assertEqual(restored["active_user_id"], user_id)
-                self.assertTrue(restored["active_genome_index_access"]["approved"])
-
+        self.assertEqual(status, 0)
+        setup.assert_called_once_with(check=False, demo="ctla4")
 
 if __name__ == "__main__":
     unittest.main()

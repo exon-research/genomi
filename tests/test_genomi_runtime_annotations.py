@@ -45,41 +45,19 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(libraries["privacyScope"], "metadata_only")
         self.assertIn("library_inventory", libraries["produces"])
 
-        portal_start = by_name["genomi.start_portal_run"]["annotations"]
-        self.assertEqual(portal_start["portalLabel"], "Start portal run")
-        self.assertEqual(portal_start["operationScope"], "write")
-        self.assertTrue(portal_start["mutating"])
-        self.assertIn("portal_run_id", portal_start["produces"])
-        self.assertIn("host_agent_process", portal_start["dataAccess"])
-        self.assertEqual(portal_start["mcpExecution"], "inline_only")
+        lab_start = by_name["lab.start_investigation"]["annotations"]
+        self.assertEqual(lab_start["operationScope"], "write")
+        self.assertTrue(lab_start["mutating"])
+        self.assertIn("portal_binding", lab_start["produces"])
+        self.assertEqual(lab_start["mcpExecution"], "inline_only")
+        self.assertEqual(lab_start["toolCapability"], "lab")
+        self.assertEqual(lab_start["dataAccess"], ["local_encrypted_genomilab_records"])
 
-        portal_check = by_name["genomi.check_portal_run"]["annotations"]
-        self.assertEqual(portal_check["portalLabel"], "Portal run status")
-        self.assertEqual(portal_check["operationScope"], "read")
-        self.assertFalse(portal_check["mutating"])
-        self.assertIn("portal_run_status", portal_check["produces"])
-        self.assertEqual(portal_check["mcpExecution"], "inline_only")
-
-        portal_cancel = by_name["genomi.cancel_portal_run"]["annotations"]
-        self.assertEqual(portal_cancel["portalLabel"], "Cancel portal run")
-        self.assertEqual(portal_cancel["operationScope"], "write")
-        self.assertTrue(portal_cancel["mutating"])
-        self.assertEqual(portal_cancel["mcpExecution"], "inline_only")
-
-        portal_events = by_name["genomi.retrieve_portal_run_event_page"]["annotations"]
-        self.assertEqual(portal_events["portalLabel"], "Portal run events")
-        self.assertEqual(portal_events["operationScope"], "read")
-        self.assertFalse(portal_events["mutating"])
-        self.assertIn("portal_run_event_page", portal_events["produces"])
-        self.assertIn("local_portal_run_events", portal_events["dataAccess"])
-        self.assertEqual(portal_events["mcpExecution"], "inline_only")
-
-        portal_package = by_name["genomi.retrieve_portal_run_result_package"]["annotations"]
-        self.assertEqual(portal_package["portalLabel"], "Portal run package")
-        self.assertEqual(portal_package["operationScope"], "read")
-        self.assertFalse(portal_package["mutating"])
-        self.assertIn("portal_run_result_package", portal_package["produces"])
-        self.assertEqual(portal_package["mcpExecution"], "inline_only")
+        lab_workspace = by_name["lab.describe_workspace"]["annotations"]
+        self.assertEqual(lab_workspace["operationScope"], "read")
+        self.assertFalse(lab_workspace["mutating"])
+        self.assertIn("genomilab_workspace", lab_workspace["produces"])
+        self.assertEqual(lab_workspace["mcpExecution"], "inline_only")
 
         clinvar = by_name["clinvar.scan_candidates"]["annotations"]
         self.assertEqual(

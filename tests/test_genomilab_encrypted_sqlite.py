@@ -18,7 +18,7 @@ from genomi.lab.encrypted_sqlite import (
     EncryptedSQLiteFormatError,
     EncryptionKeyUnavailableError,
     EncryptedSQLiteNestedTransactionError,
-    OSKeyringKeyProvider,
+    LocalFileEncryptionKeyProvider,
     PlaintextSQLiteRejectedError,
     StaticEncryptionKeyProvider,
 )
@@ -289,42 +289,57 @@ class EncryptedSQLiteDatabaseTests(unittest.TestCase):
                 connection.execute("CREATE TABLE records(value TEXT)")
         self.assertFalse(self.path.exists())
 
-    def test_os_keyring_provider_creates_and_reuses_a_secret_store_key(self) -> None:
-        saved: dict[tuple[str, str], str] = {}
-
-        def get_password(service: str, account: str) -> str | None:
-            return saved.get((service, account))
-
-        def set_password(service: str, account: str, value: str) -> None:
-            saved[(service, account)] = value
-
-        fake_keyring = mock.Mock(
-            get_password=mock.Mock(side_effect=get_password),
-            set_password=mock.Mock(side_effect=set_password),
-        )
-        provider = OSKeyringKeyProvider("test.genomilab", keyring_backend=fake_keyring)
+    def test_local_key_provider_creates_private_key_and_reuses_it(self) -> None:
+        key_directory = self.root / ".keys"
+        provider = LocalFileEncryptionKeyProvider(key_directory)
         first = provider.get_or_create_key("a" * 32)
-        second = provider.get_or_create_key("a" * 32)
+        second = LocalFileEncryptionKeyProvider(key_directory).get_or_create_key(
+            "a" * 32
+        )
 
         self.assertEqual(first, second)
         self.assertEqual(len(first), 32)
-        fake_keyring.set_password.assert_called_once()
-        self.assertEqual(
-            fake_keyring.set_password.call_args.args[:2],
-            ("test.genomilab", "database:" + "a" * 32),
-        )
+        key_path = key_directory / (("a" * 32) + ".key")
+        self.assertEqual(stat.S_IMODE(key_directory.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(key_path.stat().st_mode), 0o600)
 
-    def test_os_keyring_provider_fails_closed_without_a_working_backend(self) -> None:
-        fake_keyring = mock.Mock()
-        fake_keyring.get_password.side_effect = RuntimeError("backend unavailable")
+    def test_local_key_provider_rejects_invalid_identifier(self) -> None:
+        provider = LocalFileEncryptionKeyProvider(self.root / ".keys")
         with self.assertRaises(EncryptionKeyUnavailableError):
-            OSKeyringKeyProvider(
-                "test.genomilab", keyring_backend=fake_keyring
-            ).get_or_create_key("b" * 32)
+            provider.get_or_create_key("../outside")
 
 
 @unittest.skipUnless(os.name == "posix", "private modes require a POSIX filesystem")
 class EncryptedSQLitePathSafetyTests(unittest.TestCase):
+    def test_local_key_provider_refuses_a_symlink_key_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "private"
+            key_directory = root / ".keys"
+            key_directory.mkdir(parents=True, mode=0o700)
+            victim = Path(temporary) / "victim"
+            victim.write_bytes(b"untouched")
+            key_id = "a" * 32
+            (key_directory / f"{key_id}.key").symlink_to(victim)
+
+            with self.assertRaises(OSError):
+                LocalFileEncryptionKeyProvider(key_directory).get_or_create_key(key_id)
+            self.assertEqual(victim.read_bytes(), b"untouched")
+
+    def test_local_key_provider_refuses_a_symlink_key_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "private"
+            root.mkdir(mode=0o700)
+            victim_directory = Path(temporary) / "victim-keys"
+            victim_directory.mkdir(mode=0o700)
+            key_directory = root / ".keys"
+            key_directory.symlink_to(victim_directory)
+
+            with self.assertRaises(OSError):
+                LocalFileEncryptionKeyProvider(key_directory).get_or_create_key(
+                    "b" * 32
+                )
+            self.assertEqual(list(victim_directory.iterdir()), [])
+
     def test_database_refuses_a_symlink_target(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "private"

@@ -40,6 +40,7 @@ def agent_environment(project_id: str, root: str | Path | None = None) -> dict[s
 
 def _project_context_payload(binding: JsonObject | None) -> JsonObject:
     agi_id = str(binding.get("agi_id") or "").strip() if isinstance(binding, dict) else ""
+    user_id = str(binding.get("user_id") or "").strip() if isinstance(binding, dict) else ""
     access: JsonObject = {}
     if agi_id:
         access[agi_id] = {
@@ -50,7 +51,7 @@ def _project_context_payload(binding: JsonObject | None) -> JsonObject:
         }
     return {
         "active_agi_id": agi_id or None,
-        "active_user_id": None,
+        "active_user_id": user_id or None,
         "agis": {},
         AGI_ACCESS_KEY: access,
         DEFAULT_USER_AUTO_SELECTION_KEY: False,

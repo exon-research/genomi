@@ -15,15 +15,12 @@ authors = [
 dependencies = [
   "biopython>=1.87",
   # GenomiLab persists its in-memory SQLite state as an authenticated encrypted
-  # container and stores the encryption key in an OS-backed secret store.
+  # container with Genomi-owned private local key material.
   "cryptography>=42",
   "google-genai>=2.0.1",
-  # Typed Paperclip client for a fixed public connection probe and separately
-  # authorized investigation-scoped evidence operations.
+  # Optional provider backends remain available to ordinary Genomi capabilities;
+  # GenomiLab does not execute them directly in the host-neutral milestone.
   "gxl-paperclip @ git+https://github.com/GXL-ai/paperclip.git@b5571365f0b36847dce42c5d66d2b158a0f871f9",
-  "keyring>=25",
-  # Proto prerequisite checks use an isolated, fixed-endpoint child with
-  # explicit user-owned Modal credentials; no Proto tool is deployed or run.
   "modal==1.5.1",
   "numpy>=1.26",
   "openpyxl>=3.1.5",

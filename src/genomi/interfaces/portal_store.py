@@ -35,7 +35,11 @@ DEFAULT_PROJECT_NAME = "GenomiLab Workspace"
 MAX_PROJECT_NAME_LENGTH = 80
 MAX_CONVERSATION_TITLE_LENGTH = 96
 _PROJECT_GENOME_BINDING_KEY = "genome_binding"
-_PRIVATE_PROJECT_KEYS = {_PROJECT_GENOME_BINDING_KEY, "assistant_permissions"}
+_PRIVATE_PROJECT_KEYS = {
+    _PROJECT_GENOME_BINDING_KEY,
+    "assistant_permissions",
+    "genomilab_binding",
+}
 
 
 def artifacts_dir(project_id: str, root: str | Path | None = None) -> Path:
@@ -133,10 +137,12 @@ def bind_project_genome(
     project_id: str,
     *,
     agi_id: str,
+    user_id: str | None = None,
     root: str | Path | None = None,
 ) -> JsonObject | None:
     clean_project_id = str(project_id or "").strip()
     clean_agi_id = str(agi_id or "").strip()
+    clean_user_id = str(user_id or "").strip()
     if not clean_project_id or not clean_agi_id:
         return None
 
@@ -147,6 +153,7 @@ def bind_project_genome(
         now = _now()
         binding = {
             "agi_id": clean_agi_id,
+            "user_id": clean_user_id or None,
             "approved_at": now,
             "scope": "portal_project",
         }

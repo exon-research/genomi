@@ -42,7 +42,17 @@ def select_active_genome(payload: JsonObject, *, project_id: str) -> JsonObject:
     target_agi_id = _public_text(target.get("agi_id"))
     if not target_agi_id:
         raise OperationError("missing_context", "That genome is no longer available. Refresh the genome list and choose another genome.")
-    binding = portal_store.bind_project_genome(project_id, agi_id=target_agi_id)
+    target_user_id = _selection_user_id(
+        inventory,
+        target,
+        requested_user_id=user_id,
+        requested_nickname=nickname,
+    )
+    binding = portal_store.bind_project_genome(
+        project_id,
+        agi_id=target_agi_id,
+        user_id=target_user_id,
+    )
     if binding is None:
         raise OperationError("portal_project_not_found", "Workspace not found.")
     portal_project_genomes.ensure_project_context(project_id)
@@ -55,6 +65,51 @@ def select_active_genome(payload: JsonObject, *, project_id: str) -> JsonObject:
         },
         "inventory": genome_inventory_payload(project_id),
     }
+
+
+def _selection_user_id(
+    inventory: JsonObject,
+    genome: JsonObject,
+    *,
+    requested_user_id: str,
+    requested_nickname: str,
+) -> str:
+    users = _objects(inventory.get("users"))
+    agi_id = _public_text(genome.get("agi_id"))
+    owner_ids = {
+        _public_text(item.get("user_id"))
+        for item in _objects(genome.get("users"))
+        if _public_text(item.get("user_id"))
+    }
+    owner_ids.update(
+        _public_text(item.get("user_id"))
+        for item in users
+        if agi_id
+        and agi_id in [_public_text(value) for value in item.get("agi_ids", [])]
+        and _public_text(item.get("user_id"))
+    )
+    if requested_user_id or requested_nickname:
+        selected = next(
+            (
+                item
+                for item in users
+                if (requested_user_id and _public_text(item.get("user_id")) == requested_user_id)
+                or (
+                    requested_nickname
+                    and _public_text(item.get("nickname")).casefold()
+                    == requested_nickname.casefold()
+                )
+            ),
+            {},
+        )
+        selected_user_id = _public_text(selected.get("user_id"))
+        if not selected_user_id or selected_user_id not in owner_ids:
+            raise OperationError(
+                "invalid_params",
+                "That Genomi user does not own the selected Active Genome Index.",
+            )
+        return selected_user_id
+    return next(iter(owner_ids)) if len(owner_ids) == 1 else ""
 
 
 def _scoped_active(inventory: JsonObject, project_id: str | None) -> JsonObject:

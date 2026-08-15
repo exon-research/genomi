@@ -7,9 +7,11 @@
     import { createEvidenceLedger } from './portal_evidence_ledger.js';
     import { genomeContextViewModel, renderGenomeContext } from './portal_genome_context.js';
     import { activeGenomeHeaderModel, renderGenomeInventory } from './portal_genome_inventory.js';
+    import { createGenomiLabController } from './portal_genomilab.js';
     import { shouldReloadFrameMessages } from './portal_message_refresh.js';
     import { createMessageSurface } from './portal_messages.js';
     import { createPromptContextController } from './portal_prompt_context.js';
+    import { initializePortalSession } from './portal_session.js';
     import { watchProject } from './portal_project_stream.js';
     import { renderRuntimeDetails, runtimeStatusLabel } from './portal_runtime_status.js';
     import { watchRun } from './portal_run_stream.js';
@@ -18,6 +20,8 @@
     import { artifactRoutePath, artifactRouteState, artifactWithSelectedVersion, frameRoutePath, parsePortalRoute, projectRoutePath, resolveArtifactRouteSelection, validateRequestedArtifactVersion } from './portal_artifact_route_model.js';
     import { renderToolCatalog, renderToolCatalogStatus, renderToolInspector, visibleTools } from './portal_tool_catalog.js';
     import { clearStarterCardState, markStarterSourceUnavailable, setStarterCardPending } from './portal_starter_cards.js';
+
+    await initializePortalSession();
 
     const frameStorageKeyBase = 'genomi:portal:frameId';
     const promptContextStorageKey = 'genomi:portal:selectedEvidence:v1';
@@ -58,6 +62,10 @@
     };
     const $ = (id) => document.getElementById(id);
     const advancedWorkspaceSections = new Set(['evidence-ledger-pane', 'work-trace-pane', 'genome-index', 'tool-launcher']);
+    const genomiLab = createGenomiLabController({
+      api,
+      getProjectId: () => state.project && state.project.project_id
+    });
     const promptContext = createPromptContextController({
       tray: $('prompt-context'),
       prompt: $('prompt'),
@@ -708,6 +716,12 @@
       });
       const genomeState = genomeContextViewModel(state.context);
       const genomeHeader = activeGenomeHeaderModel(state.genomeInventory, genomeState);
+      const onboardingAgiState = $('onboarding-agi-state');
+      if (onboardingAgiState) {
+        onboardingAgiState.textContent = genomeHeader.status === 'ready'
+          ? (genomeHeader.displayTitle || genomeHeader.title) + ' selected.'
+          : 'Choose an Active Genome Index for this workspace.';
+      }
       $('context-dot').className = 'status-dot ' + (genomeHeader.status === 'ready' ? 'ready' : '');
       const genomeHeaderTitle = genomeHeader.displayTitle || genomeHeader.title;
       $('context-label').textContent = genomeHeaderTitle;
@@ -741,6 +755,7 @@
       const routeSelection = artifactRouteState(route);
       state.project = await loadRouteProject(route);
       await loadProjectGenomeContext();
+      genomiLab.loadAll().catch(() => undefined);
       await refreshWorkspaceProjects();
       watchActiveProject();
       updateProjectStatus();
@@ -1432,6 +1447,8 @@
         return;
       }
       if (target === 'tool-launcher') ensureToolCatalogLoaded().catch(() => undefined);
+      if (target === 'patient-context-pane') genomiLab.loadProfile().catch(() => undefined);
+      if (target === 'research-connections-pane') genomiLab.loadConnections().catch(() => undefined);
     }
     function revealWorkspaceSection(target, section) {
       if (advancedWorkspaceSections.has(target)) {
@@ -1564,6 +1581,7 @@
         },
         onInterrupt: () => {
           if (!isCurrentRun(runId, frameId)) return;
+          assistantMessage?.classList.remove('streaming');
           messageSurface.appendText(body, '\\n\\nRun stream interrupted. Refresh this conversation or send the turn again.');
           $('send').disabled = false;
           state.activeRun = null;
@@ -1571,6 +1589,7 @@
         },
         onEnd: (data) => {
           if (!isCurrentRun(runId, frameId)) return;
+          assistantMessage?.classList.remove('streaming');
           if (data.status !== 'succeeded' && data.error) messageSurface.appendText(body, '\\n\\nRun ' + data.status + ': ' + data.error);
           loadFrames().catch(() => undefined);
           $('send').disabled = false;
@@ -1724,8 +1743,8 @@
       if (!card) setWorkspaceMenuOpen(false);
     });
     $('context-summary-action').addEventListener('click', () => activateWorkspaceSection('genome-index'));
-    $('context-switch-genome').addEventListener('click', focusGenomeInventory);
-    $('context-add-genome').addEventListener('click', startAddGenome);
+    $('context-switch-genome')?.addEventListener('click', focusGenomeInventory);
+    $('context-add-genome')?.addEventListener('click', startAddGenome);
     $('add-genome').addEventListener('click', startAddGenome);
     $('switch-genome').addEventListener('click', focusGenomeInventory);
     $('new-chat').addEventListener('click', newChat);
@@ -1758,6 +1777,7 @@
         if (input) input.value = '';
       });
     });
+    genomiLab.bind();
     initWorkspaceNavigation();
     workTrace.render();
     loadContext().catch((error) => {
@@ -1767,4 +1787,10 @@
       } else {
         $('agent-status').textContent = 'GenomiLab API unavailable';
       }
+    });
+    $('prompt').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      if ($('send').disabled) return;
+      $('composer').requestSubmit();
     });
