@@ -684,24 +684,53 @@ def _investigation_summary(investigation: JsonObject) -> JsonObject:
     }
 
 
+def _latest_hypothesis_versions(items: object) -> dict[str, JsonObject]:
+    latest: dict[str, JsonObject] = {}
+    if not isinstance(items, list):
+        return latest
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        logical_id = str(item.get("logical_hypothesis_id") or "").strip()
+        if not logical_id:
+            continue
+        current = latest.get(logical_id)
+        if current is None or int(item.get("version") or 0) > int(
+            current.get("version") or 0
+        ):
+            latest[logical_id] = item
+    return latest
+
+
 def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     if not isinstance(investigation, dict):
         return None
     result = _investigation_summary(investigation)
     record = investigation.get("investigation")
     record = record if isinstance(record, dict) else investigation
-    hypotheses = investigation.get("current_hypotheses") or investigation.get(
-        "hypothesis_versions"
-    ) or []
+    if "current_hypotheses" in investigation:
+        current_hypotheses = investigation.get("current_hypotheses")
+        hypotheses = current_hypotheses if isinstance(current_hypotheses, list) else []
+    else:
+        hypotheses = list(
+            _latest_hypothesis_versions(
+                investigation.get("hypothesis_versions") or []
+            ).values()
+        )
     workstreams = investigation.get("panel_assignments") or investigation.get(
         "specialist_workstreams"
     ) or []
     patient_questions = investigation.get("patient_questions") or []
     next_steps = investigation.get("recommended_next_steps") or []
     brief_versions = investigation.get("brief_versions") or []
-    current_brief = investigation.get("current_brief_version") or (
-        brief_versions[-1] if brief_versions else None
-    )
+    if "current_brief_version" in investigation:
+        current_brief = investigation.get("current_brief_version")
+    else:
+        current_brief = max(
+            (item for item in brief_versions if isinstance(item, dict)),
+            key=lambda item: int(item.get("version") or 0),
+            default=None,
+        )
     evidence_snapshots = investigation.get("evidence_snapshots") or []
     cycles = investigation.get("cycles") or []
     research_artifacts = investigation.get("research_artifacts") or []
@@ -765,18 +794,9 @@ def _resume_investigation(investigation: JsonObject | None) -> JsonObject | None
         for item in investigation.get("brief_versions") or []
         if isinstance(item, dict)
     ]
-    latest_hypotheses: dict[str, JsonObject] = {}
-    for item in investigation.get("hypothesis_versions") or []:
-        if not isinstance(item, dict):
-            continue
-        logical_id = str(item.get("logical_hypothesis_id") or "").strip()
-        if not logical_id:
-            continue
-        current = latest_hypotheses.get(logical_id)
-        if current is None or int(item.get("version") or 0) > int(
-            current.get("version") or 0
-        ):
-            latest_hypotheses[logical_id] = item
+    latest_hypotheses = _latest_hypothesis_versions(
+        investigation.get("hypothesis_versions") or []
+    )
 
     latest_cycle = max(
         cycles, key=lambda item: int(item.get("ordinal") or 0), default=None

@@ -83,6 +83,82 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(profile["profile"]["observations"], [])
         self.assertEqual(integrations["integrations"][0]["provider"], "paperclip")
 
+    def test_board_projects_latest_logical_hypotheses_and_brief(self) -> None:
+        service = mock.Mock()
+        service.bootstrap_workspace.return_value = {"status": "ready"}
+        service.list_investigations.return_value = [
+            {
+                "investigation": {
+                    "investigation_id": "investigation-a",
+                    "question": "Could these synthetic findings share an explanation?",
+                    "status": "running",
+                },
+                "hypothesis_versions": [
+                    {
+                        "logical_hypothesis_id": "logical-a",
+                        "hypothesis_version_id": "version-a2",
+                        "version": 2,
+                        "statement": "Revised explanation A",
+                    },
+                    {
+                        "logical_hypothesis_id": "logical-b",
+                        "hypothesis_version_id": "version-b1",
+                        "version": 1,
+                        "statement": "Current explanation B",
+                    },
+                    {
+                        "logical_hypothesis_id": "logical-a",
+                        "hypothesis_version_id": "version-a1",
+                        "version": 1,
+                        "statement": "Initial explanation A",
+                    },
+                ],
+                "brief_versions": [
+                    {"version": 2, "brief": {"summary": "Current brief"}},
+                    {"version": 1, "brief": {"summary": "Historical brief"}},
+                ],
+            }
+        ]
+
+        board = portal_genomilab.project_board(
+            self.project_id, service=service, root=self.root
+        )["investigation"]
+
+        self.assertEqual(board["hypothesis_count"], 2)
+        self.assertEqual(
+            {
+                item["logical_hypothesis_id"]: item["hypothesis_version_id"]
+                for item in board["hypotheses"]
+            },
+            {"logical-a": "version-a2", "logical-b": "version-b1"},
+        )
+        self.assertEqual(board["current_brief_version"], 2)
+        self.assertEqual(board["current_brief"], "Current brief")
+
+    def test_board_respects_explicit_empty_current_projections(self) -> None:
+        board = portal_genomilab._board_investigation(
+            {
+                "investigation_id": "investigation-a",
+                "current_hypotheses": [],
+                "hypothesis_versions": [
+                    {
+                        "logical_hypothesis_id": "logical-a",
+                        "version": 1,
+                        "statement": "Stale explanation",
+                    }
+                ],
+                "current_brief_version": None,
+                "brief_versions": [
+                    {"version": 1, "brief": {"summary": "Stale brief"}}
+                ],
+            }
+        )
+
+        self.assertEqual(board["hypotheses"], [])
+        self.assertEqual(board["hypothesis_count"], 0)
+        self.assertIsNone(board["current_brief_version"])
+        self.assertIsNone(board["current_brief"])
+
     def test_profile_api_projects_canonical_current_facts_and_keeps_history(
         self,
     ) -> None:
@@ -266,7 +342,7 @@ class PortalGenomiLabTests(unittest.TestCase):
             self.assertEqual(html.count(f'id="{form_id}"'), 1)
             self.assertIn(f'data-profile-form="{form_id}"', html)
         self.assertEqual(html.count("data-profile-entry-form hidden"), 4)
-        self.assertIn("Credentials are encrypted in the local Lab store.", html)
+        self.assertIn("Credential values are never shown here.", html)
 
         if shutil.which("node") is None:
             self.skipTest("node is required for the frontend state check")
