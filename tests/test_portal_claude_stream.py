@@ -12,6 +12,7 @@ from genomi.interfaces import (
     portal_claude_stream,
     portal_run_events,
     portal_runs,
+    portal_specialist_lane,
 )
 from genomi.runtime import context
 
@@ -144,6 +145,96 @@ TOOL_USE_RESULT = json.dumps(
         },
     }
 )
+BACKGROUND_SPAWN = json.dumps(
+    {
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+                    "name": "Agent",
+                    "input": {
+                        "subagent_type": "public_literature",
+                        "description": "CTLA4 literature review",
+                        "prompt": "Review public literature for CTLA4 immune dysregulation.",
+                        "run_in_background": True,
+                    },
+                }
+            ],
+        },
+        "parent_tool_use_id": None,
+    }
+)
+ASYNC_LAUNCH_ACK = json.dumps(
+    {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+                    "type": "tool_result",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Async agent launched successfully.\n"
+                                "agentId: a5651591ae9299c63\n"
+                                "The agent is working in the background."
+                            ),
+                        }
+                    ],
+                }
+            ],
+        },
+        "parent_tool_use_id": None,
+        "tool_use_result": {
+            "isAsync": True,
+            "status": "async_launched",
+            "agentId": "a5651591ae9299c63",
+            "description": "CTLA4 literature review",
+            "resolvedModel": "claude-opus-5[1m]",
+        },
+    }
+)
+
+
+def _child_tool_result(*, is_error: bool = False) -> str:
+    return json.dumps(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "tool_use_id": "toolu_child_call",
+                        "type": "tool_result",
+                        "is_error": is_error,
+                        "content": "source_unavailable" if is_error else "records",
+                    }
+                ],
+            },
+            "parent_tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+            "subagent_type": "public_literature",
+        }
+    )
+
+
+def _task_notification(*, status: str = "completed", summary: str = "") -> str:
+    payload = {
+        "type": "system",
+        "subtype": "task_notification",
+        "task_id": "a5651591ae9299c63",
+        "tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+        "status": status,
+    }
+    if summary:
+        payload["summary"] = summary
+    return json.dumps(payload)
+
+
 TERMINAL_RESULT = json.dumps(
     {
         "is_error": False,
@@ -273,10 +364,18 @@ def _events(session: portal_claude_stream.ClaudeStreamSession, *lines: str) -> l
     return collected
 
 
-def _bound_session() -> portal_claude_stream.ClaudeStreamSession:
+def _bound_session(spawn: str = AGENT_SPAWN) -> portal_claude_stream.ClaudeStreamSession:
     session = portal_claude_stream.ClaudeStreamSession(session_id="portal:project:frame")
-    _events(session, _create_assignment_call(), _create_assignment_result(), AGENT_SPAWN, TASK_STARTED)
+    _events(session, _create_assignment_call(), _create_assignment_result(), spawn, TASK_STARTED)
     return session
+
+
+def _spawn_result(events: list[dict]) -> dict:
+    return next(
+        event
+        for event in events
+        if event.get("name") == "spawn_agent" and event["type"] == "tool_result"
+    )
 
 
 class ClaudeSpecialistLaneTests(unittest.TestCase):
@@ -433,6 +532,10 @@ class ClaudeSpecialistLaneTests(unittest.TestCase):
                     "agent_id": "a5651591ae9299c63",
                     "task_name": "CTLA4 literature review",
                     "status": "completed",
+                    "guidance": portal_specialist_lane.SPECIALIST_COMPLETED,
+                    "provider_calls": 0,
+                    "execution_policy": "public_literature",
+                    "provider_call_budget": 12,
                     "assignment_id": "assignment-1",
                     "message": f"CTLA4 literature reviewed. Provider receipt: {RECEIPT_ID}",
                 }
@@ -657,6 +760,163 @@ class ClaudeSpecialistLaneTests(unittest.TestCase):
             native_agent_id="a5651591ae9299c63",
             execution_policy="public_literature",
         )
+
+    def test_background_specialist_completes_on_its_notification_not_its_launch(
+        self,
+    ) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+        receipt = "result-receipt-abcdefghijklmnopqrstuvwxyz012345"
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            launch_events = _events(session, ASYNC_LAUNCH_ACK)
+            work_events = _events(
+                session,
+                _child_tool_use("paperclip.search_biomedical"),
+                _child_tool_result(),
+                _task_notification(
+                    summary=f"CTLA4 literature reviewed. Provider receipt: {receipt}"
+                ),
+            )
+
+        # The launch acknowledgement carries no result, so it ends nothing.
+        self.assertEqual(launch_events, [])
+        completion = _spawn_result(work_events)
+        self.assertFalse(completion["isError"])
+        self.assertEqual(completion["payload"]["status"], "completed")
+        update = completion["payload"]["updates"][0]
+        self.assertEqual(
+            update["guidance"], portal_specialist_lane.SPECIALIST_COMPLETED
+        )
+        self.assertEqual(update["provider_calls"], 1)
+        self.assertEqual(update["provider_call_budget"], 12)
+        self.assertEqual(update["assignment_id"], "assignment-1")
+        authorize.assert_called_once_with(
+            receipt,
+            session_id="portal:project:frame",
+            specialist_assignment_id="assignment-1",
+            specialist_brief_id="brief-1",
+            native_agent_id="a5651591ae9299c63",
+            execution_policy="public_literature",
+        )
+
+    def test_specialist_that_stops_without_analysis_reports_its_counted_work(
+        self,
+    ) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            events = _events(
+                session,
+                ASYNC_LAUNCH_ACK,
+                _child_tool_use("paperclip.search_biomedical"),
+                _child_tool_result(),
+                _child_tool_use("paperclip.retrieve_document_evidence"),
+                _child_tool_result(),
+                _task_notification(),
+            )
+
+        completion = _spawn_result(events)
+        self.assertTrue(completion["isError"])
+        update = completion["payload"]["updates"][0]
+        self.assertEqual(update["status"], "failed")
+        self.assertEqual(
+            update["guidance"], portal_specialist_lane.SPECIALIST_RETURNED_NO_ANALYSIS
+        )
+        self.assertEqual(update["provider_calls"], 2)
+        self.assertEqual(update["provider_call_budget"], 12)
+        self.assertEqual(update["execution_policy"], "public_literature")
+        authorize.assert_not_called()
+
+    def test_specialist_whose_run_never_finished_is_reported_as_such(self) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+
+        events = _events(
+            session, ASYNC_LAUNCH_ACK, _task_notification(status="cancelled")
+        )
+
+        update = _spawn_result(events)["payload"]["updates"][0]
+        self.assertEqual(
+            update["guidance"],
+            portal_specialist_lane.SPECIALIST_RUN_DID_NOT_COMPLETE,
+        )
+        self.assertEqual(update["provider_calls"], 0)
+
+    def test_failing_provider_calls_are_reported_as_an_answerability_gap(self) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+
+        events = _events(
+            session,
+            ASYNC_LAUNCH_ACK,
+            _child_tool_use("paperclip.search_biomedical"),
+            _child_tool_result(is_error=True),
+            _task_notification(),
+        )
+
+        update = _spawn_result(events)["payload"]["updates"][0]
+        self.assertEqual(
+            update["guidance"],
+            portal_specialist_lane.SPECIALIST_PROVIDER_UNAVAILABLE,
+        )
+        self.assertEqual(update["provider_calls"], 1)
+
+    def test_partial_analysis_with_receipts_still_authorizes_them(self) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+        receipt = "result-receipt-abcdefghijklmnopqrstuvwxyz012345"
+        partial = (
+            "Partial review: only the penetrance cohort was reached before the "
+            f"budget ran out. Provider receipt: {receipt}. Not covered: "
+            "transendocytosis assays."
+        )
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            events = _events(
+                session,
+                ASYNC_LAUNCH_ACK,
+                _child_tool_use("paperclip.search_biomedical"),
+                _child_tool_result(),
+                _task_notification(summary=partial),
+            )
+
+        completion = _spawn_result(events)
+        self.assertEqual(completion["payload"]["status"], "completed")
+        self.assertEqual(
+            completion["payload"]["updates"][0]["guidance"],
+            portal_specialist_lane.SPECIALIST_COMPLETED,
+        )
+        authorize.assert_called_once_with(
+            receipt,
+            session_id="portal:project:frame",
+            specialist_assignment_id="assignment-1",
+            specialist_brief_id="brief-1",
+            native_agent_id="a5651591ae9299c63",
+            execution_policy="public_literature",
+        )
+
+    def test_policy_violating_specialist_reports_the_violation_state(self) -> None:
+        session = _bound_session(BACKGROUND_SPAWN)
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            events = _events(
+                session,
+                ASYNC_LAUNCH_ACK,
+                _child_bash(),
+                _task_notification(summary="Read /etc/passwd and found nothing."),
+            )
+
+        update = _spawn_result(events)["payload"]["updates"][0]
+        self.assertEqual(update["status"], "failed")
+        self.assertEqual(
+            update["guidance"], portal_specialist_lane.SPECIALIST_POLICY_VIOLATION
+        )
+        authorize.assert_not_called()
 
     def test_replayed_user_text_is_not_presented_as_host_work(self) -> None:
         session = portal_claude_stream.ClaudeStreamSession()

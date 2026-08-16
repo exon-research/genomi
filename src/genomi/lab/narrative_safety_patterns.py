@@ -135,17 +135,6 @@ _DECISION_TO_CARE = re.compile(
     r"changes?\s+to\s+care)\b",
     re.IGNORECASE,
 )
-_NEGATED_DECISION = re.compile(
-    r"\b(?:does|do|did|can|cannot|can't|could|couldn't|is|are|was|were|has|"
-    r"have|had)\s+(?:not|n't)\s+(?:support|require|warrant|justify|indicate|"
-    r"call\s+for|demand)\b",
-    re.IGNORECASE,
-)
-_DOUBLE_NEGATIVE_DECISION = re.compile(
-    r"\b(?:does|do|did|can|could|is|are|was|were|has|have|had)\s+"
-    r"(?:not|n't)\s+(?:fail|fails|failed|lack|lacks|lacked)\s+to\b",
-    re.IGNORECASE,
-)
 _CONFIRMATION_BEFORE_CARE = re.compile(
     r"\b(?:independent\s+|clinical\s+|laboratory\s+)?(?:confirmation|review|"
     r"testing|verification)\b[^.!?;]{0,65}\bbefore\b",
@@ -335,45 +324,41 @@ _ALTERNATE_CARE_DECISION = re.compile(
     re.IGNORECASE,
 )
 
-_SAFE_UNRESOLVED_CLAIMS = (
-    re.compile(
-        r"\b(?:this|that|it|the\s+(?:variant|mutation|finding|result|test|"
-        r"evidence|profile)|a\s+(?:variant|mutation|finding|result))\s+"
-        r"(?:is|are|was|were|has\s+been|remains?)\s+not\s+(?:likely\s+)?"
-        r"(?:disease-causing|pathogenic|diagnostic|medically\s+actionable|"
-        r"actionable|clinically\s+confirmed)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:evidence|finding|result|variant|mutation|test|profile|analysis|"
-        r"data)\b[^.!?;,:—–]{0,30}\b(?:does|do|did|can|cannot|can't|"
-        r"could|couldn't|is|are|was|were|has|have|had)\s+(?:not|n't)\s+"
-        r"(?:support|confirm|establish|prove|demonstrate|show|mean|indicate|"
-        r"warrant|justify|require|rule\s+in)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:variant|mutation|gene|alteration|biomarker|finding|result|"
-        r"[A-Z][A-Z0-9-]{1,20})\b[^.!?;,:—–]{0,25}\b"
-        r"(?:may|might|could)\s+(?:potentially\s+)?(?:help\s+)?(?:be\s+)?"
-        r"(?:disease-causing|pathogenic|diagnostic|actionable|cause|explain|"
-        r"account\s+for|drive|underlie|be\s+causal)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:whether|if)\b[^.!?;,:—–]{0,45}\b(?:disease-causing|"
-        r"pathogenic|diagnostic|actionable|clinically\s+confirmed|causes?|"
-        r"explains?|confirms?|establishes?)\b",
-        re.IGNORECASE,
-    ),
+# Polarity operators scope forward over the rest of their clause, so an
+# operator standing anywhere between the clause opening and the end of a
+# clinical claim governs that claim: the clause asserts the absence, the
+# non-establishment, or the uncertainty of the claim rather than the claim
+# itself.  "No formal diagnosis was recorded" and "whether the variant is
+# pathogenic" are the same shape as "the evidence does not establish causality".
+_POLARITY_OPERATOR = re.compile(
+    r"\b(?:no|not|never|neither|nor|none|nothing|without|absent|absence|"
+    r"cannot|lack|lacks|lacked|lacking|fail|fails|failed|failing|unable|"
+    r"may|might|could|possible|possibly|potentially|whether|if)\b"
+    r"|\w+n['’]t\b",
+    re.IGNORECASE,
 )
+# After the claim only its own predicate complement can still carry the
+# polarity: "the diagnosis was **not established**", "the classification is
+# **uncertain**", "the patient has **no** recorded diagnosis".
+_NEGATIVE_OR_UNCERTAIN_PREDICATE = re.compile(
+    r"^\s*(?:[a-z]+ly\s+){0,2}"
+    r"(?:(?:not|never|no\s+longer|no|none|neither|absent|missing|pending|"
+    r"unknown|unclear|uncertain|unresolved|unestablished|undetermined|"
+    r"unconfirmed|inconclusive)\b|\w+n['’]t\b)",
+    re.IGNORECASE,
+)
+# Laundering reinstates the positive assertion behind a negative surface, so a
+# clause carrying one of these forms keeps no polarity exemption.
 _ASSERTION_LAUNDERING = re.compile(
-    r"\bwhether\b[^.!?;]{0,80}\bdoes\s+not\s+change\b[^.!?;]{0,40}"
-    r"\b(?:fact|conclusion)\s+that\b|"
+    r"\b(?:does|do|did|can|could|is|are|was|were|has|have|had|would)\s+"
+    r"(?:not|n['’]t)\s+(?:change|alter|affect|undermine|negate|weaken|"
+    r"diminish|remove|erase)\b[^.!?;]{0,60}\b(?:fact|conclusion|that)\b|"
     r"\b(?:not|never)\s+(?:false|untrue)\s+that\b|"
+    r"\bno\s+(?:doubt|dispute|ambiguity)\b|"
     r"\b(?:does|do|did|can|could|is|are|was|were|has|have|had)\s+"
-    r"(?:not|n't)\s+(?:fail|fails|failed|lack|lacks|lacked)\s+to\s+"
-    r"(?:confirm|establish|prove|demonstrate|show|support|indicate)\b",
+    r"(?:not|n['’]t)\s+(?:fail|fails|failed|lack|lacks|lacked)\s+to\s+"
+    r"(?:confirm|establish|prove|demonstrate|show|support|indicate|warrant|"
+    r"justify|require|mean|explain|rule\s+in)\b",
     re.IGNORECASE,
 )
 
@@ -762,7 +747,7 @@ _UNSAFE_FINITE_CONCLUSION = re.compile(
 _DOUBLE_NEGATED_CLINICAL = re.compile(
     r"\b(?:cannot|can't|does\s+not|do\s+not|did\s+not|is\s+not|are\s+not|"
     r"was\s+not|were\s+not)\s+(?:not|non[- ]|un(?:necessary|confirmed|"
-    r"pathogenic|resolved|established))\b",
+    r"pathogenic|resolved|established|certain|clear|known))\b",
     re.IGNORECASE,
 )
 _CONFIRMATION_DISAVOWAL = re.compile(

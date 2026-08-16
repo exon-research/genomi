@@ -13,6 +13,7 @@ from genomi.interfaces import (
     portal_project_genomes,
     portal_run_events,
     portal_runs,
+    portal_specialist_lane,
 )
 from genomi.operations.registry.evidence_result_receipts import (
     EVIDENCE_RESULT_RECEIPTS,
@@ -350,6 +351,8 @@ class CodexAppServerSessionTests(IsolatedGenomiHomeTestCase):
                     "agent_id": "/root/public_literature",
                     "task_name": "/root/public_literature",
                     "status": "completed",
+                    "guidance": portal_specialist_lane.SPECIALIST_COMPLETED,
+                    "provider_calls": 0,
                     "message": "SPECIALIST ONLY",
                 }
             ],
@@ -580,6 +583,158 @@ class CodexAppServerSessionTests(IsolatedGenomiHomeTestCase):
             specialist_brief_id=assignment["specialist_brief_id"],
             native_agent_id="/root/literature_reviewer",
             execution_policy=assignment["execution_policy"],
+        )
+
+    def test_specialist_that_stops_without_analysis_reports_its_counted_work(
+        self,
+    ) -> None:
+        events: list[dict[str, object]] = []
+        session = portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), io.StringIO(), events.append,
+            session_id="portal:project:frame",
+        )
+        session._root_thread_id = "main-thread"
+        session._specialist_assignments["assignment-1"] = {
+            "assignment_id": "assignment-1",
+            "specialist_brief_id": "brief-1",
+            "execution_policy": "public_literature",
+            "specialist_role": "Public-literature reviewer",
+            "state": "proposed",
+        }
+        session._specialists_by_thread_id["child-thread"] = {
+            "call_id": "spawn-1",
+            "agent_id": "/root/literature_reviewer",
+            "assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+        }
+        for index in range(2):
+            session._handle_notification(
+                "item/started",
+                {
+                    "threadId": "child-thread",
+                    "turnId": "child-turn",
+                    "item": {
+                        "type": "mcpToolCall",
+                        "id": f"provider-call-{index}",
+                        "server": "genomi",
+                        "tool": "genomi.invoke",
+                        "arguments": {
+                            "tool": "paperclip.search_biomedical",
+                            "params": {"query": "CTLA4"},
+                        },
+                        "status": "inProgress",
+                    },
+                },
+            )
+
+        with mock.patch.object(
+            portal_codex_app_server.EVIDENCE_RESULT_RECEIPTS,
+            "authorize_specialist_result",
+        ) as authorize:
+            session._complete_specialist(
+                "child-thread", {"status": "completed", "items": []}
+            )
+
+        completion = next(
+            event
+            for event in events
+            if event.get("name") == "spawn_agent" and event.get("type") == "tool_result"
+        )
+        self.assertTrue(completion["isError"])
+        update = completion["payload"]["updates"][0]
+        self.assertEqual(update["status"], "failed")
+        self.assertEqual(
+            update["guidance"],
+            portal_specialist_lane.SPECIALIST_RETURNED_NO_ANALYSIS,
+        )
+        self.assertEqual(update["provider_calls"], 2)
+        self.assertEqual(update["provider_call_budget"], 12)
+        self.assertEqual(update["execution_policy"], "public_literature")
+        authorize.assert_not_called()
+
+    def test_specialist_provider_failure_is_reported_as_an_answerability_gap(
+        self,
+    ) -> None:
+        events: list[dict[str, object]] = []
+        session = portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), io.StringIO(), events.append,
+            session_id="portal:project:frame",
+        )
+        session._root_thread_id = "main-thread"
+        session._specialists_by_thread_id["child-thread"] = {
+            "call_id": "spawn-1",
+            "agent_id": "/root/literature_reviewer",
+            "assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+        }
+        session._handle_notification(
+            "item/completed",
+            {
+                "threadId": "child-thread",
+                "turnId": "child-turn",
+                "item": {
+                    "type": "mcpToolCall",
+                    "id": "provider-call",
+                    "server": "genomi",
+                    "tool": "genomi.invoke",
+                    "arguments": {"tool": "paperclip.search_biomedical", "params": {}},
+                    "error": "source_unavailable",
+                    "status": "failed",
+                },
+            },
+        )
+        session._complete_specialist("child-thread", {"status": "failed", "items": []})
+
+        completion = next(
+            event
+            for event in events
+            if event.get("name") == "spawn_agent" and event.get("type") == "tool_result"
+        )
+        self.assertEqual(
+            completion["payload"]["updates"][0]["guidance"],
+            portal_specialist_lane.SPECIALIST_PROVIDER_UNAVAILABLE,
+        )
+
+    def test_partial_analysis_with_receipts_still_authorizes_them(self) -> None:
+        session = portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), io.StringIO(), lambda _event: None,
+            session_id="portal:project:frame",
+        )
+        session._root_thread_id = "main-thread"
+        session._specialist_assignments["assignment-1"] = {
+            "assignment_id": "assignment-1",
+            "specialist_brief_id": "brief-1",
+            "execution_policy": "public_literature",
+            "specialist_role": "Public-literature reviewer",
+            "state": "spawned",
+        }
+        session._specialists_by_thread_id["child-thread"] = {
+            "call_id": "spawn-1",
+            "agent_id": "/root/literature_reviewer",
+            "assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+        }
+        receipt = "result-receipt-abcdefghijklmnopqrstuvwxyz012345"
+        session._specialist_final_messages["child-thread"] = (
+            "Partial review: budget reached after the penetrance cohort. "
+            f"Provider receipt: {receipt}. Not covered: transendocytosis assays."
+        )
+
+        with mock.patch.object(
+            portal_codex_app_server.EVIDENCE_RESULT_RECEIPTS,
+            "authorize_specialist_result",
+        ) as authorize:
+            session._complete_specialist(
+                "child-thread", {"status": "completed", "items": []}
+            )
+
+        authorize.assert_called_once_with(
+            receipt,
+            session_id="portal:project:frame",
+            specialist_assignment_id="assignment-1",
+            specialist_brief_id="brief-1",
+            native_agent_id="/root/literature_reviewer",
+            execution_policy="public_literature",
         )
 
     def test_inbound_approval_request_with_colliding_id_is_declined_without_hanging(self) -> None:

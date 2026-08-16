@@ -287,7 +287,15 @@ class LabPublishBriefContractTests(unittest.TestCase):
                     ),
                     "evidence_record_ids": [],
                     "profile_revision_ids": fact_ids,
-                }
+                },
+                {
+                    "statement": (
+                        "The current profile records the reported observations, "
+                        "and no formal diagnosis was recorded."
+                    ),
+                    "evidence_record_ids": [],
+                    "profile_revision_ids": fact_ids,
+                },
             ],
             "hypothesis_ids": [candidate_id],
             "gap_ids": [gap_id],
@@ -435,6 +443,10 @@ class LabPublishBriefContractTests(unittest.TestCase):
         self.assertEqual(result["dispatched_tool"], "lab.publish_brief")
         self.assertEqual(result["brief_version"]["version"], 2)
         self.assertEqual(result["brief_version"]["brief"], brief)
+        self.assertIn(
+            "no formal diagnosis was recorded",
+            result["brief_version"]["brief"]["claims"][1]["statement"],
+        )
         with mock.patch.object(
             lab_operations, "_authorized_store", authorized_store
         ):

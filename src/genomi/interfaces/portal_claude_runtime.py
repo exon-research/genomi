@@ -67,9 +67,10 @@ def specialist_agent_definitions() -> dict[str, JsonObject]:
     for profile in policy_manifest()["profiles"]:
         policy = str(profile["id"])
         operations = [str(operation) for operation in profile["allowed_operations"]]
+        budget = int(profile["max_provider_calls"])
         definitions[policy] = {
             "description": _description(policy, operations),
-            "prompt": _prompt(policy, operations),
+            "prompt": _prompt(policy, operations, budget),
             "tools": [GENOMI_INVOKE_TOOL] if operations else [],
         }
     return definitions
@@ -84,20 +85,38 @@ def _description(policy: str, operations: list[str]) -> str:
     )
 
 
-def _prompt(policy: str, operations: list[str]) -> str:
+def _prompt(policy: str, operations: list[str], budget: int) -> str:
     if operations:
         tools = (
             f"Your only permitted tool is the Genomi MCP tool {GENOMI_INVOKE_TOOL}, "
             "called as {\"tool\": \"<operation>\", \"params\": {...}}, and only for "
             f"these operations: {', '.join(operations)}."
         )
+        work = (
+            f"You have a budget of {budget} provider calls for this whole assignment. "
+            "You answer one bounded question; you are not running an exhaustive "
+            "review. Plan your calls up front, and stop calling providers once you "
+            "reach the budget or once you can answer, whichever comes first."
+        )
         receipts = (
-            "Return your analysis together with the exact result_receipt_id that each "
-            "provider operation returned."
+            "Before you run out of room, write your analysis and the exact "
+            "result_receipt_id each provider operation returned. Nothing you did "
+            "counts until you write it: a partial analysis with its receipts is far "
+            "more valuable than a complete analysis you never returned. If you are "
+            "running low on budget or context, stop researching immediately and "
+            "write what you already have, naming what you did not get to."
         )
     else:
         tools = "You have no tools. Answer from your own reasoning over the brief."
-        receipts = "Return your analysis as plain text."
+        work = (
+            "You answer one bounded question from the brief; you are not running an "
+            "exhaustive review."
+        )
+        receipts = (
+            "Return your analysis as plain text. Write it before you run out of "
+            "room: a partial analysis returned is worth more than a complete one "
+            "that is never delivered."
+        )
     return (
         f"You are a GenomiLab native specialist running under the fixed {policy} "
         "execution policy.\n"
@@ -107,6 +126,7 @@ def _prompt(policy: str, operations: list[str]) -> str:
         f"{tools}\n"
         "Any other tool call violates this policy, is reported to the portal, and "
         "voids your result.\n"
+        f"{work}\n"
         f"{receipts}"
     )
 

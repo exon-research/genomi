@@ -7,7 +7,11 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .models import JsonObject, required_text
-from .specialist_policies import EXPECTED_CONNECTORS, policy_manifest
+from .specialist_policies import (
+    EXPECTED_CONNECTORS,
+    policy_manifest,
+    policy_provider_call_budget,
+)
 
 
 OUTBOUND_BRIEF_FIELDS = frozenset(
@@ -19,6 +23,7 @@ OUTBOUND_BRIEF_FIELDS = frozenset(
         "abstract_event_relations",
         "public_evidence",
         "allowed_tools",
+        "work_budget",
         "privacy_constraints",
     }
 )
@@ -98,6 +103,7 @@ def build_outbound_specialist_brief(
         ),
         "public_evidence": _object_array(public_evidence, "public_evidence"),
         "allowed_tools": list(policy["allowed_operations"]),
+        "work_budget": _policy_work_budget(policy),
         "privacy_constraints": list(PRIVACY_CONSTRAINTS),
     }
     validate_specialist_brief(outbound, policy=policy)
@@ -128,6 +134,8 @@ def validate_specialist_brief(
         resolved_policy["allowed_operations"]
     ):
         raise ValueError("outbound allowed_tools do not match the selected policy")
+    if outbound.get("work_budget") != _policy_work_budget(resolved_policy):
+        raise ValueError("outbound work_budget does not match the selected policy")
     if tuple(outbound.get("privacy_constraints") or ()) != PRIVACY_CONSTRAINTS:
         raise ValueError("outbound privacy_constraints must use the fixed contract")
 
@@ -213,6 +221,12 @@ def _strings(value: object, path: str = "outbound") -> Iterable[tuple[str, str]]
 def _word_windows(text: str, size: int) -> set[str]:
     words = text.split()
     return {" ".join(words[index : index + size]) for index in range(len(words) - size + 1)}
+
+
+def _policy_work_budget(policy: Mapping[str, object]) -> JsonObject:
+    """Carry the security profile's fixed work bound into the outbound brief."""
+
+    return {"max_provider_calls": policy_provider_call_budget(str(policy["id"]))}
 
 
 def _resolved_policy(value: object) -> JsonObject:

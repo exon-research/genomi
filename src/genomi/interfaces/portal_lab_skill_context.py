@@ -33,11 +33,16 @@ def prompt_section() -> str:
         if name.startswith("lab.")
     }
     specialist_policies = {
-        str(profile["id"]): list(profile["allowed_operations"])
+        str(profile["id"]): {
+            "allowed_operations": list(profile["allowed_operations"]),
+            "max_provider_calls": int(profile["max_provider_calls"]),
+        }
         for profile in policy_manifest()["profiles"]
     }
     specialist_operation_names = {
-        name for names in specialist_policies.values() for name in names
+        name
+        for policy in specialist_policies.values()
+        for name in policy["allowed_operations"]
     }
     specialist_operations = {
         name: {
@@ -69,6 +74,13 @@ def prompt_section() -> str:
         "paperclip is not itself a tool name. The specialist must use no operation "
         "outside allowed_tools and must return the exact provider result_receipt_id "
         "with its analysis.\n\n"
+        "The brief's work_budget.max_provider_calls is the specialist's whole "
+        "assignment budget. Give the specialist that number, and tell it to write "
+        "its analysis and its collected result_receipt_id values before it reaches "
+        "the budget or runs low on context: a partial analysis that is returned is "
+        "worth far more than a complete one that is never delivered. A question "
+        "too large for one budget becomes a second narrow brief, not a wider "
+        "specialist.\n\n"
         "After creating an assignment, start one native specialist with the "
         "validated outbound brief, record spawned with its real native agent id, "
         "and wait for its result. On success, record completed with the general "

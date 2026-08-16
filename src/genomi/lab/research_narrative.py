@@ -425,6 +425,7 @@ def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> str | None:
         _safety._NO_CONFIRMATION_REQUIRED,
         _safety._CONFIRMATION_DISAVOWAL,
         _safety._ASSERTION_LAUNDERING,
+        _safety._DOUBLE_NEGATED_CLINICAL,
         _safety._PATIENT_MODAL_ACTION,
         _safety._PATIENT_NEEDS_PRODUCT,
         _safety._IMPERATIVE_DIAGNOSIS_OR_TREATMENT_REVIEW,
@@ -457,11 +458,9 @@ def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> str | None:
     for match in _safety._DECISION_TO_CARE.finditer(text):
         if _safety._CONFIRMATION_BEFORE_CARE.search(match.group(0)):
             continue
-        decision_context = text[max(0, match.start() - 45) : match.end()]
-        if _safety._DOUBLE_NEGATIVE_DECISION.search(decision_context):
-            return match.group(0)
-        if not _safety._NEGATED_DECISION.search(decision_context):
-            return match.group(0)
+        if _asserts_absence_or_uncertainty(text, match):
+            continue
+        return match.group(0)
 
     clinical_claim_patterns = (
         _safety._PATIENT_DIAGNOSIS,
@@ -485,7 +484,7 @@ def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> str | None:
         for match in pattern.finditer(text):
             if kind == "professional_question":
                 continue
-            if _is_directly_unresolved(text, match):
+            if _asserts_absence_or_uncertainty(text, match):
                 continue
             if _is_directly_source_attributed(text, match):
                 continue
@@ -517,33 +516,27 @@ def _validate_professional_question(text: str, field: str) -> None:
         raise ValueError(f"{field} must use a declared open-question form")
 
 
-def _is_directly_unresolved(text: str, claim: re.Match[str]) -> bool:
+def _asserts_absence_or_uncertainty(text: str, claim: re.Match[str]) -> bool:
+    """Report whether the clause asserts the claim's absence or uncertainty.
+
+    Polarity is read from the claim's own clause.  A negation, absence, or
+    hedge operator scopes forward, so any operator between the clause opening
+    and the end of the claim governs it; behind the claim only its own
+    predicate complement can still carry the polarity.  Laundering forms
+    reinstate the positive assertion behind a negative surface, so a clause
+    carrying one keeps no exemption and stays rejected.
+    """
+
     start, end, clause = _clause_window(text, claim.start(), claim.end())
-    for pattern in _safety._SAFE_UNRESOLVED_CLAIMS:
-        for safe in pattern.finditer(clause):
-            safe_start = start + safe.start()
-            safe_end = start + safe.end()
-            if safe_start <= claim.end() and safe_end >= claim.start():
-                return True
-    governed_prefix = clause[: claim.end() - start]
-    if re.search(
-        r"\bno\s+(?:causal\s+link|diagnosis|diagnostic\s+conclusion|clinical\s+"
-        r"conclusion|clinical\s+claim)\b[^.!?;]{0,120}\b(?:is|are|was|were)\s+"
-        r"(?:established|confirmed|proved|demonstrated)\b",
-        governed_prefix,
-        re.IGNORECASE,
-    ):
+    if _safety._ASSERTION_LAUNDERING.search(
+        clause
+    ) or _safety._DOUBLE_NEGATED_CLINICAL.search(clause):
+        return False
+    if _safety._POLARITY_OPERATOR.search(clause[: claim.end() - start]):
         return True
-    if re.search(
-        r"\b(?:approved\s+)?(?:context|evidence|record|source|relation|analysis|"
-        r"data)\s+(?:does|do|did|can|cannot|can't|could|couldn't|has|have|had)\s+"
-        r"(?:not|n't)\s+(?:establish|confirm|prove|demonstrate|show|mean|"
-        r"support|indicate|warrant|justify|require|rule\s+in)\b[^.!?;]{0,120}$",
-        governed_prefix,
-        re.IGNORECASE,
-    ):
-        return True
-    return False
+    return bool(
+        _safety._NEGATIVE_OR_UNCERTAIN_PREDICATE.match(text[claim.end() : end])
+    )
 
 
 def _is_scoped_to_reported_observation(

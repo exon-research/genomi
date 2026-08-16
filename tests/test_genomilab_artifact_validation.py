@@ -113,6 +113,192 @@ class BriefTitleSafetyTests(unittest.TestCase):
         )
 
 
+class NarrativePolarityTests(unittest.TestCase):
+    """Clinical-claim rules read polarity, not surface tokens.
+
+    Asserting that a diagnosis, a causal link, or a pathogenicity call is
+    absent, not established, or uncertain is the uncertainty-preserving wording
+    a clinician brief is built from, so it is accepted.  Asserting that any of
+    them holds stays rejected, and so does laundering a positive assertion
+    behind a negative surface or behind a neighbouring clause's negation.
+    """
+
+    ACCEPTED = (
+        # a diagnosis is recorded as absent or as not established
+        (
+            "diagnosis absent",
+            "Severe thrombocytopenia occurred at age 15 in 2005 with a platelet "
+            "count of 9 x10^9/L requiring two weeks of admission and treatment "
+            "with steroids and intravenous immunoglobulin, and no formal "
+            "diagnosis was recorded.",
+        ),
+        ("diagnosis absent", "No diagnosis was recorded in the discharge summary."),
+        ("diagnosis absent", "The diagnosis was not established by the treating team."),
+        ("diagnosis absent", "The record states that no unifying diagnosis was reached."),
+        (
+            "diagnosis absent",
+            "A diagnosis has not been assigned in the available records.",
+        ),
+        ("diagnosis absent", "No new diagnosis was assigned at the 2005 admission."),
+        (
+            "diagnosis absent",
+            "The discharge summary shows that the patient has no recorded "
+            "diagnosis for the 2005 admission.",
+        ),
+        ("diagnosis uncertain", "The diagnosis is unresolved in the current record."),
+        # causality is recorded as absent or as uncertain
+        (
+            "causality absent",
+            "The variant does not explain the recurrent sinopulmonary infections.",
+        ),
+        ("causality absent", "No variant in this sample explains the recorded phenotype."),
+        (
+            "causality absent",
+            "No causal link between Q76H and the enteropathy has been established.",
+        ),
+        (
+            "causality absent",
+            "The record does not show that the enteropathy is caused by this variant.",
+        ),
+        (
+            "causality absent",
+            "The variant does not lead to hypogammaglobulinaemia in the reported series.",
+        ),
+        ("causality absent", "No finding here is causal for the reported phenotype."),
+        (
+            "causality absent",
+            "No unifying condition is present in this patient on the current record.",
+        ),
+        ("causality uncertain", "The variant may explain part of the reported phenotype."),
+        # pathogenicity is recorded as absent or as uncertain
+        ("pathogenicity absent", "No pathogenic variant was identified in CTLA4."),
+        (
+            "pathogenicity absent",
+            "The variant is not pathogenic under the reporting laboratory's criteria.",
+        ),
+        ("pathogenicity absent", "No evidence supports the diagnosis."),
+        ("pathogenicity absent", "No finding confirms the CTLA4 mechanism."),
+        (
+            "pathogenicity absent",
+            "No finding in this record is diagnostic of an immune disorder.",
+        ),
+        (
+            "pathogenicity absent",
+            "No result was confirmed as definitive by the reference laboratory.",
+        ),
+        ("pathogenicity uncertain", "Whether the variant is pathogenic remains open."),
+        ("pathogenicity uncertain", "The variant may be pathogenic."),
+        # treatment is described historically, and no care decision is drawn
+        (
+            "treatment described historically",
+            "The 2005 discharge summary records treatment with steroids and "
+            "intravenous immunoglobulin during a two-week admission.",
+        ),
+        ("care not decided", "The evidence does not support starting treatment."),
+        ("care not decided", "No evidence supports starting treatment."),
+        (
+            "care not decided",
+            "The finding requires independent confirmation before treatment decisions.",
+        ),
+    )
+
+    REJECTED = (
+        ("diagnosis asserted", "The diagnosis is CTLA4 haploinsufficiency."),
+        ("diagnosis asserted", "The diagnosis was confirmed by the reference laboratory."),
+        ("diagnosis asserted", "The patient has CTLA4 haploinsufficiency."),
+        ("diagnosis asserted", "CTLA4 haploinsufficiency is present in this patient."),
+        ("diagnosis asserted", "Diagnosis: CTLA4 haploinsufficiency."),
+        ("causality asserted", "The variant explains the recurrent sinopulmonary infections."),
+        ("causality asserted", "This variant causes the enteropathy."),
+        ("causality asserted", "The enteropathy is caused by this variant."),
+        ("causality asserted", "The variant is causal for the reported phenotype."),
+        ("causality asserted", "The variant leads to hypogammaglobulinaemia."),
+        ("pathogenicity asserted", "This variant is pathogenic."),
+        ("pathogenicity asserted", "Pathogenic CTLA4 variant."),
+        ("pathogenicity asserted", "ACMG classification: pathogenic."),
+        ("pathogenicity asserted", "Pathogenicity is established."),
+        ("pathogenicity asserted", "This result is diagnostic."),
+        ("care directed", "Start immunoglobulin replacement."),
+        ("care directed", "The patient should start abatacept."),
+        ("care directed", "The best treatment is abatacept."),
+        ("care directed", "Evidence supports starting therapy."),
+        ("care directed", "The uncertain variant calls for care changes now."),
+        ("care directed", "The patient is eligible for this trial."),
+        ("care directed", "No additional confirmation is needed."),
+        (
+            "laundering",
+            "It is not false that the diagnosis is CTLA4 haploinsufficiency.",
+        ),
+        ("laundering", "Evidence does not fail to establish the diagnosis."),
+        ("laundering", "Evidence does not fail to warrant starting treatment."),
+        ("laundering", "Evidence cannot not support the diagnosis."),
+        ("laundering", "The variant is not non-pathogenic."),
+        (
+            "laundering",
+            "Whether further testing is needed does not change the fact that "
+            "this variant causes the enteropathy.",
+        ),
+        (
+            "laundering",
+            "The normal staining does not change that the diagnosis is CTLA4 "
+            "haploinsufficiency.",
+        ),
+        (
+            "laundering",
+            "There is no doubt that the diagnosis is CTLA4 haploinsufficiency.",
+        ),
+        ("laundering", "It is not uncertain that this variant is pathogenic."),
+        (
+            "neighbouring-clause negation",
+            "This is not clinically confirmed, but this finding is diagnostic.",
+        ),
+        (
+            "neighbouring-clause negation",
+            "The report says nothing, but the patient has CTLA4 haploinsufficiency.",
+        ),
+        (
+            "neighbouring-clause negation",
+            "Testing could help while this result is diagnostic.",
+        ),
+        (
+            "neighbouring-clause negation",
+            "The report states unrelated findings before the patient has CTLA4 "
+            "haploinsufficiency.",
+        ),
+    )
+
+    def test_absence_and_uncertainty_wording_is_accepted(self) -> None:
+        for shape, value in self.ACCEPTED:
+            with self.subTest(shape=shape, value=value):
+                self.assertEqual(
+                    validate_informational_narrative(
+                        value, "brief claim statement", kind="assertion"
+                    ),
+                    value,
+                )
+
+    def test_asserted_clinical_claims_stay_rejected(self) -> None:
+        for shape, value in self.REJECTED:
+            with self.subTest(shape=shape, value=value):
+                with self.assertRaises(NarrativeSafetyError) as caught:
+                    validate_informational_narrative(
+                        value, "brief claim statement", kind="assertion"
+                    )
+                self.assertIn(caught.exception.rejected_text, value)
+
+    def test_recorded_observation_claims_carry_absence_wording(self) -> None:
+        statement = (
+            "Severe thrombocytopenia occurred at age 15 in 2005 and no formal "
+            "diagnosis was recorded."
+        )
+        self.assertEqual(
+            validate_informational_narrative(
+                statement, "brief claim statement", kind="claim_observation"
+            ),
+            statement,
+        )
+
+
 class GenomiLabArtifactValidationTests(unittest.TestCase):
     def test_assertions_preserve_negation_and_uncertainty(self) -> None:
         allowed = (

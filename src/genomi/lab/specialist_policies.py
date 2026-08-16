@@ -30,6 +30,17 @@ EXPECTED_OPERATIONS: Mapping[str, tuple[str, ...]] = {
         "proto.run_tool",
     ),
 }
+# A specialist answers one bounded question from a de-identified brief, not an
+# exhaustive review.  The budget is a property of the security profile, so the
+# same number reaches every host through the outbound brief and neither the
+# Main Orchestrator nor the specialist can raise it.  A larger question is
+# answered by preparing another narrow brief, not by widening one child.
+EXPECTED_PROVIDER_CALL_BUDGETS: Mapping[str, int] = {
+    "reasoning_only": 0,
+    "public_literature": 12,
+    "protein_model_research": 6,
+    "experiment_design": 8,
+}
 ISOLATION_FIELDS = (
     "inherit_environment",
     "inherit_mcp",
@@ -99,9 +110,24 @@ def validate_policy_manifest(value: Mapping[str, object]) -> None:
             raise SpecialistPolicyError(
                 f"{profile_id} must accept a de-identified brief contract"
             )
+        budget = profile.get("max_provider_calls")
+        if (
+            not isinstance(budget, int)
+            or isinstance(budget, bool)
+            or budget != EXPECTED_PROVIDER_CALL_BUDGETS[profile_id]
+        ):
+            raise SpecialistPolicyError(
+                f"{profile_id} must declare the fixed provider-call budget"
+            )
         for field in ISOLATION_FIELDS:
             if profile.get(field) is not False:
                 raise SpecialistPolicyError(f"{profile_id}.{field} must be false")
+
+
+def policy_provider_call_budget(policy: str) -> int:
+    """Return the provider-call budget the named security profile authorizes."""
+
+    return int(EXPECTED_PROVIDER_CALL_BUDGETS[policy])
 
 
 def read_installed_policy(path: str | Path) -> JsonObject:
@@ -122,11 +148,13 @@ def read_installed_policy(path: str | Path) -> JsonObject:
 __all__ = [
     "EXPECTED_CONNECTORS",
     "EXPECTED_OPERATIONS",
+    "EXPECTED_PROVIDER_CALL_BUDGETS",
     "ISOLATION_FIELDS",
     "SpecialistPolicyError",
     "policy_manifest",
     "policy_manifest_bytes",
     "policy_manifest_sha256",
+    "policy_provider_call_budget",
     "read_installed_policy",
     "validate_policy_manifest",
 ]

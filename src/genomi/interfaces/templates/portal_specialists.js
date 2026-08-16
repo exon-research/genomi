@@ -18,6 +18,18 @@ const LAB_ASSIGNMENT_STATES = new Set([
   'failed',
   'cancelled'
 ]);
+// A research workstream that ends without findings must say what happened in
+// the user's terms. The host lane reports a typed state; this is its copy.
+const SPECIALIST_OUTCOME_COPY = {
+  'specialist_returned_no_analysis:reassign_a_narrower_question':
+    'This workstream ran out of room before it wrote up what it found. Its sources were not saved.',
+  'specialist_run_did_not_complete:reassign_or_record_information_gap':
+    'This workstream stopped before it finished. Its sources were not saved.',
+  'specialist_provider_unavailable:retry_later_or_record_information_gap':
+    'A literature source was unavailable, so this workstream could not finish.',
+  'specialist_policy_violation:discard_this_specialist_result':
+    'This workstream stepped outside its privacy boundary, so its results were discarded.'
+};
 
 export function isSpecialistToolName(value) {
   const name = String(value || '').trim().toLowerCase();
@@ -214,14 +226,17 @@ function labAssignmentUpdate(record) {
   if (!assignmentId || !LAB_ASSIGNMENT_STATES.has(state)) return null;
   const policy = clean(assignment.execution_policy);
   const finding = completedFinding(payload.specialist_analysis);
+  const status = labDisplayStatus(state);
   return {
     assignmentId,
     nativeAgentId: clean(assignment.native_agent_id),
     title: humanTaskName(assignment.specialist_role) || 'Research workstream',
     policy,
     revision: Number(assignment.revision) || 0,
-    status: labDisplayStatus(state),
-    summary: finding || policySummary(policy)
+    status,
+    // A workstream that ended badly must not be described by what it was
+    // supposed to be doing; keep whatever reason the host lane reported.
+    summary: finding || (status === 'error' ? '' : policySummary(policy))
   };
 }
 
@@ -320,7 +335,10 @@ function applySignals(values, specialists, byIdentity, fallback, preserveTermina
     }
     const status = normalizedStatus(signal.status || signal.state || signal.result || signal.type);
     if (status) specialist.status = status;
-    const summary = compact(signal.message || signal.summary, 150);
+    // A workstream that ended without findings explains itself in the user's
+    // terms; only a workstream that delivered shows its own write-up.
+    const outcome = SPECIALIST_OUTCOME_COPY[clean(signal.guidance)];
+    const summary = outcome || compact(signal.message || signal.summary, 150);
     if (summary) specialist.summary = summary;
     registerIdentities(byIdentity, specialist);
     applied = true;

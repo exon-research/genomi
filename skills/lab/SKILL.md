@@ -99,6 +99,15 @@ derivation separately and validates the outbound payload before release.
 Call `lab.create_specialist_assignment` with that validated brief before
 starting the native specialist, then record lifecycle changes separately.
 
+The brief's `work_budget.max_provider_calls` is the specialist's whole
+assignment budget, fixed by its execution policy. Give the specialist that
+number and require it to write its analysis and its collected
+`result_receipt_id` values before it reaches the budget or runs low on
+context; a partial analysis that is returned is worth far more than a complete
+one that is never delivered. Scope each `research_question` to fit that budget,
+and split a larger question into a second narrow brief rather than widening one
+specialist.
+
 Fixed policies are security profiles, not medical roles:
 
 - `reasoning_only`: no connector, MCP, shell, filesystem, Genomi, or Lab;

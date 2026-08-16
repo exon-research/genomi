@@ -9,10 +9,8 @@ fixed execution-policy enforcement, and provider-receipt authorization.
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any
 
-from ..lab.specialist_policies import policy_manifest
 from ..operations.registry.evidence_result_receipts import (
     EVIDENCE_RESULT_RECEIPTS,
     EvidenceResultReceiptError,
@@ -106,13 +104,22 @@ class ClaudeStreamSession:
     ) -> list[JsonObject]:
         call_id = portal_agents.clean_str(block.get("tool_use_id")) or ""
         specialist = self._specialists.get(call_id)
-        if specialist is not None and specialist.get("started"):
+        if specialist is not None:
+            if _is_async_launch(payload.get("tool_use_result")):
+                # A background Agent returns the moment the child is launched,
+                # long before it has done any work. Its terminal boundary is the
+                # later task_notification, exactly like a resumed child.
+                specialist["async_launch"] = True
+                return []
             if specialist.get("continuation"):
                 # A continuation's tool_result is the immediate resume
                 # acknowledgement; the child's terminal boundary is its
                 # task_notification.
                 return []
-            return self._complete_specialist_from_spawn(call_id, specialist, payload)
+            if specialist.get("started"):
+                return self._complete_specialist_from_spawn(
+                    call_id, specialist, payload
+                )
         operation = self._pending_operations.pop(call_id, "")
         result_fields = portal_agents.tool_result_fields(block.get("content"))
         if operation and not block.get("is_error"):
@@ -163,7 +170,10 @@ class ClaudeStreamSession:
             summary = payload.get("summary")
             if isinstance(summary, str) and summary.strip():
                 specialist["terminal_text"] = summary
-            if specialist.get("continuation"):
+            if specialist.get("continuation") or specialist.get("async_launch"):
+                # Resumed and background children never deliver a terminal
+                # Agent tool_result, so this notification is their only
+                # completion boundary.
                 return self._complete_specialist(
                     str(specialist.get("call_id") or ""),
                     specialist,
@@ -192,8 +202,11 @@ class ClaudeStreamSession:
             "subagent_type": policy,
             "started": True,
             "continuation": bool(pending.get("continuation")),
+            "async_launch": bool(pending.get("async_launch")),
             "status": "",
             "terminal_text": "",
+            "provider_calls": 0,
+            "provider_errors": 0,
         }
         tool_input: JsonObject = {"agent_id": task_id, "task_name": task_name}
         if binding is not None:
@@ -244,8 +257,12 @@ class ClaudeStreamSession:
         return None, "specialist_policy_binding_missing"
 
     def _specialist_for_task(self, payload: JsonObject) -> JsonObject | None:
-        task_id = portal_agents.clean_str(payload.get("task_id")) or ""
-        call_id = self._call_id_by_task_id.get(task_id, "")
+        # A resumed child keeps its task id across turns, so the notification's
+        # own tool_use_id names the exact turn that is ending.
+        call_id = portal_agents.clean_str(payload.get("tool_use_id")) or ""
+        if call_id not in self._specialists:
+            task_id = portal_agents.clean_str(payload.get("task_id")) or ""
+            call_id = self._call_id_by_task_id.get(task_id, "")
         return self._specialists.get(call_id)
 
     # -- specialist lane ---------------------------------------------------
@@ -267,6 +284,14 @@ class ClaudeStreamSession:
                 text = block.get("text")
                 if is_child_assistant and specialist is not None and isinstance(text, str) and text.strip():
                     specialist["terminal_text"] = text
+                continue
+            if block_type == "tool_result":
+                # A failing provider call is an answerability gap the host agent
+                # must be able to tell apart from a child that simply stopped.
+                if specialist is not None and block.get("is_error"):
+                    specialist["provider_errors"] = (
+                        int(specialist.get("provider_errors") or 0) + 1
+                    )
                 continue
             if block_type != "tool_use":
                 continue
@@ -295,7 +320,9 @@ class ClaudeStreamSession:
             if isinstance(tool_input, dict)
             else ""
         )
-        allowed = _allowed_operations(str(specialist.get("execution_policy") or ""))
+        allowed = portal_specialist_lane.allowed_operations(
+            str(specialist.get("execution_policy") or "")
+        )
         if name != GENOMI_INVOKE_TOOL or operation not in allowed:
             return "specialist_policy_operation_not_allowed"
         return ""
@@ -342,6 +369,7 @@ class ClaudeStreamSession:
         )
         if not operation:
             return None
+        specialist["provider_calls"] = int(specialist.get("provider_calls") or 0) + 1
         agent_id = str(specialist.get("agent_id") or parent_call_id)
         update: JsonObject = {
             "agent_id": agent_id,
@@ -369,7 +397,7 @@ class ClaudeStreamSession:
         specialist: JsonObject,
         payload: JsonObject,
     ) -> list[JsonObject]:
-        """The Agent tool_use_result is the spawned child's terminal boundary."""
+        """A foreground Agent's tool_use_result is the child's terminal boundary."""
 
         result = payload.get("tool_use_result")
         result = result if isinstance(result, dict) else {}
@@ -399,22 +427,16 @@ class ClaudeStreamSession:
         if not call_id or call_id in self._completed_call_ids:
             return []
         self._completed_call_ids.add(call_id)
-        succeeded = (
-            (status or "failed") == "completed"
-            and call_id not in self._violated_call_ids
-        )
         agent_id = agent_id or call_id
-        update: JsonObject = {
-            "agent_id": agent_id,
-            "task_name": str(specialist.get("task_name") or agent_id),
-            "status": "completed" if succeeded else "failed",
-        }
-        assignment_id = str(specialist.get("assignment_id") or "")
-        if assignment_id:
-            update["assignment_id"] = assignment_id
-        if message:
-            update["message"] = message
-        if succeeded and message:
+        update = portal_specialist_lane.terminal_specialist_update(
+            specialist,
+            agent_id=agent_id,
+            run_completed=(status or "failed") == "completed",
+            violated=call_id in self._violated_call_ids,
+            message=message,
+        )
+        delivered = update["status"] == "completed"
+        if delivered:
             self._authorize_specialist_receipts(
                 specialist,
                 message,
@@ -431,7 +453,7 @@ class ClaudeStreamSession:
                 "type": "tool_result",
                 "id": call_id,
                 "name": "spawn_agent",
-                "isError": not succeeded,
+                "isError": not delivered,
                 "content": portal_agents.content_preview(output),
                 "payload": output,
             }
@@ -539,16 +561,12 @@ def _result_text(value: Any) -> str:
     return "\n".join(parts)
 
 
-def _allowed_operations(policy: str) -> frozenset[str]:
-    return _policy_operations().get(policy, frozenset())
+def _is_async_launch(value: Any) -> bool:
+    """A background Agent acknowledges the launch, not the child's result."""
 
-
-@lru_cache(maxsize=1)
-def _policy_operations() -> dict[str, frozenset[str]]:
-    return {
-        str(profile["id"]): frozenset(profile["allowed_operations"])
-        for profile in policy_manifest()["profiles"]
-    }
+    if not isinstance(value, dict):
+        return False
+    return bool(value.get("isAsync")) or str(value.get("status") or "") == "async_launched"
 
 
 __all__ = ["ClaudeStreamSession"]

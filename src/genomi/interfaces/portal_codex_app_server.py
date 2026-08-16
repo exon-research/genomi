@@ -4,8 +4,6 @@ import json
 import re
 import threading
 from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, Callable, TextIO
 
 from ..operations.registry.evidence_result_receipts import (
@@ -236,7 +234,7 @@ class CodexAppServerSession:
                             progress = self._specialist_progress_event(thread_id, item)
                             if progress is not None:
                                 self.on_event(progress)
-                    self._remember_specialist_message(thread_id, item, completed=completed)
+                    self._remember_specialist_item(thread_id, item, completed=completed)
                     return
                 if str(item.get("type") or "") == "subAgentActivity":
                     events = self._specialist_activity_events(item, completed=completed)
@@ -368,7 +366,7 @@ class CodexAppServerSession:
         if binding_error:
             return binding_error
         policy = str(specialist.get("execution_policy") or "")
-        allowed = _specialist_allowed_operations(policy)
+        allowed = portal_specialist_lane.allowed_operations(policy)
         if item_type != "mcpToolCall":
             return f"specialist_policy_forbids_{item_type}"
         arguments = _object(item.get("arguments"))
@@ -408,18 +406,32 @@ class CodexAppServerSession:
             params["turnId"] = turn_id
         self._write({"id": request_id, "method": "turn/interrupt", "params": params})
 
-    def _remember_specialist_message(
+    def _remember_specialist_item(
         self,
         thread_id: str,
         item: JsonObject,
         *,
         completed: bool,
     ) -> None:
-        if not completed or str(item.get("type") or "") != "agentMessage":
+        if not completed:
             return
-        text = item.get("text")
-        if isinstance(text, str) and text:
-            self._specialist_final_messages[thread_id] = text
+        item_type = str(item.get("type") or "")
+        if item_type == "agentMessage":
+            text = item.get("text")
+            if isinstance(text, str) and text:
+                self._specialist_final_messages[thread_id] = text
+            return
+        if item_type != "mcpToolCall":
+            return
+        # A failing provider call is an answerability gap the host agent must be
+        # able to tell apart from a child that simply stopped.
+        if item.get("error") is None and str(item.get("status") or "") != "failed":
+            return
+        specialist = self._specialists_by_thread_id.get(thread_id)
+        if specialist is not None:
+            specialist["provider_errors"] = (
+                int(specialist.get("provider_errors") or 0) + 1
+            )
 
     def _specialist_progress_event(
         self,
@@ -437,6 +449,7 @@ class CodexAppServerSession:
         operation = str(arguments.get("tool") or "").strip()
         if not operation:
             return None
+        specialist["provider_calls"] = int(specialist.get("provider_calls") or 0) + 1
         agent_id = str(specialist.get("agent_id") or thread_id)
         update: JsonObject = {
             "agent_id": agent_id,
@@ -463,8 +476,6 @@ class CodexAppServerSession:
         if not specialist:
             return
         turn = turn_value if isinstance(turn_value, dict) else {}
-        status = str(turn.get("status") or "failed")
-        succeeded = status == "completed"
         message = self._specialist_final_messages.get(thread_id, "")
         if not message:
             for item in reversed(turn.get("items") or []):
@@ -475,20 +486,18 @@ class CodexAppServerSession:
                     message = text
                     break
         agent_id = str(specialist.get("agent_id") or thread_id)
-        update: JsonObject = {
-            "agent_id": agent_id,
-            "task_name": str(specialist.get("task_name") or agent_id),
-            "status": "completed" if succeeded else "failed",
-        }
-        assignment_id = str(specialist.get("assignment_id") or "")
-        if assignment_id:
-            update["assignment_id"] = assignment_id
-        if message:
-            update["message"] = message
-        if succeeded and message:
+        update = portal_specialist_lane.terminal_specialist_update(
+            specialist,
+            agent_id=agent_id,
+            run_completed=str(turn.get("status") or "failed") == "completed",
+            violated=thread_id in self._interrupted_specialist_threads,
+            message=message,
+        )
+        delivered = update["status"] == "completed"
+        if delivered:
             self._authorize_specialist_receipts(specialist, message)
         output: JsonObject = {
-            "status": "completed" if succeeded else "failed",
+            "status": update["status"],
             "updates": [update],
             "receiverThreadIds": [thread_id],
             "agentsStates": {agent_id: update},
@@ -498,7 +507,7 @@ class CodexAppServerSession:
                 "type": "tool_result",
                 "id": str(specialist.get("call_id") or thread_id),
                 "name": "spawn_agent",
-                "isError": not succeeded,
+                "isError": not delivered,
                 "content": _preview(output),
                 "payload": output,
             }
@@ -635,40 +644,6 @@ def _tool_item(item: JsonObject) -> tuple[str, JsonObject, Any] | None:
 
 def _object(value: Any) -> JsonObject:
     return value if isinstance(value, dict) else {"value": value} if value is not None else {}
-
-
-def _specialist_allowed_operations(policy: str) -> frozenset[str]:
-    return _specialist_policy_operations().get(policy, frozenset())
-
-
-@lru_cache(maxsize=1)
-def _specialist_policy_operations() -> dict[str, frozenset[str]]:
-    # Read the canonical packaged manifest directly. Importing genomi.lab here
-    # would initialize the Lab store and operations registry inside the thin
-    # app-server protocol adapter.
-    path = Path(__file__).resolve().parents[1] / "lab" / "specialist_policies.json"
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    profiles = manifest.get("profiles") if isinstance(manifest, dict) else None
-    if not isinstance(profiles, list):
-        return {}
-    policies: dict[str, frozenset[str]] = {}
-    for profile in profiles:
-        if not isinstance(profile, dict):
-            return {}
-        policy_id = profile.get("id")
-        operations = profile.get("allowed_operations")
-        if (
-            not isinstance(policy_id, str)
-            or policy_id in policies
-            or not isinstance(operations, list)
-            or any(not isinstance(operation, str) for operation in operations)
-        ):
-            return {}
-        policies[policy_id] = frozenset(operations)
-    return policies
 
 
 def _preview(value: Any) -> str:

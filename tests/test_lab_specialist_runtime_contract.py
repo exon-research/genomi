@@ -9,8 +9,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
+from genomi.interfaces import portal_claude_runtime, portal_specialist_lane
 from genomi.lab import operations as lab_operations
 from genomi.lab.result_receipts import _validate_capturable_provider_result
+from genomi.lab.specialist_policies import policy_manifest
+from genomi.lab.specialist_validation import (
+    build_outbound_specialist_brief,
+    validate_specialist_brief,
+)
 from genomi.lab.store import GenomiLabStore
 from genomi.operations import OperationError
 from genomi.operations.registry.evidence_result_receipts import EVIDENCE_RESULT_RECEIPTS
@@ -36,6 +42,48 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
         self.addCleanup(EVIDENCE_RESULT_RECEIPTS.clear)
         self.store = GenomiLabStore()
         self.store.open_workspace("user-a", "Synthetic user")
+
+    def test_outbound_brief_carries_the_policy_work_budget_to_the_specialist(self) -> None:
+        state = self._completed_public_literature_assignment()
+
+        self.assertEqual(
+            state["outbound_brief"]["work_budget"], {"max_provider_calls": 12}
+        )
+        self.assertEqual(
+            portal_specialist_lane.provider_call_budget("public_literature"), 12
+        )
+        # The bound is a property of the security profile, so the same number
+        # reaches a Codex specialist through the brief and a Claude specialist
+        # through both the brief and its agent definition.
+        prompt = portal_claude_runtime.specialist_agent_definitions()[
+            "public_literature"
+        ]["prompt"]
+        self.assertIn("budget of 12 provider calls", prompt)
+        self.assertIn("result_receipt_id", prompt)
+
+    def test_every_policy_declares_a_budget_matching_its_provider_reach(self) -> None:
+        for profile in policy_manifest()["profiles"]:
+            policy = str(profile["id"])
+            with self.subTest(policy=policy):
+                budget = int(profile["max_provider_calls"])
+                self.assertEqual(
+                    budget, portal_specialist_lane.provider_call_budget(policy)
+                )
+                self.assertEqual(bool(profile["allowed_operations"]), budget > 0)
+
+    def test_a_brief_that_overstates_its_budget_is_rejected(self) -> None:
+        outbound = build_outbound_specialist_brief(
+            specialist_role="Public evidence reviewer",
+            execution_policy="public_literature",
+            research_question="Compare public evidence for a reference mechanism.",
+            public_concepts=[],
+            abstract_relations=[],
+            public_evidence=[],
+        )
+        outbound["work_budget"] = {"max_provider_calls": 400}
+
+        with self.assertRaisesRegex(ValueError, "work_budget"):
+            validate_specialist_brief(outbound, policy="public_literature")
 
     def test_public_literature_receipt_is_redeemed_into_assignment_evidence(self) -> None:
         state = self._completed_public_literature_assignment()

@@ -120,6 +120,60 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
         )
         self.assertEqual(result["completed"]["specialists"][0]["status"], "completed")
 
+    def test_specialist_that_returned_nothing_explains_itself_to_the_user(self) -> None:
+        module_url = (TEMPLATES / "portal_specialists.js").as_uri()
+        script = textwrap.dedent(
+            f"""
+            const specialists = await import({module_url!r});
+            function lane(guidance) {{
+              return specialists.specialistLaneModel([
+                {{
+                  call: {{ id: 'spawn-1', name: 'spawn_agent', input: {{
+                    agent_id: 'specialist-1', task_name: 'CTLA4 literature review',
+                    assignment_id: 'assignment-1', specialist_role: 'Public evidence reviewer'
+                  }} }},
+                  result: {{ id: 'spawn-1', name: 'spawn_agent', isError: true, payload: {{
+                    status: 'failed',
+                    updates: [{{
+                      agent_id: 'specialist-1', assignment_id: 'assignment-1',
+                      task_name: 'CTLA4 literature review', status: 'failed',
+                      guidance, provider_calls: 40, provider_call_budget: 12,
+                      execution_policy: 'public_literature'
+                    }}]
+                  }} }}
+                }},
+                {{
+                  call: {{ id: 'transition-1', name: 'genomi.genomi.invoke', input: {{ tool: 'lab.transition_specialist_assignment' }} }},
+                  result: {{ id: 'transition-1', payload: {{
+                    dispatched_tool: 'lab.transition_specialist_assignment',
+                    assignment: {{
+                      specialist_assignment_id: 'assignment-1', native_agent_id: 'specialist-1',
+                      specialist_role: 'Public evidence reviewer', execution_policy: 'public_literature',
+                      revision: 3, state: 'failed'
+                    }}
+                  }} }}
+                }}
+              ]);
+            }}
+            process.stdout.write(JSON.stringify({{
+              noAnalysis: lane('specialist_returned_no_analysis:reassign_a_narrower_question'),
+              unavailable: lane('specialist_provider_unavailable:retry_later_or_record_information_gap'),
+              violation: lane('specialist_policy_violation:discard_this_specialist_result')
+            }}));
+            """
+        )
+
+        result = _run_node(script)
+        for key, expected in (
+            ("noAnalysis", "ran out of room"),
+            ("unavailable", "source was unavailable"),
+            ("violation", "privacy boundary"),
+        ):
+            specialist = result[key]["specialists"][0]
+            self.assertEqual(specialist["status"], "error")
+            self.assertIn(expected, specialist["summary"])
+            self.assertEqual(specialist["title"], "Public evidence reviewer")
+
     def test_live_collaboration_records_drive_multiple_specialists_and_parent_wait(self) -> None:
         module_url = (TEMPLATES / "portal_specialists.js").as_uri()
         script = textwrap.dedent(
