@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from genomi.lab import operations as lab_operations
+from genomi.lab.result_receipts import _validate_capturable_provider_result
 from genomi.lab.store import GenomiLabStore
 from genomi.operations import OperationError
 from genomi.operations.registry.evidence_result_receipts import EVIDENCE_RESULT_RECEIPTS
@@ -54,18 +55,20 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
                     "import EVIDENCE_RESULT_RECEIPTS; "
                     "print(EVIDENCE_RESULT_RECEIPTS.issue("
                     "session_id='session-a', "
-                    "operation='paperclip.search_biomedical', "
-                    "params={'query': 'synthetic public mechanism'}, "
-                    "result={'evidence_envelope': {"
-                    "'operation': 'paperclip.search_biomedical', "
-                    "'headline': 'paperclip.search_biomedical: data_returned', "
+                    "operation='paperclip.retrieve_document_evidence', "
+                    "params={'document_id': 'PMC1', 'collection': 'papers', "
+                    "'patterns': ['synthetic mechanism']}, "
+                    "result={'status': 'completed', 'evidence_envelope': {"
+                    "'operation': 'paperclip.retrieve_document_evidence', "
+                    "'headline': 'paperclip.retrieve_document_evidence: data_returned', "
                     "'finding_state': 'evidence_present', "
                     "'answer_readiness': 'answer_supported', "
                     "'guidance': [], "
                     "'negative_inference': {'allowed': False, 'requires': []}, "
-                    "'coverage': {'consulted_sources': ['pmc']}}, "
-                    "'records': [{'title': 'Synthetic public result', "
-                    "'source': 'pmc'}]}))"
+                    "'coverage': {'consulted_sources': ['paperclip:papers/PMC1']}}, "
+                    "'document': {'title': 'Synthetic public result', "
+                    "'record_id': 'PMC1'}, 'excerpts': [{'line_start': 12, "
+                    "'line_end': 12, 'text': 'Synthetic public evidence.'}]}))"
                 ),
             ],
             cwd=repository_root,
@@ -134,6 +137,149 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "invalid_lab_request")
         EVIDENCE_RESULT_RECEIPTS.resolve(process_receipt_id, session_id="session-a")
+
+    def test_paperclip_search_receipt_remains_discovery_only(self) -> None:
+        state = self._completed_public_literature_assignment()
+        process_receipt_id = EVIDENCE_RESULT_RECEIPTS.issue(
+            session_id="session-a",
+            operation="paperclip.search_biomedical",
+            params={"query": "synthetic public mechanism"},
+            result={
+                "status": "completed",
+                "records": [{"title": "Synthetic discovery result"}],
+                "evidence_envelope": {
+                    "operation": "paperclip.search_biomedical",
+                    "headline": "paperclip.search_biomedical: data_returned",
+                    "finding_state": "evidence_present",
+                    "answer_readiness": "scoped_answer_only",
+                    "guidance": [
+                        "evidence_present:use_as_scoped_public_literature_evidence"
+                    ],
+                    "negative_inference": {"allowed": False, "requires": []},
+                    "coverage": {"consulted_sources": ["paperclip:pmc"]},
+                },
+            },
+        )
+
+        @contextmanager
+        def authorized_store():
+            yield self.store, "user-a", "session-a"
+
+        with mock.patch.object(
+            lab_operations, "_authorized_store", authorized_store
+        ), self.assertRaises(OperationError) as raised:
+            lab_operations.capture_provider_result(
+                {
+                    "investigation_id": state["investigation_id"],
+                    "cycle_id": state["cycle_id"],
+                    "assignment_id": state["assignment_id"],
+                    "specialist_brief_id": state["specialist_brief_id"],
+                    "result_receipt_id": process_receipt_id,
+                    "purpose": "Reject discovery-only search output",
+                    "command_id": "reject-search-result",
+                    "expected_revision": state["domain_revision"],
+                }
+            )
+
+        self.assertEqual(raised.exception.code, "invalid_lab_request")
+        EVIDENCE_RESULT_RECEIPTS.resolve(
+            process_receipt_id, session_id="session-a"
+        )
+        self.assertEqual(
+            self.store.get_investigation(state["investigation_id"])[
+                "evidence_snapshot_id"
+            ],
+            None,
+        )
+
+    def test_provider_capture_rejects_every_noncompleted_result_state(self) -> None:
+        for provider, operation in (
+            ("paperclip", "paperclip.retrieve_document_evidence"),
+            ("biohub-esm", "biohub.compare_protein_embeddings"),
+            ("proto", "proto.run_tool"),
+        ):
+            for status in (
+                "source_unavailable",
+                "in_progress",
+                "in_scope_empty",
+                "out_of_scope_for_input",
+                "failed",
+            ):
+                with self.subTest(provider=provider, status=status), self.assertRaisesRegex(
+                    ValueError, "only completed provider results can be captured"
+                ):
+                    _validate_capturable_provider_result(
+                        {
+                            "provider": provider,
+                            "operation": operation,
+                            "exact_result": {"status": status},
+                        }
+                    )
+
+    def test_completed_empty_provider_result_is_not_data_returned(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "only data-returned provider results can be captured"
+        ):
+            _validate_capturable_provider_result(
+                {
+                    "provider": "paperclip",
+                    "operation": "paperclip.retrieve_document_evidence",
+                    "exact_result": {
+                        "status": "completed",
+                        "evidence_envelope": {
+                            "operation": "paperclip.retrieve_document_evidence",
+                            "headline": "paperclip.retrieve_document_evidence: not_observed_in_consulted_scope",
+                            "finding_state": "not_observed_in_consulted_scope",
+                            "answer_readiness": "scoped_answer_only",
+                            "guidance": [
+                                "not_observed_in_consulted_scope:do_not_imply_biomedical_negative"
+                            ],
+                            "negative_inference": {"allowed": False, "requires": []},
+                            "coverage": {"consulted_sources": ["paperclip:papers/PMC1"]},
+                        },
+                    },
+                }
+            )
+
+    def test_completed_data_returned_results_pass_capture_policy(self) -> None:
+        for provider, operation in (
+            ("paperclip", "paperclip.retrieve_document_evidence"),
+            ("biohub-esm", "biohub.compare_protein_embeddings"),
+            ("proto", "proto.run_tool"),
+        ):
+            with self.subTest(provider=provider):
+                exact_result = {
+                    "status": "completed",
+                    "evidence_envelope": {
+                        "operation": operation,
+                        "headline": f"{operation}: data_returned",
+                        "finding_state": "evidence_present",
+                        "answer_readiness": "scoped_answer_only",
+                        "guidance": [
+                            "evidence_present:use_only_within_declared_scope"
+                        ],
+                        "negative_inference": {
+                            "allowed": False,
+                            "requires": [],
+                        },
+                        "coverage": {"consulted_sources": [provider]},
+                    },
+                }
+                if provider == "paperclip":
+                    exact_result["excerpts"] = [
+                        {
+                            "line_start": 12,
+                            "line_end": 12,
+                            "text": "Synthetic public evidence.",
+                        }
+                    ]
+                _validate_capturable_provider_result(
+                    {
+                        "provider": provider,
+                        "operation": operation,
+                        "exact_result": exact_result,
+                    }
+                )
 
     def _completed_public_literature_assignment(self) -> dict[str, object]:
         created = self.store.create_lab_investigation(

@@ -67,6 +67,30 @@ def _verified_receipt(row: object, *, provider: bool = False) -> JsonObject:
     return value
 
 
+def _validate_capturable_provider_result(receipt: JsonObject) -> None:
+    """Admit only completed, data-returned provider results to durable state."""
+
+    operation = str(receipt.get("operation") or "")
+    provider = str(receipt.get("provider") or "")
+    result = _object(receipt.get("exact_result"), "exact_result")
+    if result.get("status") != "completed":
+        raise ValueError("only completed provider results can be captured")
+    envelope = _object(result.get("evidence_envelope"), "evidence_envelope")
+    canonical_evidence_envelope.validate(envelope)
+    if envelope.get("operation") != operation:
+        raise ValueError("provider result envelope operation does not match its receipt")
+    if envelope.get("finding_state") != canonical_evidence_envelope.EVIDENCE_PRESENT:
+        raise ValueError("only data-returned provider results can be captured")
+    if provider == "paperclip" and operation != "paperclip.retrieve_document_evidence":
+        raise ValueError(
+            "Paperclip search results are discovery-only; capture line-pinned document evidence"
+        )
+    if provider == "paperclip" and not (
+        isinstance(result.get("excerpts"), list) and result["excerpts"]
+    ):
+        raise ValueError("captured Paperclip evidence requires line-pinned excerpts")
+
+
 class ResultReceiptStoreMixin:
     """Issue immutable receipts internally and capture only verified receipts."""
 
@@ -326,6 +350,7 @@ class ResultReceiptStoreMixin:
             if receipt_row is None:
                 raise ValueError("provider result receipt not found")
             receipt = _verified_receipt(receipt_row, provider=True)
+            _validate_capturable_provider_result(receipt)
             if receipt["specialist_assignment_id"] != assignment or receipt["specialist_brief_id"] != brief_id or receipt.get("captured_at"):
                 raise ValueError("provider result receipt is not capturable for this brief")
             evidence = None

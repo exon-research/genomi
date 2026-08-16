@@ -169,7 +169,21 @@ class LabPublicResearchCycleTests(unittest.TestCase):
             provider="biohub-esm",
             result_kind="research_artifact",
             operation="biohub.compare_protein_embeddings",
-            exact_result={"comparison": {"state": "research_only"}},
+            exact_result={
+                "status": "completed",
+                "comparison": {"state": "research_only"},
+                "evidence_envelope": {
+                    "operation": "biohub.compare_protein_embeddings",
+                    "headline": "biohub.compare_protein_embeddings: data_returned",
+                    "finding_state": "evidence_present",
+                    "answer_readiness": "scoped_answer_only",
+                    "guidance": [
+                        "evidence_present:use_only_as_nonclinical_protein_model_signal"
+                    ],
+                    "negative_inference": {"allowed": False, "requires": []},
+                    "coverage": {"consulted_sources": ["biohub:esmc"]},
+                },
+            },
             specialist_assignment_id=assignment_id,
             specialist_brief_id=brief["specialist_brief_id"],
             provider_provenance={"provider": "biohub-esm"},

@@ -181,19 +181,21 @@ class LabHypothesisSnapshotDefaultTests(unittest.TestCase):
         receipt_id = self.store.issue_provider_result_receipt(
             provider="paperclip",
             result_kind="public_source_evidence",
-            operation="paperclip.search_biomedical",
+            operation="paperclip.retrieve_document_evidence",
             exact_result={
+                "status": "completed",
                 "evidence_envelope": {
-                    "operation": "paperclip.search_biomedical",
-                    "headline": "paperclip.search_biomedical: data_returned",
+                    "operation": "paperclip.retrieve_document_evidence",
+                    "headline": "paperclip.retrieve_document_evidence: data_returned",
                     "finding_state": "evidence_present",
                     "answer_readiness": "answer_supported",
                     "guidance": [],
                     "negative_inference": {"allowed": False, "requires": []},
                     "coverage": {"consulted_sources": ["pmc"]},
                 },
-                "records": [
-                    {"title": "Synthetic public result", "source": "pmc"}
+                "document": {"title": "Synthetic public result", "record_id": "PMC1"},
+                "excerpts": [
+                    {"line_start": 12, "line_end": 12, "text": "Synthetic public evidence."}
                 ],
             },
             specialist_assignment_id=assignment_id,
