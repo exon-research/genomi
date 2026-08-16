@@ -299,8 +299,20 @@ class MCPHTTPTests(unittest.TestCase):
                 {"user_id": "user_b", "nickname": "Subject B", "active_agi_id": "agi_b", "agi_ids": ["agi_b"]},
             ],
             "active_genome_indexes": [
-                {"agi_id": "agi_a", "names": {"display": "Subject A genome"}, "users": [{"user_id": "user_a", "nickname": "Subject A"}]},
-                {"agi_id": "agi_b", "names": {"display": "Subject B genome"}, "users": [{"user_id": "user_b", "nickname": "Subject B"}]},
+                {
+                    "agi_id": "agi_a",
+                    "agi_snapshot_id": "snapshot_a",
+                    "names": {"display": "Subject A genome"},
+                    "active_genome_index_readiness": {"status": "completed", "complete": True, "variants_ready": True},
+                    "users": [{"user_id": "user_a", "nickname": "Subject A"}],
+                },
+                {
+                    "agi_id": "agi_b",
+                    "agi_snapshot_id": "snapshot_b",
+                    "names": {"display": "Subject B genome"},
+                    "active_genome_index_readiness": {"status": "completed", "complete": True, "variants_ready": True},
+                    "users": [{"user_id": "user_b", "nickname": "Subject B"}],
+                },
             ],
         }
         with (

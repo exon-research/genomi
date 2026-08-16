@@ -681,7 +681,8 @@ class PortalFrontendAssetTests(unittest.TestCase):
         self.assertNotIn("function runtimeStatusLabel", portal)
 
         self.assertIn("submitTurnDraft({ message, selectedEvidence }).catch", portal)
-        self.assertNotIn("requestSubmit()", portal)
+        self.assertIn("if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;", portal)
+        self.assertIn("$('composer').requestSubmit();", portal)
         self.assertIn("data.type === 'diagnostic' || data.type === 'tool_call'", portal)
         self.assertNotIn("messageSurface.appendText(body, '\\\\n[' + data.name + ']\\\\n')", portal)
         self.assertNotIn("host_agent_stdout", portal)

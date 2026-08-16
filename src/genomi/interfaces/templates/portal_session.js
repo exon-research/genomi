@@ -14,7 +14,7 @@ export async function initializePortalSession() {
   if (!response.ok || !payload || !payload.session_token) {
     throw new Error(payload?.error?.message || 'The private GenomiLab launch link could not be opened.');
   }
-  sessionStorage.setItem(SESSION_STORAGE_KEY, String(payload.session_token));
+  storeSessionToken(String(payload.session_token));
   window.history.replaceState(null, '', window.location.pathname + window.location.search);
   return String(payload.session_token);
 }
@@ -24,6 +24,30 @@ export function portalSessionHeaders() {
   return token ? { 'x-genomi-session': token } : {};
 }
 
+function sessionStore() {
+  try {
+    return globalThis.sessionStorage || null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function sessionToken() {
-  return sessionStorage.getItem(SESSION_STORAGE_KEY) || '';
+  const store = sessionStore();
+  if (!store) return '';
+  try {
+    return store.getItem(SESSION_STORAGE_KEY) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function storeSessionToken(token) {
+  const store = sessionStore();
+  if (!store) return;
+  try {
+    store.setItem(SESSION_STORAGE_KEY, token);
+  } catch (error) {
+    /* the launch exchange also sets the loopback session cookie */
+  }
 }

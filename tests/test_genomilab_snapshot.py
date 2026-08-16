@@ -189,9 +189,8 @@ class GenomiLabSnapshotTests(unittest.TestCase):
         self.assertIsNone(
             self.store.consent_receipt(original["consent_receipt_id"])["revoked_at"]
         )
-        self.assertEqual(
-            len(self.store.workspace_activity("user-a")["context_approvals"]), 1
-        )
+        # The rolled-back attempt left no live consent behind for its session.
+        self.assertEqual(self.store.revoke_session_consents("session-b"), 0)
 
         renewed = self.store.create_profile_snapshot(
             "user-a",
@@ -203,11 +202,21 @@ class GenomiLabSnapshotTests(unittest.TestCase):
         )
         self.assertEqual(renewed["context_change"], "authorization_renewed")
         self.assertFalse(renewed["snapshot_created"])
-        activity = self.store.workspace_activity("user-a")["context_approvals"]
-        active = [item for item in activity if item["revoked_at"] is None]
         self.assertEqual(
-            [item["consent_receipt_id"] for item in active],
-            [renewed["consent_receipt_id"]],
+            renewed["patient_molecular_snapshot_id"],
+            original["patient_molecular_snapshot_id"],
+        )
+        self.assertNotEqual(
+            renewed["consent_receipt_id"], original["consent_receipt_id"]
+        )
+        after_renewal = self.store.get_investigation(
+            self.investigation["investigation_id"]
+        )
+        self.assertEqual(
+            after_renewal["active_consent_receipt_id"], renewed["consent_receipt_id"]
+        )
+        self.assertIsNone(
+            self.store.consent_receipt(renewed["consent_receipt_id"])["revoked_at"]
         )
         self.assertIsNotNone(
             self.store.consent_receipt(original["consent_receipt_id"])["revoked_at"]

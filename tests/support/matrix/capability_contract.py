@@ -69,8 +69,16 @@ PUBLIC_DETERMINISTIC_CAPABILITIES = frozenset(
     }
 )
 
-EXTERNAL_SOURCE_CAPABILITIES = frozenset({"gnomad", "gwas-catalog"})
-STATEFUL_RUNTIME_CAPABILITIES = frozenset({"genomi", "journal"})
+EXTERNAL_SOURCE_CAPABILITIES = frozenset(
+    {
+        "biohub",
+        "gnomad",
+        "gwas-catalog",
+        "paperclip",
+        "proto",
+    }
+)
+STATEFUL_RUNTIME_CAPABILITIES = frozenset({"genomi", "journal", "lab"})
 
 SOURCE_FORMAT_MATRIX_OPERATIONS = frozenset(
     {
@@ -149,6 +157,7 @@ SOURCE_FORMAT_SUPPORT_EXECUTABLE_OPERATIONS = frozenset(
 )
 
 EXTERNAL_SOURCE_OPERATION_RATIONALES = {
+    "biohub.compare_protein_embeddings": "live Biohub ESMC embedding provider call",
     "functional_genomics.query_geo": "live NCBI GEO query",
     "functional_genomics.retrieve_perturbation_records": "live public screen-source retrieval",
     "gnomad.fetch_population_frequency": "live gnomAD/static-population fetch",
@@ -159,9 +168,24 @@ EXTERNAL_SOURCE_OPERATION_RATIONALES = {
     "pharmacogenomics.fetch_pgxdb": "live PGxDB source fetch",
     "phenotype.retrieve_disease_drug_targets": "live Open Targets drug-candidate query",
     "phenotype.retrieve_trait_gene_records": "live Open Targets trait-gene query",
+    "paperclip.retrieve_document_evidence": "live Paperclip document evidence retrieval",
+    "paperclip.search_biomedical": "live Paperclip biomedical literature search",
+    "proto.describe_tool_schema": "live Proto tool schema fetch",
+    "proto.run_tool": "live Proto tool execution on the provider runtime",
+    "proto.search_tools": "live Proto tool catalog search",
 }
 EXTERNAL_SOURCE_OPERATIONS = frozenset(EXTERNAL_SOURCE_OPERATION_RATIONALES)
-EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS = EXTERNAL_SOURCE_OPERATIONS
+# Credential-gated provider operations stay declared but non-executable in the
+# source-format sweep: they need an authorized provider account, so CI covers
+# them in their own capability tests instead.
+EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS = EXTERNAL_SOURCE_OPERATIONS - {
+    "biohub.compare_protein_embeddings",
+    "paperclip.retrieve_document_evidence",
+    "paperclip.search_biomedical",
+    "proto.describe_tool_schema",
+    "proto.run_tool",
+    "proto.search_tools",
+}
 
 STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "genomi.check_background_job": "background job polling state",
@@ -178,6 +202,20 @@ STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "journal.export_memory": "journal state export",
     "journal.search_entries": "journal state search",
     "journal.summarize": "journal state summary",
+    "lab.capture_evidence_result": "durable Lab evidence-record mutation",
+    "lab.capture_provider_result": "durable Lab provider-result binding mutation",
+    "lab.create_cycle": "durable Lab investigation cycle mutation",
+    "lab.create_hypothesis": "durable Lab hypothesis-version mutation",
+    "lab.create_information_gap": "durable Lab information-gap mutation",
+    "lab.create_investigation": "durable Lab investigation mutation",
+    "lab.create_specialist_assignment": "durable Lab specialist-assignment mutation",
+    "lab.prepare_specialist_brief": "durable Lab disclosure-receipt mutation",
+    "lab.publish_brief": "durable Lab clinician-brief mutation",
+    "lab.read_investigation": "durable Lab investigation state read",
+    "lab.revise_information_gap": "durable Lab information-gap version mutation",
+    "lab.revise_hypothesis": "durable Lab hypothesis version mutation",
+    "lab.transition_specialist_assignment": "durable Lab assignment state transition",
+    "lab.update_health_profile": "durable Lab health-profile mutation",
     "research.build_target_packet": "reviewed-research store orchestration",
     "research.list_sources": "source catalog inventory",
     "research.query": "reviewed-research store query",
@@ -185,9 +223,13 @@ STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "research.search": "reviewed-research store search",
 }
 STATEFUL_RUNTIME_OPERATIONS = frozenset(STATEFUL_RUNTIME_OPERATION_RATIONALES)
+# Lab operations carry patient investigation state behind an authorized
+# workspace, so the source-format sweep declares them without executing them;
+# the Lab capability tests own their behavior.
 STATEFUL_RUNTIME_EXECUTABLE_OPERATIONS = STATEFUL_RUNTIME_OPERATIONS - {
     "genomi.describe_portal_workspace",
     "genomi.install",
+    *(name for name in STATEFUL_RUNTIME_OPERATION_RATIONALES if name.startswith("lab.")),
 }
 
 def _empty_params(_ctx: MatrixCaseContext) -> JsonObject:

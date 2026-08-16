@@ -8,7 +8,7 @@ from unittest import mock
 
 from genomi.interfaces.cli import build_parser
 from genomi.interfaces.mcp import handle_request
-from genomi.operations import OperationError, call_operation
+from genomi.operations import OperationError, all_operations, call_operation, get_operation
 from genomi.runtime import background_jobs
 
 from tests.support.runtime.genomi import (
@@ -214,10 +214,18 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         self.assertIn("in_progress:poll_runtime_check_background_job", payload["evidence_envelope"]["guidance"])
         self.assertEqual(payload["evidence_envelope"]["next_actions"][0]["operation"], "genomi.check_background_job")
 
-    def test_mcp_lab_record_operation_executes_inline_when_background_enabled(self) -> None:
+    def test_mcp_lab_capture_operation_executes_inline_when_background_enabled(self) -> None:
+        arguments = {
+            "investigation_id": "investigation-1",
+            "cycle_id": "cycle-1",
+            "result_receipt_id": "receipt-1",
+            "purpose": "bind clinvar evidence to the current cycle",
+            "command_id": "command-1",
+            "expected_revision": 3,
+        }
         inline_result = {
             "status": "ready",
-            "investigations": [],
+            "investigation_evidence_record": {"evidence_record_id": "evidence-1"},
         }
         with (
             mock.patch.dict(os.environ, {"GENOMI_MCP_BACKGROUND": "1"}),
@@ -229,17 +237,31 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
                     "jsonrpc": "2.0",
                     "id": 56,
                     "method": "tools/call",
-                    "params": {"name": "lab.describe_workspace", "arguments": {}},
+                    "params": {"name": "lab.capture_evidence_result", "arguments": arguments},
                 }
             )
 
         start_job.assert_not_called()
-        call_inline.assert_called_once_with("lab.describe_workspace", {})
+        call_inline.assert_called_once_with("lab.capture_evidence_result", arguments)
         self.assertIsNotNone(response)
         assert response is not None
         payload = json.loads(response["result"]["content"][0]["text"])
         self.assertEqual(payload["status"], "ready")
-        self.assertEqual(payload["investigations"], [])
+        self.assertEqual(payload["investigation_evidence_record"]["evidence_record_id"], "evidence-1")
+
+    def test_every_lab_operation_is_inline_only(self) -> None:
+        lab_tools = [
+            tool
+            for tool in all_operations()
+            if tool["name"].startswith("lab.")
+        ]
+        self.assertTrue(lab_tools)
+        for tool in lab_tools:
+            with self.subTest(operation=tool["name"]):
+                # Lab state carries patient facts; background execution would
+                # spool operation params to the plaintext job file.
+                self.assertEqual(tool["annotations"]["mcpExecution"], "inline_only")
+                self.assertFalse(get_operation(tool["name"]).mcp_background_eligible)
 
     def test_operation_error_json_uses_evidence_envelope_contract(self) -> None:
         payload = OperationError("invalid_params", "missing required input").to_json(operation="genomi.list_resources")

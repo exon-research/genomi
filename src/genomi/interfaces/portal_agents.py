@@ -4,7 +4,7 @@ import json
 import re
 import shutil
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 JsonObject = dict[str, Any]
 
@@ -21,6 +21,9 @@ class StreamParseOutcome:
     stdout: str | None = None
 
 
+StreamAdapterFactory = Callable[..., StreamAdapter]
+
+
 @dataclass(frozen=True)
 class AgentDriver:
     id: str
@@ -28,7 +31,7 @@ class AgentDriver:
     command: str
     summary: str
     invocation_args: tuple[str, ...]
-    stream_adapter: StreamAdapter
+    stream_adapter_factory: StreamAdapterFactory
     runnable: bool = True
 
     def invocation(self, resolved_command: str | None) -> list[str] | None:
@@ -75,8 +78,16 @@ def agent_invocation(agent_id: str, *, approved_tools: list[str] | tuple[str, ..
     if invocation is None:
         return None
     if driver.id == "claude":
-        invocation.extend(_clean_approved_tools(approved_tools))
+        invocation.extend(clean_approved_tools(approved_tools))
     return invocation
+
+
+def new_stream_adapter(agent_id: str, *, session_id: str = "") -> StreamAdapter:
+    """Build one adapter for one run; stateful hosts keep per-run state."""
+
+    driver = driver_for(agent_id)
+    factory = driver.stream_adapter_factory if driver else _plain_text_adapter
+    return factory(session_id=session_id)
 
 
 def agent_events_for_line(agent_id: str, line: str) -> list[JsonObject]:
@@ -84,13 +95,7 @@ def agent_events_for_line(agent_id: str, line: str) -> list[JsonObject]:
 
 
 def parse_agent_line(agent_id: str, line: str) -> StreamParseOutcome:
-    driver = driver_for(agent_id)
-    adapter = driver.stream_adapter if driver else PlainTextStreamAdapter()
-    return adapter.parse_line(line)
-
-
-def text_or_diagnostic_event(text: str) -> JsonObject:
-    return _text_or_diagnostic_event(text)
+    return new_stream_adapter(agent_id).parse_line(line)
 
 
 def driver_for(agent_id: str) -> AgentDriver | None:
@@ -99,146 +104,98 @@ def driver_for(agent_id: str) -> AgentDriver | None:
 
 class PlainTextStreamAdapter:
     def parse_line(self, line: str) -> StreamParseOutcome:
-        return _events_outcome([{"type": "text_delta", "delta": line}]) if line.strip() else _ignored_structured_event()
-
-
-class ClaudeStreamAdapter:
-    def parse_line(self, line: str) -> StreamParseOutcome:
-        payload = _json_line(line)
-        if not isinstance(payload, dict):
-            return _non_json_outcome(line)
-        event_type = str(payload.get("type") or "")
-        if "error" in event_type.lower():
-            return _events_outcome([_error_event(payload)])
-        if event_type == "result":
-            result = payload.get("result")
-            if isinstance(result, str) and result.strip():
-                return _events_outcome([{"type": "text_delta", "delta": result}])
-            return _ignored_structured_event()
-        events: list[JsonObject] = []
-        content_blocks = _claude_content_blocks(payload)
-        has_tool_use = any(str(block.get("type") or "") == "tool_use" for block in content_blocks)
-        for block in content_blocks:
-            block_type = str(block.get("type") or "")
-            if block_type == "text" and isinstance(block.get("text"), str):
-                events.append(_text_or_diagnostic_event(block["text"]) if has_tool_use else _claude_status_event(block["text"]))
-            elif block_type == "tool_use":
-                name = _clean_str(block.get("name")) or "tool"
-                events.append({"type": "tool_call", "id": _clean_str(block.get("id")), "name": name, "input": block.get("input") or {}})
-            elif block_type == "tool_result":
-                result_fields = _tool_result_fields(block.get("content"))
-                events.append(
-                    {
-                        "type": "tool_result",
-                        "id": _clean_str(block.get("tool_use_id")),
-                        "name": None,
-                        "isError": bool(block.get("is_error")),
-                        **result_fields,
-                    }
-                )
-        return _events_outcome(events)
-
-
-def _claude_status_event(text: str) -> JsonObject:
-    setup_event = _text_or_diagnostic_event(text)
-    if setup_event.get("type") == "diagnostic":
-        return setup_event
-    return {
-        "type": "diagnostic",
-        "name": "assistant_status",
-        "message": _content_preview(text),
-    }
+        return events_outcome([{"type": "text_delta", "delta": line}]) if line.strip() else ignored_structured_event()
 
 
 class CodexStreamAdapter:
     def parse_line(self, line: str) -> StreamParseOutcome:
-        payload = _json_line(line)
+        payload = json_line(line)
         if not isinstance(payload, dict):
-            return _non_json_outcome(line)
+            return non_json_outcome(line)
         event = _codex_event(payload)
         event_type = str(event.get("type") or "")
         if event_type == "agent_message":
             message = event.get("message")
-            return _events_outcome([_text_or_diagnostic_event(message)]) if isinstance(message, str) and message else _ignored_structured_event()
+            return events_outcome([text_or_diagnostic_event(message)]) if isinstance(message, str) and message else ignored_structured_event()
         if event_type in {"agent_message_delta", "response.output_text.delta"}:
             delta = event.get("delta")
-            return _events_outcome([_text_or_diagnostic_event(delta)]) if isinstance(delta, str) and delta else _ignored_structured_event()
+            return events_outcome([text_or_diagnostic_event(delta)]) if isinstance(delta, str) and delta else ignored_structured_event()
         if event_type == "function_call":
-            return _events_outcome([_codex_tool_call(event)])
+            return events_outcome([_codex_tool_call(event)])
         if event_type == "function_call_output":
-            return _events_outcome([_codex_tool_result(event)])
+            return events_outcome([_codex_tool_result(event)])
         if event_type == "item.completed" and isinstance(event.get("item"), dict):
             item = event["item"]
             item_type = str(item.get("type") or "")
             if item_type == "agent_message":
                 text = item.get("text")
-                return _events_outcome([_text_or_diagnostic_event(text)]) if isinstance(text, str) and text else _ignored_structured_event()
+                return events_outcome([text_or_diagnostic_event(text)]) if isinstance(text, str) and text else ignored_structured_event()
             if item_type == "function_call":
-                return _events_outcome([_codex_tool_call(item)])
+                return events_outcome([_codex_tool_call(item)])
             if item_type == "function_call_output":
-                return _events_outcome([_codex_tool_result(item)])
+                return events_outcome([_codex_tool_result(item)])
         if "error" in event_type.lower():
-            return _events_outcome([_error_event(event)])
-        return _ignored_structured_event()
+            return events_outcome([error_event(event)])
+        return ignored_structured_event()
 
 
 class GeminiStreamAdapter:
     def parse_line(self, line: str) -> StreamParseOutcome:
-        payload = _json_line(line)
+        payload = json_line(line)
         if not isinstance(payload, dict):
-            return _non_json_outcome(line)
+            return non_json_outcome(line)
         event_type = str(payload.get("type") or payload.get("event") or "")
         if event_type in {"text", "content", "message"} and isinstance(payload.get("text"), str):
-            return _events_outcome([_text_or_diagnostic_event(payload["text"])])
+            return events_outcome([text_or_diagnostic_event(payload["text"])])
         if event_type == "function_call":
-            return _events_outcome(
+            return events_outcome(
                 [
                     {
                         "type": "tool_call",
-                        "id": _clean_str(payload.get("id")),
-                        "name": _clean_str(payload.get("function_name")) or "tool",
-                        "input": _jsonish(payload.get("arguments")),
+                        "id": clean_str(payload.get("id")),
+                        "name": clean_str(payload.get("function_name")) or "tool",
+                        "input": jsonish(payload.get("arguments")),
                     }
                 ]
             )
         if event_type == "function_response":
-            result_fields = _tool_result_fields(payload.get("response") if "response" in payload else payload.get("error"))
-            return _events_outcome(
+            result_fields = tool_result_fields(payload.get("response") if "response" in payload else payload.get("error"))
+            return events_outcome(
                 [
                     {
                         "type": "tool_result",
-                        "id": _clean_str(payload.get("id")),
-                        "name": _clean_str(payload.get("function_name")),
+                        "id": clean_str(payload.get("id")),
+                        "name": clean_str(payload.get("function_name")),
                         "isError": bool(payload.get("error")),
                         **result_fields,
                     }
                 ]
             )
         if "error" in event_type.lower():
-            return _events_outcome([_error_event(payload)])
-        return _ignored_structured_event()
+            return events_outcome([error_event(payload)])
+        return ignored_structured_event()
 
 
-def _events_outcome(events: list[JsonObject]) -> StreamParseOutcome:
-    return StreamParseOutcome(kind="events", events=events) if events else _ignored_structured_event()
+def events_outcome(events: list[JsonObject]) -> StreamParseOutcome:
+    return StreamParseOutcome(kind="events", events=events) if events else ignored_structured_event()
 
 
-def _ignored_structured_event() -> StreamParseOutcome:
+def ignored_structured_event() -> StreamParseOutcome:
     return StreamParseOutcome(kind="ignored_structured_event", events=[])
 
 
-def _non_json_outcome(line: str) -> StreamParseOutcome:
+def non_json_outcome(line: str) -> StreamParseOutcome:
     stripped = line.strip()
     if not stripped:
-        return _ignored_structured_event()
+        return ignored_structured_event()
     if stripped[0] in "[{":
-        return _ignored_structured_event()
-    return _events_outcome([text_or_diagnostic_event(line)])
+        return ignored_structured_event()
+    return events_outcome([text_or_diagnostic_event(line)])
 
 
-def _text_or_diagnostic_event(text: str) -> JsonObject:
+def text_or_diagnostic_event(text: str) -> JsonObject:
     if _looks_like_host_setup_text(text):
-        return {"type": "diagnostic", "name": "host_agent_context_load", "message": _content_preview(text)}
+        return {"type": "diagnostic", "name": "host_agent_context_load", "message": content_preview(text)}
     return {"type": "text_delta", "delta": text}
 
 
@@ -259,16 +216,6 @@ def _driver_status(driver: AgentDriver, resolved: str | None) -> str:
     return "missing"
 
 
-def _claude_content_blocks(payload: JsonObject) -> list[JsonObject]:
-    message = payload.get("message")
-    content = message.get("content") if isinstance(message, dict) else payload.get("content")
-    if isinstance(content, dict):
-        return [content]
-    if isinstance(content, list):
-        return [block for block in content if isinstance(block, dict)]
-    return []
-
-
 def _codex_event(payload: JsonObject) -> JsonObject:
     nested = payload.get("payload")
     return nested if payload.get("type") == "response_item" and isinstance(nested, dict) else payload
@@ -277,26 +224,26 @@ def _codex_event(payload: JsonObject) -> JsonObject:
 def _codex_tool_call(event: JsonObject) -> JsonObject:
     return {
         "type": "tool_call",
-        "id": _clean_str(event.get("call_id")),
-        "name": _clean_str(event.get("name")) or "tool",
-        "input": _jsonish(event.get("arguments")),
+        "id": clean_str(event.get("call_id")),
+        "name": clean_str(event.get("name")) or "tool",
+        "input": jsonish(event.get("arguments")),
     }
 
 
 def _codex_tool_result(event: JsonObject) -> JsonObject:
-    result_fields = _tool_result_fields(event.get("output"))
+    result_fields = tool_result_fields(event.get("output"))
     return {
         "type": "tool_result",
-        "id": _clean_str(event.get("call_id")),
+        "id": clean_str(event.get("call_id")),
         "name": None,
         "isError": False,
         **result_fields,
     }
 
 
-def _tool_result_fields(value: Any) -> JsonObject:
-    payload = _jsonish(value)
-    content = _content_preview(value)
+def tool_result_fields(value: Any) -> JsonObject:
+    payload = jsonish(value)
+    content = content_preview(value)
     result: JsonObject = {"content": content, "payload": payload}
     permission = permission_request_from_message(content)
     if permission:
@@ -304,14 +251,14 @@ def _tool_result_fields(value: Any) -> JsonObject:
     return result
 
 
-def _jsonish(value: Any) -> Any:
+def jsonish(value: Any) -> Any:
     if isinstance(value, str):
         parsed = _json_text(value)
         return parsed if parsed is not None else value
     return value if value is not None else {}
 
 
-def _content_preview(value: Any) -> str:
+def content_preview(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
@@ -319,14 +266,14 @@ def _content_preview(value: Any) -> str:
     return _compact_json(value, limit=4000)
 
 
-def _clean_str(value: Any) -> str | None:
+def clean_str(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
 
 
-def _json_line(line: str) -> Any:
+def json_line(line: str) -> Any:
     return _json_text(line.strip())
 
 
@@ -339,9 +286,9 @@ def _json_text(text: str) -> Any:
         return None
 
 
-def _error_event(payload: JsonObject) -> JsonObject:
+def error_event(payload: JsonObject) -> JsonObject:
     message = payload.get("message") or payload.get("error") or _compact_json(payload, limit=1600)
-    text = _content_preview(message)
+    text = content_preview(message)
     event: JsonObject = {"type": "error", "message": text}
     permission = permission_request_from_message(text)
     if permission:
@@ -355,13 +302,13 @@ def permission_request_from_message(message: str) -> JsonObject | None:
     if not text:
         return None
     match = re.search(r"requested permissions? to use\s+(.+?)(?:,\s+but\b|\s+but\b|\.|\n|$)", text, flags=re.IGNORECASE)
-    tool = _clean_approved_tool(match.group(1)) if match else _file_permission_tool(text)
+    tool = clean_approved_tool(match.group(1)) if match else _file_permission_tool(text)
     if not tool:
         return None
     return {
         "kind": "host_agent_tool",
         "tool": tool,
-        "label": _permission_label(tool),
+        "label": permission_label(tool),
     }
 
 
@@ -373,20 +320,16 @@ def _file_permission_tool(message: str) -> str:
     return ""
 
 
-def clean_approved_tool(value: Any) -> str:
-    return _clean_approved_tool(value)
-
-
-def _clean_approved_tools(values: list[str] | tuple[str, ...] | None) -> list[str]:
+def clean_approved_tools(values: list[str] | tuple[str, ...] | None) -> list[str]:
     clean: list[str] = []
     for value in values or []:
-        tool = _clean_approved_tool(value)
+        tool = clean_approved_tool(value)
         if tool and tool not in clean:
             clean.append(tool)
     return clean
 
 
-def _clean_approved_tool(value: Any) -> str:
+def clean_approved_tool(value: Any) -> str:
     text = str(value or "").strip().strip("`'\"")
     if not text or len(text) > 180:
         return ""
@@ -395,7 +338,7 @@ def _clean_approved_tool(value: Any) -> str:
     return text
 
 
-def _permission_label(tool: str) -> str:
+def permission_label(tool: str) -> str:
     if tool == "WebSearch":
         return "Search the public web"
     if tool == "WebFetch":
@@ -416,7 +359,7 @@ def _permission_label(tool: str) -> str:
         return "Create or update project files"
     if tool == "Edit":
         return "Edit project files"
-    if tool.startswith("Bash("):
+    if tool == "Bash" or tool.startswith("Bash("):
         return "Shell command"
     return tool.split("(", 1)[0] or "Host-agent tool"
 
@@ -431,6 +374,26 @@ def _compact_json(value: Any, *, limit: int) -> str:
     return f"{text[:limit]}..."
 
 
+def _plain_text_adapter(**_options: Any) -> StreamAdapter:
+    return PlainTextStreamAdapter()
+
+
+def _codex_adapter(**_options: Any) -> StreamAdapter:
+    return CodexStreamAdapter()
+
+
+def _gemini_adapter(**_options: Any) -> StreamAdapter:
+    return GeminiStreamAdapter()
+
+
+def _claude_adapter(**options: Any) -> StreamAdapter:
+    # Imported at call time so the Claude session module can use these generic
+    # stream helpers without an import cycle.
+    from .portal_claude_stream import ClaudeStreamSession
+
+    return ClaudeStreamSession(session_id=str(options.get("session_id") or ""))
+
+
 AGENT_DRIVERS: tuple[AgentDriver, ...] = (
     AgentDriver(
         id="codex",
@@ -438,22 +401,37 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
         command="codex",
         summary="Runs `codex exec --json` with Genomi tools available from the host install.",
         invocation_args=("exec", "--json", "--skip-git-repo-check"),
-        stream_adapter=CodexStreamAdapter(),
+        stream_adapter_factory=_codex_adapter,
     ),
     AgentDriver(
         id="claude",
         label="Claude Code",
         command="claude",
-        summary="Available as an alternate host; the unified WebUI defaults to Codex.",
+        summary=(
+            "Runs `claude -p --output-format stream-json` bound to this portal's Genomi "
+            "MCP server and GenomiLab specialist policies, reporting denied tools instead "
+            "of bypassing permissions."
+        ),
         invocation_args=(
             "-p",
             "--output-format",
             "stream-json",
             "--verbose",
+            # Subagent text is not streamed without this, so the specialist lane
+            # and provider-receipt binding would have nothing to observe.
+            "--forward-subagent-text",
+            # Deny-and-report rather than silently proceeding; the portal
+            # surfaces the denial and retries with approved tools.
+            "--permission-mode",
+            "dontAsk",
+            # Must stay last: --allowedTools is variadic and absorbs the
+            # approved-tool retry list appended by agent_invocation.
             "--allowedTools",
             "mcp__genomi__*",
+            # Permission name of the subagent tool that streams as `Agent`.
+            "Task",
         ),
-        stream_adapter=ClaudeStreamAdapter(),
+        stream_adapter_factory=_claude_adapter,
     ),
     AgentDriver(
         id="gemini",
@@ -461,7 +439,7 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
         command="gemini",
         summary="Detected for setup visibility; a runnable GenomiLab driver needs a verified headless JSON stream contract.",
         invocation_args=("--output-format", "stream-json"),
-        stream_adapter=GeminiStreamAdapter(),
+        stream_adapter_factory=_gemini_adapter,
         runnable=False,
     ),
     AgentDriver(
@@ -470,7 +448,7 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
         command="opencode",
         summary="Detected for setup visibility; a runnable GenomiLab driver needs an explicit invocation and stream contract.",
         invocation_args=(),
-        stream_adapter=PlainTextStreamAdapter(),
+        stream_adapter_factory=_plain_text_adapter,
         runnable=False,
     ),
 )

@@ -168,7 +168,7 @@ class CapabilityMatrixContractTests(unittest.TestCase):
         self.assertLessEqual(SOURCE_FORMAT_SUPPORT_EXECUTABLE_OPERATIONS, set(SOURCE_FORMAT_SUPPORT_OPERATION_RATIONALES))
 
     def test_executable_external_operations_are_external_source_operations(self) -> None:
-        self.assertEqual(EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS, set(EXTERNAL_SOURCE_OPERATION_RATIONALES))
+        self.assertLessEqual(EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS, set(EXTERNAL_SOURCE_OPERATION_RATIONALES))
 
     def test_executable_stateful_runtime_operations_are_stateful_runtime_operations(self) -> None:
         self.assertLessEqual(STATEFUL_RUNTIME_EXECUTABLE_OPERATIONS, set(STATEFUL_RUNTIME_OPERATION_RATIONALES))

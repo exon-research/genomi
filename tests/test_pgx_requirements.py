@@ -68,9 +68,18 @@ class PGxGeneRequirementTests(unittest.TestCase):
         self.assertEqual(result["query"], {"gene": "HLA-B"})
         self.assertEqual(
             set(result),
-            {"evidence_envelope", "status", "query", "records", "summary", "source_documents"},
+            {
+                "evidence_envelope",
+                "status",
+                "query",
+                "records",
+                "summary",
+                "source_documents",
+                "result_receipt_id",
+            },
         )
         self.assertEqual(result["evidence_envelope"]["operation"], "pharmacogenomics.describe_gene_requirements")
+        self.assertTrue(result["result_receipt_id"].startswith("result-receipt-"))
 
 
 if __name__ == "__main__":

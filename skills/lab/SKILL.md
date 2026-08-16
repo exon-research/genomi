@@ -157,3 +157,163 @@ new de-identified specialist questions only where useful, and publish a new
 brief version that explains what changed. Use informational medical language
 and recommend qualified clinical confirmation for diagnosis, treatment, or
 testing decisions.
+
+## Tools
+
+Every write takes a fresh `command_id`, and every write after the investigation
+exists takes the `expected_revision` returned by the last read or write.
+
+### lab.create_investigation
+
+Create the investigation that owns every later cycle, profile revision,
+hypothesis, gap, assignment, evidence record, and brief.
+
+**Params**: `question`, `command_id`. Optional `disease_scope`, `public_only`.
+
+**Use when**: The inquiry is new and `lab.read_investigation` shows no
+investigation that already covers it.
+
+### lab.read_investigation
+
+Read current cycles, hypothesis versions, information gaps, evidence
+snapshots, specialist assignments, disclosure summaries, and published briefs.
+
+**Params**: `investigation_id`. Optional `include_history`.
+
+**Use when**: Resuming an investigation, and before every write, to get the
+current revision.
+
+### lab.update_health_profile
+
+Persist Main-Orchestrator-extracted health facts and refresh the approved
+profile snapshot and consent binding.
+
+**Params**: `investigation_id`, `facts`, `purpose`, `command_id`,
+`expected_revision`. Each fact needs `modality`, `label`, `original_wording`,
+`source_class`, `verification_state`.
+
+**Use when**: The user states or uploads health facts, or corrects earlier
+ones. Never pass Active Genome Index identity; the operation binds the selected
+approved context itself.
+
+### lab.create_cycle
+
+Create the next immutable investigation cycle for the current objective.
+
+**Params**: `investigation_id`, `purpose`, `public_only`, `command_id`,
+`expected_revision`. Optional `profile_snapshot_id`, `prior_cycle_id`.
+
+**Use when**: Starting a new round of hypothesis, evidence, and specialist
+work.
+
+### lab.create_hypothesis
+
+Create the first immutable version of a logical hypothesis with its cited
+evidence and unresolved gaps.
+
+**Params**: `investigation_id`, `cycle_id`, `statement`, `status` (`open`),
+`supporting_evidence_record_ids`, `contradicting_evidence_record_ids`,
+`contextual_evidence_record_ids`, `unresolved_gaps`, `revision_rationale`,
+`command_id`, `expected_revision`.
+
+**Use when**: A competing explanation first enters the investigation.
+
+### lab.revise_hypothesis
+
+Append a new immutable version to an existing logical hypothesis.
+
+**Params**: the `lab.create_hypothesis` fields plus `logical_hypothesis_id`,
+with `status` in `open`, `strengthened`, `weakened`, `retained`, `rejected`,
+`resolved`.
+
+**Use when**: New evidence or a new profile snapshot changes the hypothesis
+statement, status, or cited evidence. Never edit a prior version.
+
+### lab.create_information_gap
+
+Create the first immutable version of a durable unknown.
+
+**Params**: `investigation_id`, `cycle_id`, `statement`, `status` (`open`),
+`revision_rationale`, `command_id`, `expected_revision`.
+
+**Use when**: A missing fact, missing measurement, or uninstalled library
+blocks a conclusion. Do not record it as negative evidence.
+
+### lab.revise_information_gap
+
+Append a new immutable version to an existing logical information gap.
+
+**Params**: the `lab.create_information_gap` fields plus
+`logical_information_gap_id`, with `status` `open` or `resolved`.
+
+**Use when**: The gap's wording changes, or a newer approved profile or
+evidence snapshot resolves it.
+
+### lab.prepare_specialist_brief
+
+Validate a de-identified public research brief, keep the private derivation
+internal, and return only the outbound specialist payload.
+
+**Params**: `investigation_id`, `cycle_id`, `specialist_role`,
+`execution_policy`, `research_question`, `public_concepts`,
+`abstract_event_relations`, `public_evidence_record_ids`, `purpose`,
+`command_id`, `expected_revision`. Optional `source_fact_ids`.
+
+**Use when**: A bounded public research question can be answered without any
+patient-specific information.
+
+### lab.create_specialist_assignment
+
+Create the proposed assignment that a native specialist will run.
+
+**Params**: `investigation_id`, `cycle_id`, `specialist_brief_id`,
+`command_id`, `expected_revision`.
+
+**Use when**: After the brief validates and before the specialist is spawned.
+
+### lab.transition_specialist_assignment
+
+Apply one legal assignment state transition; completing an assignment records
+its general finding and closes it atomically.
+
+**Params**: `investigation_id`, `assignment_id`, `to_state` (`spawned`,
+`completed`, `failed`, `cancelled`), `command_id`, `expected_revision`.
+Optional `native_agent_id`, `general_finding`, `failure`.
+
+**Use when**: The specialist is spawned, finishes, fails, or is cancelled.
+
+### lab.capture_evidence_result
+
+Capture a durable, tamper-checked Genomi result receipt as investigation
+evidence.
+
+**Params**: `investigation_id`, `cycle_id`, `result_receipt_id`, `purpose`,
+`command_id`, `expected_revision`.
+
+**Use when**: The Main Orchestrator called a Genomi capability directly and its
+presented result should become citable evidence. Caller-supplied replacement
+evidence is rejected.
+
+### lab.capture_provider_result
+
+Redeem a policy-authorized provider receipt and bind it to the completed
+specialist assignment.
+
+**Params**: `investigation_id`, `cycle_id`, `assignment_id`,
+`specialist_brief_id`, `result_receipt_id`, `purpose`, `command_id`,
+`expected_revision`.
+
+**Use when**: A Paperclip, ESM, or Proto receipt returns with a completed
+assignment. Paperclip receipts may become public source evidence; ESM and Proto
+receipts stay nonclinical research artifacts.
+
+### lab.publish_brief
+
+Publish an immutable clinician-brief version from current investigation state.
+
+**Params**: `investigation_id`, `cycle_id`, `brief`, `command_id`,
+`expected_revision`. Every `brief.claims` entry cites `evidence_record_ids` or
+`profile_revision_ids`.
+
+**Use when**: The cycle has enough cited evidence to hand the user something a
+clinician can review.

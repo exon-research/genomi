@@ -45,19 +45,29 @@ class GenomiRuntimeAnnotationsTests(GenomiRuntimeTestCase):
         self.assertEqual(libraries["privacyScope"], "metadata_only")
         self.assertIn("library_inventory", libraries["produces"])
 
-        lab_start = by_name["lab.start_investigation"]["annotations"]
-        self.assertEqual(lab_start["operationScope"], "write")
-        self.assertTrue(lab_start["mutating"])
-        self.assertIn("portal_binding", lab_start["produces"])
-        self.assertEqual(lab_start["mcpExecution"], "inline_only")
-        self.assertEqual(lab_start["toolCapability"], "lab")
-        self.assertEqual(lab_start["dataAccess"], ["local_encrypted_genomilab_records"])
+        lab_create = by_name["lab.create_investigation"]["annotations"]
+        self.assertEqual(lab_create["operationScope"], "write")
+        self.assertTrue(lab_create["mutating"])
+        self.assertEqual(lab_create["privacyScope"], "local_private")
+        self.assertIn("investigation", lab_create["produces"])
+        self.assertEqual(lab_create["mcpExecution"], "inline_only")
+        self.assertEqual(lab_create["toolCapability"], "lab")
+        self.assertEqual(lab_create["dataAccess"], ["lab_investigation_state"])
 
-        lab_workspace = by_name["lab.describe_workspace"]["annotations"]
-        self.assertEqual(lab_workspace["operationScope"], "read")
-        self.assertFalse(lab_workspace["mutating"])
-        self.assertIn("genomilab_workspace", lab_workspace["produces"])
-        self.assertEqual(lab_workspace["mcpExecution"], "inline_only")
+        lab_read = by_name["lab.read_investigation"]["annotations"]
+        self.assertEqual(lab_read["operationScope"], "read")
+        self.assertFalse(lab_read["mutating"])
+        self.assertIn("investigation_state", lab_read["produces"])
+        self.assertEqual(lab_read["mcpExecution"], "inline_only")
+
+        lab_profile = by_name["lab.update_health_profile"]["annotations"]
+        self.assertEqual(lab_profile["operationScope"], "write")
+        self.assertTrue(lab_profile["mutating"])
+        self.assertEqual(lab_profile["externalIO"], [])
+        # Patient facts must never be written to the plaintext background-job
+        # spool, so every Lab operation runs inline over the local store.
+        self.assertEqual(lab_profile["mcpExecution"], "inline_only")
+        self.assertIn("lab_health_profile", lab_profile["dataAccess"])
 
         clinvar = by_name["clinvar.scan_candidates"]["annotations"]
         self.assertEqual(

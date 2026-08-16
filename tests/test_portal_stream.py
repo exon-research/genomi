@@ -31,7 +31,16 @@ class PortalStreamTests(unittest.TestCase):
         self.assertEqual(events[0]["id"], "toolu_1")
         self.assertEqual(events[0]["name"], "variant.resolve")
         self.assertEqual(events[0]["input"], {"rsid": "rs429358"})
-        self.assertEqual(events[1], {"type": "text_delta", "delta": "I will check the variant."})
+        # The terminal `result` line is the single source of answer text, so
+        # streamed assistant prose stays in the work trail.
+        self.assertEqual(
+            events[1],
+            {
+                "type": "diagnostic",
+                "name": "assistant_status",
+                "message": "I will check the variant.",
+            },
+        )
 
     def test_tool_result_stream_event_stays_structured(self) -> None:
         line = json.dumps(

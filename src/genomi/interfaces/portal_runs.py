@@ -12,6 +12,7 @@ from ..runtime.context import GENOMI_SESSION_ENV
 from . import (
     portal_active_context,
     portal_agents,
+    portal_claude_runtime,
     portal_codex_app_server,
     portal_codex_runtime,
     portal_context,
@@ -369,11 +370,14 @@ def run_agent(run: PortalRun) -> None:
         workspace_snapshot = portal_workspace_files.workspace_file_snapshot(cwd) if run.project_id else {}
         presentation.configure_workspace_tracking(cwd, workspace_snapshot)
         environment = _run_environment(run.project_id, run.frame_id)
+        session_id = str(environment.get(GENOMI_SESSION_ENV) or "")
         if agent_id == "codex" and Path(command[0]).name == "codex":
             command = [
                 *command,
                 *portal_codex_runtime.exec_config_args(environment),
             ]
+        elif agent_id == "claude" and Path(command[0]).name == "claude":
+            command = portal_claude_runtime.command_with_runtime(command, environment)
         use_codex_app_server = agent_id == "codex" and Path(command[0]).name == "codex"
         try:
             process = _spawn_agent_process(
@@ -423,9 +427,13 @@ def run_agent(run: PortalRun) -> None:
                     run.process = process
                     stderr_queue = queue.Queue()
                     threading.Thread(target=_read_stderr, args=(process, stderr_queue), daemon=True).start()
-                    code = _consume_exec_stream(process, agent_id, prompt, presentation)
+                    code = _consume_exec_stream(
+                        process, agent_id, prompt, presentation, session_id=session_id
+                    )
             else:
-                code = _consume_exec_stream(process, agent_id, prompt, presentation)
+                code = _consume_exec_stream(
+                    process, agent_id, prompt, presentation, session_id=session_id
+                )
         finally:
             presentation.drain_stderr(stderr_queue)
     except Exception as exc:
@@ -502,13 +510,18 @@ def _consume_exec_stream(
     agent_id: str,
     prompt: str,
     presentation: HostAgentRunPresentation,
+    *,
+    session_id: str = "",
 ) -> int:
+    # Host stream adapters may carry per-run specialist state, so each run owns
+    # its own adapter rather than sharing one across concurrent portal runs.
+    adapter = portal_agents.new_stream_adapter(agent_id, session_id=session_id)
     if process.stdin:
         process.stdin.write(prompt)
         process.stdin.close()
     assert process.stdout is not None
     for line in process.stdout:
-        parsed_line = portal_agents.parse_agent_line(agent_id, line)
+        parsed_line = adapter.parse_line(line)
         if parsed_line.events:
             for event in parsed_line.events:
                 presentation.handle_agent_event(event)
