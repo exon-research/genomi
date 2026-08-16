@@ -61,6 +61,7 @@ export function createGenomiLabController({ api, getProjectId, getFrameId = () =
       hypothesisBoardCard(investigation.hypotheses),
       specialistWorkstreamsCard(investigation.specialist_workstreams),
       informationGapsCard(investigation.information_gaps),
+      setupFaultsCard(investigation.information_gaps),
       evidenceBoardCard(investigation),
       doctorBriefCard(brief)
     ].filter(Boolean);
@@ -317,10 +318,34 @@ function hypothesisBoardCard(values) {
   return card;
 }
 
-function informationGapsCard(values) {
-  const card = boardCardShell('What is still missing');
-  const gaps = informationGapModels(values);
+// Two very different things end up recorded as gaps: facts about the person's
+// case that nobody has yet, and Genomi failing to run something. Only the first
+// is missing evidence -- the second is a setup problem the reader can actually
+// act on, and showing them in one list makes a configuration fault look like an
+// unknown about the person's health.
+const SETUP_FAULT_MARKERS = [
+  'credential',
+  'api key',
+  'unreachable',
+  'not installed',
+  'not configured',
+  'variants_ready',
+  'candidate inventory',
+  'active genome index',
+  'source families',
+  'provider was unavailable',
+  'provider was unreachable'
+];
+
+export function isSetupFaultGap(statement) {
+  const value = String(statement || '').toLowerCase();
+  return SETUP_FAULT_MARKERS.some((marker) => value.includes(marker));
+}
+
+function gapListCard(titleText, gaps, note) {
   if (!gaps.length) return null;
+  const card = boardCardShell(titleText);
+  if (note) card.append(boardParagraph(note));
   const list = document.createElement('ul');
   list.className = 'genomilab-board-list genomilab-information-gaps';
   gaps.forEach((gap) => {
@@ -335,6 +360,20 @@ function informationGapsCard(values) {
   });
   card.append(list);
   return card;
+}
+
+function informationGapsCard(values) {
+  const gaps = informationGapModels(values).filter((gap) => !isSetupFaultGap(gap.statement));
+  return gapListCard('What is still missing', gaps);
+}
+
+function setupFaultsCard(values) {
+  const gaps = informationGapModels(values).filter((gap) => isSetupFaultGap(gap.statement));
+  return gapListCard(
+    'Genomi could not finish these',
+    gaps,
+    'These are problems with this Genomi setup, not findings about you. Nothing here says anything about your health.'
+  );
 }
 
 function evidenceBoardCard(investigation) {
