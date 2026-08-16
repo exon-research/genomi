@@ -879,8 +879,6 @@
         onFrameChanged: () => scheduleFramesReload(),
         onMessagesChanged: (event) => scheduleMessagesReload(event),
         onLabInvestigationChanged: () => debounceRefresh('lab-board', genomiLab.loadBoard),
-        onLabProfileChanged: () => debounceRefresh('lab-profile', genomiLab.loadProfile),
-        onLabIntegrationChanged: () => debounceRefresh('lab-integrations', genomiLab.loadConnections),
         onArtifactsChanged: () => {
           scheduleArtifactsReload();
           scheduleWorkspaceFilesReload();
@@ -1453,8 +1451,6 @@
         return;
       }
       if (target === 'tool-launcher') ensureToolCatalogLoaded().catch(() => undefined);
-      if (target === 'patient-context-pane') genomiLab.loadProfile().catch(() => undefined);
-      if (target === 'research-connections-pane') genomiLab.loadConnections().catch(() => undefined);
     }
     function revealWorkspaceSection(target, section) {
       if (advancedWorkspaceSections.has(target)) {

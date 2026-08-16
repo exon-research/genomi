@@ -364,49 +364,37 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(second_context["active_user_id"], "user-b")
         self.assertEqual(second_context["active_agi_id"], "agi-b")
 
-    def test_health_context_collection_editor_preserves_forms_and_repeated_add(self) -> None:
+    def test_onboarding_has_only_active_genome_selection_and_natural_chat(self) -> None:
         html = portal_assets._portal_html("test-csrf-token")
         templates = Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates"
         script_path = templates / "portal_genomilab.js"
-        form_ids = [
+        script = script_path.read_text()
+        api_script = (templates / "portal_api.js").read_text()
+        intake = html.split('<section class="genomilab-intake"', 1)[1].split(
+            "</section>", 1
+        )[0]
+
+        self.assertEqual(intake.count("<button"), 1)
+        self.assertIn('data-nav-target="genome-index"', intake)
+        self.assertIn("Active Genome Index", intake)
+        self.assertIn("Ask in your own words", intake)
+        self.assertIn("Genomi will organize the details", intake)
+        self.assertIn("Tell Genomi naturally", html)
+        self.assertNotIn("data-genomilab-open", html)
+        self.assertNotIn('id="patient-context-pane"', html)
+        self.assertNotIn('id="research-connections-pane"', html)
+        for form_id in (
             "patient-observation-form",
             "patient-report-form",
             "patient-specimen-form",
             "patient-assay-form",
-        ]
-
-        self.assertIn('id="patient-context-add"', html)
-        self.assertIn('id="patient-context-type-chooser"', html)
-        for form_id in form_ids:
-            self.assertEqual(html.count(f'id="{form_id}"'), 1)
-            self.assertIn(f'data-profile-form="{form_id}"', html)
-        self.assertEqual(html.count("data-profile-entry-form hidden"), 4)
-        self.assertIn("Credential values are never shown here.", html)
-
-        if shutil.which("node") is None:
-            self.skipTest("node is required for the frontend state check")
-        node_script = f"""
-          const module = await import({script_path.as_uri()!r});
-          const ids = {json.dumps(form_ids)};
-          const first = module.profileEditorSelection(ids, ids[0]);
-          const switched = module.profileEditorSelection(ids, ids[2]);
-          const repeated = module.profileEditorSelection(ids, switched.activeFormId);
-          process.stdout.write(JSON.stringify({{ first, switched, repeated }}));
-        """
-        completed = subprocess.run(
-            ["node", "--input-type=module", "-e", node_script],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        state = json.loads(completed.stdout)
-        self.assertEqual(state["first"]["activeFormId"], form_ids[0])
-        self.assertEqual(state["switched"]["activeFormId"], form_ids[2])
-        self.assertEqual(state["repeated"], state["switched"])
-        self.assertEqual(
-            [key for key, hidden in state["repeated"]["hiddenByFormId"].items() if not hidden],
-            [form_ids[2]],
-        )
+        ):
+            self.assertNotIn(form_id, html)
+        self.assertIn("await loadBoard();", script)
+        self.assertNotIn("loadGenomiLabProfile", script)
+        self.assertNotIn("loadGenomiLabIntegrations", script)
+        self.assertNotIn("addGenomiLabObservation", api_script)
+        self.assertNotIn("changeGenomiLabIntegration", api_script)
 
     def test_completed_lab_tool_result_triggers_projection_refresh_contract(self) -> None:
         script_path = (
@@ -416,11 +404,9 @@ class PortalGenomiLabTests(unittest.TestCase):
         node_script = f"""
           const module = await import({script_path.as_uri()!r});
           globalThis.document = {{ getElementById: () => null }};
-          let profileLoads = 0;
           let boardLoads = 0;
           const controller = module.createGenomiLabController({{
             api: {{
-              loadGenomiLabProfile: async () => {{ profileLoads += 1; return {{ profile: {{ observations: [{{ label: 'Persisted fact' }}] }} }}; }},
               loadGenomiLabBoard: async () => {{ boardLoads += 1; return {{}}; }}
             }},
             getProjectId: () => 'project-1'
@@ -444,7 +430,7 @@ class PortalGenomiLabTests(unittest.TestCase):
             call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'paperclip.search_biomedical' }} }},
             result: {{ isError: false }}
           }});
-          process.stdout.write(JSON.stringify({{ completedLab, pendingLab, publicEvidence, refreshed, ignored, profileLoads, boardLoads }}));
+          process.stdout.write(JSON.stringify({{ completedLab, pendingLab, publicEvidence, refreshed, ignored, boardLoads }}));
         """
         completed = subprocess.run(
             ["node", "--input-type=module", "-e", node_script],
@@ -459,7 +445,6 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(state["publicEvidence"], "")
         self.assertTrue(state["refreshed"])
         self.assertFalse(state["ignored"])
-        self.assertEqual(state["profileLoads"], 1)
         self.assertEqual(state["boardLoads"], 1)
 
     def test_board_models_render_durable_workstreams_and_complete_brief(self) -> None:

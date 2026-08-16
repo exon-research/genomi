@@ -91,40 +91,6 @@ export async function loadGenomiLabBoard(projectId) {
   return fetchJson(genomiLabEndpoint(projectId, 'board'));
 }
 
-export async function loadGenomiLabProfile(projectId) {
-  return fetchJson(genomiLabEndpoint(projectId, 'profile'));
-}
-
-export async function addGenomiLabObservation(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'profile/observations'), payload);
-}
-
-export async function addGenomiLabSourceArtifact(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'profile/source-artifacts'), payload);
-}
-
-export async function addGenomiLabSpecimen(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'profile/specimens'), payload);
-}
-
-export async function addGenomiLabAssay(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'profile/assays'), payload);
-}
-
-export async function loadGenomiLabIntegrations(projectId) {
-  return fetchJson(genomiLabEndpoint(projectId, 'integrations'));
-}
-
-export async function changeGenomiLabIntegration(projectId, provider, action, payload = {}) {
-  return postJson(
-    genomiLabEndpoint(
-      projectId,
-      'integrations/' + encodeURIComponent(provider) + '/' + encodeURIComponent(action)
-    ),
-    payload
-  );
-}
-
 export async function createGenomiLabInvestigation(projectId, payload = {}) {
   return postJson(genomiLabEndpoint(projectId, 'investigations'), payload);
 }

@@ -132,24 +132,18 @@
           </form>
           <section class="genomilab-intake" data-workspace-nav aria-labelledby="genomilab-intake-title">
             <h2 id="genomilab-intake-title">What would you like to investigate?</h2>
-            <p>Ask in your own words. Add only the health history, testing, or research connections that matter for this inquiry.</p>
-            <div class="genomilab-context-strip" aria-label="Inquiry context">
+            <p>Ask in your own words. Describe your health history, medications, testing, and any uploaded records that matter; Genomi will organize the details and use Lab when the investigation needs it.</p>
+            <div class="genomilab-context-strip" aria-label="Active Genome Index selection">
               <button type="button" data-nav-target="genome-index">
-                <span>Genome</span><strong id="onboarding-agi-state">Checking context…</strong>
-              </button>
-              <button type="button" data-genomilab-open="health-testing-step">
-                <span>Health &amp; testing</span><strong id="onboarding-profile-state">No context added</strong>
-              </button>
-              <button type="button" data-genomilab-open="research-connections-step">
-                <span>Research connections</span><strong id="onboarding-connections-state">Checking availability…</strong>
+                <span>Active Genome Index</span><strong id="onboarding-agi-state">Checking context…</strong>
               </button>
             </div>
           </section>
           <form id="composer" class="composer">
             <div id="prompt-context" class="prompt-context" hidden></div>
-            <textarea id="prompt" placeholder="Example: Review CYP2C19 and clopidogrel evidence, separating public sources from any approved active genome."></textarea>
+            <textarea id="prompt" placeholder="Describe what has been happening, relevant health history or tests, and what you want to understand."></textarea>
             <div class="composer-row">
-              <span class="small">Local-first. Evidence comes from Genomi and the current chat.</span>
+              <span class="small">Tell Genomi naturally; it will organize your context and research the question.</span>
               <button id="send" class="primary" type="submit">Send</button>
             </div>
           </form>
@@ -209,84 +203,6 @@
               <button id="copy-context" class="secondary" type="button">Copy technical state</button>
               <pre id="context" class="json">Loading...</pre>
             </details>
-          </div>
-          <div id="patient-context-pane" class="pane genomilab-pane" data-nav-section="patient-context-pane" hidden>
-            <div class="pane-header">
-              <div><h2>Health &amp; testing context</h2><p class="small">Reusable facts stay local and are not sent to a model unless you include them in an inquiry.</p></div>
-              <div class="genomilab-pane-actions">
-                <button id="patient-context-add" class="primary" type="button" aria-expanded="false" aria-controls="patient-context-editor">Add context</button>
-                <button id="refresh-patient-context" class="secondary" type="button">Refresh</button>
-              </div>
-            </div>
-            <div id="patient-context-status" class="genomilab-status" role="status"></div>
-            <div id="patient-context-summary" class="genomilab-summary"></div>
-            <div id="patient-context-editor" class="genomilab-collection-editor" hidden>
-              <div id="patient-context-type-chooser" class="genomilab-type-chooser" role="group" aria-label="Context type">
-                <button type="button" data-profile-form="patient-observation-form" aria-pressed="false"><strong>Health fact</strong><span>Condition, symptom, family history, medication, or finding</span></button>
-                <button type="button" data-profile-form="patient-report-form" aria-pressed="false"><strong>Report</strong><span>Fingerprint a local medical or laboratory record</span></button>
-                <button type="button" data-profile-form="patient-specimen-form" aria-pressed="false"><strong>Specimen</strong><span>Describe the sample behind a result</span></button>
-                <button type="button" data-profile-form="patient-assay-form" aria-pressed="false"><strong>Test or assay</strong><span>Record tested scope and detection limits</span></button>
-              </div>
-              <div class="genomilab-form-stage">
-              <form id="patient-observation-form" class="genomilab-form" data-profile-entry-form hidden>
-                <h3>Add health context</h3>
-                <label>Type<select name="modality" required>
-                  <option value="condition">Condition</option>
-                  <option value="phenotype">Symptom or phenotype</option>
-                  <option value="family_history">Family history</option>
-                  <option value="measurement">Lab or measurement</option>
-                  <option value="medication">Medication</option>
-                  <option value="reported_germline_finding">Reported germline finding</option>
-                  <option value="reported_somatic_finding">Reported tumor finding</option>
-                  <option value="pathology">Pathology observation</option>
-                  <option value="biomarker">Biomarker</option>
-                </select></label>
-                <label>What was observed or reported?<textarea name="label" rows="3" maxlength="500" required></textarea></label>
-                <label>Status<select name="assertion_status"><option value="present">Present</option><option value="absent">Not detected or absent</option><option value="unknown">Unknown</option></select></label>
-                <label>Source report<select name="artifact_id" data-profile-artifact-select><option value="">No linked report</option></select></label>
-                <label>Specimen<select name="specimen_id" data-profile-specimen-select><option value="">No linked specimen</option></select></label>
-                <label>Assay<select name="assay_id" data-profile-assay-select><option value="">No linked assay</option></select></label>
-                <div class="genomilab-form-actions"><button class="primary" type="submit">Save context</button><button class="secondary" type="button" data-profile-form-cancel>Cancel</button></div>
-              </form>
-              <form id="patient-report-form" class="genomilab-form" data-profile-entry-form hidden>
-                <h3>Register a report</h3>
-                <p class="small">The file is fingerprinted in your browser. GenomiLab stores the fingerprint and entered metadata, not the file bytes.</p>
-                <label>Local report<input name="report_file" type="file" accept=".pdf,.txt,.rtf,.doc,.docx,.png,.jpg,.jpeg" required></label>
-                <label>Title<input name="title" maxlength="300" required></label>
-                <label>Source type<select name="source_type"><option value="issued_report">Issued report</option><option value="laboratory_report">Laboratory report</option><option value="pathology_report">Pathology report</option><option value="clinical_note">Clinical note</option></select></label>
-                <label>Issued date<input name="issued_at" type="date"></label>
-                <div class="genomilab-form-actions"><button class="primary" type="submit">Register fingerprint</button><button class="secondary" type="button" data-profile-form-cancel>Cancel</button></div>
-              </form>
-              <form id="patient-specimen-form" class="genomilab-form" data-profile-entry-form hidden>
-                <h3>Add specimen</h3>
-                <label>Specimen type<input name="specimen_type" maxlength="200" placeholder="Blood, saliva, tumor tissue" required></label>
-                <label>Report<select name="artifact_id" data-profile-artifact-select><option value="">No linked report</option></select></label>
-                <label>Body site<input name="body_site" maxlength="200"></label>
-                <label>Role<select name="tumor_normal_role"><option value="unknown">Unknown</option><option value="normal">Normal</option><option value="tumor">Tumor</option></select></label>
-                <div class="genomilab-form-actions"><button class="primary" type="submit">Save specimen</button><button class="secondary" type="button" data-profile-form-cancel>Cancel</button></div>
-              </form>
-              <form id="patient-assay-form" class="genomilab-form" data-profile-entry-form hidden>
-                <h3>Add test or assay</h3>
-                <label>Assay type<input name="assay_type" maxlength="200" required></label>
-                <label>Report<select name="artifact_id" data-profile-artifact-select><option value="">No linked report</option></select></label>
-                <label>Specimen<select name="specimen_id" data-profile-specimen-select><option value="">No linked specimen</option></select></label>
-                <label>What did the test cover?<textarea name="assay_scope" rows="2" maxlength="2000" required></textarea></label>
-                <label>Detection limits<textarea name="detection_limits" rows="2" maxlength="2000" required></textarea></label>
-                <label>Laboratory<input name="laboratory" maxlength="300"></label>
-                <label>Platform<input name="platform" maxlength="300"></label>
-                <label>Genome build<input name="genome_build" maxlength="50" placeholder="GRCh38"></label>
-                <div class="genomilab-form-actions"><button class="primary" type="submit">Save assay</button><button class="secondary" type="button" data-profile-form-cancel>Cancel</button></div>
-              </form>
-              </div>
-            </div>
-          </div>
-          <div id="research-connections-pane" class="pane genomilab-pane" data-nav-section="research-connections-pane" hidden>
-            <div class="pane-header">
-              <div><h2>Research connections</h2><p class="small">Genomi uses configured research capabilities when they help answer your question. Credential values are never shown here.</p></div>
-              <button id="refresh-research-connections" class="secondary" type="button">Refresh</button>
-            </div>
-            <div id="research-connections-status" class="genomilab-status" role="status"></div>
-            <div id="research-connections-list" class="genomilab-connections"></div>
           </div>
           <div id="tool-launcher" class="pane" data-nav-section="tool-launcher" hidden>
             <div class="pane-header">

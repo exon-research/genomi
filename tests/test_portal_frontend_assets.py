@@ -546,11 +546,18 @@ class PortalFrontendAssetTests(unittest.TestCase):
         self.assertIn('id="work-trace-pane" class="pane" data-nav-section="work-trace-pane" hidden', html)
         self.assertIn('id="genome-index" class="pane" data-nav-section="genome-index" hidden', html)
         self.assertIn('id="tool-launcher" class="pane" data-nav-section="tool-launcher" hidden', html)
-        self.assertIn('data-genomilab-open="health-testing-step"', html)
-        self.assertIn('data-genomilab-open="research-connections-step"', html)
+        intake = html.split('<section class="genomilab-intake"', 1)[1].split('</section>', 1)[0]
+        self.assertEqual(intake.count('<button'), 1)
+        self.assertIn('data-nav-target="genome-index"', intake)
+        self.assertIn('Active Genome Index', intake)
+        self.assertIn('Ask in your own words', intake)
+        self.assertNotIn('data-genomilab-open', html)
+        self.assertNotIn('id="patient-context-pane"', html)
+        self.assertNotIn('id="research-connections-pane"', html)
         self.assertIn('id="genomilab-case-board"', html)
-        self.assertIn("mountJourney();", genomilab)
-        self.assertIn("await Promise.all([loadProfile(), loadConnections(), loadBoard()]);", genomilab)
+        self.assertIn("await loadBoard();", genomilab)
+        self.assertNotIn("loadGenomiLabProfile", genomilab)
+        self.assertNotIn("loadGenomiLabIntegrations", genomilab)
         self.assertIn(
             "new Set(['evidence-ledger-pane', 'work-trace-pane', 'genome-index', 'tool-launcher'])",
             portal,
