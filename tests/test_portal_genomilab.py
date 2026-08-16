@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from genomi.interfaces import portal_assets, portal_genomilab, portal_store
+from genomi.runtime import context as runtime_context
 
 
 class _FakeGenomiLabService:
@@ -80,6 +82,65 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(profile["status"], "ready")
         self.assertEqual(profile["profile"]["observations"], [])
         self.assertEqual(integrations["integrations"][0]["provider"], "paperclip")
+
+    def test_profile_api_projects_canonical_current_facts_and_keeps_history(
+        self,
+    ) -> None:
+        context = {"active_user_id": "user-a", "active_agi_id": None}
+        environment = {
+            "GENOMI_HOME": str(self.root / "genomi-home"),
+            "GENOMI_CONTEXT": "",
+            "GENOMI_SESSION_ID": "portal-profile-projection-test",
+            **{name: "" for name in runtime_context.AGENT_SESSION_ENVS},
+        }
+        with mock.patch.dict(os.environ, environment):
+            application = portal_genomilab._PortalGenomiLabApplication(
+                session_id="portal-profile-projection-test",
+                context_provider=lambda: context,
+            )
+            application.bootstrap_workspace()
+            original = application.add_profile_observation(
+                {
+                    "modality": "phenotype",
+                    "label": "Recurrent synthetic episodes",
+                    "original_wording": "The synthetic episodes keep happening",
+                    "source_class": "model_extracted",
+                    "verification_state": "unreviewed",
+                    "assertion_author": "model",
+                }
+            )
+            latest = application.add_profile_observation(
+                {
+                    "modality": "phenotype",
+                    "label": "Repeated synthetic episode",
+                    "original_wording": "I continue to experience the synthetic event",
+                    "source_class": "model_extracted",
+                    "verification_state": "unreviewed",
+                    "assertion_author": "model",
+                }
+            )
+            projected = portal_genomilab.project_profile(
+                self.project_id,
+                service=application,
+                root=self.root,
+            )["profile"]
+
+        self.assertEqual(len(projected["observations"]), 1)
+        self.assertEqual(
+            projected["observations"][0]["observation_revision_id"],
+            latest["observation_revision_id"],
+        )
+        self.assertEqual(len(projected["observation_history"]), 2)
+        self.assertEqual(
+            {
+                item["observation_revision_id"]
+                for item in projected["observation_history"]
+            },
+            {
+                original["observation_revision_id"],
+                latest["observation_revision_id"],
+            },
+        )
 
     def test_health_and_testing_entities_delegate_to_genomilab_service(self) -> None:
         portal_genomilab.add_profile_observation(

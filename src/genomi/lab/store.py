@@ -24,6 +24,7 @@ from .models import (
 from .orchestrator_state_store import OrchestratorStateStoreMixin
 from .orchestrator_brief_store import OrchestratorBriefStoreMixin
 from .orchestrator_hypothesis_store import OrchestratorHypothesisStoreMixin
+from .profile_fact_identity import unique_current_profile_observations
 from .profile_entities import ProfileEntityStoreMixin
 from .result_receipts import ResultReceiptStoreMixin
 from .schema_migrations import upgrade_lab_schema
@@ -181,9 +182,12 @@ class GenomiLabStore(
                 (user_id,),
             ).fetchall()
         result = row_dict(workspace)
+        current_observations = unique_current_profile_observations(
+            self.list_profile_observations(user_id, current_only=True)
+        )
         result["profile"] = {
             "user_id": user_id,
-            "observations": self.list_profile_observations(user_id, current_only=True),
+            "observations": current_observations,
             "observation_history": self.list_profile_observations(
                 user_id, current_only=False
             ),
