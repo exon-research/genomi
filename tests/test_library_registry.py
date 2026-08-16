@@ -78,6 +78,7 @@ class LibraryRegistryTests(unittest.TestCase):
                 "pgxdb",
                 "quickgo",
                 "reactome",
+                "uniprot",
             },
         )
         for spec in online:

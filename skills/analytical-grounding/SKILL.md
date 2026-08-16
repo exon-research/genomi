@@ -1,12 +1,14 @@
 ---
 name: analytical-grounding
 description: |
-  Retrieve canonical pathway members, cell-type marker records, and genomic
-  interval feature overlaps from declared analytical sources.
+  Retrieve canonical pathway members, cell-type marker records, genomic
+  interval feature overlaps, and public reference protein sequences from
+  declared analytical sources.
 tools:
   - pathway.retrieve_members
   - cell_type.retrieve_markers
   - region.retrieve_features
+  - protein.retrieve_reference_sequence
 mutating: false
 ---
 
@@ -98,3 +100,25 @@ Retrieve genomic-region feature annotations from supplied or installed GENCODE a
 **Why necessary**: Genomic coordinates need gene and regulatory feature context before they can be biologically discussed.
 
 **Result semantics**: Returns source-declared interval overlaps for the assembly shown in query. Empty results mean no overlap in declared files, not biological absence outside declared coverage.
+
+### protein.retrieve_reference_sequence
+
+Retrieve the public UniProt reference amino-acid sequence and entry provenance
+for a declared accession or reviewed gene symbol.
+
+**Use when**: A downstream step needs the canonical reference sequence itself —
+for example before comparing a reference and substituted sequence through
+`biohub.compare_protein_embeddings`. Pass `accession` when the entry is already
+known; pass `gene_symbol` with `organism_taxon_id` when it is not.
+
+**Why necessary**: Sequence-model and sequence-utility operations take the
+sequence as an input. Without a retrieval step the agent has no supported way to
+obtain one, and a pasted sequence carries no entry identity.
+
+**Result semantics**: Returns one reviewed entry with `sequence`,
+`sequence_length`, `entry_version`, `sequence_version`, CRC64/MD5 checksums, and
+the source record URL, so a later comparison can state exactly which sequence it
+used. A well-formed identifier with no reviewed entry is an empty in-scope
+result, not evidence that the protein does not exist. Ambiguous gene-symbol
+lookups return `resolution_candidates` for the agent to choose from rather than
+guessing.

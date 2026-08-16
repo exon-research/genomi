@@ -167,6 +167,7 @@ EXTERNAL_SOURCE_OPERATION_RATIONALES = {
     "pharmacogenomics.fetch_fda_labels": "live FDA label source fetch",
     "pharmacogenomics.fetch_pgxdb": "live PGxDB source fetch",
     "phenotype.retrieve_disease_drug_targets": "live Open Targets drug-candidate query",
+    "protein.retrieve_reference_sequence": "live UniProt reference-sequence fetch",
     "phenotype.retrieve_trait_gene_records": "live Open Targets trait-gene query",
     "paperclip.retrieve_document_evidence": "live Paperclip document evidence retrieval",
     "paperclip.search_biomedical": "live Paperclip biomedical literature search",
@@ -175,9 +176,12 @@ EXTERNAL_SOURCE_OPERATION_RATIONALES = {
     "proto.search_tools": "live Proto tool catalog search",
 }
 EXTERNAL_SOURCE_OPERATIONS = frozenset(EXTERNAL_SOURCE_OPERATION_RATIONALES)
-# Credential-gated provider operations stay declared but non-executable in the
-# source-format sweep: they need an authorized provider account, so CI covers
-# them in their own capability tests instead.
+# These stay declared but non-executable in the source-format sweep, and are
+# covered by their own capability tests instead. Provider operations need an
+# authorized account; protein.retrieve_reference_sequence takes a public
+# accession rather than anything derived from the parsed source, so sweeping it
+# once per source format would repeat the same live UniProt fetch without
+# testing any source format.
 EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS = EXTERNAL_SOURCE_OPERATIONS - {
     "biohub.compare_protein_embeddings",
     "paperclip.retrieve_document_evidence",
@@ -185,6 +189,7 @@ EXTERNAL_SOURCE_EXECUTABLE_OPERATIONS = EXTERNAL_SOURCE_OPERATIONS - {
     "proto.describe_tool_schema",
     "proto.run_tool",
     "proto.search_tools",
+    "protein.retrieve_reference_sequence",
 }
 
 STATEFUL_RUNTIME_OPERATION_RATIONALES = {
