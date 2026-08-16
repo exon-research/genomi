@@ -114,7 +114,8 @@ export function hypothesisModels(values) {
       statement: text(item.statement || item.title || item.summary),
       status,
       statusLabel: labels[status] || humanLabel(status),
-      rationale: text(item.revision_rationale)
+      rationale: text(item.revision_rationale),
+      gaps: array(item.unresolved_gaps).map((gap) => text(gap && (gap.question || gap.statement) ? (gap.question || gap.statement) : gap)).filter(Boolean)
     };
   }).filter((item) => item.statement);
 }
@@ -138,19 +139,33 @@ export function informationGapModels(values) {
 }
 
 export function specialistWorkstreamModels(values) {
+  // These describe what happened to a workstream, not a chore for the reader.
+  // "Needs attention" asked the person to act on something they cannot reach:
+  // an unfinished workstream is Genomi's to reassign, and what it was missing
+  // is already recorded under what is still missing.
   const states = {
     proposed: 'Ready to start',
     spawned: 'Researching',
     completed: 'Findings added',
-    failed: 'Needs attention',
+    failed: 'Returned no findings',
     cancelled: 'Stopped'
   };
-  return array(values).filter((item) => item && typeof item === 'object').map((item) => ({
-    role: humanLabel(item.specialist_role || 'Research specialist'),
-    status: states[text(item.state)] || 'Status pending',
-    finding: text(item.finding),
-    gaps: array(item.gaps).map(text).filter(Boolean)
-  }));
+  const outcomes = {
+    specialist_returned_no_analysis: 'Finished without reporting findings; Genomi can reassign it as a narrower question.',
+    specialist_run_did_not_complete: 'Did not finish; Genomi can reassign it or record what it was after as missing evidence.',
+    specialist_provider_unavailable: 'Its evidence source was unavailable; Genomi can retry it later.',
+    specialist_policy_violation: 'Its result was discarded because it went outside the evidence it was allowed to use.'
+  };
+  return array(values).filter((item) => item && typeof item === 'object').map((item) => {
+    const guidance = text(item.guidance || item.outcome || '').split(':')[0];
+    return {
+      role: humanLabel(item.specialist_role || 'Research specialist'),
+      status: states[text(item.state)] || 'Status pending',
+      outcome: outcomes[guidance] || '',
+      finding: text(item.finding),
+      gaps: array(item.gaps).map(text).filter(Boolean)
+    };
+  });
 }
 
 export function investigationStatusModel(value) {
@@ -235,6 +250,11 @@ function specialistWorkstreamsCard(values) {
     heading.className = 'genomilab-workstream-heading';
     heading.append(role, status);
     item.append(heading);
+    if (workstream.outcome) {
+      const outcome = boardParagraph(workstream.outcome);
+      outcome.className = 'genomilab-workstream-outcome';
+      item.append(outcome);
+    }
     if (workstream.finding) item.append(boardParagraph(workstream.finding));
     if (workstream.gaps.length) appendInlineList(item, 'Still needed', workstream.gaps);
     list.append(item);
@@ -244,9 +264,11 @@ function specialistWorkstreamsCard(values) {
 }
 
 function hypothesisBoardCard(values) {
-  const card = boardCardShell('Competing explanations');
   const hypotheses = hypothesisModels(values);
   if (!hypotheses.length) return null;
+  // Say how many explanations are in play up front: holding several open at
+  // once is the point of the investigation, not an implementation detail.
+  const card = boardCardShell('Competing explanations (' + hypotheses.length + ')');
   const list = document.createElement('ol');
   list.className = 'genomilab-board-list genomilab-hypotheses';
   hypotheses.forEach((hypothesis) => {
@@ -258,10 +280,11 @@ function hypothesisBoardCard(values) {
     statement.textContent = hypothesis.statement;
     item.append(state, statement);
     if (hypothesis.rationale) {
-      const rationale = boardParagraph(hypothesis.rationale);
+      const rationale = boardParagraph('Why it moved: ' + hypothesis.rationale);
       rationale.className = 'genomilab-hypothesis-rationale';
       item.append(rationale);
     }
+    if (hypothesis.gaps.length) appendInlineList(item, 'Waiting on', hypothesis.gaps);
     list.append(item);
   });
   card.append(list);
