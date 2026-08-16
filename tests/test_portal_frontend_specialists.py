@@ -253,7 +253,7 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
             "Literature findings ready.",
         )
         self.assertEqual(
-            completed["summary"], "1 findings added · 1 returned nothing"
+            completed["summary"], "1 findings added · 1 no findings"
         )
         self.assertEqual(result["names"], [True, True, False])
 

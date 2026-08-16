@@ -469,14 +469,12 @@ class PortalGenomiLabTests(unittest.TestCase):
                 {
                     "role": "Rare disease",
                     "status": "Findings added",
-                    "outcome": "",
                     "finding": "The pattern warrants parallel review.",
                     "gaps": ["Original report"],
                 },
                 {
                     "role": "Medication safety",
                     "status": "Researching",
-                    "outcome": "",
                     "finding": "",
                     "gaps": [],
                 },

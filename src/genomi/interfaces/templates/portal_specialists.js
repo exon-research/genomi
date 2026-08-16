@@ -184,9 +184,7 @@ export function renderSpecialistLane(stack, records = []) {
     ? 'Coordinating research'
     : model.parentStatus === 'completed'
       ? 'Research coordination complete'
-      : model.parentStatus === 'error'
-        ? 'Some research did not come back'
-        : model.summary;
+      : model.summary;
   if (model.parentStatus) header.querySelector('em').className = model.parentStatus;
   lane.appendChild(header);
 
@@ -494,15 +492,13 @@ function specialistSummaryText(counts) {
     counts.running ? counts.running + ' in progress' : '',
     counts.waiting ? counts.waiting + ' ready' : '',
     counts.completed ? counts.completed + ' findings added' : '',
-    counts.error ? counts.error + ' returned nothing' : ''
+    counts.error ? counts.error + ' no findings' : ''
   ].filter(Boolean).join(' · ') || 'Coordinating research';
 }
 
-// A workstream that did not come back is Genomi's to reassign; the reader has
-// nothing to attend to and no control to attend it with. Say what happened.
 function statusLabel(status) {
   if (status === 'completed') return 'Findings added';
-  if (status === 'error') return 'Returned no findings';
+  if (status === 'error') return 'No findings';
   if (status === 'waiting') return 'Ready';
   return 'Researching';
 }
