@@ -97,7 +97,9 @@ def _sequence(value: str) -> str:
 
 def _mean_embedding(call: Transport, sequence: str, model: str, token: str) -> list[float]:
     encoded = _unwrap(call("/api/v1/encode", {"inputs": {"sequence": sequence}, "model": model}, token))
-    token_ids = encoded.get("sequence") or encoded.get("tokens")
+    outputs = encoded.get("outputs")
+    token_ids = outputs.get("sequence") if isinstance(outputs, dict) else None
+    token_ids = token_ids or encoded.get("sequence") or encoded.get("tokens")
     if not isinstance(token_ids, list):
         raise ValueError("Biohub encode response did not contain tokens")
     result = _unwrap(
@@ -118,7 +120,7 @@ def _mean_embedding(call: Transport, sequence: str, model: str, token: str) -> l
         )
     )
     vector = result.get("mean_embedding")
-    if isinstance(vector, list) and len(vector) == 1 and isinstance(vector[0], list):
+    while isinstance(vector, list) and len(vector) == 1 and isinstance(vector[0], list):
         vector = vector[0]
     if not isinstance(vector, list):
         raise ValueError("Biohub logits response did not contain a mean embedding")

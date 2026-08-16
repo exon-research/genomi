@@ -115,8 +115,8 @@ class ExternalCapabilityTests(unittest.TestCase):
         def transport(path: str, payload: dict[str, object], token: str) -> dict[str, object]:
             self.assertEqual(token, "biohub-test-secret")
             if path.endswith("encode"):
-                return {"sequence": [1, 2, 3]}
-            return {"mean_embedding": list(next(vectors))}
+                return {"outputs": {"sequence": [1, 2, 3]}}
+            return {"mean_embedding": [[list(next(vectors))]]}
 
         with external_credential_session({"BIOHUB_API_KEY": "biohub-test-secret"}):
             result = compare_protein_embeddings(
