@@ -130,7 +130,7 @@ export function specialistLaneModel(records = []) {
     specialists.forEach((specialist) => {
       if (!['running', 'waiting'].includes(specialist.status)) return;
       specialist.status = 'error';
-      specialist.summary = 'Turn ended before the assignment reached a durable terminal state';
+      specialist.summary = 'This research workstream stopped before findings were saved.';
     });
   }
 
@@ -167,13 +167,13 @@ export function renderSpecialistLane(stack, records = []) {
 
   const header = document.createElement('div');
   header.className = 'specialist-lane-head';
-  header.innerHTML = '<div><span>Live collaboration</span><strong>Specialists</strong></div><em></em>';
+  header.innerHTML = '<div><span>Investigation team</span><strong>Research workstreams</strong></div><em></em>';
   header.querySelector('em').textContent = model.parentWaiting
-    ? 'Parent waiting'
+    ? 'Coordinating research'
     : model.parentStatus === 'completed'
-      ? 'Parent wait completed'
+      ? 'Research coordination complete'
       : model.parentStatus === 'error'
-        ? 'Parent wait error'
+        ? 'Research coordination needs attention'
         : model.summary;
   if (model.parentStatus) header.querySelector('em').className = model.parentStatus;
   lane.appendChild(header);
@@ -217,7 +217,7 @@ function labAssignmentUpdate(record) {
   return {
     assignmentId,
     nativeAgentId: clean(assignment.native_agent_id),
-    title: clean(assignment.specialist_role) || 'Research specialist',
+    title: humanTaskName(assignment.specialist_role) || 'Research workstream',
     policy,
     revision: Number(assignment.revision) || 0,
     status: labDisplayStatus(state),
@@ -265,11 +265,11 @@ function labDisplayStatus(state) {
 
 function policySummary(policy) {
   return {
-    reasoning_only: 'Isolated reasoning · no inherited tools or workspace',
-    public_literature: 'Isolated public literature research · Paperclip',
-    protein_model_research: 'Isolated protein model research · ESM',
-    experiment_design: 'Isolated experiment design · Proto'
-  }[policy] || 'Isolated specialist assignment';
+    reasoning_only: 'Focused analysis in progress',
+    public_literature: 'Reviewing public biomedical literature',
+    protein_model_research: 'Comparing protein-model evidence',
+    experiment_design: 'Developing an experiment plan'
+  }[policy] || 'Focused research workstream';
 }
 
 function mergeSpecialists(target, source, specialists) {
@@ -433,21 +433,21 @@ function registerIdentities(index, specialist) {
 
 function specialistTitle(input) {
   const specialistRole = clean(input.specialist_role || input.specialistRole);
-  if (specialistRole) return specialistRole;
+  if (specialistRole) return humanTaskName(specialistRole);
   const taskName = clean(input.task_name || input.taskName);
   if (taskName) return humanTaskName(taskName);
   const message = compact(input.message || input.objective, 72);
-  return message || 'Research specialist';
+  return message || 'Research workstream';
 }
 
 function specialistSummary(input) {
-  return compact(input.message || input.objective, 150) || 'Independent specialist task';
+  return compact(input.message || input.objective, 150) || 'Focused research in progress';
 }
 
 function humanTaskName(value) {
   const leaf = clean(value).split('/').filter(Boolean).pop() || clean(value);
   const text = leaf.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Research specialist';
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Research workstream';
 }
 
 function normalizedStatus(value) {
@@ -473,15 +473,15 @@ function countStatuses(specialists) {
 
 function specialistSummaryText(counts) {
   return [
-    counts.running ? counts.running + ' running' : '',
-    counts.waiting ? counts.waiting + ' waiting' : '',
-    counts.completed ? counts.completed + ' completed' : '',
-    counts.error ? counts.error + ' error' + (counts.error === 1 ? '' : 's') : ''
-  ].filter(Boolean).join(' · ') || 'Coordinating specialists';
+    counts.running ? counts.running + ' in progress' : '',
+    counts.waiting ? counts.waiting + ' ready' : '',
+    counts.completed ? counts.completed + ' findings added' : '',
+    counts.error ? counts.error + ' need' + (counts.error === 1 ? 's' : '') + ' attention' : ''
+  ].filter(Boolean).join(' · ') || 'Coordinating research';
 }
 
 function statusLabel(status) {
-  return status === 'completed' ? 'Completed' : status === 'error' ? 'Error' : status === 'waiting' ? 'Waiting' : 'Running';
+  return status === 'completed' ? 'Findings added' : status === 'error' ? 'Needs attention' : status === 'waiting' ? 'Ready' : 'Researching';
 }
 
 function toolLeaf(value) {

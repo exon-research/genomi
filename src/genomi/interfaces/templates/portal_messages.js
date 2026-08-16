@@ -549,7 +549,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const recoveredOperation = recoveredOperationFromSummary(summary);
     if (isSpecialistToolName(name)) {
       return {
-        title: 'Specialist collaboration',
+        title: 'Research workstream',
         status: record.result ? (record.result.isError ? 'error' : 'done') : 'running',
         summary,
         technical: true
@@ -844,8 +844,8 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const toggle = stack.querySelector('.tool-stack-toggle');
     const title = stack.querySelector('.tool-stack-title');
     const summary = stack.querySelector('.tool-stack-summary');
-    const titleText = specialistOnly ? 'Specialists' : model.title;
-    const summaryText = specialistOnly ? (specialistLane.dataset.summary || 'Coordinating specialists') : model.summary;
+    const titleText = specialistOnly ? 'Research workstreams' : model.title;
+    const summaryText = specialistOnly ? (specialistLane.dataset.summary || 'Coordinating research') : model.summary;
     const statusText = specialistOnly ? (specialistLane.dataset.status === 'completed' ? 'done' : specialistLane.dataset.status) : model.status;
     if (statusNode) statusNode.className = 'tool-status ' + statusText;
     if (head) head.setAttribute('aria-label', titleText + ': ' + summaryText);

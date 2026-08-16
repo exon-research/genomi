@@ -219,7 +219,7 @@ class HostAgentRunPresentation:
             # its canonical continuation target.
             return
         try:
-            portal_genomilab.bind_investigation(
+            portal_genomilab._bind_observed_investigation(
                 project_id,
                 investigation_id=investigation_id,
                 frame_id=frame_id,

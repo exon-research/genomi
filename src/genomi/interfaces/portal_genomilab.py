@@ -7,7 +7,6 @@ The portal persists only the identity binding needed to open the right board.
 from __future__ import annotations
 
 import threading
-import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,16 +36,8 @@ class _GenomiLabApplication(Protocol):
     def bootstrap_workspace(self) -> JsonObject: ...
     def molecular_profile(self) -> JsonObject: ...
     def integrations(self) -> JsonObject: ...
-    def add_profile_observation(self, payload: JsonObject) -> JsonObject: ...
-    def add_source_artifact(self, payload: JsonObject) -> JsonObject: ...
-    def add_specimen(self, payload: JsonObject) -> JsonObject: ...
-    def add_assay(self, payload: JsonObject) -> JsonObject: ...
-    def connect_integration(self, provider: str, payload: JsonObject) -> JsonObject: ...
-    def verify_integration(self, provider: str) -> JsonObject: ...
-    def disconnect_integration(self, provider: str, *, confirmed: bool) -> JsonObject: ...
     def list_investigations(self) -> list[JsonObject]: ...
     def investigation(self, investigation_id: str) -> JsonObject: ...
-    def create_investigation(self, payload: JsonObject) -> JsonObject: ...
 
 
 _SERVICES: dict[tuple[str, str], _GenomiLabApplication] = {}
@@ -180,166 +171,7 @@ def project_integrations(
     return application.integrations()
 
 
-def add_profile_observation(
-    project_id: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    _require_project(project_id, root=root)
-    observation = (
-        service or _application_service(project_id, root=root)
-    ).add_profile_observation(payload)
-    revision_id = str(observation.get("observation_revision_id") or "")
-    _emit_status(
-        project_id,
-        "genomilab_profile_changed",
-        status="updated",
-        reason="observation_added",
-        observation_revision_id=revision_id,
-        root=root,
-    )
-    return {"status": "updated", "observation": observation}
-
-
-def add_profile_source_artifact(
-    project_id: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    _require_project(project_id, root=root)
-    artifact = (
-        service or _application_service(project_id, root=root)
-    ).add_source_artifact(payload)
-    _emit_status(
-        project_id,
-        "genomilab_profile_changed",
-        status="updated",
-        reason="source_artifact_added",
-        artifact_id=str(artifact.get("artifact_id") or ""),
-        root=root,
-    )
-    return {"status": "updated", "source_artifact": artifact}
-
-
-def add_profile_specimen(
-    project_id: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    _require_project(project_id, root=root)
-    specimen = (
-        service or _application_service(project_id, root=root)
-    ).add_specimen(payload)
-    _emit_status(
-        project_id,
-        "genomilab_profile_changed",
-        status="updated",
-        reason="specimen_added",
-        specimen_id=str(specimen.get("specimen_id") or ""),
-        root=root,
-    )
-    return {"status": "updated", "specimen": specimen}
-
-
-def add_profile_assay(
-    project_id: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    _require_project(project_id, root=root)
-    assay = (service or _application_service(project_id, root=root)).add_assay(
-        payload
-    )
-    _emit_status(
-        project_id,
-        "genomilab_profile_changed",
-        status="updated",
-        reason="assay_added",
-        assay_id=str(assay.get("assay_id") or ""),
-        root=root,
-    )
-    return {"status": "updated", "assay": assay}
-
-
-def change_integration(
-    project_id: str,
-    provider: str,
-    action: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    """Apply one redacted, audited provider connection transition."""
-
-    _require_project(project_id, root=root)
-    application = service or _application_service(project_id, root=root)
-    if action == "connect":
-        integration = application.connect_integration(provider, payload)
-    elif action == "verify":
-        if payload:
-            raise PortalGenomiLabError(
-                "invalid_integration_request",
-                "Connection checks do not accept request fields.",
-            )
-        integration = application.verify_integration(provider)
-    elif action == "disconnect":
-        if set(payload) != {"confirmed"} or payload.get("confirmed") is not True:
-            raise PortalGenomiLabError(
-                "invalid_integration_request",
-                "Disconnect requires explicit confirmation.",
-            )
-        integration = application.disconnect_integration(provider, confirmed=True)
-    else:
-        raise PortalGenomiLabError(
-            "invalid_integration_action", "Unsupported integration action."
-        )
-    _emit_status(
-        project_id,
-        "genomilab_integration_changed",
-        status=str(integration.get("connection_state") or "updated"),
-        reason=f"integration_{action}",
-        provider=provider,
-        root=root,
-    )
-    return {"status": "updated", "integration": integration}
-
-
-def create_investigation(
-    project_id: str,
-    payload: JsonObject,
-    *,
-    service: _GenomiLabApplication | None = None,
-    root: str | Path | None = None,
-) -> JsonObject:
-    _require_project(project_id, root=root)
-    application = service or _application_service(project_id, root=root)
-    investigation = application.create_investigation(
-        {key: payload[key] for key in ("question", "disease_scope") if key in payload}
-    )
-    binding = bind_investigation(
-        project_id,
-        investigation_id=str(investigation.get("investigation_id") or ""),
-        frame_id=str(payload.get("frame_id") or ""),
-        service=application,
-        root=root,
-    )
-    return {
-        "status": "created",
-        "binding": binding,
-        "investigation": _board_investigation(investigation),
-    }
-
-
-def bind_investigation(
+def _bind_observed_investigation(
     project_id: str,
     *,
     investigation_id: str,
@@ -478,22 +310,6 @@ class _PortalGenomiLabApplication:
         }
         return profile
 
-    def add_profile_observation(self, payload: JsonObject) -> JsonObject:
-        with self._current_user() as user_id:
-            return self.store.add_profile_observation(user_id, payload)
-
-    def add_source_artifact(self, payload: JsonObject) -> JsonObject:
-        with self._current_user() as user_id:
-            return self.store.add_source_artifact(user_id, payload)
-
-    def add_specimen(self, payload: JsonObject) -> JsonObject:
-        with self._current_user() as user_id:
-            return self.store.add_specimen(user_id, payload)
-
-    def add_assay(self, payload: JsonObject) -> JsonObject:
-        with self._current_user() as user_id:
-            return self.store.add_assay(user_id, payload)
-
     def list_investigations(self) -> list[JsonObject]:
         with self._current_user() as user_id:
             records: list[JsonObject] = []
@@ -549,20 +365,6 @@ class _PortalGenomiLabApplication:
             )
         return view
 
-    def create_investigation(self, payload: JsonObject) -> JsonObject:
-        with self._current_user() as user_id:
-            response = self.store.create_lab_investigation(
-                user_id,
-                workspace_session_id=self.session_id,
-                question=str(payload.get("question") or "").strip(),
-                disease_scope=str(payload.get("disease_scope") or "").strip()
-                or None,
-                public_only=False,
-                approved_profile_context=None,
-                command_id=f"portal-create-{uuid.uuid4().hex}",
-            )
-            return dict(response["investigation"])
-
     def integrations(self) -> JsonObject:
         registered_operations = {
             str(operation.get("name") or "") for operation in all_operations()
@@ -574,22 +376,6 @@ class _PortalGenomiLabApplication:
                 for provider in _RESEARCH_PROVIDER_OPERATIONS
             ],
         }
-
-    def connect_integration(self, provider: str, payload: JsonObject) -> JsonObject:
-        del provider, payload
-        raise PortalGenomiLabError(
-            "provider_connection_backend_unavailable",
-            "Provider connections are not available in this build.",
-            http_status=503,
-        )
-
-    def verify_integration(self, provider: str) -> JsonObject:
-        return self.connect_integration(provider, {})
-
-    def disconnect_integration(self, provider: str, *, confirmed: bool) -> JsonObject:
-        del confirmed
-        return self.connect_integration(provider, {})
-
 
 def _research_provider_readiness(
     provider: str, registered_operations: set[str]

@@ -41,14 +41,14 @@ export function labResultViewModel(payload, operation) {
     lane('Hypotheses', hypotheses.map(hypothesisNode)),
     lane('Captured evidence', evidence.map(evidenceNode)),
     lane('Evidence changes', snapshots.map(snapshotNode)),
-    lane('Specialist assignments', assignments.map(assignmentNode)),
+    lane('Research workstreams', assignments.map(assignmentNode)),
     lane('Research artifacts', artifacts.map(artifactNode)),
     lane('Open gaps and questions', [
       ...gaps.map((gap) => resultNode('Unresolved gap', gap, { gap })),
       ...questions.map((question) => resultNode('Question', question, { question }))
     ]),
     lane('Published briefs', briefs.map(briefNode)),
-    lane('Prepared specialist brief', record(state.outbound_brief) ? [specialistBriefNode(state.outbound_brief)] : []),
+    lane('Prepared research brief', record(state.outbound_brief) ? [specialistBriefNode(state.outbound_brief)] : []),
     lane('Health profile update', operation === 'lab.update_health_profile' ? profileNodes(state) : [])
   ].filter((item) => item.nodes.length);
   const revision = positiveNumber(state.domain_revision ?? investigation.domain_revision);
@@ -146,8 +146,8 @@ function snapshotNode(item) {
 }
 
 function assignmentNode(item) {
-  const role = text(item.specialist_role) || 'Specialist assignment';
-  return resultNode(role, join([status(item.state), text(item.execution_policy)]), {
+  const role = humanLabel(item.specialist_role) || 'Research workstream';
+  return resultNode(role, status(item.state), {
     specialist_assignment_id: text(item.specialist_assignment_id),
     specialist_role: role,
     execution_policy: text(item.execution_policy),
@@ -181,8 +181,8 @@ function briefNode(item) {
 
 function specialistBriefNode(value) {
   const item = object(value);
-  const role = text(item.specialist_role) || 'Specialist brief';
-  return resultNode(role, join([text(item.execution_policy), text(item.research_question)]), {
+  const role = humanLabel(item.specialist_role) || 'Research brief';
+  return resultNode(role, text(item.research_question), {
     specialist_role: role,
     execution_policy: text(item.execution_policy),
     research_question: text(item.research_question)
@@ -222,7 +222,7 @@ function resultTitle(operation, state) {
   if (text(object(state.hypothesis_version).statement)) return text(object(state.hypothesis_version).statement);
   const brief = object(object(state.brief_version).brief);
   if (text(brief.title)) return text(brief.title);
-  if (text(object(state.assignment).specialist_role)) return text(object(state.assignment).specialist_role);
+  if (text(object(state.assignment).specialist_role)) return humanLabel(object(state.assignment).specialist_role);
   return operationLabel(operation);
 }
 
@@ -274,6 +274,11 @@ function version(value, prefix = 'Version') {
 
 function status(value) {
   const clean = text(value).replaceAll('_', ' ');
+  return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : '';
+}
+
+function humanLabel(value) {
+  const clean = text(value).replace(/[_-]+/g, ' ').replace(/\bspecialist\b/gi, '').replace(/\s+/g, ' ').trim();
   return clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : '';
 }
 

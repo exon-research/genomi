@@ -42,7 +42,8 @@ export function createGenomiLabController({ api, getProjectId }) {
       return;
     }
     byId('genomilab-case-board').hidden = false;
-    setStatus('genomilab-board-status', text(investigation.status) || 'Investigation active', 'success');
+    const investigationStatus = investigationStatusModel(investigation.status);
+    setStatus('genomilab-board-status', investigationStatus.label, investigationStatus.kind);
     const brief = doctorBriefModel(investigation);
     container.append(
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
@@ -96,6 +97,25 @@ export function specialistWorkstreamModels(values) {
     role: humanLabel(item.specialist_role || 'Research specialist'),
     status: states[text(item.state)] || 'Status pending'
   }));
+}
+
+export function investigationStatusModel(value) {
+  const status = text(value).toLowerCase();
+  if (status === 'completed') return { label: 'Doctor brief ready', kind: 'success' };
+  if (['running', 'active', 'in_progress'].includes(status)) {
+    return { label: 'Research in progress', kind: 'active' };
+  }
+  if (['needs_input', 'blocked', 'waiting'].includes(status)) {
+    return { label: 'Needs your input', kind: 'warning' };
+  }
+  if (['failed', 'error'].includes(status)) {
+    return { label: 'Investigation needs attention', kind: 'error' };
+  }
+  if (status === 'cancelled') return { label: 'Investigation stopped', kind: 'muted' };
+  if (['created', 'planning', ''].includes(status)) {
+    return { label: 'Organizing your investigation', kind: 'active' };
+  }
+  return { label: humanLabel(status), kind: 'active' };
 }
 
 export function doctorBriefModel(investigation) {

@@ -136,13 +136,6 @@ def _post_routes() -> tuple[portal_router.RouteSpec, ...]:
         portal_router.RouteSpec("/api/projects/{project_id}/request", _post_project_request),
         portal_router.RouteSpec("/api/prompt/suggestion", _post_prompt_suggestion),
         portal_router.RouteSpec("/api/projects/{project_id}/active-context", _post_project_active_context),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/profile/observations", _post_project_genomilab_observation),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/profile/source-artifacts", _post_project_genomilab_source_artifact),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/profile/specimens", _post_project_genomilab_specimen),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/profile/assays", _post_project_genomilab_assay),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/integrations/{provider}/{action}", _post_project_genomilab_integration),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/investigations", _post_project_genomilab_investigation),
-        portal_router.RouteSpec("/api/projects/{project_id}/genomilab/binding", _post_project_genomilab_binding),
         portal_router.RouteSpec("/api/projects/{project_id}/artifacts/render", _post_project_artifact_render),
         portal_router.RouteSpec(portal_routes.project_artifact_import_endpoint("{project_id}"), _post_project_artifact_import),
         portal_router.RouteSpec(portal_routes.project_artifact_version_review_runs_endpoint("{project_id}", "{artifact_id}", "{version_id}"), _post_project_artifact_version_review_run),
@@ -685,101 +678,6 @@ def _post_project_active_context(handler: BaseHTTPRequestHandler, params: dict[s
         return
     active_context = portal_active_context.update_project_active_context(params["project_id"], payload)
     _send_json(handler, HTTPStatus.OK, {"active_context": active_context})
-
-
-def _post_project_genomilab_observation(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.add_profile_observation(params["project_id"], payload),
-    )
-
-
-def _post_project_genomilab_source_artifact(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.add_profile_source_artifact(params["project_id"], payload),
-        success_status=HTTPStatus.CREATED,
-    )
-
-
-def _post_project_genomilab_specimen(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.add_profile_specimen(params["project_id"], payload),
-        success_status=HTTPStatus.CREATED,
-    )
-
-
-def _post_project_genomilab_assay(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.add_profile_assay(params["project_id"], payload),
-        success_status=HTTPStatus.CREATED,
-    )
-
-
-def _post_project_genomilab_integration(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    provider = params["provider"]
-    action = params["action"]
-    if provider not in {"paperclip", "biohub-esm", "proto"} or action not in {"connect", "verify", "disconnect"}:
-        _send_json(handler, HTTPStatus.NOT_FOUND, {"error": {"code": "not_found", "message": "Integration route not found."}})
-        return
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.change_integration(
-            params["project_id"], provider, action, payload
-        ),
-    )
-
-
-def _post_project_genomilab_investigation(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: portal_genomilab.create_investigation(params["project_id"], payload),
-        success_status=HTTPStatus.CREATED,
-    )
-
-
-def _post_project_genomilab_binding(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
-    payload = _read_json_body(body)
-    if payload is None:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
-        return
-    _send_genomilab_result(
-        handler,
-        lambda: {
-            "status": "linked",
-            "binding": portal_genomilab.bind_investigation(
-                params["project_id"],
-                investigation_id=_payload_text(payload, "investigation_id", "investigationId"),
-                frame_id=_payload_text(payload, "frame_id", "frameId"),
-            ),
-        },
-    )
 
 
 def _post_project_artifact_render(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:

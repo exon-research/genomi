@@ -142,12 +142,16 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.addCleanup(portal_genomilab._SERVICES.clear)
         application = portal_genomilab._application_service(project_id, root=None)
         application.bootstrap_workspace()
-        created = application.create_investigation(
-            {
-                "question": "Sensitive patient wording must not enter the continuation summary.",
-                "disease_scope": "Sensitive condition label",
-            }
-        )
+        with application._current_user() as user_id:
+            created = application.store.create_lab_investigation(
+                user_id,
+                workspace_session_id=application.session_id,
+                question="Sensitive patient wording must not enter the continuation summary.",
+                disease_scope="Sensitive condition label",
+                public_only=False,
+                approved_profile_context=None,
+                command_id="portal-resume-test-create",
+            )["investigation"]
         investigation_id = str(created["investigation_id"])
         cycle = application.store.create_investigation_cycle(
             investigation_id,

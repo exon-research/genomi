@@ -91,14 +91,6 @@ export async function loadGenomiLabBoard(projectId) {
   return fetchJson(genomiLabEndpoint(projectId, 'board'));
 }
 
-export async function createGenomiLabInvestigation(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'investigations'), payload);
-}
-
-export async function bindGenomiLabInvestigation(projectId, payload = {}) {
-  return postJson(genomiLabEndpoint(projectId, 'binding'), payload);
-}
-
 export async function importProjectFile(projectId, payload = {}) {
   return postJson('/api/projects/' + encodeURIComponent(projectId) + '/artifacts/import', payload);
 }

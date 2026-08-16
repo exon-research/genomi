@@ -35,6 +35,9 @@
 .genomilab-status { min-height: 20px; padding: 0 14px; color: var(--text3); font-size: 12px; }
 .genomilab-status.error { color: #fca5a5; }
 .genomilab-status.success { color: var(--green); }
+.genomilab-status.active { color: var(--text3); }
+.genomilab-status.warning { color: #fcd34d; }
+.genomilab-status.muted { color: var(--text4); }
 .genomilab-case-board { margin: 12px 14px 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface2); }
 .genomilab-case-board-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .genomilab-case-board-heading span { color: var(--green); font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }

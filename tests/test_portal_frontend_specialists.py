@@ -109,10 +109,14 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
 
         result = _run_node(script)
         self.assertEqual(result["live"]["specialists"][0]["status"], "running")
+        self.assertEqual(
+            result["live"]["specialists"][0]["summary"],
+            "Reviewing public biomedical literature",
+        )
         self.assertEqual(result["terminal"]["specialists"][0]["status"], "error")
         self.assertEqual(
             result["terminal"]["specialists"][0]["summary"],
-            "Turn ended before the assignment reached a durable terminal state",
+            "This research workstream stopped before findings were saved.",
         )
         self.assertEqual(result["completed"]["specialists"][0]["status"], "completed")
 
@@ -194,7 +198,9 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
             completed["specialists"][0]["summary"],
             "Literature findings ready.",
         )
-        self.assertEqual(completed["summary"], "1 completed · 1 error")
+        self.assertEqual(
+            completed["summary"], "1 findings added · 1 needs attention"
+        )
         self.assertEqual(result["names"], [True, True, False])
 
     def test_message_surface_integrates_real_specialist_lane(self) -> None:
@@ -273,7 +279,7 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
         self.assertEqual(len(result["specialists"]), 1)
         self.assertEqual(
             result["specialists"][0]["title"],
-            "Public-literature clinical immunology reviewer",
+            "Public literature clinical immunology reviewer",
         )
         self.assertEqual(result["specialists"][0]["status"], "completed")
 
