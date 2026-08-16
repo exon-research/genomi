@@ -281,6 +281,65 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
                     }
                 )
 
+    def test_direct_provider_result_cannot_bypass_specialist_artifact_policy(self) -> None:
+        created = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Compare a public protein model without patient context.",
+            public_only=True,
+            command_id="create-public-protein-investigation",
+        )
+        investigation_id = str(created["investigation"]["investigation_id"])
+        cycle = self.store.create_investigation_cycle(
+            investigation_id,
+            purpose="Run public protein research",
+            public_only=True,
+            command_id="create-public-protein-cycle",
+            expected_revision=1,
+        )
+        operation = "biohub.compare_protein_embeddings"
+        receipt_id = self.store.issue_genomi_result_receipt(
+            operation=operation,
+            params={
+                "reference_sequence": "A" * 20,
+                "alternate_sequence": "A" * 19 + "V",
+                "sequence_scope": "public_reference",
+            },
+            presented_result={
+                "status": "completed",
+                "evidence_envelope": {
+                    "operation": operation,
+                    "headline": f"{operation}: data_returned",
+                    "finding_state": "evidence_present",
+                    "answer_readiness": "scoped_answer_only",
+                    "guidance": [
+                        "evidence_present:use_only_as_nonclinical_protein_model_signal"
+                    ],
+                    "negative_inference": {"allowed": False, "requires": []},
+                    "coverage": {"consulted_sources": ["biohub:esmc"]},
+                },
+                "comparison": {"cosine_similarity": 0.99},
+            },
+            investigation_id=investigation_id,
+            workspace_session_id="session-a",
+        )
+
+        with self.assertRaisesRegex(
+            ValueError, "external provider results require a completed specialist"
+        ):
+            self.store.capture_evidence_result(
+                investigation_id,
+                cycle_id=cycle["cycle"]["cycle_id"],
+                result_receipt_id=receipt_id,
+                purpose="Reject direct provider capture",
+                command_id="reject-direct-provider-capture",
+                expected_revision=cycle["domain_revision"],
+            )
+
+        self.assertIsNone(
+            self.store.get_investigation(investigation_id)["evidence_snapshot_id"]
+        )
+
     def _completed_public_literature_assignment(self) -> dict[str, object]:
         created = self.store.create_lab_investigation(
             "user-a",

@@ -225,6 +225,10 @@ class ResultReceiptStoreMixin:
             if receipt.get("captured_at"):
                 raise ValueError("result receipt was already captured")
             source_family = str(receipt["operation"]).split(".", 1)[0]
+            if source_family in {"paperclip", "biohub", "proto"}:
+                raise ValueError(
+                    "external provider results require a completed specialist assignment and provider receipt"
+                )
             evidence = self.commit_evidence(
                 investigation_id,
                 source_family=source_family,
