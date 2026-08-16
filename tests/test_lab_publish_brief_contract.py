@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+import copy
+import os
+import tempfile
+import unittest
+from contextlib import contextmanager
+from pathlib import Path
+from unittest import mock
+
+from jsonschema import ValidationError, validate
+
+from genomi.lab import operations as lab_operations
+from genomi.lab.store import GenomiLabStore
+from genomi.operations.registry.table import call_operation, list_operations
+from genomi.runtime import context as runtime_context
+
+
+CLINICAL_BOUNDARY = (
+    "Research support only; this is not a diagnosis or treatment decision."
+)
+
+
+class LabPublishBriefContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temporary_home = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary_home.cleanup)
+        self._environment = mock.patch.dict(
+            os.environ,
+            {
+                "GENOMI_HOME": str(Path(self._temporary_home.name) / "home"),
+                "GENOMI_CONTEXT": "",
+                "GENOMI_SESSION_ID": "lab-publish-brief-contract-tests",
+                "GENOMI_MCP_BACKGROUND": "0",
+                **{name: "" for name in runtime_context.AGENT_SESSION_ENVS},
+            },
+        )
+        self._environment.start()
+        self.addCleanup(self._environment.stop)
+
+    def test_publish_schema_rejects_incomplete_or_unanchored_briefs(self) -> None:
+        schema = self._publish_schema()
+        valid = {
+            "investigation_id": "investigation-example",
+            "cycle_id": "cycle-example",
+            "brief": {
+                "title": "Clinician discussion brief",
+                "summary": "Current observations support a bounded discussion.",
+                "claims": [
+                    {
+                        "statement": "The current profile records two reported observations.",
+                        "evidence_record_ids": [],
+                        "profile_revision_ids": ["observation-revision-example"],
+                    }
+                ],
+                "hypothesis_ids": ["logical-hypothesis-example"],
+                "gap_ids": ["logical-hypothesis-gap"],
+                "confirmation_needs": ["Independent clinical assessment"],
+                "professional_questions": [
+                    "Which clinical measurements would help distinguish the alternatives?"
+                ],
+                "clinical_boundary": CLINICAL_BOUNDARY,
+            },
+            "command_id": "publish-example",
+            "expected_revision": 4,
+        }
+        validate(instance=valid, schema=schema)
+
+        missing_boundary = copy.deepcopy(valid)
+        del missing_boundary["brief"]["clinical_boundary"]
+        with self.assertRaises(ValidationError):
+            validate(instance=missing_boundary, schema=schema)
+
+        unanchored = copy.deepcopy(valid)
+        unanchored["brief"]["claims"][0]["profile_revision_ids"] = []
+        with self.assertRaises(ValidationError):
+            validate(instance=unanchored, schema=schema)
+
+        wrong_boundary = copy.deepcopy(valid)
+        wrong_boundary["brief"]["clinical_boundary"] = "For diagnosis."
+        with self.assertRaises(ValidationError):
+            validate(instance=wrong_boundary, schema=schema)
+
+    def test_genomi_invoke_publishes_the_declared_clinician_brief_shape(self) -> None:
+        store = GenomiLabStore()
+        store.open_workspace("user-a", "Synthetic user")
+        created = store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question=(
+                "Could persistent exercise-associated fatigue and disrupted sleep "
+                "have a shared explanation?"
+            ),
+            command_id="create-investigation",
+        )
+        investigation_id = str(created["investigation"]["investigation_id"])
+        updated = store.update_health_profile(
+            "user-a",
+            investigation_id,
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Exercise-associated fatigue",
+                    "original_wording": "I remain unusually tired after ordinary exercise.",
+                },
+                {
+                    "modality": "phenotype",
+                    "label": "Disrupted sleep",
+                    "original_wording": "My sleep has been repeatedly interrupted.",
+                },
+            ],
+            purpose="Record the reported observations",
+            command_id="update-profile",
+            expected_revision=1,
+        )
+        cycle = store.create_investigation_cycle(
+            investigation_id,
+            purpose="Assess shared and independent explanations",
+            command_id="create-cycle",
+            expected_revision=updated["domain_revision"],
+        )
+        cycle_id = str(cycle["cycle"]["cycle_id"])
+        candidate = store.create_hypothesis(
+            investigation_id,
+            cycle_id=cycle_id,
+            statement=(
+                "The two reported patterns may share a physiological explanation."
+            ),
+            status="open",
+            profile_snapshot_id=None,
+            evidence_snapshot_id=None,
+            supporting_evidence_record_ids=[],
+            contradicting_evidence_record_ids=[],
+            contextual_evidence_record_ids=[],
+            unresolved_gaps=["Objective clinical measurements have not been reviewed"],
+            revision_rationale="Keep a shared explanation open for comparison.",
+            category="shared_explanation",
+            command_id="create-shared-hypothesis",
+            expected_revision=cycle["domain_revision"],
+        )
+        gap = store.create_hypothesis(
+            investigation_id,
+            cycle_id=cycle_id,
+            statement=(
+                "The reported patterns may have independent causes that require "
+                "clinical evaluation."
+            ),
+            status="open",
+            profile_snapshot_id=None,
+            evidence_snapshot_id=None,
+            supporting_evidence_record_ids=[],
+            contradicting_evidence_record_ids=[],
+            contextual_evidence_record_ids=[],
+            unresolved_gaps=["Independent clinical assessment remains needed"],
+            revision_rationale="Preserve the independent-causes alternative.",
+            category="evidence_gap",
+            command_id="create-gap-hypothesis",
+            expected_revision=candidate["domain_revision"],
+        )
+        fact_ids = list(updated["source_fact_ids"])
+        candidate_id = str(
+            candidate["hypothesis_version"]["logical_hypothesis_id"]
+        )
+        gap_id = str(gap["hypothesis_version"]["logical_hypothesis_id"])
+        brief = {
+            "title": "Clinician discussion brief",
+            "summary": (
+                "Two reported observations are documented while shared and "
+                "independent explanations remain open."
+            ),
+            "claims": [
+                {
+                    "statement": (
+                        "The current profile records exercise-associated fatigue "
+                        "and disrupted sleep."
+                    ),
+                    "evidence_record_ids": [],
+                    "profile_revision_ids": fact_ids,
+                }
+            ],
+            "hypothesis_ids": [candidate_id],
+            "gap_ids": [gap_id],
+            "confirmation_needs": [
+                "Independent clinical assessment and objective measurements"
+            ],
+            "professional_questions": [
+                "Which clinical measurements would best distinguish shared from independent explanations?"
+            ],
+            "clinical_boundary": CLINICAL_BOUNDARY,
+        }
+        params = {
+            "investigation_id": investigation_id,
+            "cycle_id": cycle_id,
+            "brief": brief,
+            "command_id": "publish-clinician-brief",
+            "expected_revision": gap["domain_revision"],
+        }
+        validate(instance=params, schema=self._publish_schema())
+
+        @contextmanager
+        def authorized_store():
+            yield store, "user-a", "session-a"
+
+        with mock.patch.object(
+            lab_operations, "_authorized_store", authorized_store
+        ):
+            result = call_operation(
+                "genomi.invoke",
+                {"tool": "lab.publish_brief", "params": params},
+            )
+
+        self.assertEqual(result["dispatched_tool"], "lab.publish_brief")
+        self.assertEqual(result["brief_version"]["version"], 1)
+        self.assertEqual(result["brief_version"]["brief"], brief)
+
+    @staticmethod
+    def _publish_schema() -> dict[str, object]:
+        focused = {
+            tool["name"]: tool for tool in list_operations(capability="lab")
+        }
+        return focused["lab.publish_brief"]["inputSchema"]
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -421,7 +421,76 @@
         "properties": {
           "investigation_id": {"type": "string"},
           "cycle_id": {"type": "string"},
-          "brief": {"type": "object", "additionalProperties": true},
+          "brief": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string", "minLength": 1},
+              "summary": {"type": "string", "minLength": 1},
+              "claims": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {"type": "string", "minLength": 1},
+                    "evidence_record_ids": {
+                      "type": "array",
+                      "items": {"type": "string", "minLength": 1},
+                      "uniqueItems": true
+                    },
+                    "profile_revision_ids": {
+                      "type": "array",
+                      "items": {"type": "string", "minLength": 1},
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": ["statement", "evidence_record_ids", "profile_revision_ids"],
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "evidence_record_ids": {"minItems": 1}
+                      }
+                    },
+                    {
+                      "properties": {
+                        "profile_revision_ids": {"minItems": 1}
+                      }
+                    }
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "hypothesis_ids": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "gap_ids": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "confirmation_needs": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "professional_questions": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "clinical_boundary": {
+                "type": "string",
+                "const": "Research support only; this is not a diagnosis or treatment decision."
+              }
+            },
+            "required": [
+              "title", "summary", "claims", "hypothesis_ids", "gap_ids",
+              "confirmation_needs", "professional_questions", "clinical_boundary"
+            ],
+            "additionalProperties": false
+          },
           "command_id": {"type": "string"},
           "expected_revision": {"type": "integer", "minimum": 0}
         },
