@@ -189,6 +189,143 @@ class LabSpecialistFactBindingTests(unittest.TestCase):
         )
         self.assertEqual(len(self.store.list_profile_observations("user-a")), 2)
 
+    def test_semantic_fact_identity_survives_conservative_extraction_drift(
+        self,
+    ) -> None:
+        first = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="First phrasing of a synthetic inquiry",
+            command_id="create-first-semantic-identity-investigation",
+        )
+        first_update = self.store.update_health_profile(
+            "user-a",
+            first["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Recurrent synthetic episodes",
+                    "original_wording": "The synthetic episodes keep happening",
+                }
+            ],
+            purpose="Capture the first extraction",
+            command_id="update-first-semantic-identity-investigation",
+            expected_revision=1,
+        )
+        second = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Second phrasing of the synthetic inquiry",
+            command_id="create-second-semantic-identity-investigation",
+        )
+        second_update = self.store.update_health_profile(
+            "user-a",
+            second["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Repeated synthetic episode",
+                    "original_wording": "I continue to experience the synthetic event",
+                    "onset_or_event_time": "historical synthetic period",
+                }
+            ],
+            purpose="Capture the semantically equivalent extraction",
+            command_id="update-second-semantic-identity-investigation",
+            expected_revision=1,
+        )
+
+        original = first_update["observations"][0]
+        revised = second_update["observations"][0]
+        self.assertEqual(
+            revised["logical_observation_id"], original["logical_observation_id"]
+        )
+        self.assertEqual(
+            revised["supersedes_revision_id"], original["observation_revision_id"]
+        )
+        self.assertEqual(
+            second_update["source_fact_ids"],
+            [revised["observation_revision_id"]],
+        )
+        self.assertEqual(
+            len(self.store.list_profile_observations("user-a", current_only=True)),
+            1,
+        )
+        self.assertEqual(len(self.store.list_profile_observations("user-a")), 2)
+
+    def test_semantic_fact_identity_keeps_distinct_features_separate(self) -> None:
+        created = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Two distinct synthetic features",
+            command_id="create-distinct-semantic-features",
+        )
+        updated = self.store.update_health_profile(
+            "user-a",
+            created["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Recurrent synthetic alpha episodes",
+                    "original_wording": "Synthetic alpha events keep happening",
+                },
+                {
+                    "modality": "phenotype",
+                    "label": "Repeated synthetic beta episode",
+                    "original_wording": "Synthetic beta events keep happening",
+                },
+            ],
+            purpose="Keep distinct reported features separate",
+            command_id="update-distinct-semantic-features",
+            expected_revision=1,
+        )
+
+        self.assertEqual(len(updated["source_fact_ids"]), 2)
+        self.assertEqual(
+            len(self.store.list_profile_observations("user-a", current_only=True)),
+            2,
+        )
+
+    def test_semantic_fact_identity_keeps_distinct_explicit_events_separate(
+        self,
+    ) -> None:
+        created = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Two explicitly distinct synthetic events",
+            command_id="create-distinct-semantic-events",
+        )
+        updated = self.store.update_health_profile(
+            "user-a",
+            created["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "measurement",
+                    "label": "Synthetic measurement",
+                    "original_wording": "The synthetic measurement was reported",
+                    "onset_or_event_time": "synthetic period one",
+                },
+                {
+                    "modality": "measurement",
+                    "label": "Synthetic measurement",
+                    "original_wording": "The synthetic measurement was reported",
+                    "onset_or_event_time": "synthetic period two",
+                },
+            ],
+            purpose="Keep distinct explicit events separate",
+            command_id="update-distinct-semantic-events",
+            expected_revision=1,
+        )
+
+        self.assertEqual(len(updated["source_fact_ids"]), 2)
+        self.assertEqual(
+            len(self.store.list_profile_observations("user-a", current_only=True)),
+            2,
+        )
+
     def test_incomplete_selected_agi_is_an_evidence_gap_not_a_profile_blocker(
         self,
     ) -> None:

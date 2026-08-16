@@ -17,7 +17,7 @@ from .models import (
 )
 from .profile_fact_identity import (
     extracted_fact_content,
-    extracted_fact_identity,
+    extracted_facts_share_identity,
     unique_current_profile_observations,
 )
 from .orchestrator_support import (
@@ -125,15 +125,21 @@ class OrchestratorStateStoreMixin:
             prior_current = self.list_profile_observations(  # type: ignore[attr-defined]
                 user_id, current_only=True
             )
-            current_by_identity = {
-                extracted_fact_identity(item): item
-                for item in reversed(prior_current)
+            current_extracted = [
+                item
+                for item in prior_current
                 if item.get("source_class") == "model_extracted"
-            }
+            ]
             observations: list[JsonObject] = []
             for fact in normalized_facts:
-                identity = extracted_fact_identity(fact)
-                prior = current_by_identity.get(identity)
+                prior = next(
+                    (
+                        item
+                        for item in current_extracted
+                        if extracted_facts_share_identity(item, fact)
+                    ),
+                    None,
+                )
                 if prior is not None and extracted_fact_content(
                     prior
                 ) == extracted_fact_content(fact):
@@ -154,7 +160,9 @@ class OrchestratorStateStoreMixin:
                     observation = self.add_profile_observation(  # type: ignore[attr-defined]
                         user_id, observation_input
                     )
-                current_by_identity[identity] = observation
+                if prior is not None:
+                    current_extracted.remove(prior)
+                current_extracted.insert(0, observation)
                 observations.append(observation)
             current = unique_current_profile_observations(
                 self.list_profile_observations(  # type: ignore[attr-defined]
