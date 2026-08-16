@@ -70,7 +70,11 @@ def run_tool(
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if input_scope != PUBLIC_INPUT_SCOPE or external_transfer_approved is not True:
-        raise ValueError("Proto requires approved external transfer of public research inputs")
+        return _out_of_scope(
+            tool_key=tool_key,
+            input_scope=input_scope,
+            external_transfer_approved=external_transfer_approved,
+        )
     native = _native_tools()
     _credentials, client = _modal_client()
     query_scope = {"tool_key": tool_key, "input_scope": input_scope, "device": DEFAULT_DEVICE}
@@ -185,5 +189,36 @@ def _unavailable(
             query_scope=query_scope,
             coverage={"consulted_sources": [], "source_status": "unavailable"},
             guidance=["not_assessed:configure_provider_or_retry_external_source"],
+        ),
+    }
+
+
+def _out_of_scope(
+    *,
+    tool_key: str,
+    input_scope: str,
+    external_transfer_approved: bool,
+) -> dict[str, Any]:
+    query_scope = {
+        "tool_key": tool_key,
+        "input_scope": input_scope,
+        "external_transfer_approved": external_transfer_approved,
+        "device": DEFAULT_DEVICE,
+    }
+    coverage = {
+        "consulted_sources": [],
+        "source_status": "not_consulted",
+        "coverage_state": evidence_envelope.OUT_OF_SCOPE_FOR_INPUT,
+    }
+    return {
+        "status": evidence_envelope.OUT_OF_SCOPE_FOR_INPUT,
+        "coverage_state": evidence_envelope.OUT_OF_SCOPE_FOR_INPUT,
+        "provider": "proto",
+        "reason_code": "input_scope_not_approved",
+        "evidence_envelope": evidence_envelope.out_of_scope_for_input(
+            operation="proto.run_tool",
+            query_scope=query_scope,
+            coverage=coverage,
+            next_actions=[{"action": "use_approved_public_research_inputs"}],
         ),
     }

@@ -9,6 +9,7 @@ from genomi.capabilities.biohub.esmc import compare_protein_embeddings
 from genomi.capabilities.paperclip.read import retrieve_document_evidence
 from genomi.capabilities.paperclip.search import search_biomedical
 from genomi.capabilities.proto.tools import run_tool
+from genomi.evidence import envelope as evidence_envelope
 from genomi.operations.registry.table import call_operation, list_operations
 from genomi.runtime.external_credentials import external_credential_session
 
@@ -136,6 +137,56 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(result["comparison"]["changed_positions"][0]["position"], 2)
         self.assertNotIn("biohub-test-secret", json.dumps(result))
         self.assertNotIn("mean_embedding", json.dumps(result))
+
+    def test_biohub_refuses_unapproved_or_wrong_scope_without_provider_call(self) -> None:
+        def transport(*_: object) -> dict[str, object]:
+            self.fail("out-of-scope input must not reach BioHub")
+
+        for sequence_scope, approved in (
+            ("patient_sequence", True),
+            ("public_reference_or_approved_research_artifact", False),
+        ):
+            with self.subTest(sequence_scope=sequence_scope, approved=approved):
+                result = compare_protein_embeddings(
+                    reference_sequence="not inspected",
+                    alternate_sequence="not inspected",
+                    sequence_scope=sequence_scope,
+                    external_transfer_approved=approved,
+                    transport=transport,
+                )
+                self.assertEqual(result["status"], "out_of_scope_for_input")
+                self.assertEqual(result["coverage_state"], "out_of_scope_for_input")
+                envelope = result["evidence_envelope"]
+                evidence_envelope.validate(envelope)
+                self.assertEqual(envelope["finding_state"], "out_of_scope_for_input")
+                self.assertFalse(envelope["negative_inference"]["allowed"])
+                self.assertEqual(envelope["coverage"]["consulted_sources"], [])
+                self.assertNotIn("not inspected", json.dumps(result))
+
+    def test_invoke_returns_typed_out_of_scope_for_biohub_scope_and_approval(self) -> None:
+        for sequence_scope, approved in (
+            ("patient_sequence", True),
+            ("public_reference_or_approved_research_artifact", False),
+        ):
+            with self.subTest(sequence_scope=sequence_scope, approved=approved):
+                result = call_operation(
+                    "genomi.invoke",
+                    {
+                        "tool": "biohub.compare_protein_embeddings",
+                        "params": {
+                            "reference_sequence": "not inspected",
+                            "alternate_sequence": "not inspected",
+                            "sequence_scope": sequence_scope,
+                            "external_transfer_approved": approved,
+                        },
+                    },
+                )
+                self.assertEqual(result["dispatched_tool"], "biohub.compare_protein_embeddings")
+                self.assertEqual(result["status"], "out_of_scope_for_input")
+                self.assertEqual(
+                    result["evidence_envelope"]["finding_state"],
+                    "out_of_scope_for_input",
+                )
 
     def test_public_paperclip_protein_sequence_can_feed_biohub(self) -> None:
         def paperclip_runner(
@@ -267,6 +318,58 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(result["result"]["score"], 0.7)
         self.assertEqual(result["result"]["artifact_state"], "materialized_not_presented")
         self.assertNotIn("/private/result.json", json.dumps(result))
+
+    def test_proto_refuses_unapproved_or_wrong_scope_without_provider_call(self) -> None:
+        class Native:
+            @staticmethod
+            def run_tool(**_: object) -> dict[str, object]:
+                raise AssertionError("out-of-scope input must not reach Proto")
+
+        for input_scope, approved in (
+            ("patient_inputs", True),
+            ("public_or_approved_research_artifact", False),
+        ):
+            with self.subTest(input_scope=input_scope, approved=approved):
+                with patch("genomi.capabilities.proto.tools._native_tools", return_value=Native()):
+                    result = run_tool(
+                        tool_key="example-tool",
+                        inputs={"private": "not inspected"},
+                        input_scope=input_scope,
+                        external_transfer_approved=approved,
+                    )
+                self.assertEqual(result["status"], "out_of_scope_for_input")
+                self.assertEqual(result["coverage_state"], "out_of_scope_for_input")
+                envelope = result["evidence_envelope"]
+                evidence_envelope.validate(envelope)
+                self.assertEqual(envelope["finding_state"], "out_of_scope_for_input")
+                self.assertFalse(envelope["negative_inference"]["allowed"])
+                self.assertEqual(envelope["coverage"]["consulted_sources"], [])
+                self.assertNotIn("not inspected", json.dumps(result))
+
+    def test_invoke_returns_typed_out_of_scope_for_proto_scope_and_approval(self) -> None:
+        for input_scope, approved in (
+            ("patient_inputs", True),
+            ("public_or_approved_research_artifact", False),
+        ):
+            with self.subTest(input_scope=input_scope, approved=approved):
+                result = call_operation(
+                    "genomi.invoke",
+                    {
+                        "tool": "proto.run_tool",
+                        "params": {
+                            "tool_key": "example-tool",
+                            "inputs": {"private": "not inspected"},
+                            "input_scope": input_scope,
+                            "external_transfer_approved": approved,
+                        },
+                    },
+                )
+                self.assertEqual(result["dispatched_tool"], "proto.run_tool")
+                self.assertEqual(result["status"], "out_of_scope_for_input")
+                self.assertEqual(
+                    result["evidence_envelope"]["finding_state"],
+                    "out_of_scope_for_input",
+                )
 
 
 if __name__ == "__main__":

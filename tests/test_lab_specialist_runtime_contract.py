@@ -138,6 +138,104 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "invalid_lab_request")
         EVIDENCE_RESULT_RECEIPTS.resolve(process_receipt_id, session_id="session-a")
 
+    def test_cross_process_model_provider_receipts_become_research_artifacts(self) -> None:
+        cases = (
+            (
+                "biohub-esm",
+                "protein_model_research",
+                "biohub.compare_protein_embeddings",
+                {"comparison": {"cosine_similarity": 0.99}},
+            ),
+            (
+                "proto",
+                "experiment_design",
+                "proto.run_tool",
+                {"result": {"ok": True, "score": 0.7}},
+            ),
+        )
+        repository_root = Path(__file__).resolve().parents[1]
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(repository_root / "src")
+
+        for provider, policy, operation, provider_payload in cases:
+            with self.subTest(provider=provider):
+                state = self._completed_research_artifact_assignment(
+                    policy=policy,
+                    suffix=provider,
+                )
+                exact_result = {
+                    "status": "completed",
+                    "provider": "biohub" if provider == "biohub-esm" else provider,
+                    **provider_payload,
+                    "interpretation_scope": "nonclinical_research_artifact",
+                    "classification_effect": "none",
+                    "evidence_envelope": {
+                        "operation": operation,
+                        "headline": f"{operation}: evidence_present · scoped_answer_only",
+                        "finding_state": "evidence_present",
+                        "answer_readiness": "scoped_answer_only",
+                        "guidance": [
+                            "evidence_present:use_only_within_declared_scope"
+                        ],
+                        "negative_inference": {
+                            "allowed": False,
+                            "requires": [],
+                            "satisfied": [],
+                        },
+                        "coverage": {"consulted_sources": [provider]},
+                    },
+                }
+                issued = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        (
+                            "from genomi.operations.registry.evidence_result_receipts "
+                            "import EVIDENCE_RESULT_RECEIPTS; "
+                            "print(EVIDENCE_RESULT_RECEIPTS.issue("
+                            "session_id='session-a', "
+                            f"operation={operation!r}, params={{}}, result={exact_result!r}))"
+                        ),
+                    ],
+                    cwd=repository_root,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                process_receipt_id = issued.stdout.strip()
+
+                @contextmanager
+                def authorized_store():
+                    yield self.store, "user-a", "session-a"
+
+                with mock.patch.object(
+                    lab_operations, "_authorized_store", authorized_store
+                ):
+                    captured = lab_operations.capture_provider_result(
+                        {
+                            "investigation_id": state["investigation_id"],
+                            "cycle_id": state["cycle_id"],
+                            "assignment_id": state["assignment_id"],
+                            "specialist_brief_id": state["specialist_brief_id"],
+                            "result_receipt_id": process_receipt_id,
+                            "purpose": "Retain exact nonclinical provider artifact",
+                            "command_id": f"capture-{provider}-artifact",
+                            "expected_revision": state["domain_revision"],
+                        }
+                    )
+
+                self.assertIsNone(captured["evidence_record"])
+                self.assertIsNone(captured["evidence_snapshot"])
+                self.assertEqual(captured["research_artifact"]["provider"], provider)
+                self.assertEqual(
+                    captured["research_artifact"]["artifact_kind"], operation
+                )
+                with self.assertRaises(ValueError):
+                    EVIDENCE_RESULT_RECEIPTS.resolve(
+                        process_receipt_id, session_id="session-a"
+                    )
+
     def test_paperclip_search_receipt_remains_discovery_only(self) -> None:
         state = self._completed_public_literature_assignment()
         process_receipt_id = EVIDENCE_RESULT_RECEIPTS.issue(
@@ -428,6 +526,91 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             "evidence_snapshot_id": updated["evidence_snapshot"][
                 "evidence_snapshot_id"
             ],
+            "domain_revision": completed["domain_revision"],
+        }
+
+    def _completed_research_artifact_assignment(
+        self,
+        *,
+        policy: str,
+        suffix: str,
+    ) -> dict[str, object]:
+        created = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Evaluate a synthetic public research object.",
+            public_only=True,
+            command_id=f"create-{suffix}-investigation",
+        )
+        investigation_id = str(created["investigation"]["investigation_id"])
+        cycle = self.store.create_investigation_cycle(
+            investigation_id,
+            purpose="Run public nonclinical provider research",
+            public_only=True,
+            command_id=f"create-{suffix}-cycle",
+            expected_revision=1,
+        )
+        cycle_id = str(cycle["cycle"]["cycle_id"])
+        brief = self.store.prepare_specialist_brief(
+            investigation_id,
+            cycle_id=cycle_id,
+            specialist_role="Public nonclinical research specialist",
+            execution_policy=policy,
+            research_question="Evaluate the public research object.",
+            public_concepts=[
+                {
+                    "type": "public_research_object",
+                    "identifier": f"synthetic-{suffix}",
+                    "label": "Synthetic public research object",
+                }
+            ],
+            abstract_relations=[],
+            public_evidence_record_ids=[],
+            source_fact_ids=[],
+            rationale="Obtain a nonclinical research artifact",
+            purpose="Prepare public nonclinical provider work",
+            workspace_session_id="session-a",
+            command_id=f"prepare-{suffix}-brief",
+            expected_revision=cycle["domain_revision"],
+        )
+        assignment = self.store.create_specialist_assignment(
+            investigation_id,
+            cycle_id=cycle_id,
+            specialist_brief_id=brief["specialist_brief_id"],
+            command_id=f"create-{suffix}-assignment",
+            expected_revision=brief["domain_revision"],
+        )
+        assignment_id = str(
+            assignment["assignment"]["specialist_assignment_id"]
+        )
+        spawned = self.store.transition_specialist_assignment(
+            investigation_id,
+            specialist_assignment_id=assignment_id,
+            to_state="spawned",
+            assignment_expected_revision=1,
+            native_agent_id=f"native-{suffix}-specialist",
+            command_id=f"spawn-{suffix}-assignment",
+            expected_revision=assignment["domain_revision"],
+        )
+        completed = self.store.transition_specialist_assignment(
+            investigation_id,
+            specialist_assignment_id=assignment_id,
+            to_state="completed",
+            assignment_expected_revision=2,
+            analysis={
+                "general_analysis": "Synthetic public provider work completed.",
+                "uncertainty": [],
+                "alternatives": [],
+                "gaps": [],
+            },
+            command_id=f"complete-{suffix}-assignment",
+            expected_revision=spawned["domain_revision"],
+        )
+        return {
+            "investigation_id": investigation_id,
+            "cycle_id": cycle_id,
+            "specialist_brief_id": brief["specialist_brief_id"],
+            "assignment_id": assignment_id,
             "domain_revision": completed["domain_revision"],
         }
 

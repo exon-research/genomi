@@ -41,6 +41,7 @@ from typing import Any
 EVIDENCE_PRESENT = "evidence_present"
 NOT_OBSERVED_IN_CONSULTED_SCOPE = "not_observed_in_consulted_scope"
 NOT_ASSESSED = "not_assessed"
+OUT_OF_SCOPE_FOR_INPUT = "out_of_scope_for_input"
 BLOCKED_MISSING_LIBRARY = "blocked_missing_library"
 MATERIALIZATION_INCOMPLETE = "materialization_incomplete"
 TRUE_NEGATIVE_SUPPORTED = "true_negative_supported"
@@ -49,6 +50,7 @@ FINDING_STATES = (
     EVIDENCE_PRESENT,
     NOT_OBSERVED_IN_CONSULTED_SCOPE,
     NOT_ASSESSED,
+    OUT_OF_SCOPE_FOR_INPUT,
     BLOCKED_MISSING_LIBRARY,
     MATERIALIZATION_INCOMPLETE,
     TRUE_NEGATIVE_SUPPORTED,
@@ -501,6 +503,35 @@ def not_assessed(
     )
 
 
+def out_of_scope_for_input(
+    *,
+    operation: str,
+    query_scope: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
+    observations: dict[str, Any] | None = None,
+    next_actions: list[dict[str, Any]] | None = None,
+    guidance: list[str] | None = None,
+) -> dict[str, Any]:
+    """Refuse an input outside the operation's declared evidence scope."""
+
+    return envelope(
+        operation=operation,
+        finding_state=OUT_OF_SCOPE_FOR_INPUT,
+        answer_readiness=CANNOT_ANSWER_YET,
+        query_scope=query_scope,
+        coverage=coverage,
+        observations=observations or {"observation_count": 0},
+        negative_inference=_negative_inference(
+            allowed=False,
+            requires=[REQ_SCOPE_ALIGNMENT],
+            reason="The supplied input is outside the operation's declared scope.",
+        ),
+        next_actions=next_actions,
+        guidance=guidance
+        or ["out_of_scope_for_input:use_input_within_declared_scope"],
+    )
+
+
 def true_negative_supported(
     *,
     operation: str,
@@ -582,6 +613,10 @@ def validate(env: EvidenceEnvelope | dict[str, Any]) -> None:
         raise EnvelopeValidationError(
             "not_observed_in_consulted_scope must not allow negative inference"
         )
+    if finding == OUT_OF_SCOPE_FOR_INPUT and ni.get("allowed"):
+        raise EnvelopeValidationError(
+            "out_of_scope_for_input must not allow negative inference"
+        )
     if finding == TRUE_NEGATIVE_SUPPORTED:
         if not ni.get("allowed"):
             raise EnvelopeValidationError("true_negative_supported must allow negative inference")
@@ -609,6 +644,7 @@ _GUIDANCE_TEMPLATES = {
     (EVIDENCE_PRESENT, NEEDS_CLINICAL_CONFIRMATION): "evidence_present:requires_clinical_confirmation",
     (NOT_OBSERVED_IN_CONSULTED_SCOPE, SCOPED_ANSWER_ONLY): "not_observed_in_consulted_scope:do_not_imply_clinical_negative",
     (NOT_ASSESSED, CANNOT_ANSWER_YET): "not_assessed:request_missing_inputs_or_use_different_tool",
+    (OUT_OF_SCOPE_FOR_INPUT, CANNOT_ANSWER_YET): "out_of_scope_for_input:use_input_within_declared_scope",
     (BLOCKED_MISSING_LIBRARY, NEEDS_USER_INSTALL): "blocked_missing_library:ask_user_to_install",
     (MATERIALIZATION_INCOMPLETE, NEEDS_MATERIALIZATION): "materialization_incomplete:wait_or_poll_background_job",
     (TRUE_NEGATIVE_SUPPORTED, SCOPED_ANSWER_ONLY): "true_negative_supported:state_scope_explicitly",
@@ -663,6 +699,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
     Heuristics (low → high specificity):
       - status == "requires_library_install" → blocked_missing_library / needs_user_install
       - status == "in_progress" → materialization_incomplete / needs_materialization
+      - status == "out_of_scope_for_input" → out_of_scope_for_input / cannot_answer_yet
       - status == "source_unavailable", "failed", or "error" → not_assessed / cannot_answer_yet
       - status == "no_*" or zero-count signals → not_observed_in_consulted_scope
       - any obvious evidence count > 0 → evidence_present, scoped_answer_only
@@ -779,6 +816,15 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             notes=_string_notes(result),
             guidance=_status_guidance(status),
         )
+    if status == OUT_OF_SCOPE_FOR_INPUT or coverage_state == OUT_OF_SCOPE_FOR_INPUT:
+        return out_of_scope_for_input(
+            operation=operation,
+            query_scope=query_scope,
+            coverage=coverage,
+            observations=observations,
+            next_actions=_status_next_actions(OUT_OF_SCOPE_FOR_INPUT, result),
+            guidance=_status_guidance(OUT_OF_SCOPE_FOR_INPUT),
+        )
     if status in {"source_unavailable", "source_unavailable_no_evidence", "error", "unavailable", "failed"}:
         return not_assessed(
             operation=operation,
@@ -885,6 +931,8 @@ def _status_guidance(status: str) -> list[str]:
         return ["in_progress:poll_runtime_check_background_job"]
     if status in {"requires_library_install", "needs_library_install"}:
         return ["blocked_missing_library:ask_user_to_install"]
+    if status == OUT_OF_SCOPE_FOR_INPUT:
+        return ["out_of_scope_for_input:use_input_within_declared_scope"]
     if status in {"source_unavailable", "source_unavailable_no_evidence", "unavailable"}:
         return ["source_unavailable:retry_or_use_alternate_source"]
     if status in {"failed", "error"} or status.endswith("_failed"):
@@ -925,6 +973,8 @@ def _status_next_actions(status: str, result: dict[str, Any]) -> list[dict[str, 
                 "install_command": install_command,
             }
         ]
+    if status == OUT_OF_SCOPE_FOR_INPUT:
+        return [{"action": "use_input_within_declared_scope"}]
     if status.startswith(("invalid", "missing")):
         missing_inputs = []
         for item in result.get("unanswered_answer_components") or []:

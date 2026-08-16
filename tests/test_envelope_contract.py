@@ -97,6 +97,26 @@ class DispatchEnvelopeContractTests(GenomiRuntimeTestCase):
                 self.assertEqual(envelope["answer_readiness"], env.CANNOT_ANSWER_YET)
                 self.assertIn("source_unavailable:retry_or_use_alternate_source", envelope["guidance"])
 
+    def test_out_of_scope_result_yields_canonical_out_of_scope_envelope(self) -> None:
+        for name in sorted(ops.EVIDENCE_PRODUCING_OPERATIONS):
+            with self.subTest(op=name):
+                result = self._call_with_stub(
+                    name,
+                    {
+                        "status": "out_of_scope_for_input",
+                        "coverage_state": "out_of_scope_for_input",
+                    },
+                )
+                envelope = result["evidence_envelope"]
+                env.validate(envelope)
+                self.assertEqual(envelope["finding_state"], env.OUT_OF_SCOPE_FOR_INPUT)
+                self.assertEqual(envelope["answer_readiness"], env.CANNOT_ANSWER_YET)
+                self.assertFalse(envelope["negative_inference"]["allowed"])
+                self.assertIn(
+                    "out_of_scope_for_input:use_input_within_declared_scope",
+                    envelope["guidance"],
+                )
+
     def test_every_operation_failure_like_result_gets_same_envelope_guidance(self) -> None:
         for name in sorted(ops._OPERATION_BY_NAME):
             with self.subTest(op=name):
