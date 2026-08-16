@@ -156,6 +156,202 @@ class CodexAppServerSessionTests(unittest.TestCase):
         self.assertEqual(events[3]["content"]["updates"], [{"agent_id": "specialist-1", "status": "completed"}])
         self.assertNotIn("status", events[3]["content"])
 
+    def test_native_specialist_protocol_is_isolated_from_main_answer_until_root_completion(self) -> None:
+        output = io.StringIO(
+            "".join(
+                [
+                    _line({"id": 1, "result": {}}),
+                    _line({"id": 2, "result": {"thread": {"id": "main-thread"}}}),
+                    _line({"id": 3, "result": {"turn": {"id": "main-turn"}}}),
+                    _line(
+                        {
+                            "method": "item/started",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "item": {
+                                    "type": "subAgentActivity",
+                                    "id": "spawn-native-1",
+                                    "kind": "started",
+                                    "agentThreadId": "specialist-thread",
+                                    "agentPath": "/root/public_literature",
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/completed",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "item": {
+                                    "type": "subAgentActivity",
+                                    "id": "spawn-native-1",
+                                    "kind": "started",
+                                    "agentThreadId": "specialist-thread",
+                                    "agentPath": "/root/public_literature",
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/agentMessage/delta",
+                            "params": {
+                                "threadId": "specialist-thread",
+                                "turnId": "specialist-turn",
+                                "itemId": "specialist-message",
+                                "delta": "SPECIALIST ONLY",
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/completed",
+                            "params": {
+                                "threadId": "specialist-thread",
+                                "turnId": "specialist-turn",
+                                "item": {
+                                    "type": "agentMessage",
+                                    "id": "specialist-message",
+                                    "text": "SPECIALIST ONLY",
+                                    "phase": "final_answer",
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "turn/completed",
+                            "params": {
+                                "threadId": "specialist-thread",
+                                "turn": {
+                                    "id": "specialist-turn",
+                                    "items": [
+                                        {
+                                            "type": "agentMessage",
+                                            "id": "specialist-message",
+                                            "text": "SPECIALIST ONLY",
+                                            "phase": "final_answer",
+                                        }
+                                    ],
+                                    "status": "completed",
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/started",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "item": {
+                                    "id": "wait-1",
+                                    "type": "collabAgentToolCall",
+                                    "tool": "wait",
+                                    "status": "inProgress",
+                                    "receiverThreadIds": [],
+                                    "agentsStates": {},
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/completed",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "item": {
+                                    "id": "wait-1",
+                                    "type": "collabAgentToolCall",
+                                    "tool": "wait",
+                                    "status": "completed",
+                                    "receiverThreadIds": [],
+                                    "agentsStates": {},
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/agentMessage/delta",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "itemId": "main-message",
+                                "delta": "MAIN RECEIVED",
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "item/completed",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turnId": "main-turn",
+                                "item": {
+                                    "type": "agentMessage",
+                                    "id": "main-message",
+                                    "text": "MAIN RECEIVED",
+                                    "phase": "final_answer",
+                                },
+                            },
+                        }
+                    ),
+                    _line(
+                        {
+                            "method": "turn/completed",
+                            "params": {
+                                "threadId": "main-thread",
+                                "turn": {"id": "main-turn", "items": [], "status": "completed"},
+                            },
+                        }
+                    ),
+                ]
+            )
+        )
+        events: list[dict[str, object]] = []
+
+        portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), output, events.append
+        ).run(prompt="Question", cwd="/tmp")
+
+        self.assertEqual(
+            [event for event in events if event["type"] == "text_delta"],
+            [{"type": "text_delta", "delta": "MAIN RECEIVED"}],
+        )
+        spawn_call = next(
+            event
+            for event in events
+            if event["type"] == "tool_call" and event["name"] == "spawn_agent"
+        )
+        self.assertEqual(spawn_call["id"], "spawn-native-1")
+        self.assertEqual(spawn_call["input"]["task_name"], "/root/public_literature")
+        spawn_result = next(
+            event
+            for event in events
+            if event["type"] == "tool_result" and event["name"] == "spawn_agent"
+        )
+        self.assertEqual(spawn_result["id"], "spawn-native-1")
+        self.assertEqual(
+            spawn_result["payload"]["updates"],
+            [
+                {
+                    "agent_id": "/root/public_literature",
+                    "task_name": "/root/public_literature",
+                    "status": "completed",
+                    "message": "SPECIALIST ONLY",
+                }
+            ],
+        )
+        self.assertEqual(
+            [event["name"] for event in events if event["type"] == "tool_call"],
+            ["spawn_agent", "wait_agent"],
+        )
+
     def test_inbound_approval_request_with_colliding_id_is_declined_without_hanging(self) -> None:
         output = io.StringIO(
             "".join(

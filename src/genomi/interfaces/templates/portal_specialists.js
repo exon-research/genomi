@@ -302,6 +302,8 @@ function applySignals(values, specialists, byIdentity, fallback) {
     }
     const status = normalizedStatus(signal.status || signal.state || signal.result || signal.type);
     if (status) specialist.status = status;
+    const summary = compact(signal.message || signal.summary, 150);
+    if (summary) specialist.summary = summary;
     registerIdentities(byIdentity, specialist);
     applied = true;
   });

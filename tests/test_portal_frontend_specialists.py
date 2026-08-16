@@ -103,7 +103,7 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
             records[2].result = {{
               id: 'wait-1',
               payload: {{ updates: [
-                {{ agent_id: 'agent-lit', task_name: '/root/literature_review', status: 'completed' }},
+                {{ agent_id: 'agent-lit', task_name: '/root/literature_review', status: 'completed', message: 'Literature findings ready.' }},
                 {{ agent_id: 'agent-protein', task_name: '/root/protein_model', status: 'failed' }}
               ] }}
             }};
@@ -140,6 +140,10 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
         self.assertEqual(
             [item["status"] for item in completed["specialists"]],
             ["completed", "error"],
+        )
+        self.assertEqual(
+            completed["specialists"][0]["summary"],
+            "Literature findings ready.",
         )
         self.assertEqual(completed["summary"], "1 completed · 1 error")
         self.assertEqual(result["names"], [True, True, False])

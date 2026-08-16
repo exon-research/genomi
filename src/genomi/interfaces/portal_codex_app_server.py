@@ -28,7 +28,11 @@ class CodexAppServerSession:
     _turn_submitted: bool = False
     _turn_completed: bool = False
     _turn_error: str | None = None
+    _root_thread_id: str = ""
     _message_deltas: dict[str, str] = field(default_factory=dict)
+    _specialists_by_thread_id: dict[str, JsonObject] = field(default_factory=dict)
+    _specialist_final_messages: dict[str, str] = field(default_factory=dict)
+    _completed_specialist_threads: set[str] = field(default_factory=set)
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def run(
@@ -67,6 +71,7 @@ class CodexAppServerSession:
         thread_id = str(thread.get("id") or "") if isinstance(thread, dict) else ""
         if not thread_id:
             raise CodexAppServerUnavailable("Codex app-server returned no thread id")
+        self._root_thread_id = thread_id
         self._turn_submitted = True
         turn_result = self._request(
             "turn/start",
@@ -194,20 +199,33 @@ class CodexAppServerSession:
         )
 
     def _handle_notification(self, method: str, params: JsonObject) -> None:
+        thread_id = str(params.get("threadId") or "")
         if method == "item/agentMessage/delta":
             item_id = str(params.get("itemId") or "")
             delta = params.get("delta")
             if isinstance(delta, str) and delta:
                 self._message_deltas[item_id] = self._message_deltas.get(item_id, "") + delta
-                self.on_event({"type": "text_delta", "delta": delta})
+                if self._is_root_notification(thread_id):
+                    self.on_event({"type": "text_delta", "delta": delta})
             return
         if method in {"item/started", "item/completed"}:
             item = params.get("item")
             if isinstance(item, dict):
-                for event in self._item_events(item, completed=method == "item/completed"):
+                completed = method == "item/completed"
+                if not self._is_root_notification(thread_id):
+                    self._remember_specialist_message(thread_id, item, completed=completed)
+                    return
+                if str(item.get("type") or "") == "subAgentActivity":
+                    events = self._specialist_activity_events(item, completed=completed)
+                else:
+                    events = self._item_events(item, completed=completed)
+                for event in events:
                     self.on_event(event)
             return
         if method == "turn/completed":
+            if not self._is_root_notification(thread_id):
+                self._complete_specialist(thread_id, params.get("turn"))
+                return
             turn = params.get("turn")
             if isinstance(turn, dict):
                 status = str(turn.get("status") or "")
@@ -216,6 +234,101 @@ class CodexAppServerSession:
                 elif status == "interrupted":
                     self._turn_error = "Codex turn was interrupted"
             self._turn_completed = True
+
+    def _is_root_notification(self, thread_id: str) -> bool:
+        return not thread_id or not self._root_thread_id or thread_id == self._root_thread_id
+
+    def _specialist_activity_events(
+        self,
+        item: JsonObject,
+        *,
+        completed: bool,
+    ) -> list[JsonObject]:
+        # Codex app-server represents a native specialist launch as a
+        # subAgentActivity on the parent thread. Its immediate item/completed
+        # only completes the launch notification; the child thread's own
+        # turn/completed is the specialist's terminal boundary.
+        if completed:
+            return []
+        child_thread_id = str(item.get("agentThreadId") or "")
+        if not child_thread_id:
+            return []
+        item_id = str(item.get("id") or child_thread_id)
+        agent_path = str(item.get("agentPath") or child_thread_id)
+        self._specialists_by_thread_id[child_thread_id] = {
+            "call_id": item_id,
+            "agent_id": agent_path,
+            "task_name": agent_path,
+        }
+        return [
+            {
+                "type": "tool_call",
+                "id": item_id,
+                "name": "spawn_agent",
+                "input": {
+                    "agent_id": agent_path,
+                    "task_name": agent_path,
+                    "receiverThreadIds": [child_thread_id],
+                },
+            }
+        ]
+
+    def _remember_specialist_message(
+        self,
+        thread_id: str,
+        item: JsonObject,
+        *,
+        completed: bool,
+    ) -> None:
+        if not completed or str(item.get("type") or "") != "agentMessage":
+            return
+        text = item.get("text")
+        if isinstance(text, str) and text:
+            self._specialist_final_messages[thread_id] = text
+
+    def _complete_specialist(self, thread_id: str, turn_value: Any) -> None:
+        if not thread_id or thread_id in self._completed_specialist_threads:
+            return
+        specialist = self._specialists_by_thread_id.get(thread_id)
+        if not specialist:
+            return
+        turn = turn_value if isinstance(turn_value, dict) else {}
+        status = str(turn.get("status") or "failed")
+        succeeded = status == "completed"
+        message = self._specialist_final_messages.get(thread_id, "")
+        if not message:
+            for item in reversed(turn.get("items") or []):
+                if not isinstance(item, dict) or str(item.get("type") or "") != "agentMessage":
+                    continue
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    message = text
+                    break
+        agent_id = str(specialist.get("agent_id") or thread_id)
+        update: JsonObject = {
+            "agent_id": agent_id,
+            "task_name": str(specialist.get("task_name") or agent_id),
+            "status": "completed" if succeeded else "failed",
+        }
+        if message:
+            update["message"] = message
+        output: JsonObject = {
+            "status": "completed" if succeeded else "failed",
+            "updates": [update],
+            "receiverThreadIds": [thread_id],
+            "agentsStates": {agent_id: update},
+        }
+        self.on_event(
+            {
+                "type": "tool_result",
+                "id": str(specialist.get("call_id") or thread_id),
+                "name": "spawn_agent",
+                "isError": not succeeded,
+                "content": _preview(output),
+                "payload": output,
+            }
+        )
+        self._completed_specialist_threads.add(thread_id)
 
     def _item_events(self, item: JsonObject, *, completed: bool) -> list[JsonObject]:
         item_type = str(item.get("type") or "")
