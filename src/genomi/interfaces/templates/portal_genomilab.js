@@ -59,7 +59,6 @@ export function createGenomiLabController({ api, getProjectId, getFrameId = () =
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
       roundBoardCard(investigation.cycles),
       hypothesisBoardCard(investigation.hypotheses),
-      specialistWorkstreamsCard(investigation.specialist_workstreams),
       informationGapsCard(investigation.information_gaps),
       setupFaultsCard(investigation.information_gaps),
       evidenceBoardCard(investigation),
@@ -267,7 +266,6 @@ function roundBoardCard(values) {
   // progress rather than a verdict.
   const card = boardCardShell('Round ' + round.ordinal);
   if (round.purpose) card.append(boardParagraph(round.purpose));
-  if (round.total > 1) card.append(boardParagraph(round.total + ' rounds so far'));
   return card;
 }
 

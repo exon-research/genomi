@@ -596,9 +596,15 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     return match ? match[1] : '';
   }
 
+  // Genomi's own record-keeping -- opening a cycle, re-reading state, moving an
+  // assignment along -- is not a research step the reader needs a row for. Its
+  // outcomes already appear on the board, so only the brief stays visible.
+  const LAB_BOOKKEEPING_EXCEPTIONS = new Set(['lab.publish_brief']);
+
   function isTechnicalToolRecord(record, name, summary, recoveredOperation) {
     if (isPermissionRequestRecord(record) || recoveredOperation) return false;
     const cleanName = promptSafeText(String(name || '')).trim().toLowerCase();
+    if (cleanName.startsWith('lab.') && !LAB_BOOKKEEPING_EXCEPTIONS.has(cleanName)) return true;
     if (cleanName.startsWith('mcp__')) return true;
     if (['bash', 'skill', 'toolsearch'].includes(cleanName)) return true;
     // Read the raw result, not the one-line summary: transport blobs are kept
