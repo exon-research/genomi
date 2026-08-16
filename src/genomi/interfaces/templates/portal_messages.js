@@ -772,6 +772,28 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     };
   }
 
+  // Guidance asks the assistant to narrate for the person, but a line about
+  // Genomi's own bookkeeping still reads as the tool breaking. Hold those back
+  // from the live line; the full text stays in the work trail either way.
+  const INTERNAL_NARRATION_MARKERS = [
+    'command id',
+    'idempotency',
+    'expected_revision',
+    'revision conflict',
+    'consent receipt',
+    'snapshot id',
+    'retrying with',
+    'fresh key',
+    'schema',
+    'validation error',
+    'invalid_lab'
+  ];
+
+  function isInternalNarration(message) {
+    const value = String(message || '').toLowerCase();
+    return INTERNAL_NARRATION_MARKERS.some((marker) => value.includes(marker));
+  }
+
   // While a turn runs, the assistant narrates what it is doing -- reading the
   // records, scanning the genome, briefing a specialist. That narration was
   // being filed as a hidden diagnostic, so the person watched an unchanging
@@ -784,6 +806,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     if (!body) return;
     const answer = body.querySelector('.message-answer-text');
     if (answer && answer.textContent.trim()) return;
+    if (isInternalNarration(message)) return;
     let live = body.querySelector('.message-live-progress');
     if (!live) {
       live = document.createElement('p');
