@@ -140,25 +140,103 @@ class LabPublishBriefContractTests(unittest.TestCase):
             command_id="create-shared-hypothesis",
             expected_revision=cycle["domain_revision"],
         )
-        gap = store.create_hypothesis(
-            investigation_id,
-            cycle_id=cycle_id,
-            statement=(
-                "The reported patterns may have independent causes that require "
-                "clinical evaluation."
-            ),
-            status="open",
-            profile_snapshot_id=None,
-            evidence_snapshot_id=None,
-            supporting_evidence_record_ids=[],
-            contradicting_evidence_record_ids=[],
-            contextual_evidence_record_ids=[],
-            unresolved_gaps=["Independent clinical assessment remains needed"],
-            revision_rationale="Preserve the independent-causes alternative.",
-            category="evidence_gap",
-            command_id="create-gap-hypothesis",
-            expected_revision=candidate["domain_revision"],
-        )
+
+        @contextmanager
+        def authorized_store():
+            yield store, "user-a", "session-a"
+
+        with mock.patch.object(
+            lab_operations, "_authorized_store", authorized_store
+        ):
+            with self.assertRaisesRegex(
+                OperationError, "must describe missing or unresolved information"
+            ):
+                call_operation(
+                    "genomi.invoke",
+                    {
+                        "tool": "lab.create_information_gap",
+                        "params": {
+                            "investigation_id": investigation_id,
+                            "cycle_id": cycle_id,
+                            "statement": (
+                                "The two reported patterns share one explanation."
+                            ),
+                            "status": "open",
+                            "revision_rationale": "Attempt a non-gap assertion.",
+                            "command_id": "reject-non-gap-assertion",
+                            "expected_revision": candidate["domain_revision"],
+                        },
+                    },
+                )
+            gap = call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.create_information_gap",
+                    "params": {
+                        "investigation_id": investigation_id,
+                        "cycle_id": cycle_id,
+                        "statement": (
+                            "Objective evidence distinguishing shared from "
+                            "independent explanations remains unavailable."
+                        ),
+                        "status": "open",
+                        "revision_rationale": (
+                            "Record the unresolved comparison explicitly."
+                        ),
+                        "command_id": "create-information-gap",
+                        "expected_revision": candidate["domain_revision"],
+                    },
+                },
+            )
+            revised_gap = call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.revise_information_gap",
+                    "params": {
+                        "investigation_id": investigation_id,
+                        "logical_information_gap_id": gap[
+                            "information_gap_version"
+                        ]["logical_information_gap_id"],
+                        "cycle_id": cycle_id,
+                        "statement": (
+                            "Independent clinical assessment and objective "
+                            "measurements remain unavailable."
+                        ),
+                        "status": "open",
+                        "revision_rationale": (
+                            "Clarify the evidence needed to close the gap."
+                        ),
+                        "command_id": "revise-information-gap",
+                        "expected_revision": gap["domain_revision"],
+                    },
+                },
+            )
+            with self.assertRaisesRegex(
+                OperationError, "requires a new current profile or evidence snapshot"
+            ):
+                call_operation(
+                    "genomi.invoke",
+                    {
+                        "tool": "lab.revise_information_gap",
+                        "params": {
+                            "investigation_id": investigation_id,
+                            "logical_information_gap_id": gap[
+                                "information_gap_version"
+                            ]["logical_information_gap_id"],
+                            "cycle_id": cycle_id,
+                            "statement": (
+                                "Whether the patterns share an explanation remains "
+                                "to be determined."
+                            ),
+                            "status": "resolved",
+                            "revision_rationale": (
+                                "Attempt resolution without new assessed information."
+                            ),
+                            "command_id": "resolve-gap-without-new-information",
+                            "expected_revision": revised_gap["domain_revision"],
+                        },
+                    },
+                )
         revised_candidate = store.revise_hypothesis(
             investigation_id,
             logical_hypothesis_id=candidate["hypothesis_version"][
@@ -178,7 +256,7 @@ class LabPublishBriefContractTests(unittest.TestCase):
             revision_rationale="Carry the current shared explanation forward.",
             category="shared_explanation",
             command_id="revise-shared-hypothesis",
-            expected_revision=gap["domain_revision"],
+            expected_revision=revised_gap["domain_revision"],
         )
         current_cycle = store.create_investigation_cycle(
             investigation_id,
@@ -192,7 +270,9 @@ class LabPublishBriefContractTests(unittest.TestCase):
         candidate_id = str(
             candidate["hypothesis_version"]["logical_hypothesis_id"]
         )
-        gap_id = str(gap["hypothesis_version"]["logical_hypothesis_id"])
+        gap_id = str(
+            gap["information_gap_version"]["logical_information_gap_id"]
+        )
         brief = {
             "title": "Clinician discussion brief",
             "summary": (
@@ -228,10 +308,6 @@ class LabPublishBriefContractTests(unittest.TestCase):
         }
         validate(instance=params, schema=self._publish_schema())
 
-        @contextmanager
-        def authorized_store():
-            yield store, "user-a", "session-a"
-
         with mock.patch.object(
             lab_operations, "_authorized_store", authorized_store
         ):
@@ -253,10 +329,31 @@ class LabPublishBriefContractTests(unittest.TestCase):
                     {"tool": "lab.publish_brief", "params": stale_reference},
                 )
 
+            stale_gap = copy.deepcopy(params)
+            stale_gap["brief"]["gap_ids"] = [
+                gap["information_gap_version"]["information_gap_version_id"]
+            ]
+            stale_gap["command_id"] = "stale-information-gap-version"
+            with self.assertRaisesRegex(OperationError, "current information gaps"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": stale_gap},
+                )
+
+            hypothesis_as_gap = copy.deepcopy(params)
+            hypothesis_as_gap["brief"]["hypothesis_ids"] = []
+            hypothesis_as_gap["brief"]["gap_ids"] = [candidate_id]
+            hypothesis_as_gap["command_id"] = "reject-hypothesis-as-gap"
+            with self.assertRaisesRegex(OperationError, "current information gaps"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": hypothesis_as_gap},
+                )
+
             unknown_gap = copy.deepcopy(params)
-            unknown_gap["brief"]["gap_ids"] = ["logical-hypothesis-unknown-gap"]
+            unknown_gap["brief"]["gap_ids"] = ["logical-information-gap-unknown"]
             unknown_gap["command_id"] = "unknown-gap-reference"
-            with self.assertRaisesRegex(OperationError, "current logical hypotheses"):
+            with self.assertRaisesRegex(OperationError, "current information gaps"):
                 call_operation(
                     "genomi.invoke",
                     {"tool": "lab.publish_brief", "params": unknown_gap},
@@ -303,6 +400,32 @@ class LabPublishBriefContractTests(unittest.TestCase):
         self.assertEqual(result["dispatched_tool"], "lab.publish_brief")
         self.assertEqual(result["brief_version"]["version"], 1)
         self.assertEqual(result["brief_version"]["brief"], brief)
+        with mock.patch.object(
+            lab_operations, "_authorized_store", authorized_store
+        ):
+            current = call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.read_investigation",
+                    "params": {"investigation_id": investigation_id},
+                },
+            )
+            history = call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.read_investigation",
+                    "params": {
+                        "investigation_id": investigation_id,
+                        "include_history": True,
+                    },
+                },
+            )
+        self.assertEqual(len(current["information_gap_versions"]), 1)
+        self.assertEqual(
+            current["information_gap_versions"][0]["information_gap_version_id"],
+            revised_gap["information_gap_version"]["information_gap_version_id"],
+        )
+        self.assertEqual(len(history["information_gap_versions"]), 2)
 
     @staticmethod
     def _publish_schema() -> dict[str, object]:

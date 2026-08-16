@@ -240,6 +240,14 @@ def revise_hypothesis(params: JsonObject) -> JsonObject:
     )
 
 
+def create_information_gap(params: JsonObject) -> JsonObject:
+    return _invoke_store_operation("create_information_gap", params)
+
+
+def revise_information_gap(params: JsonObject) -> JsonObject:
+    return _invoke_store_operation("revise_information_gap", params)
+
+
 def prepare_specialist_brief(params: JsonObject) -> JsonObject:
     investigation_id = _required(params, "investigation_id")
 
@@ -447,12 +455,14 @@ __all__ = [
     "capture_provider_result",
     "create_cycle",
     "create_hypothesis",
+    "create_information_gap",
     "create_investigation",
     "create_specialist_assignment",
     "prepare_specialist_brief",
     "publish_brief",
     "read_investigation",
     "revise_hypothesis",
+    "revise_information_gap",
     "transition_specialist_assignment",
     "update_health_profile",
 ]

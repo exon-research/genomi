@@ -6,16 +6,14 @@ import json
 from collections.abc import Mapping
 from typing import Any, ContextManager, Protocol
 
-from . import narrative_safety_patterns as _safety
 from .artifact_validation import BRIEF_CLINICAL_BOUNDARY
+from .informational_narrative import validate_informational_narrative
 from .models import (
-    QUESTION_MAX,
     JsonObject,
     compact_json,
     required_text,
     validate_private_payload,
 )
-from .research_narrative import NarrativeKind, _unsafe_narrative
 
 
 _BRIEF_FIELDS = {
@@ -47,8 +45,8 @@ def validate_orchestrator_brief(
         raise ValueError("brief must use the complete clinician brief shape")
     title = required_text(brief.get("title"), "brief.title", 500)
     summary = required_text(brief.get("summary"), "brief.summary", 10_000)
-    _validate_informational_narrative(title, "brief.title", kind="brief_title")
-    _validate_informational_narrative(summary, "brief.summary", kind="brief_summary")
+    validate_informational_narrative(title, "brief.title", kind="brief_title")
+    validate_informational_narrative(summary, "brief.summary", kind="brief_summary")
     if brief.get("clinical_boundary") != BRIEF_CLINICAL_BOUNDARY:
         raise ValueError("brief must preserve the informational clinical boundary")
 
@@ -60,11 +58,11 @@ def validate_orchestrator_brief(
     if set(hypothesis_ids) & set(gap_ids):
         raise ValueError("brief references cannot be both hypotheses and gaps")
     for value in _text_array(brief, "confirmation_needs"):
-        _validate_informational_narrative(
+        validate_informational_narrative(
             value, "brief confirmation need", kind="confirmation_need"
         )
     for value in _text_array(brief, "professional_questions"):
-        _validate_informational_narrative(
+        validate_informational_narrative(
             value, "brief professional question", kind="professional_question"
         )
 
@@ -79,7 +77,7 @@ def validate_orchestrator_brief(
         statement = required_text(
             claim.get("statement"), "brief claim statement", 8_000
         )
-        _validate_informational_narrative(
+        validate_informational_narrative(
             statement, "brief claim statement", kind="assertion"
         )
         for field, target in (
@@ -119,35 +117,6 @@ def validate_orchestrator_brief(
             hypothesis_ids=hypothesis_ids,
             gap_ids=gap_ids,
         )
-
-
-def _validate_informational_narrative(
-    value: object,
-    field: str,
-    *,
-    kind: NarrativeKind = "assertion",
-) -> str:
-    """Reject clinical conclusions without constraining evidence-specific wording."""
-
-    text = required_text(value, field, QUESTION_MAX)
-    if kind == "brief_title" and (
-        _safety._UNSAFE_TITLE_TERM.search(text)
-        or _safety._UNSAFE_TITLE_CLAIM.search(text)
-    ):
-        raise ValueError(f"{field} {_safety._ERROR}")
-    if _unsafe_narrative(text, kind=kind):
-        raise ValueError(f"{field} {_safety._ERROR}")
-    if kind == "confirmation_need" and not _safety._CONFIRMATION_FORM.search(text):
-        raise ValueError(f"{field} must describe a confirmation or evidence need")
-    if kind == "professional_question":
-        stripped = text.strip().lstrip('"\'\u201c\u2018')
-        if not text.rstrip().endswith("?") or not _safety._INTERROGATIVE.match(
-            stripped
-        ):
-            raise ValueError(f"{field} must be a genuine professional question")
-        if _safety._INTERNAL_QUESTION_UNIT.search(text.rstrip()[:-1]):
-            raise ValueError(f"{field} must contain exactly one professional question")
-    return text
 
 
 def _validate_current_cycle(
@@ -245,10 +214,7 @@ def _validate_current_references(
     hypothesis_ids: list[str],
     gap_ids: list[str],
 ) -> None:
-    requested = set(hypothesis_ids) | set(gap_ids)
-    if not requested:
-        return
-    rows = connection.execute(
+    hypothesis_rows = connection.execute(
         "SELECT thread.logical_hypothesis_id, version.hypothesis_version_id, "
         "version.patient_molecular_snapshot_id, "
         "version.evidence_snapshot_id FROM orchestrator_hypothesis_threads AS thread "
@@ -259,35 +225,68 @@ def _validate_current_references(
         "WHERE latest.logical_hypothesis_id = thread.logical_hypothesis_id)",
         (investigation["investigation_id"],),
     ).fetchall()
-    by_identifier: dict[str, Any] = {}
-    for row in rows:
-        by_identifier[str(row["logical_hypothesis_id"])] = row
-        by_identifier[str(row["hypothesis_version_id"])] = row
-    if not requested.issubset(by_identifier):
+    hypotheses_by_identifier: dict[str, Any] = {}
+    for row in hypothesis_rows:
+        hypotheses_by_identifier[str(row["logical_hypothesis_id"])] = row
+        hypotheses_by_identifier[str(row["hypothesis_version_id"])] = row
+    if not set(hypothesis_ids).issubset(hypotheses_by_identifier):
         raise ValueError(
-            "brief hypothesis and gap references must identify current logical "
-            "hypotheses or their latest versions"
+            "brief hypothesis references must identify current logical hypotheses "
+            "or their latest versions"
         )
     resolved_hypotheses = {
-        str(by_identifier[value]["logical_hypothesis_id"]) for value in hypothesis_ids
+        str(hypotheses_by_identifier[value]["logical_hypothesis_id"])
+        for value in hypothesis_ids
     }
-    resolved_gaps = {
-        str(by_identifier[value]["logical_hypothesis_id"]) for value in gap_ids
-    }
-    if len(resolved_hypotheses) != len(hypothesis_ids) or len(resolved_gaps) != len(
-        gap_ids
-    ):
+    if len(resolved_hypotheses) != len(hypothesis_ids):
         raise ValueError("brief references cannot repeat one logical hypothesis")
-    if resolved_hypotheses & resolved_gaps:
-        raise ValueError("brief references cannot be both hypotheses and gaps")
-    for identifier in requested:
-        row = by_identifier[identifier]
+    for identifier in hypothesis_ids:
+        row = hypotheses_by_identifier[identifier]
         if row["patient_molecular_snapshot_id"] != investigation.get(
             "patient_molecular_snapshot_id"
         ):
             raise ValueError("brief references must use the current profile snapshot")
         if row["evidence_snapshot_id"] != investigation.get("evidence_snapshot_id"):
             raise ValueError("brief references must use the current evidence snapshot")
+
+    gap_rows = connection.execute(
+        "SELECT thread.logical_information_gap_id, "
+        "version.information_gap_version_id, version.status, "
+        "version.patient_molecular_snapshot_id, version.evidence_snapshot_id "
+        "FROM information_gap_threads AS thread "
+        "JOIN information_gap_versions AS version "
+        "ON version.logical_information_gap_id = thread.logical_information_gap_id "
+        "WHERE thread.investigation_id = ? AND version.version = ("
+        "SELECT MAX(latest.version) FROM information_gap_versions AS latest "
+        "WHERE latest.logical_information_gap_id = "
+        "thread.logical_information_gap_id)",
+        (investigation["investigation_id"],),
+    ).fetchall()
+    gaps_by_identifier: dict[str, Any] = {}
+    for row in gap_rows:
+        gaps_by_identifier[str(row["logical_information_gap_id"])] = row
+        gaps_by_identifier[str(row["information_gap_version_id"])] = row
+    if not set(gap_ids).issubset(gaps_by_identifier):
+        raise ValueError(
+            "brief gap references must identify current information gaps or their "
+            "latest versions"
+        )
+    resolved_gaps = {
+        str(gaps_by_identifier[value]["logical_information_gap_id"])
+        for value in gap_ids
+    }
+    if len(resolved_gaps) != len(gap_ids):
+        raise ValueError("brief references cannot repeat one logical information gap")
+    for identifier in gap_ids:
+        row = gaps_by_identifier[identifier]
+        if row["status"] != "open":
+            raise ValueError("brief gap references must be current open information gaps")
+        if row["patient_molecular_snapshot_id"] != investigation.get(
+            "patient_molecular_snapshot_id"
+        ):
+            raise ValueError("brief gap references must use the current profile snapshot")
+        if row["evidence_snapshot_id"] != investigation.get("evidence_snapshot_id"):
+            raise ValueError("brief gap references must use the current evidence snapshot")
 
 
 __all__ = ["validate_orchestrator_brief"]

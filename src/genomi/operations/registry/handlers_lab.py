@@ -61,6 +61,14 @@ def _lab_revise_hypothesis(params: JsonObject) -> JsonObject:
     return _dispatch_lab("revise_hypothesis", params)
 
 
+def _lab_create_information_gap(params: JsonObject) -> JsonObject:
+    return _dispatch_lab("create_information_gap", params)
+
+
+def _lab_revise_information_gap(params: JsonObject) -> JsonObject:
+    return _dispatch_lab("revise_information_gap", params)
+
+
 def _lab_prepare_specialist_brief(params: JsonObject) -> JsonObject:
     return _dispatch_lab("prepare_specialist_brief", params)
 
@@ -90,12 +98,14 @@ __all__ = [
     "_lab_capture_provider_result",
     "_lab_create_cycle",
     "_lab_create_hypothesis",
+    "_lab_create_information_gap",
     "_lab_create_investigation",
     "_lab_create_specialist_assignment",
     "_lab_prepare_specialist_brief",
     "_lab_publish_brief",
     "_lab_read_investigation",
     "_lab_revise_hypothesis",
+    "_lab_revise_information_gap",
     "_lab_transition_specialist_assignment",
     "_lab_update_health_profile",
 ]

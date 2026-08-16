@@ -10,11 +10,13 @@
         "lab.capture_provider_result",
         "lab.create_cycle",
         "lab.create_investigation",
+        "lab.create_information_gap",
         "lab.create_specialist_assignment",
         "lab.create_hypothesis",
         "lab.prepare_specialist_brief",
         "lab.publish_brief",
         "lab.read_investigation",
+        "lab.revise_information_gap",
         "lab.revise_hypothesis",
         "lab.transition_specialist_assignment",
         "lab.update_health_profile"
@@ -213,6 +215,64 @@
       "requires": ["active_investigation_authorization", "current_investigation_cycle", "existing_logical_hypothesis"],
       "produces": ["hypothesis_version"],
       "context_optional": ["profile_snapshot_id", "evidence_snapshot_id", "parent_hypothesis_id", "category"],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_profile_snapshot_metadata", "captured_evidence_records"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.create_information_gap": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Create the first immutable version of a current investigation information gap.",
+      "input_schema": {
+        "type": "object",
+        "x_genomi_property_groups": ["lab_information_gap_version"],
+        "properties": {
+          "status": {"type": "string", "enum": ["open"]}
+        },
+        "required": [
+          "investigation_id", "cycle_id", "statement", "status",
+          "revision_rationale", "command_id", "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle"],
+      "produces": ["information_gap_version"],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": ["lab_investigation_state", "approved_profile_snapshot_metadata", "captured_evidence_records"],
+      "discovery_role": "focused_tool"
+    },
+    "lab.revise_information_gap": {
+      "capability": "lab",
+      "namespace": "lab",
+      "description": "Append an immutable current-snapshot version to an existing logical information gap.",
+      "input_schema": {
+        "type": "object",
+        "x_genomi_property_groups": ["lab_information_gap_version"],
+        "properties": {
+          "logical_information_gap_id": {"type": "string"},
+          "status": {"type": "string", "enum": ["open", "resolved"]}
+        },
+        "required": [
+          "investigation_id", "cycle_id", "logical_information_gap_id",
+          "statement", "status", "revision_rationale", "command_id",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/lab/SKILL.md",
+      "area": "lab",
+      "requires": ["active_investigation_authorization", "current_investigation_cycle", "existing_logical_information_gap"],
+      "produces": ["information_gap_version"],
+      "context_optional": [],
       "privacy_scope": "local_private",
       "operation_scope": "write",
       "mutating": true,

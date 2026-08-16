@@ -195,16 +195,40 @@ CREATE TABLE IF NOT EXISTS orchestrator_hypothesis_versions (
     created_at TEXT NOT NULL,
     UNIQUE(logical_hypothesis_id, version)
 );
+CREATE TABLE IF NOT EXISTS information_gap_threads (
+    logical_information_gap_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS information_gap_versions (
+    information_gap_version_id TEXT PRIMARY KEY,
+    logical_information_gap_id TEXT NOT NULL REFERENCES information_gap_threads(logical_information_gap_id) ON DELETE CASCADE,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    cycle_id TEXT NOT NULL REFERENCES investigation_cycles(cycle_id),
+    patient_molecular_snapshot_id TEXT REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    evidence_snapshot_id TEXT REFERENCES evidence_snapshots(evidence_snapshot_id),
+    supersedes_information_gap_version_id TEXT UNIQUE REFERENCES information_gap_versions(information_gap_version_id),
+    version INTEGER NOT NULL CHECK (version > 0),
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+    revision_rationale TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(logical_information_gap_id, version)
+);
 CREATE INDEX IF NOT EXISTS idx_cycles_investigation ON investigation_cycles(investigation_id, ordinal);
 CREATE INDEX IF NOT EXISTS idx_specialist_briefs_cycle ON specialist_brief_derivations(cycle_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_specialist_assignments_cycle ON specialist_assignments(cycle_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_orchestrator_hypotheses_investigation ON orchestrator_hypothesis_threads(investigation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_orchestrator_hypothesis_versions_thread ON orchestrator_hypothesis_versions(logical_hypothesis_id, version);
+CREATE INDEX IF NOT EXISTS idx_information_gaps_investigation ON information_gap_threads(investigation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_information_gap_versions_thread ON information_gap_versions(logical_information_gap_id, version);
 CREATE TRIGGER IF NOT EXISTS specialist_brief_derivations_immutable BEFORE UPDATE ON specialist_brief_derivations BEGIN SELECT RAISE(ABORT, 'specialist brief derivations are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS specialist_briefs_immutable BEFORE UPDATE ON specialist_briefs BEGIN SELECT RAISE(ABORT, 'specialist briefs are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS specialist_analyses_immutable BEFORE UPDATE ON specialist_analyses BEGIN SELECT RAISE(ABORT, 'specialist analyses are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS orchestrator_hypothesis_threads_immutable BEFORE UPDATE ON orchestrator_hypothesis_threads BEGIN SELECT RAISE(ABORT, 'hypothesis threads are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS orchestrator_hypothesis_versions_immutable BEFORE UPDATE ON orchestrator_hypothesis_versions BEGIN SELECT RAISE(ABORT, 'hypothesis versions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS information_gap_threads_immutable BEFORE UPDATE ON information_gap_threads BEGIN SELECT RAISE(ABORT, 'information gap threads are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS information_gap_versions_immutable BEFORE UPDATE ON information_gap_versions BEGIN SELECT RAISE(ABORT, 'information gap versions are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS genomi_result_receipts_content_immutable BEFORE UPDATE ON genomi_result_receipts
 WHEN NEW.result_receipt_id IS NOT OLD.result_receipt_id OR NEW.operation IS NOT OLD.operation
   OR NEW.params_json IS NOT OLD.params_json OR NEW.presented_result_json IS NOT OLD.presented_result_json

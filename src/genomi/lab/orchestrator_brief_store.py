@@ -99,6 +99,19 @@ class OrchestratorBriefStoreMixin:
                    "AND version.version = (SELECT MAX(latest.version) FROM orchestrator_hypothesis_versions AS latest WHERE latest.logical_hypothesis_id = version.logical_hypothesis_id) ORDER BY version.created_at"),
                 (investigation_id,),
             ).fetchall()
+            information_gaps = connection.execute(
+                "SELECT version.* FROM information_gap_versions AS version "
+                "WHERE version.investigation_id = ? "
+                + (
+                    "ORDER BY version.created_at"
+                    if include_history
+                    else "AND version.version = (SELECT MAX(latest.version) "
+                    "FROM information_gap_versions AS latest WHERE "
+                    "latest.logical_information_gap_id = "
+                    "version.logical_information_gap_id) ORDER BY version.created_at"
+                ),
+                (investigation_id,),
+            ).fetchall()
             assignments = connection.execute(
                 "SELECT * FROM specialist_assignments WHERE investigation_id = ? ORDER BY created_at", (investigation_id,)
             ).fetchall()
@@ -117,6 +130,7 @@ class OrchestratorBriefStoreMixin:
             "context": row_dict(context_row) if context_row is not None else None,
             "cycles": [row_dict(row) for row in cycles],
             "hypothesis_versions": [row_dict(row) for row in hypotheses],
+            "information_gap_versions": [row_dict(row) for row in information_gaps],
             "specialist_assignments": [row_dict(row) for row in assignments],
             "evidence_snapshots": [row_dict(row) for row in snapshots],
             "brief_versions": [row_dict(row) for row in briefs],

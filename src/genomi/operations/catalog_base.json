@@ -151,6 +151,16 @@
           "expected_revision": {"type": "integer", "minimum": 0}
         }
       },
+      "lab_information_gap_version": {
+        "properties": {
+          "investigation_id": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "statement": {"type": "string"},
+          "revision_rationale": {"type": "string"},
+          "command_id": {"type": "string"},
+          "expected_revision": {"type": "integer", "minimum": 0}
+        }
+      },
       "decode_dashboard_options": {
         "properties": {
           "panels": {

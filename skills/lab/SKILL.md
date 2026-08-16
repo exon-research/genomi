@@ -144,6 +144,13 @@ Record supporting, contradicting, and contextual evidence plus unresolved
 gaps and a revision rationale. Model output alone cannot change hypothesis
 status. Classifications and uncertainty labels cannot be silently upgraded.
 
+Record a durable unknown with `lab.create_information_gap`; revise the same
+logical gap with `lab.revise_information_gap` when its wording or current
+snapshot basis changes. A gap may be `open` or `resolved`; resolving it requires
+a newer approved profile or evidence snapshot. Clinician brief `gap_ids` refer
+only to current open information-gap threads or their latest versions, never to
+hypotheses or arbitrary prose.
+
 When the patient returns with new information, create a reviewed profile
 snapshot and new evidence snapshot, revisit every current hypothesis, prepare
 new de-identified specialist questions only where useful, and publish a new

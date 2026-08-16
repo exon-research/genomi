@@ -12,6 +12,7 @@ from .local_sqlite import LocalSQLiteDatabase
 from .disease_relations import DiseaseRelationStoreMixin
 from .evidence_store import EvidenceStoreMixin
 from .health_store import HealthRecordStoreMixin
+from .information_gap_store import InformationGapStoreMixin
 from .investigation_store import InvestigationStoreMixin
 from .models import (
     DISPLAY_NAME_MAX,
@@ -44,6 +45,7 @@ def default_store_path(root: str | Path | None = None) -> Path:
 class GenomiLabStore(
     PortalInvestigationStoreMixin,
     OrchestratorStateStoreMixin,
+    InformationGapStoreMixin,
     OrchestratorHypothesisStoreMixin,
     OrchestratorBriefStoreMixin,
     ResultReceiptStoreMixin,
