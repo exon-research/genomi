@@ -42,6 +42,7 @@ export function specialistLaneModel(records = []) {
     const specialist = {
       key: clean(call.id) || 'specialist-' + String(index + 1),
       id: '',
+      assignmentId: clean(input.assignment_id || input.specialist_assignment_id),
       taskName: clean(input.task_name || input.taskName),
       title: specialistTitle(input),
       summary: specialistSummary(input),
@@ -384,6 +385,8 @@ function signalIdentities(signal) {
   return [
     signal.agent_id,
     signal.agentId,
+    signal.assignment_id,
+    signal.specialist_assignment_id,
     signal.task_name,
     signal.taskName,
     signal.target,
@@ -412,6 +415,8 @@ function registerIdentities(index, specialist) {
 }
 
 function specialistTitle(input) {
+  const specialistRole = clean(input.specialist_role || input.specialistRole);
+  if (specialistRole) return specialistRole;
   const taskName = clean(input.task_name || input.taskName);
   if (taskName) return humanTaskName(taskName);
   const message = compact(input.message || input.objective, 72);

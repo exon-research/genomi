@@ -4,6 +4,8 @@ import json
 import re
 import threading
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Callable, TextIO
 
 JsonObject = dict[str, Any]
@@ -31,8 +33,10 @@ class CodexAppServerSession:
     _root_thread_id: str = ""
     _message_deltas: dict[str, str] = field(default_factory=dict)
     _specialists_by_thread_id: dict[str, JsonObject] = field(default_factory=dict)
+    _specialist_assignments: dict[str, JsonObject] = field(default_factory=dict)
     _specialist_final_messages: dict[str, str] = field(default_factory=dict)
     _completed_specialist_threads: set[str] = field(default_factory=set)
+    _interrupted_specialist_threads: set[str] = field(default_factory=set)
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def run(
@@ -213,11 +217,21 @@ class CodexAppServerSession:
             if isinstance(item, dict):
                 completed = method == "item/completed"
                 if not self._is_root_notification(thread_id):
+                    if not completed:
+                        violation = self._specialist_policy_violation(thread_id, item)
+                        if violation:
+                            self._interrupt_specialist(
+                                thread_id,
+                                str(params.get("turnId") or ""),
+                                violation,
+                            )
                     self._remember_specialist_message(thread_id, item, completed=completed)
                     return
                 if str(item.get("type") or "") == "subAgentActivity":
                     events = self._specialist_activity_events(item, completed=completed)
                 else:
+                    if completed:
+                        self._remember_specialist_assignment(item)
                     events = self._item_events(item, completed=completed)
                 for event in events:
                     self.on_event(event)
@@ -255,23 +269,149 @@ class CodexAppServerSession:
             return []
         item_id = str(item.get("id") or child_thread_id)
         agent_path = str(item.get("agentPath") or child_thread_id)
-        self._specialists_by_thread_id[child_thread_id] = {
+        unbound = [
+            assignment
+            for assignment in self._specialist_assignments.values()
+            if assignment.get("state") == "proposed" and not assignment.get("child_thread_id")
+        ]
+        binding = unbound[0] if len(unbound) == 1 else None
+        if binding is not None:
+            binding["child_thread_id"] = child_thread_id
+        specialist: JsonObject = {
             "call_id": item_id,
             "agent_id": agent_path,
             "task_name": agent_path,
         }
+        if binding is not None:
+            specialist.update(
+                {
+                    "assignment_id": binding["assignment_id"],
+                    "execution_policy": binding["execution_policy"],
+                    "specialist_role": binding.get("specialist_role") or "Research specialist",
+                }
+            )
+        else:
+            specialist["binding_error"] = (
+                "specialist_policy_binding_ambiguous"
+                if unbound
+                else "specialist_policy_binding_missing"
+            )
+        self._specialists_by_thread_id[child_thread_id] = specialist
+        tool_input: JsonObject = {
+            "agent_id": agent_path,
+            "task_name": agent_path,
+            "receiverThreadIds": [child_thread_id],
+        }
+        if binding is not None:
+            tool_input.update(
+                {
+                    "assignment_id": binding["assignment_id"],
+                    "execution_policy": binding["execution_policy"],
+                    "specialist_role": binding.get("specialist_role") or "Research specialist",
+                }
+            )
         return [
             {
                 "type": "tool_call",
                 "id": item_id,
                 "name": "spawn_agent",
-                "input": {
-                    "agent_id": agent_path,
-                    "task_name": agent_path,
-                    "receiverThreadIds": [child_thread_id],
-                },
+                "input": tool_input,
             }
         ]
+
+    def _remember_specialist_assignment(self, item: JsonObject) -> None:
+        if str(item.get("type") or "") != "mcpToolCall":
+            return
+        arguments = _object(item.get("arguments"))
+        if str(item.get("server") or "") != "genomi" or str(item.get("tool") or "") != "genomi.invoke":
+            return
+        if str(arguments.get("tool") or "") not in {
+            "lab.create_specialist_assignment",
+            "lab.read_investigation",
+            "lab.transition_specialist_assignment",
+        }:
+            return
+        payload = _find_result_object(item.get("result"))
+        assignments: list[JsonObject] = []
+        assignment = payload.get("assignment")
+        if isinstance(assignment, dict):
+            assignments.append(assignment)
+        listed = payload.get("specialist_assignments")
+        if isinstance(listed, list):
+            assignments.extend(value for value in listed if isinstance(value, dict))
+        for value in assignments:
+            assignment_id = str(value.get("specialist_assignment_id") or "")
+            policy = str(value.get("execution_policy") or "")
+            state = str(value.get("state") or "")
+            if not assignment_id or not policy or state not in {"proposed", "spawned", "completed", "failed", "cancelled"}:
+                continue
+            existing = self._specialist_assignments.get(assignment_id, {})
+            self._specialist_assignments[assignment_id] = {
+                **existing,
+                "assignment_id": assignment_id,
+                "execution_policy": policy,
+                "specialist_role": str(value.get("specialist_role") or existing.get("specialist_role") or ""),
+                "state": state,
+            }
+
+    def _specialist_policy_violation(self, thread_id: str, item: JsonObject) -> str:
+        item_type = str(item.get("type") or "")
+        if item_type not in {
+            "commandExecution",
+            "fileChange",
+            "dynamicToolCall",
+            "collabAgentToolCall",
+            "mcpToolCall",
+            "webSearch",
+            "imageGeneration",
+        }:
+            return ""
+        specialist = self._specialists_by_thread_id.get(thread_id)
+        if specialist is None:
+            return "specialist_policy_binding_missing"
+        binding_error = str(specialist.get("binding_error") or "")
+        if binding_error:
+            return binding_error
+        policy = str(specialist.get("execution_policy") or "")
+        allowed = _specialist_allowed_operations(policy)
+        if item_type != "mcpToolCall":
+            return f"specialist_policy_forbids_{item_type}"
+        arguments = _object(item.get("arguments"))
+        operation = str(arguments.get("tool") or "")
+        if (
+            str(item.get("server") or "") != "genomi"
+            or str(item.get("tool") or "") != "genomi.invoke"
+            or operation not in allowed
+        ):
+            return "specialist_policy_operation_not_allowed"
+        return ""
+
+    def _interrupt_specialist(self, thread_id: str, turn_id: str, violation: str) -> None:
+        if not thread_id or thread_id in self._interrupted_specialist_threads:
+            return
+        self._interrupted_specialist_threads.add(thread_id)
+        specialist = self._specialists_by_thread_id.get(thread_id, {})
+        agent_id = str(specialist.get("agent_id") or thread_id)
+        self._specialist_final_messages[thread_id] = violation
+        self.on_event(
+            {
+                "type": "error",
+                "name": "specialist_policy_violation",
+                "message": violation,
+                "payload": {
+                    "agent_id": agent_id,
+                    "assignment_id": specialist.get("assignment_id"),
+                    "execution_policy": specialist.get("execution_policy"),
+                    "status": "failed",
+                },
+            }
+        )
+        request_id = self._next_request_id
+        self._next_request_id += 1
+        params: JsonObject = {"threadId": thread_id}
+        if turn_id:
+            params["turnId"] = turn_id
+        self._write({"id": request_id, "method": "turn/interrupt", "params": params})
 
     def _remember_specialist_message(
         self,
@@ -310,6 +450,9 @@ class CodexAppServerSession:
             "task_name": str(specialist.get("task_name") or agent_id),
             "status": "completed" if succeeded else "failed",
         }
+        assignment_id = str(specialist.get("assignment_id") or "")
+        if assignment_id:
+            update["assignment_id"] = assignment_id
         if message:
             update["message"] = message
         output: JsonObject = {
@@ -433,6 +576,67 @@ def _tool_item(item: JsonObject) -> tuple[str, JsonObject, Any] | None:
 
 def _object(value: Any) -> JsonObject:
     return value if isinstance(value, dict) else {"value": value} if value is not None else {}
+
+
+def _find_result_object(value: Any, depth: int = 0) -> JsonObject:
+    if depth > 5:
+        return {}
+    if isinstance(value, str):
+        try:
+            return _find_result_object(json.loads(value), depth + 1)
+        except json.JSONDecodeError:
+            return {}
+    if isinstance(value, list):
+        for child in value:
+            found = _find_result_object(child, depth + 1)
+            if found:
+                return found
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    if value.get("assignment") is not None or value.get("specialist_assignments") is not None:
+        return value
+    for key in ("structuredContent", "structured_content", "result", "payload", "content", "text"):
+        if key not in value:
+            continue
+        found = _find_result_object(value[key], depth + 1)
+        if found:
+            return found
+    return {}
+
+
+def _specialist_allowed_operations(policy: str) -> frozenset[str]:
+    return _specialist_policy_operations().get(policy, frozenset())
+
+
+@lru_cache(maxsize=1)
+def _specialist_policy_operations() -> dict[str, frozenset[str]]:
+    # Read the canonical packaged manifest directly. Importing genomi.lab here
+    # would initialize the Lab store and operations registry inside the thin
+    # app-server protocol adapter.
+    path = Path(__file__).resolve().parents[1] / "lab" / "specialist_policies.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    profiles = manifest.get("profiles") if isinstance(manifest, dict) else None
+    if not isinstance(profiles, list):
+        return {}
+    policies: dict[str, frozenset[str]] = {}
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            return {}
+        policy_id = profile.get("id")
+        operations = profile.get("allowed_operations")
+        if (
+            not isinstance(policy_id, str)
+            or policy_id in policies
+            or not isinstance(operations, list)
+            or any(not isinstance(operation, str) for operation in operations)
+        ):
+            return {}
+        policies[policy_id] = frozenset(operations)
+    return policies
 
 
 def _preview(value: Any) -> str:

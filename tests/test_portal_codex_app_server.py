@@ -352,6 +352,166 @@ class CodexAppServerSessionTests(unittest.TestCase):
             ["spawn_agent", "wait_agent"],
         )
 
+    def test_native_specialist_policy_binding_allows_only_its_exact_provider_operations(self) -> None:
+        sent = io.StringIO()
+        events: list[dict[str, object]] = []
+        session = portal_codex_app_server.CodexAppServerSession(
+            sent, io.StringIO(), events.append
+        )
+        session._root_thread_id = "main-thread"
+        assignment = {
+            "specialist_assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+            "specialist_role": "Public-literature reviewer",
+            "state": "proposed",
+        }
+        session._handle_notification(
+            "item/completed",
+            {
+                "threadId": "main-thread",
+                "turnId": "main-turn",
+                "item": {
+                    "type": "mcpToolCall",
+                    "id": "create-assignment",
+                    "server": "genomi",
+                    "tool": "genomi.invoke",
+                    "arguments": {"tool": "lab.create_specialist_assignment", "params": {}},
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "dispatched_tool": "lab.create_specialist_assignment",
+                                        "assignment": assignment,
+                                    }
+                                ),
+                            }
+                        ]
+                    },
+                    "status": "completed",
+                },
+            },
+        )
+        session._handle_notification(
+            "item/started",
+            {
+                "threadId": "main-thread",
+                "turnId": "main-turn",
+                "item": {
+                    "type": "subAgentActivity",
+                    "id": "spawn-1",
+                    "kind": "started",
+                    "agentThreadId": "child-thread",
+                    "agentPath": "/root/literature_reviewer",
+                },
+            },
+        )
+        session._handle_notification(
+            "item/started",
+            {
+                "threadId": "child-thread",
+                "turnId": "child-turn",
+                "item": {
+                    "type": "mcpToolCall",
+                    "id": "allowed-provider-call",
+                    "server": "genomi",
+                    "tool": "genomi.invoke",
+                    "arguments": {
+                        "tool": "paperclip.search_biomedical",
+                        "params": {"query": "immune dysregulation"},
+                    },
+                    "status": "inProgress",
+                },
+            },
+        )
+
+        self.assertEqual(sent.getvalue(), "")
+        spawn = next(event for event in events if event.get("name") == "spawn_agent")
+        self.assertEqual(spawn["input"]["assignment_id"], "assignment-1")
+        self.assertEqual(spawn["input"]["execution_policy"], "public_literature")
+        self.assertEqual(spawn["input"]["specialist_role"], "Public-literature reviewer")
+
+        session._handle_notification(
+            "item/started",
+            {
+                "threadId": "child-thread",
+                "turnId": "child-turn",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "forbidden-shell",
+                    "command": "pwd",
+                    "status": "inProgress",
+                },
+            },
+        )
+
+        requests = [json.loads(line) for line in sent.getvalue().splitlines()]
+        self.assertEqual(
+            requests,
+            [
+                {
+                    "id": 1,
+                    "method": "turn/interrupt",
+                    "params": {
+                        "threadId": "child-thread",
+                        "turnId": "child-turn",
+                    },
+                }
+            ],
+        )
+        violation = next(
+            event for event in events if event.get("name") == "specialist_policy_violation"
+        )
+        self.assertEqual(
+            violation["message"], "specialist_policy_forbids_commandExecution"
+        )
+        self.assertEqual(violation["payload"]["assignment_id"], "assignment-1")
+
+    def test_native_specialist_without_unique_assignment_binding_fails_closed(self) -> None:
+        sent = io.StringIO()
+        events: list[dict[str, object]] = []
+        session = portal_codex_app_server.CodexAppServerSession(
+            sent, io.StringIO(), events.append
+        )
+        session._root_thread_id = "main-thread"
+        session._handle_notification(
+            "item/started",
+            {
+                "threadId": "main-thread",
+                "turnId": "main-turn",
+                "item": {
+                    "type": "subAgentActivity",
+                    "id": "spawn-unbound",
+                    "kind": "started",
+                    "agentThreadId": "unbound-child",
+                    "agentPath": "/root/unbound",
+                },
+            },
+        )
+        session._handle_notification(
+            "item/started",
+            {
+                "threadId": "unbound-child",
+                "turnId": "unbound-turn",
+                "item": {
+                    "type": "mcpToolCall",
+                    "id": "provider-call",
+                    "server": "genomi",
+                    "tool": "genomi.invoke",
+                    "arguments": {"tool": "paperclip.search_biomedical", "params": {}},
+                    "status": "inProgress",
+                },
+            },
+        )
+
+        request = json.loads(sent.getvalue())
+        self.assertEqual(request["method"], "turn/interrupt")
+        violation = next(
+            event for event in events if event.get("name") == "specialist_policy_violation"
+        )
+        self.assertEqual(violation["message"], "specialist_policy_binding_missing")
+
     def test_inbound_approval_request_with_colliding_id_is_declined_without_hanging(self) -> None:
         output = io.StringIO(
             "".join(

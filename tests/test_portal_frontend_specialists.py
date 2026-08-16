@@ -161,6 +161,73 @@ class PortalFrontendSpecialistTests(unittest.TestCase):
         self.assertIn(".specialist-card.waiting", css)
         self.assertIn(".specialist-card.error", css)
 
+    def test_native_and_durable_assignment_share_one_safe_identity(self) -> None:
+        module_url = (TEMPLATES / "portal_specialists.js").as_uri()
+        script = textwrap.dedent(
+            f"""
+            const specialists = await import({module_url!r});
+            const records = [
+              {{
+                call: {{
+                  id: 'spawn-1',
+                  name: 'spawn_agent',
+                  input: {{
+                    agent_id: '/root/literature_reviewer',
+                    task_name: '/root/literature_reviewer',
+                    assignment_id: 'assignment-1',
+                    execution_policy: 'public_literature',
+                    specialist_role: 'Public-literature clinical immunology reviewer'
+                  }}
+                }},
+                result: {{
+                  id: 'spawn-1',
+                  payload: {{
+                    updates: [{{
+                      agent_id: '/root/literature_reviewer',
+                      assignment_id: 'assignment-1',
+                      status: 'completed',
+                      message: 'Bounded literature synthesis.'
+                    }}]
+                  }}
+                }}
+              }},
+              {{
+                call: {{
+                  id: 'transition-1',
+                  name: 'genomi.genomi.invoke',
+                  input: {{ tool: 'lab.transition_specialist_assignment' }}
+                }},
+                result: {{
+                  id: 'transition-1',
+                  payload: {{
+                    dispatched_tool: 'lab.transition_specialist_assignment',
+                    assignment: {{
+                      specialist_assignment_id: 'assignment-1',
+                      native_agent_id: '[omitted_local_path]',
+                      specialist_role: 'Public-literature clinical immunology reviewer',
+                      execution_policy: 'public_literature',
+                      revision: 3,
+                      state: 'completed'
+                    }},
+                    specialist_analysis: {{
+                      general_analysis: 'Bounded literature synthesis.'
+                    }}
+                  }}
+                }}
+              }}
+            ];
+            process.stdout.write(JSON.stringify(specialists.specialistLaneModel(records)));
+            """
+        )
+
+        result = _run_node(script)
+        self.assertEqual(len(result["specialists"]), 1)
+        self.assertEqual(
+            result["specialists"][0]["title"],
+            "Public-literature clinical immunology reviewer",
+        )
+        self.assertEqual(result["specialists"][0]["status"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()
