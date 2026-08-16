@@ -57,6 +57,7 @@ export function createGenomiLabController({ api, getProjectId, getFrameId = () =
     // before one exists, so each panel appears only once it holds real work.
     const cards = [
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
+      roundBoardCard(investigation.cycles),
       hypothesisBoardCard(investigation.hypotheses),
       specialistWorkstreamsCard(investigation.specialist_workstreams),
       informationGapsCard(investigation.information_gaps),
@@ -260,6 +261,31 @@ function specialistWorkstreamsCard(values) {
     list.append(item);
   });
   card.append(list);
+  return card;
+}
+
+export function currentRoundModel(values) {
+  const cycles = array(values).filter((item) => item && typeof item === 'object');
+  if (!cycles.length) return null;
+  const current = cycles.reduce((latest, item) => (
+    Number(item.ordinal || 0) >= Number(latest.ordinal || 0) ? item : latest
+  ), cycles[0]);
+  return {
+    ordinal: Number(current.ordinal || cycles.length) || cycles.length,
+    total: cycles.length,
+    purpose: text(current.purpose)
+  };
+}
+
+function roundBoardCard(values) {
+  const round = currentRoundModel(values);
+  if (!round) return null;
+  // The investigation runs in rounds, each chasing a stated objective. Naming
+  // the round the reader is in is what makes the board legible as work in
+  // progress rather than a verdict.
+  const card = boardCardShell('Round ' + round.ordinal);
+  if (round.purpose) card.append(boardParagraph(round.purpose));
+  if (round.total > 1) card.append(boardParagraph(round.total + ' rounds so far'));
   return card;
 }
 
