@@ -292,10 +292,13 @@ class LabPublishBriefContractTests(unittest.TestCase):
             "hypothesis_ids": [candidate_id],
             "gap_ids": [gap_id],
             "confirmation_needs": [
-                "Independent clinical assessment and objective measurements"
+                "Independent clinical assessment and objective measurements",
+                "Characterize the unresolved observation from source records",
+                "Complete or rebuild the approved evidence index",
             ],
             "professional_questions": [
-                "Which clinical measurements would best distinguish shared from independent explanations?"
+                "Which clinical measurements would best distinguish shared from independent explanations?",
+                "Do the verified measurements support a clinically significant laboratory defect?",
             ],
             "clinical_boundary": CLINICAL_BOUNDARY,
         }

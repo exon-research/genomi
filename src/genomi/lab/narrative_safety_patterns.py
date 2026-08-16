@@ -391,6 +391,7 @@ _CONFIRMATION_FORM = re.compile(
     r"\b(?:confirm|confirmation|review|test|testing|evidence|verify|verification|"
     r"validate|validation|follow-up|assess|assessment|evaluate|evaluation|"
     r"determine|clarify|resolve|corroborate|corroboration|replicate|replication|"
+    r"obtain|retrieve|document|characterize|measure|quantify|complete|rebuild|"
     r"phenotype|assay|laboratory\s+report)\b",
     re.IGNORECASE,
 )

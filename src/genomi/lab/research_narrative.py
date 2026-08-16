@@ -418,6 +418,15 @@ def _confirmation_form(text: str) -> bool:
 
 
 def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> bool:
+    if kind == "professional_question" and any(
+        pattern.search(text)
+        for pattern in (
+            _safety._QUESTION_CLINICAL_PREMISE,
+            _safety._QUESTION_APPENDED_ASSERTION,
+            _safety._QUESTION_APPENDED_CARE_ACTION,
+        )
+    ):
+        return True
     if (
         _safety._NO_CONFIRMATION_REQUIRED.search(text)
         or _safety._CONFIRMATION_DISAVOWAL.search(text)
@@ -478,6 +487,8 @@ def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> bool:
     )
     for pattern in clinical_claim_patterns:
         for match in pattern.finditer(text):
+            if kind == "professional_question":
+                continue
             if _is_directly_unresolved(text, match):
                 continue
             if _is_directly_source_attributed(text, match):
