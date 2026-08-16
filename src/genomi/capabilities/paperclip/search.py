@@ -30,6 +30,13 @@ SUPPORTED_SOURCES = (
     "uniprot",
 )
 DEFAULT_SOURCES = ("pmc", "abstracts")
+_PROTEIN_SOURCES = frozenset({"proteins", "uniprot"})
+_PROTEIN_ALPHABET = frozenset("ACDEFGHIKLMNPQRSTVWYBXZJUO")
+_UNIPROT_ACCESSION = re.compile(
+    r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})\Z"
+)
+_BIOHUB_SEQUENCE_MIN = 20
+_BIOHUB_SEQUENCE_MAX = 4096
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -96,7 +103,7 @@ def search_biomedical(
             coverage=coverage,
             observations={"observation_count": len(records)},
             answer_readiness=evidence_envelope.SCOPED_ANSWER_ONLY,
-            guidance=["evidence_present:use_as_scoped_public_literature_evidence"],
+            guidance=["evidence_present:use_only_for_public_source_discovery"],
         )
         status = "completed"
     else:
@@ -175,7 +182,10 @@ def _parse_search_output(
     text = _ANSI_ESCAPE.sub("", str(output or "")).strip()
     payload = _decode_json_prefix(text)
     if payload is not None:
-        records = [_normalize_record(row) for row in _rows(payload)]
+        records = [
+            _normalize_record(row, selected_sources=selected_sources)
+            for row in _rows(payload)
+        ]
         return [record for record in records if record], _payload_result_id(payload), None
 
     header = _RESULT_HEADER.search(text)
@@ -214,10 +224,16 @@ def _parse_display_entry(
     if not first_line:
         return {}
     record: dict[str, Any] = {"title": first_line.group(1).strip()}
+    protein_scope = len(selected_sources) == 1 and selected_sources[0] in _PROTEIN_SOURCES
     for line in lines[1:]:
         if line.startswith("[") and "saved to" in line:
             continue
-        if line.startswith("https://"):
+        if protein_scope and _UNIPROT_ACCESSION.fullmatch(line.upper()):
+            record["record_id"] = line.upper()
+            record["accession"] = line.upper()
+        elif protein_scope and (sequence := _validated_protein_sequence(line)):
+            record["reference_sequence"] = sequence
+        elif line.startswith("https://"):
             record.setdefault("url", line)
             doi_marker = "doi.org/"
             if doi_marker in line:
@@ -273,7 +289,9 @@ def _collection_from_source(source: str) -> str:
     return "papers"
 
 
-def _normalize_record(row: dict[str, Any]) -> dict[str, Any]:
+def _normalize_record(
+    row: dict[str, Any], *, selected_sources: tuple[str, ...] = ()
+) -> dict[str, Any]:
     aliases = {
         "record_id": ("id", "paper_id", "document_id", "pmcid", "pmid", "doi"),
         "title": ("title",),
@@ -292,7 +310,56 @@ def _normalize_record(row: dict[str, Any]) -> dict[str, Any]:
         value = next((row.get(name) for name in names if row.get(name) not in (None, "", [])), None)
         if value is not None:
             normalized[target] = value
+    if not normalized.get("source") and len(selected_sources) == 1:
+        normalized["source"] = selected_sources[0]
     normalized["collection"] = _collection_from_source(str(normalized.get("source") or ""))
+    if normalized["collection"] == "proteins":
+        accession = _protein_accession(row, normalized)
+        if accession is not None:
+            normalized["accession"] = accession
+            sequence = _protein_sequence(row)
+            if sequence is not None:
+                normalized["reference_sequence"] = sequence
     if normalized.get("doi") and not normalized.get("url"):
         normalized["url"] = f"https://doi.org/{normalized['doi']}"
     return normalized
+
+
+def _protein_accession(
+    row: dict[str, Any], normalized: dict[str, Any]
+) -> str | None:
+    value = next(
+        (
+            row.get(field)
+            for field in ("accession", "primaryAccession", "document_id", "id")
+            if row.get(field) not in (None, "")
+        ),
+        normalized.get("record_id"),
+    )
+    accession = str(value or "").strip().upper()
+    return accession if _UNIPROT_ACCESSION.fullmatch(accession) else None
+
+
+def _protein_sequence(row: dict[str, Any]) -> str | None:
+    value: object = next(
+        (
+            row.get(field)
+            for field in ("sequence", "protein_sequence", "amino_acid_sequence")
+            if row.get(field) not in (None, "")
+        ),
+        None,
+    )
+    if isinstance(value, dict):
+        value = value.get("value")
+    if not isinstance(value, str):
+        return None
+    return _validated_protein_sequence(value)
+
+
+def _validated_protein_sequence(value: str) -> str | None:
+    sequence = "".join(value.split()).upper()
+    if not _BIOHUB_SEQUENCE_MIN <= len(sequence) <= _BIOHUB_SEQUENCE_MAX:
+        return None
+    if set(sequence) - _PROTEIN_ALPHABET:
+        return None
+    return sequence

@@ -14,6 +14,13 @@ from genomi.runtime.external_credentials import external_credential_session
 
 
 class ExternalCapabilityTests(unittest.TestCase):
+    CTLA4_REFERENCE_SEQUENCE = (
+        "MACLGFQRHKAQLNLATRTWPCTLLFFLLFIPVFCKAMHVAQPAVVLASSRGIASFVCEY"
+        "ASPGKATEVRVTVLRQADSQVTEVCAATYMMGNELTFLDDSICTGTSSGNQVNLTIQGLR"
+        "AMDTGLYICKVELMYPPPYYLGIGNGTQIYVIDPEPCPDSDFLLWILAAVSSGLFFYSFL"
+        "LTAVSLSKMLKKRSPLTTGVYVKMPPTEPECEKQFQPYFIPIN"
+    )
+
     def test_capabilities_are_focused_and_dispatchable(self) -> None:
         self.assertEqual(
             [tool["name"] for tool in list_operations(capability="paperclip")],
@@ -129,6 +136,119 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(result["comparison"]["changed_positions"][0]["position"], 2)
         self.assertNotIn("biohub-test-secret", json.dumps(result))
         self.assertNotIn("mean_embedding", json.dumps(result))
+
+    def test_public_paperclip_protein_sequence_can_feed_biohub(self) -> None:
+        def paperclip_runner(
+            command: list[str], **_: object
+        ) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(command[1:4], ["search", "-s", "proteins"])
+            payload = {
+                "results": [
+                    {
+                        "document_id": "P16410",
+                        "accession": "P16410",
+                        "uniprot_id": "CTLA4_HUMAN",
+                        "protein_name": "Cytotoxic T-lymphocyte protein 4",
+                        "source": "uniprot",
+                        "sequence": {
+                            "value": self.CTLA4_REFERENCE_SEQUENCE,
+                            "length": len(self.CTLA4_REFERENCE_SEQUENCE),
+                        },
+                    }
+                ]
+            }
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+        with external_credential_session(
+            {
+                "PAPERCLIP_API_KEY": "paperclip-test-secret",
+                "BIOHUB_API_KEY": "biohub-test-secret",
+            }
+        ):
+            with patch(
+                "genomi.capabilities.paperclip.search.shutil.which",
+                return_value="paperclip",
+            ):
+                search_result = search_biomedical(
+                    query="UniProt P16410",
+                    sources=["proteins"],
+                    limit=1,
+                    runner=paperclip_runner,
+                )
+
+            protein = search_result["records"][0]
+            reference = protein["reference_sequence"]
+            changed_index = reference.index("Q")
+            alternate = reference[:changed_index] + "H" + reference[changed_index + 1 :]
+            vectors = iter(([1.0, 0.0], [0.9, 0.1]))
+
+            def biohub_transport(
+                path: str, payload: dict[str, object], token: str
+            ) -> dict[str, object]:
+                self.assertEqual(token, "biohub-test-secret")
+                if path.endswith("encode"):
+                    return {"outputs": {"sequence": [1, 2, 3]}}
+                return {"mean_embedding": [[list(next(vectors))]]}
+
+            comparison = compare_protein_embeddings(
+                reference_sequence=reference,
+                alternate_sequence=alternate,
+                sequence_scope="public_reference_or_approved_research_artifact",
+                external_transfer_approved=True,
+                transport=biohub_transport,
+            )
+
+        self.assertEqual(protein["accession"], "P16410")
+        self.assertEqual(reference, self.CTLA4_REFERENCE_SEQUENCE)
+        self.assertEqual(search_result["status"], "completed")
+        self.assertEqual(comparison["status"], "completed")
+        self.assertEqual(
+            comparison["comparison"]["changed_positions"][0]["position"],
+            changed_index + 1,
+        )
+        self.assertNotIn("patient", json.dumps(search_result).lower())
+        self.assertNotIn("agi", json.dumps(search_result).lower())
+
+    def test_invalid_public_protein_sequence_is_omitted(self) -> None:
+        payload = {
+            "results": [
+                {
+                    "document_id": "P16410",
+                    "accession": "P16410",
+                    "source": "uniprot",
+                    "sequence": {"value": "ACGT*"},
+                },
+                {
+                    "document_id": "not-an-accession",
+                    "accession": "not-an-accession",
+                    "source": "uniprot",
+                    "sequence": {"value": self.CTLA4_REFERENCE_SEQUENCE},
+                },
+            ]
+        }
+
+        def runner(
+            command: list[str], **_: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+        with external_credential_session(
+            {"PAPERCLIP_API_KEY": "paperclip-test-secret"}
+        ):
+            with patch(
+                "genomi.capabilities.paperclip.search.shutil.which",
+                return_value="paperclip",
+            ):
+                result = search_biomedical(
+                    query="public protein accessions",
+                    sources=["uniprot"],
+                    runner=runner,
+                )
+
+        self.assertEqual(result["records"][0]["accession"], "P16410")
+        self.assertNotIn("reference_sequence", result["records"][0])
+        self.assertNotIn("accession", result["records"][1])
+        self.assertNotIn("reference_sequence", result["records"][1])
 
     def test_proto_preserves_result_and_prunes_paths(self) -> None:
         class Native:

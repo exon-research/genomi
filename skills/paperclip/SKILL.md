@@ -20,6 +20,12 @@ evidence terms. Cite only the returned line-pinned excerpts using their
 `citation_url`. An empty excerpt result means only that those literal terms were
 not observed in that document.
 
+For a `proteins` or `uniprot` search, a record may also carry a validated public
+`accession` and `reference_sequence`. The sequence remains discovery context,
+not capturable evidence. Main may pass it into a de-identified
+`protein_model_research` brief as `public_concepts.reference_sequence`, then use
+BioHub only after approval for that exact public sequence transfer.
+
 Paperclip receives only the public search query. Do not put patient identifiers,
 record text, raw genome data, or private Lab state in the query.
 
