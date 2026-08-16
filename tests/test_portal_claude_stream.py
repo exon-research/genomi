@@ -1074,7 +1074,7 @@ class ClaudeDriverInvocationTests(unittest.TestCase):
         )
         self.assertEqual(
             invocation[invocation.index("--allowedTools") + 1 :],
-            ["mcp__genomi__*", "Task", "WebSearch"],
+            ["mcp__genomi__*", "Task", "Read", "Glob", "WebSearch"],
         )
 
 

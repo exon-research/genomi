@@ -59,29 +59,29 @@ def validate_orchestrator_brief(
     gap_ids = _identifier_array(brief, "gap_ids")
     if set(hypothesis_ids) & set(gap_ids):
         raise ValueError("brief references cannot be both hypotheses and gaps")
-    for value in _text_array(brief, "confirmation_needs"):
+    # Name the exact item. A brief carries many claims, needs and questions, and
+    # reporting only "brief claim statement" leaves the author searching its own
+    # brief one field at a time to find which line was refused.
+    for index, value in enumerate(_text_array(brief, "confirmation_needs")):
         validate_informational_narrative(
-            value, "brief confirmation need", kind="confirmation_need"
+            value, f"brief.confirmation_needs[{index}]", kind="confirmation_need"
         )
-    for value in _text_array(brief, "professional_questions"):
+    for index, value in enumerate(_text_array(brief, "professional_questions")):
         validate_informational_narrative(
-            value, "brief professional question", kind="professional_question"
+            value, f"brief.professional_questions[{index}]", kind="professional_question"
         )
 
     evidence_ids: set[str] = set()
     fact_ids: set[str] = set()
     claim_fingerprints: set[str] = set()
-    for claim in claims:
+    for index, claim in enumerate(claims):
+        claim_field = f"brief.claims[{index}].statement"
         if not isinstance(claim, Mapping):
             raise ValueError("every brief claim must be an object")
         if set(claim) != _CLAIM_FIELDS:
             raise ValueError("every brief claim must use the complete claim shape")
-        statement = required_text(
-            claim.get("statement"), "brief claim statement", 8_000
-        )
-        validate_informational_narrative(
-            statement, "brief claim statement", kind="assertion"
-        )
+        statement = required_text(claim.get("statement"), claim_field, 8_000)
+        validate_informational_narrative(statement, claim_field, kind="assertion")
         for field, target in (
             ("evidence_record_ids", evidence_ids),
             ("profile_revision_ids", fact_ids),

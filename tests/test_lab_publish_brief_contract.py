@@ -401,7 +401,7 @@ class LabPublishBriefContractTests(unittest.TestCase):
                     {"tool": "lab.publish_brief", "params": unsafe},
                 )
             self._assert_actionable_narrative_rejection(
-                caught.exception, field="brief claim statement"
+                caught.exception, field="brief.claims[0].statement"
             )
 
             directive_title = copy.deepcopy(params)

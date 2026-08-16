@@ -450,6 +450,12 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
             "mcp__genomi__*",
             # Permission name of the subagent tool that streams as `Agent`.
             "Task",
+            # People hand Genomi their records by pointing at them in the
+            # conversation, and capability guidance lives in skill files. With
+            # no setting sources loaded, denying Read leaves the orchestrator
+            # unable to open the very records it was given.
+            "Read",
+            "Glob",
         ),
         stream_adapter_factory=_claude_adapter,
     ),
