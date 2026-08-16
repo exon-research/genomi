@@ -75,6 +75,11 @@ class CodexAppServerSessionTests(unittest.TestCase):
             "GENOMI_SESSION_ID": "portal:project:frame",
             "GENOMILAB_PORTAL_PROJECT_ID": "project",
             "GENOMILAB_PORTAL_FRAME_ID": "frame",
+            "PAPERCLIP_API_KEY": "paperclip-test-secret",
+            "BIOHUB_API_KEY": "biohub-test-secret",
+            "ESM_API_KEY": "esm-test-secret",
+            "MODAL_TOKEN_ID": "modal-test-id",
+            "MODAL_TOKEN_SECRET": "modal-test-secret",
             "UNRELATED_SECRET": "must-not-cross-the-mcp-boundary",
         }
         config = portal_codex_runtime.genomi_mcp_server_config(environment)
@@ -91,6 +96,11 @@ class CodexAppServerSessionTests(unittest.TestCase):
                 "GENOMI_SESSION_ID": "portal:project:frame",
                 "GENOMILAB_PORTAL_PROJECT_ID": "project",
                 "GENOMILAB_PORTAL_FRAME_ID": "frame",
+                "PAPERCLIP_API_KEY": "paperclip-test-secret",
+                "BIOHUB_API_KEY": "biohub-test-secret",
+                "ESM_API_KEY": "esm-test-secret",
+                "MODAL_TOKEN_ID": "modal-test-id",
+                "MODAL_TOKEN_SECRET": "modal-test-secret",
             },
         )
         exec_args = " ".join(portal_codex_runtime.exec_config_args(environment))
