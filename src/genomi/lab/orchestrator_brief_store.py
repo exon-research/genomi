@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Mapping
 
-from .artifact_validation import BRIEF_CLINICAL_BOUNDARY
-from .models import JsonObject, compact_json, required_text, row_dict, utc_now, validate_private_payload
+from .models import JsonObject, compact_json, row_dict, utc_now
+from .orchestrator_brief_validation import validate_orchestrator_brief
 from .orchestrator_support import (
     OrchestratorStoreContract,
     command_replay,
@@ -35,8 +34,8 @@ class OrchestratorBriefStoreMixin:
             return replay
         with self.atomic_write():
             investigation = require_investigation_revision(self, investigation_id, expected_revision)
-            require_cycle(self, investigation_id, cycle_id)
-            self._validate_orchestrator_brief(investigation, brief_value)
+            cycle = require_cycle(self, investigation_id, cycle_id)
+            validate_orchestrator_brief(self, investigation, cycle, brief_value)
             evidence_snapshot = self.create_evidence_snapshot(
                 investigation_id, reason="clinician_brief_evidence_basis"
             )
@@ -75,62 +74,6 @@ class OrchestratorBriefStoreMixin:
             save_command(self, command_id=command, investigation_id=investigation_id,
                          operation="lab.publish_brief", request_sha256=request_hash, response=response)
         return response
-
-    def _validate_orchestrator_brief(
-        self: OrchestratorStoreContract, investigation: Mapping[str, object], brief: JsonObject
-    ) -> None:
-        validate_private_payload(brief)
-        required_text(brief.get("title"), "brief.title", 500)
-        required_text(brief.get("summary"), "brief.summary", 10_000)
-        if brief.get("clinical_boundary") != BRIEF_CLINICAL_BOUNDARY:
-            raise ValueError("brief must preserve the informational clinical boundary")
-        claims = brief.get("claims")
-        if not isinstance(claims, list) or not claims:
-            raise ValueError("brief.claims must be a non-empty array")
-        evidence_ids: set[str] = set()
-        fact_ids: set[str] = set()
-        for claim in claims:
-            if not isinstance(claim, Mapping):
-                raise ValueError("every brief claim must be an object")
-            required_text(claim.get("statement"), "brief claim statement", 8_000)
-            for field, target in (("evidence_record_ids", evidence_ids), ("profile_revision_ids", fact_ids)):
-                values = claim.get(field) or []
-                if not isinstance(values, list) or not all(isinstance(value, str) and value for value in values):
-                    raise ValueError(f"brief claim {field} must be an array of identifiers")
-                target.update(values)
-            if not (claim.get("evidence_record_ids") or claim.get("profile_revision_ids")):
-                raise ValueError("every brief claim must cite captured evidence or approved patient facts")
-        with self._connect() as connection:
-            if evidence_ids:
-                placeholders = ",".join("?" for _ in evidence_ids)
-                found = connection.execute(
-                    f"SELECT evidence_record_id FROM evidence_records WHERE investigation_id = ? AND evidence_record_id IN ({placeholders})",
-                    (investigation["investigation_id"], *sorted(evidence_ids)),
-                ).fetchall()
-                if {str(row["evidence_record_id"]) for row in found} != evidence_ids:
-                    raise ValueError("brief cites evidence outside this investigation")
-            if fact_ids:
-                snapshot_id = investigation.get("patient_molecular_snapshot_id")
-                if not snapshot_id:
-                    raise ValueError("brief patient facts require an approved profile snapshot")
-                snapshot = connection.execute(
-                    "SELECT observation_revision_ids_json FROM profile_snapshots WHERE patient_molecular_snapshot_id = ?",
-                    (snapshot_id,),
-                ).fetchone()
-                allowed = set(json.loads(str(snapshot["observation_revision_ids_json"]))) if snapshot else set()
-                if not fact_ids.issubset(allowed):
-                    raise ValueError("brief cites facts outside the current approved profile snapshot")
-            for identifier in brief.get("hypothesis_ids") or []:
-                if not isinstance(identifier, str):
-                    raise ValueError("brief hypothesis_ids must be strings")
-                exists = connection.execute(
-                    "SELECT 1 FROM orchestrator_hypothesis_threads AS thread LEFT JOIN orchestrator_hypothesis_versions AS version "
-                    "ON version.logical_hypothesis_id = thread.logical_hypothesis_id "
-                    "WHERE thread.investigation_id = ? AND (thread.logical_hypothesis_id = ? OR version.hypothesis_version_id = ?)",
-                    (investigation["investigation_id"], identifier, identifier),
-                ).fetchone()
-                if exists is None:
-                    raise ValueError("brief cites an unknown hypothesis")
 
     def read_orchestrator_investigation(
         self: OrchestratorStoreContract, investigation_id: str, *, include_history: bool = False

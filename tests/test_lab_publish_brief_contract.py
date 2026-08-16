@@ -12,6 +12,7 @@ from jsonschema import ValidationError, validate
 
 from genomi.lab import operations as lab_operations
 from genomi.lab.store import GenomiLabStore
+from genomi.operations import OperationError
 from genomi.operations.registry.table import call_operation, list_operations
 from genomi.runtime import context as runtime_context
 
@@ -158,6 +159,35 @@ class LabPublishBriefContractTests(unittest.TestCase):
             command_id="create-gap-hypothesis",
             expected_revision=candidate["domain_revision"],
         )
+        revised_candidate = store.revise_hypothesis(
+            investigation_id,
+            logical_hypothesis_id=candidate["hypothesis_version"][
+                "logical_hypothesis_id"
+            ],
+            cycle_id=cycle_id,
+            statement=(
+                "The two reported patterns remain a shared research hypothesis."
+            ),
+            status="open",
+            profile_snapshot_id=None,
+            evidence_snapshot_id=None,
+            supporting_evidence_record_ids=[],
+            contradicting_evidence_record_ids=[],
+            contextual_evidence_record_ids=[],
+            unresolved_gaps=["Objective clinical measurements have not been reviewed"],
+            revision_rationale="Carry the current shared explanation forward.",
+            category="shared_explanation",
+            command_id="revise-shared-hypothesis",
+            expected_revision=gap["domain_revision"],
+        )
+        current_cycle = store.create_investigation_cycle(
+            investigation_id,
+            purpose="Prepare the current clinician discussion brief",
+            prior_cycle_id=cycle_id,
+            command_id="create-current-cycle",
+            expected_revision=revised_candidate["domain_revision"],
+        )
+        current_cycle_id = str(current_cycle["cycle"]["cycle_id"])
         fact_ids = list(updated["source_fact_ids"])
         candidate_id = str(
             candidate["hypothesis_version"]["logical_hypothesis_id"]
@@ -191,10 +221,10 @@ class LabPublishBriefContractTests(unittest.TestCase):
         }
         params = {
             "investigation_id": investigation_id,
-            "cycle_id": cycle_id,
+            "cycle_id": current_cycle_id,
             "brief": brief,
             "command_id": "publish-clinician-brief",
-            "expected_revision": gap["domain_revision"],
+            "expected_revision": current_cycle["domain_revision"],
         }
         validate(instance=params, schema=self._publish_schema())
 
@@ -205,6 +235,66 @@ class LabPublishBriefContractTests(unittest.TestCase):
         with mock.patch.object(
             lab_operations, "_authorized_store", authorized_store
         ):
+            stale_cycle = {**params, "cycle_id": cycle_id, "command_id": "stale-cycle"}
+            with self.assertRaisesRegex(OperationError, "current investigation cycle"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": stale_cycle},
+                )
+
+            stale_reference = copy.deepcopy(params)
+            stale_reference["brief"]["hypothesis_ids"] = [
+                candidate["hypothesis_version"]["hypothesis_version_id"]
+            ]
+            stale_reference["command_id"] = "stale-hypothesis-version"
+            with self.assertRaisesRegex(OperationError, "current logical hypotheses"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": stale_reference},
+                )
+
+            unknown_gap = copy.deepcopy(params)
+            unknown_gap["brief"]["gap_ids"] = ["logical-hypothesis-unknown-gap"]
+            unknown_gap["command_id"] = "unknown-gap-reference"
+            with self.assertRaisesRegex(OperationError, "current logical hypotheses"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": unknown_gap},
+                )
+
+            stale_evidence = copy.deepcopy(params)
+            stale_evidence["brief"]["claims"][0]["evidence_record_ids"] = [
+                "evidence-record-not-in-current-snapshot"
+            ]
+            stale_evidence["command_id"] = "stale-evidence-anchor"
+            with self.assertRaisesRegex(OperationError, "current evidence snapshot"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": stale_evidence},
+                )
+
+            incomplete = copy.deepcopy(params)
+            del incomplete["brief"]["professional_questions"]
+            incomplete["command_id"] = "incomplete-brief"
+            with self.assertRaisesRegex(OperationError, "complete clinician brief shape"):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": incomplete},
+                )
+
+            unsafe = copy.deepcopy(params)
+            unsafe["brief"]["claims"][0]["statement"] = (
+                "The evidence establishes the diagnosis and requires treatment."
+            )
+            unsafe["command_id"] = "unsafe-clinical-claim"
+            with self.assertRaisesRegex(
+                OperationError, "diagnosis or treatment directive"
+            ):
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": unsafe},
+                )
+
             result = call_operation(
                 "genomi.invoke",
                 {"tool": "lab.publish_brief", "params": params},
