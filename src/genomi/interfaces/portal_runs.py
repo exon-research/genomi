@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import queue
 import os
 import subprocess
@@ -40,6 +41,7 @@ class HostAgentRunPresentation:
         self.workspace: Path | None = None
         self.workspace_snapshot: portal_workspace_files.WorkspaceSnapshot = {}
         self._tool_names_by_id: dict[str, str] = {}
+        self._tool_calls_by_id: dict[str, JsonObject] = {}
 
     def configure_workspace_tracking(
         self,
@@ -71,6 +73,8 @@ class HostAgentRunPresentation:
         elif event_type in {"tool_call", "tool_result", "error", "diagnostic"}:
             if event_type != "diagnostic":
                 self.visible_streamed_content = True
+            if event_type == "tool_result" and not event.get("isError"):
+                self._bind_created_lab_investigation(event)
             if self.run.frame_id:
                 portal_store.append_message(self.run.frame_id, role="tool", event=event, run_id=self.run.id)
             self.run.emit("agent", event)
@@ -169,6 +173,61 @@ class HostAgentRunPresentation:
         tool_name = str(event.get("name") or "").strip()
         if tool_id and tool_name:
             self._tool_names_by_id[tool_id] = tool_name
+            tool_input = event.get("input")
+            self._tool_calls_by_id[tool_id] = {
+                "name": tool_name,
+                "input": dict(tool_input) if isinstance(tool_input, dict) else {},
+            }
+
+    def _bind_created_lab_investigation(self, event: JsonObject) -> None:
+        project_id = str(self.run.project_id or "").strip()
+        frame_id = str(self.run.frame_id or "").strip()
+        tool_id = str(event.get("id") or "").strip()
+        call = self._tool_calls_by_id.pop(tool_id, {}) if tool_id else {}
+        name = str(event.get("name") or call.get("name") or "").strip()
+        tool_input = call.get("input")
+        invoked_operation = (
+            str(tool_input.get("tool") or "").strip()
+            if isinstance(tool_input, dict)
+            else ""
+        )
+        if (
+            not project_id
+            or not frame_id
+            or name
+            not in {
+                "genomi.genomi.invoke",
+                "genomi.invoke",
+                "mcp__genomi__genomi_invoke",
+            }
+            or invoked_operation != "lab.create_investigation"
+        ):
+            return
+        investigation_id = _lab_investigation_id_from_result(
+            event.get("payload", event.get("content"))
+        )
+        if not investigation_id:
+            return
+        current_binding = portal_genomilab.project_binding(project_id)
+        if (
+            isinstance(current_binding, dict)
+            and str(current_binding.get("frame_id") or "") == frame_id
+        ):
+            # The first Lab investigation created in a conversation is the
+            # patient-facing investigation. Public-only research sidecars may
+            # be created later in that same conversation, but must not replace
+            # its canonical continuation target.
+            return
+        try:
+            portal_genomilab.bind_investigation(
+                project_id,
+                investigation_id=investigation_id,
+                frame_id=frame_id,
+            )
+        except (portal_genomilab.PortalGenomiLabError, OSError, ValueError):
+            # A result that cannot be verified against this project's canonical
+            # user/session boundary is never persisted as a portal binding.
+            return
 
     def _completed_workspace_write(self, event: JsonObject) -> bool:
         if event.get("type") != "tool_result" or event.get("isError"):
@@ -178,6 +237,43 @@ class HostAgentRunPresentation:
         if not tool_name and tool_id:
             tool_name = self._tool_names_by_id.pop(tool_id, "")
         return tool_name in {"Write", "Edit"}
+
+
+def _lab_investigation_id_from_result(value: object, depth: int = 0) -> str:
+    if depth > 6:
+        return ""
+    if isinstance(value, str):
+        try:
+            return _lab_investigation_id_from_result(json.loads(value), depth + 1)
+        except (ValueError, TypeError):
+            return ""
+    if isinstance(value, list):
+        for item in value:
+            investigation_id = _lab_investigation_id_from_result(item, depth + 1)
+            if investigation_id:
+                return investigation_id
+        return ""
+    if not isinstance(value, dict):
+        return ""
+    investigation = value.get("investigation")
+    if isinstance(investigation, dict):
+        investigation_id = str(investigation.get("investigation_id") or "").strip()
+        if investigation_id:
+            return investigation_id
+    for key in (
+        "structuredContent",
+        "structured_content",
+        "result",
+        "payload",
+        "content",
+        "text",
+    ):
+        if key not in value:
+            continue
+        investigation_id = _lab_investigation_id_from_result(value[key], depth + 1)
+        if investigation_id:
+            return investigation_id
+    return ""
 
 
 class ConversationReviewRunPresentation(HostAgentRunPresentation):

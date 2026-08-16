@@ -10,6 +10,7 @@ from genomi.interfaces import (
     portal_active_context,
     portal_artifact_renderers,
     portal_genomilab,
+    portal_project_genomes,
     portal_project_permissions,
     portal_run_events,
     portal_run_logs,
@@ -20,7 +21,7 @@ from genomi.interfaces import (
     portal_workspace_files,
     portal_workspaces,
 )
-from genomi.operations import OperationError
+from genomi.operations import OperationError, call_operation
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
 
@@ -209,6 +210,163 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertNotIn("Sensitive condition label", prompt)
         self.assertNotIn("synthetic-agent", prompt)
         _assert_prompt_has_no_private_paths(prompt)
+
+    def test_operation_created_investigation_is_bound_and_resumes_after_restart(
+        self,
+    ) -> None:
+        project = portal_store.create_project(name="Operation Lab continuation")
+        project_id = str(project["project_id"])
+        frame = portal_store.create_frame(
+            project_id=project_id,
+            request="Investigate a changing synthetic health picture.",
+            agent_id="codex",
+        )
+        assert frame is not None
+        frame_id = str(frame["id"])
+        environment = portal_project_genomes.agent_environment(project_id)
+        first_params = {
+            "question": "First synthetic investigation",
+            "public_only": True,
+            "command_id": "portal-restart-first",
+        }
+        current_lab_context = {"active_user_id": f"portal-{project_id}"}
+        with mock.patch.dict("os.environ", environment, clear=False), mock.patch(
+            "genomi.lab.operations.describe_context",
+            return_value=current_lab_context,
+        ):
+            first = call_operation(
+                "genomi.invoke",
+                {"tool": "lab.create_investigation", "params": first_params},
+            )
+        first_id = str(first["investigation"]["investigation_id"])
+        expected_session = str(
+            portal_project_genomes.project_context_path(project_id)
+            .expanduser()
+            .resolve(strict=False)
+        )
+        self.assertEqual(first["workspace_session_id"], expected_session)
+
+        run = portal_run_events.create_run(
+            kind="host_agent",
+            agent_id="codex",
+            message="Investigate a changing synthetic health picture.",
+            project_id=project_id,
+            frame_id=frame_id,
+        )
+        self.addCleanup(portal_run_events.discard_run, run.id)
+        presentation = portal_runs.HostAgentRunPresentation(run)
+        presentation.handle_agent_event(
+            {
+                "type": "tool_call",
+                "id": "create-lab-1",
+                "name": "genomi.genomi.invoke",
+                "input": {"tool": "lab.create_investigation", "params": first_params},
+            }
+        )
+        presentation.handle_agent_event(
+            {
+                "type": "tool_result",
+                "id": "create-lab-1",
+                "name": "genomi.genomi.invoke",
+                "isError": False,
+                "payload": {"structuredContent": first},
+            }
+        )
+        self.assertEqual(
+            portal_genomilab.project_binding(project_id)["investigation_id"],
+            first_id,
+        )
+
+        other_project = portal_store.create_project(name="Other Lab project")
+        other_project_id = str(other_project["project_id"])
+        other_frame = portal_store.create_frame(
+            project_id=other_project_id,
+            request="Unrelated synthetic inquiry.",
+            agent_id="codex",
+        )
+        assert other_frame is not None
+        other_run = portal_run_events.create_run(
+            kind="host_agent",
+            agent_id="codex",
+            message="Unrelated synthetic inquiry.",
+            project_id=other_project_id,
+            frame_id=str(other_frame["id"]),
+        )
+        self.addCleanup(portal_run_events.discard_run, other_run.id)
+        other_presentation = portal_runs.HostAgentRunPresentation(other_run)
+        other_presentation.handle_agent_event(
+            {
+                "type": "tool_call",
+                "id": "foreign-create-result",
+                "name": "genomi.genomi.invoke",
+                "input": {"tool": "lab.create_investigation", "params": first_params},
+            }
+        )
+        other_presentation.handle_agent_event(
+            {
+                "type": "tool_result",
+                "id": "foreign-create-result",
+                "name": "genomi.genomi.invoke",
+                "isError": False,
+                "payload": {"structuredContent": first},
+            }
+        )
+        self.assertIsNone(portal_genomilab.project_binding(other_project_id))
+
+        with mock.patch.dict("os.environ", environment, clear=False), mock.patch(
+            "genomi.lab.operations.describe_context",
+            return_value=current_lab_context,
+        ):
+            later = call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.create_investigation",
+                    "params": {
+                        "question": "Later synthetic investigation",
+                        "public_only": True,
+                        "command_id": "portal-restart-later",
+                    },
+                },
+            )
+        later_id = str(later["investigation"]["investigation_id"])
+        presentation.handle_agent_event(
+            {
+                "type": "tool_call",
+                "id": "create-lab-sidecar",
+                "name": "genomi.genomi.invoke",
+                "input": {"tool": "lab.create_investigation", "params": {}},
+            }
+        )
+        presentation.handle_agent_event(
+            {
+                "type": "tool_result",
+                "id": "create-lab-sidecar",
+                "name": "genomi.genomi.invoke",
+                "isError": False,
+                "payload": {"structuredContent": later},
+            }
+        )
+        self.assertEqual(
+            portal_genomilab.project_binding(project_id)["investigation_id"],
+            first_id,
+        )
+
+        portal_genomilab._SERVICES.clear()
+        board = portal_genomilab.project_board(project_id)
+        resumed = portal_genomilab.project_resume_context(project_id)
+        prompt = portal_runs.compose_prompt(
+            "Please continue the active work.", project_id=project_id
+        )
+
+        self.assertEqual(
+            resumed["active_investigation"]["investigation_id"], first_id
+        )
+        self.assertEqual(board["investigation"]["investigation_id"], first_id)
+        self.assertIn(f"- Active investigation: {first_id}", prompt)
+        self.assertNotIn(later_id, prompt)
+        self.assertIn(
+            "do not inspect portal logs, files, or shell history", prompt
+        )
 
     def test_compose_prompt_includes_active_view_as_non_evidence_orientation(self) -> None:
         active_context = portal_active_context.update_project_active_context(

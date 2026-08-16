@@ -16,7 +16,7 @@ from typing import Any, Callable, Iterator, Protocol
 from ..lab.store import GenomiLabStore
 from ..operations.registry import all_operations
 from ..runtime.external_credentials import credential_state as external_credential_state
-from . import portal_project_events, portal_state, portal_store
+from . import portal_project_events, portal_project_genomes, portal_state, portal_store
 
 JsonObject = dict[str, Any]
 _BINDING_KEY = "genomilab_binding"
@@ -513,25 +513,41 @@ class _PortalGenomiLabApplication:
                     if isinstance(context, dict)
                     else ""
                 )
-                if session == self.session_id or session.startswith(f"{self.session_id}:"):
+                if session == self.session_id:
                     records.append(view)
             return records
 
     def investigation(self, investigation_id: str) -> JsonObject:
+        view: JsonObject | None = None
+        authorized = False
         with self._current_user() as user_id:
-            view = self.store.read_orchestrator_investigation(
-                investigation_id, include_history=True
-            )
-            investigation = view.get("investigation")
-            if not isinstance(investigation, dict) or str(
-                investigation.get("user_id") or ""
-            ) != user_id:
-                raise PortalGenomiLabError(
-                    "investigation_not_found",
-                    "Investigation not found.",
-                    http_status=404,
+            try:
+                candidate = self.store.read_orchestrator_investigation(
+                    investigation_id, include_history=True
                 )
-            return view
+            except (KeyError, ValueError):
+                candidate = None
+            if isinstance(candidate, dict):
+                investigation = candidate.get("investigation")
+                context = candidate.get("context")
+                workspace_session_id = (
+                    str(context.get("workspace_session_id") or "")
+                    if isinstance(context, dict)
+                    else ""
+                )
+                authorized = (
+                    isinstance(investigation, dict)
+                    and str(investigation.get("user_id") or "") == user_id
+                    and workspace_session_id == self.session_id
+                )
+                view = candidate
+        if not authorized or view is None:
+            raise PortalGenomiLabError(
+                "investigation_not_found",
+                "Investigation not found.",
+                http_status=404,
+            )
+        return view
 
     def create_investigation(self, payload: JsonObject) -> JsonObject:
         with self._current_user() as user_id:
@@ -614,7 +630,15 @@ def _application_service(
             # Construction discovers capabilities but does not start or resume an
             # assistant task. The existing portal run remains the only runner.
             application = _PortalGenomiLabApplication(
-                session_id=f"portal:{clean_project_id}",
+                # Lab operations derive their durable session authority from
+                # context_scope(), whose id is the resolved GENOMI_CONTEXT path.
+                # Use that same project-stable boundary in the portal projection
+                # so a recreated service sees the investigation created by MCP.
+                session_id=str(
+                    portal_project_genomes.project_context_path(
+                        clean_project_id, root=root
+                    ).expanduser().resolve(strict=False)
+                ),
                 context_provider=lambda: _project_context(
                     clean_project_id, root=root
                 ),
