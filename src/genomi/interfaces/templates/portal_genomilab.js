@@ -51,14 +51,19 @@ export function createGenomiLabController({ api, getProjectId, getFrameId = () =
     const investigationStatus = investigationStatusModel(investigation);
     setStatus('genomilab-board-status', investigationStatus.label, investigationStatus.kind);
     const brief = doctorBriefModel(investigation);
-    container.append(
+    // An investigation that has only just started has nothing to show beyond
+    // its question. Rendering the finished shape up front -- empty panels
+    // promising explanations, workstreams and a brief -- presents an answer
+    // before one exists, so each panel appears only once it holds real work.
+    const cards = [
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
       hypothesisBoardCard(investigation.hypotheses),
       specialistWorkstreamsCard(investigation.specialist_workstreams),
       informationGapsCard(investigation.information_gaps),
       evidenceBoardCard(investigation),
       doctorBriefCard(brief)
-    );
+    ].filter(Boolean);
+    container.append(...cards);
   }
 
   return Object.freeze({ bind, loadAll, loadBoard, refreshFromToolRecord });
@@ -217,10 +222,7 @@ export function doctorBriefModel(investigation) {
 function specialistWorkstreamsCard(values) {
   const card = boardCardShell('Research workstreams');
   const workstreams = specialistWorkstreamModels(values);
-  if (!workstreams.length) {
-    card.append(boardParagraph('No specialist research has been assigned yet.'));
-    return card;
-  }
+  if (!workstreams.length) return null;
   const list = document.createElement('ul');
   list.className = 'genomilab-board-list genomilab-workstreams';
   workstreams.forEach((workstream) => {
@@ -244,10 +246,7 @@ function specialistWorkstreamsCard(values) {
 function hypothesisBoardCard(values) {
   const card = boardCardShell('Competing explanations');
   const hypotheses = hypothesisModels(values);
-  if (!hypotheses.length) {
-    card.append(boardParagraph('Genomi will keep plausible explanations separate as evidence is reviewed.'));
-    return card;
-  }
+  if (!hypotheses.length) return null;
   const list = document.createElement('ol');
   list.className = 'genomilab-board-list genomilab-hypotheses';
   hypotheses.forEach((hypothesis) => {
@@ -272,10 +271,7 @@ function hypothesisBoardCard(values) {
 function informationGapsCard(values) {
   const card = boardCardShell('What is still missing');
   const gaps = informationGapModels(values);
-  if (!gaps.length) {
-    card.append(boardParagraph('No durable evidence gaps have been recorded yet.'));
-    return card;
-  }
+  if (!gaps.length) return null;
   const list = document.createElement('ul');
   list.className = 'genomilab-board-list genomilab-information-gaps';
   gaps.forEach((gap) => {
@@ -293,8 +289,10 @@ function informationGapsCard(values) {
 }
 
 function evidenceBoardCard(investigation) {
+  const summary = boardEvidenceSummary(investigation);
+  if (!summary) return null;
   const card = boardCardShell('Evidence & research');
-  card.append(boardParagraph(boardEvidenceSummary(investigation)));
+  card.append(boardParagraph(summary));
   const sources = [...new Set(array(investigation.evidence_records)
     .map((item) => text(item && item.source_family)).filter(Boolean).map(humanLabel))];
   appendBriefList(card, 'Evidence sources', sources);
@@ -310,10 +308,7 @@ function evidenceBoardCard(investigation) {
 function doctorBriefCard(model) {
   const card = boardCardShell('Doctor brief');
   card.classList.add('genomilab-doctor-brief');
-  if (!model) {
-    card.append(boardParagraph('Not published yet. Genomi will add an evidence-linked brief here when the investigation is ready.'));
-    return card;
-  }
+  if (!model) return null;
   const heading = document.createElement('div');
   heading.className = 'genomilab-brief-heading';
   const title = document.createElement('h5');
@@ -502,7 +497,7 @@ function boardEvidenceSummary(investigation) {
   if (artifactCount) parts.push(`${artifactCount} research ${artifactCount === 1 ? 'output' : 'outputs'}`);
   if (gapCount) parts.push(`${gapCount} open gaps`);
   if (questionCount) parts.push(`${questionCount} follow-up questions`);
-  return parts.length ? parts.join(' · ') : 'New records and missing evidence will be tracked here.';
+  return parts.length ? parts.join(' · ') : '';
 }
 
 function setStatus(id, message, kind = '') {

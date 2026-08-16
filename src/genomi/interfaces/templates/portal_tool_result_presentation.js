@@ -49,9 +49,18 @@ export function toolResultSummary(result) {
     }
   }
   if (typeof result.content === 'string' && result.content.trim()) {
-    return compactLine(result.content.split('\n').find(Boolean) || result.content, 160);
+    const firstLine = result.content.split('\n').find(Boolean) || result.content;
+    // A transport blob is not a summary. Raw JSON belongs in the expanded
+    // technical detail, not on the step's one-line description.
+    if (!looksLikeTransportBlob(firstLine)) return compactLine(firstLine, 160);
   }
   return 'completed';
+}
+
+function looksLikeTransportBlob(line) {
+  const trimmed = String(line || '').trim();
+  if (!trimmed) return true;
+  return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
 }
 
 export function toolResultPresentation(record, options = {}) {

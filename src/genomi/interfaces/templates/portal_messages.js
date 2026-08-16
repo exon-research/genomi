@@ -601,7 +601,10 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const cleanName = promptSafeText(String(name || '')).trim().toLowerCase();
     if (cleanName.startsWith('mcp__')) return true;
     if (['bash', 'skill', 'toolsearch'].includes(cleanName)) return true;
-    const text = promptSafeText(String(summary || '')).trim();
+    // Read the raw result, not the one-line summary: transport blobs are kept
+    // out of summaries, so the wrapper has to be recognised from its content.
+    const raw = record && record.result && typeof record.result.content === 'string' ? record.result.content : '';
+    const text = promptSafeText(String(raw || summary || '')).trim();
     if (!text) return false;
     if (text.includes('"type":"tool_reference"') || text.includes('"type": "tool_reference"')) return true;
     if (/^\[\s*\{\s*"tool_name"\s*:/.test(text)) return true;
