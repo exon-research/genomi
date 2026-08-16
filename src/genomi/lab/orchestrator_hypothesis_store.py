@@ -116,25 +116,33 @@ class OrchestratorHypothesisStoreMixin:
         with self.atomic_write():
             investigation = require_investigation_revision(self, investigation_id, expected_revision)
             cycle = require_cycle(self, investigation_id, cycle_id)
-            if profile_id != investigation.get("patient_molecular_snapshot_id"):
+            current_profile_id = investigation.get("patient_molecular_snapshot_id")
+            current_evidence_snapshot = investigation.get("evidence_snapshot_id")
+            resolved_profile_id = profile_id if profile_id is not None else current_profile_id
+            resolved_evidence_snapshot = (
+                evidence_snapshot
+                if evidence_snapshot is not None
+                else current_evidence_snapshot
+            )
+            if resolved_profile_id != current_profile_id:
                 raise ValueError("profile_snapshot_id must be the investigation's current snapshot")
-            if evidence_snapshot != investigation.get("evidence_snapshot_id"):
+            if resolved_evidence_snapshot != current_evidence_snapshot:
                 raise ValueError("evidence_snapshot_id must be the investigation's current evidence snapshot")
             all_evidence = supporting + contradicting + contextual
             patient_fact_ids: list[str] = []
             with self._connect() as connection:
-                if profile_id:
+                if resolved_profile_id:
                     snapshot = connection.execute(
                         "SELECT observation_revision_ids_json FROM profile_snapshots WHERE patient_molecular_snapshot_id = ?",
-                        (profile_id,),
+                        (resolved_profile_id,),
                     ).fetchone()
                     if snapshot is None:
                         raise ValueError("profile snapshot not found")
                     patient_fact_ids = list(json.loads(str(snapshot["observation_revision_ids_json"])))
-                if evidence_snapshot:
+                if resolved_evidence_snapshot:
                     snapshot = connection.execute(
                         "SELECT evidence_record_ids_json FROM evidence_snapshots WHERE evidence_snapshot_id = ? AND investigation_id = ?",
-                        (evidence_snapshot, investigation_id),
+                        (resolved_evidence_snapshot, investigation_id),
                     ).fetchone()
                     if snapshot is None:
                         raise ValueError("evidence snapshot not found")
@@ -200,7 +208,7 @@ class OrchestratorHypothesisStoreMixin:
                     "patient_fact_ids_json, supporting_evidence_record_ids_json, contradicting_evidence_record_ids_json, "
                     "contextual_evidence_record_ids_json, unresolved_gaps_json, revision_rationale, patient_specific_assessment_json, created_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (version_id, logical_hypothesis_id, investigation_id, cycle["cycle_id"], profile_id, evidence_snapshot,
+                    (version_id, logical_hypothesis_id, investigation_id, cycle["cycle_id"], resolved_profile_id, resolved_evidence_snapshot,
                      prior["hypothesis_version_id"] if prior is not None else None, version, statement_value, status_value,
                      compact_json(patient_fact_ids), compact_json(supporting), compact_json(contradicting), compact_json(contextual),
                      compact_json(gaps), rationale, compact_json(assessment) if assessment is not None else None, utc_now()),
