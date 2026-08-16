@@ -431,6 +431,21 @@ class CodexAppServerSessionTests(unittest.TestCase):
         self.assertEqual(spawn["input"]["assignment_id"], "assignment-1")
         self.assertEqual(spawn["input"]["execution_policy"], "public_literature")
         self.assertEqual(spawn["input"]["specialist_role"], "Public-literature reviewer")
+        progress = next(
+            event for event in events if event.get("name") == "specialist_progress"
+        )
+        self.assertEqual(
+            progress["payload"]["updates"],
+            [
+                {
+                    "agent_id": "/root/literature_reviewer",
+                    "task_name": "/root/literature_reviewer",
+                    "assignment_id": "assignment-1",
+                    "status": "running",
+                    "message": "Searching public biomedical literature",
+                }
+            ],
+        )
 
         session._handle_notification(
             "item/started",

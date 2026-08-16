@@ -22,6 +22,55 @@ def _run_node(script: str) -> dict[str, object]:
 
 
 class PortalFrontendSpecialistTests(unittest.TestCase):
+    def test_redacted_native_progress_updates_spawned_lane_without_reviving_terminal_state(self) -> None:
+        module_url = (TEMPLATES / "portal_specialists.js").as_uri()
+        script = textwrap.dedent(
+            f"""
+            const specialists = await import({module_url!r});
+            const records = [
+              {{
+                call: {{ id: 'spawn-1', name: 'spawn_agent', input: {{
+                  agent_id: '/root/reviewer', task_name: '/root/reviewer',
+                  assignment_id: 'assignment-1', specialist_role: 'Public evidence reviewer'
+                }} }}
+              }},
+              {{
+                call: {{ id: 'transition-1', name: 'genomi.genomi.invoke', input: {{ tool: 'lab.transition_specialist_assignment' }} }},
+                result: {{ id: 'transition-1', payload: {{
+                  dispatched_tool: 'lab.transition_specialist_assignment',
+                  assignment: {{
+                    specialist_assignment_id: 'assignment-1', native_agent_id: '/root/reviewer',
+                    specialist_role: 'Public evidence reviewer', execution_policy: 'public_literature',
+                    revision: 2, state: 'spawned'
+                  }}
+                }} }}
+              }},
+              {{
+                result: {{ id: 'specialist-progress:search-1', name: 'specialist_progress', payload: {{
+                  updates: [{{
+                    agent_id: '/root/reviewer', assignment_id: 'assignment-1', status: 'running',
+                    message: 'Searching public biomedical literature'
+                  }}]
+                }} }}
+              }}
+            ];
+            const running = specialists.specialistLaneModel(records);
+            records[1].result.payload.assignment.state = 'completed';
+            records[1].result.payload.assignment.revision = 3;
+            const completed = specialists.specialistLaneModel(records);
+            process.stdout.write(JSON.stringify({{ running, completed }}));
+            """
+        )
+
+        result = _run_node(script)
+        self.assertEqual(len(result["running"]["specialists"]), 1)
+        self.assertEqual(result["running"]["specialists"][0]["status"], "running")
+        self.assertEqual(
+            result["running"]["specialists"][0]["summary"],
+            "Searching public biomedical literature",
+        )
+        self.assertEqual(result["completed"]["specialists"][0]["status"], "completed")
+
     def test_terminal_host_turn_never_leaves_spawned_assignment_running(self) -> None:
         module_url = (TEMPLATES / "portal_specialists.js").as_uri()
         script = textwrap.dedent(

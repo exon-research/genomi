@@ -225,6 +225,10 @@ class CodexAppServerSession:
                                 str(params.get("turnId") or ""),
                                 violation,
                             )
+                        else:
+                            progress = self._specialist_progress_event(thread_id, item)
+                            if progress is not None:
+                                self.on_event(progress)
                     self._remember_specialist_message(thread_id, item, completed=completed)
                     return
                 if str(item.get("type") or "") == "subAgentActivity":
@@ -426,6 +430,41 @@ class CodexAppServerSession:
         if isinstance(text, str) and text:
             self._specialist_final_messages[thread_id] = text
 
+    def _specialist_progress_event(
+        self,
+        thread_id: str,
+        item: JsonObject,
+    ) -> JsonObject | None:
+        """Expose bounded child progress without leaking child prose or results."""
+
+        if str(item.get("type") or "") != "mcpToolCall":
+            return None
+        specialist = self._specialists_by_thread_id.get(thread_id)
+        if specialist is None or specialist.get("binding_error"):
+            return None
+        arguments = _object(item.get("arguments"))
+        operation = str(arguments.get("tool") or "").strip()
+        if not operation:
+            return None
+        agent_id = str(specialist.get("agent_id") or thread_id)
+        update: JsonObject = {
+            "agent_id": agent_id,
+            "task_name": str(specialist.get("task_name") or agent_id),
+            "status": "running",
+            "message": _specialist_progress_message(operation),
+        }
+        assignment_id = str(specialist.get("assignment_id") or "")
+        if assignment_id:
+            update["assignment_id"] = assignment_id
+        return {
+            "type": "tool_result",
+            "id": f"specialist-progress:{str(item.get('id') or operation)}",
+            "name": "specialist_progress",
+            "isError": False,
+            "content": update["message"],
+            "payload": {"updates": [update]},
+        }
+
     def _complete_specialist(self, thread_id: str, turn_value: Any) -> None:
         if not thread_id or thread_id in self._completed_specialist_threads:
             return
@@ -607,6 +646,18 @@ def _find_result_object(value: Any, depth: int = 0) -> JsonObject:
 
 def _specialist_allowed_operations(policy: str) -> frozenset[str]:
     return _specialist_policy_operations().get(policy, frozenset())
+
+
+def _specialist_progress_message(operation: str) -> str:
+    if operation == "paperclip.search_biomedical":
+        return "Searching public biomedical literature"
+    if operation == "paperclip.retrieve_document_evidence":
+        return "Reading line-pinned public evidence"
+    if operation.startswith("biohub."):
+        return "Running the bounded BioHub analysis"
+    if operation.startswith("proto."):
+        return "Running the bounded Proto analysis"
+    return "Running the authorized specialist operation"
 
 
 @lru_cache(maxsize=1)

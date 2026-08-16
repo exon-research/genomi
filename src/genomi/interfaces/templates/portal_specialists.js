@@ -4,7 +4,8 @@ const SPECIALIST_TOOLS = new Set([
   'list_agents',
   'interrupt_agent',
   'send_message',
-  'followup_task'
+  'followup_task',
+  'specialist_progress'
 ]);
 const LAB_ASSIGNMENT_OPERATIONS = new Set([
   'lab.create_specialist_assignment',
@@ -64,6 +65,7 @@ export function specialistLaneModel(records = []) {
     const result = object(record && record.result);
     const operation = toolLeaf(call.name || result.name);
     if (operation === 'spawn_agent') return;
+    if (operation === 'specialist_progress') return;
     if (operation === 'wait_agent') {
       parentWaiting = !record.result;
       parentStatus = record.result ? (result.isError ? 'error' : 'completed') : 'waiting';
@@ -108,6 +110,17 @@ export function specialistLaneModel(records = []) {
     specialist.policy = update.policy;
     specialist.authoritative = true;
     registerIdentities(byIdentity, specialist);
+  });
+
+  // Child MCP output remains isolated from Main, but the protocol adapter emits
+  // a redacted lifecycle signal when an authorized provider operation starts.
+  // Apply that signal after the durable spawned assignment so its useful status
+  // text is visible, while never reviving a terminal specialist.
+  collaboration.forEach((record) => {
+    const call = object(record && record.call);
+    const result = object(record && record.result);
+    if (toolLeaf(call.name || result.name) !== 'specialist_progress' || !record.result) return;
+    applySignals([result], specialists, byIdentity, null, true);
   });
 
   // A host turn is a hard runtime boundary. If it ends without a canonical
@@ -270,7 +283,7 @@ function mergeSpecialists(target, source, specialists) {
   return target;
 }
 
-function applySignals(values, specialists, byIdentity, fallback) {
+function applySignals(values, specialists, byIdentity, fallback, preserveTerminal = false) {
   const signals = signalObjects(values);
   let applied = false;
   signals.forEach((signal) => {
@@ -294,6 +307,10 @@ function applySignals(values, specialists, byIdentity, fallback) {
       specialists.push(specialist);
     }
     if (!specialist) return;
+    if (preserveTerminal && ['completed', 'error'].includes(specialist.status)) {
+      applied = true;
+      return;
+    }
     const agentId = clean(signal.agent_id || signal.agentId || signal.id);
     const taskName = clean(signal.task_name || signal.taskName);
     if (agentId) specialist.id = agentId;
