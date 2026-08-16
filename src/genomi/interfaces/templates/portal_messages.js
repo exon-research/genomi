@@ -466,6 +466,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
       record.kind = 'diagnostic';
       record.diagnostics = [...(record.diagnostics || []), sanitizeDiagnosticEvent(data)];
       record.diagnostic = diagnosticRecordModel(record.diagnostics);
+      showLiveProgress(parentMessage || lastToolParent, data);
     } else if (kind === 'tool_result') {
       record.kind = 'tool';
       record.result = data;
@@ -769,6 +770,27 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
       selectedEvidence: context ? [context] : [],
       scope: record.scope || {}
     };
+  }
+
+  // While a turn runs, the assistant narrates what it is doing -- reading the
+  // records, scanning the genome, briefing a specialist. That narration was
+  // being filed as a hidden diagnostic, so the person watched an unchanging
+  // screen for minutes. Show the latest line where they are already looking.
+  function showLiveProgress(parentMessage, data) {
+    if (!parentMessage || String((data && data.name) || '') !== 'assistant_status') return;
+    const message = promptSafeText(String((data && data.message) || '')).trim();
+    if (!message) return;
+    const body = parentMessage.querySelector('.body');
+    if (!body) return;
+    const answer = body.querySelector('.message-answer-text');
+    if (answer && answer.textContent.trim()) return;
+    let live = body.querySelector('.message-live-progress');
+    if (!live) {
+      live = document.createElement('p');
+      live.className = 'message-live-progress';
+      body.appendChild(live);
+    }
+    live.textContent = message.split('\n').find(Boolean) || message;
   }
 
   function renderAssistantBody(body, text) {

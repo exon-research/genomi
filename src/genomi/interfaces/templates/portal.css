@@ -524,6 +524,14 @@ body[data-active-workspace-section="tool-launcher"] .right-stack > .pane:not(#to
 .message.compact-tools { background: transparent; border: 0; padding: 0; }
 .message .role { color: var(--text4); font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; margin-bottom: 6px; }
 .message .body { color: var(--text2); white-space: pre-wrap; line-height: 1.55; font-size: 13px; }
+.message-live-progress {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.5;
+}
+/* Once the answer lands the narration has served its purpose. */
+.message.assistant:not(.streaming) .message-live-progress { display: none; }
 .message.assistant.streaming .message-answer-text:empty::after {
   /* Names whichever assistant is actually running this turn. The fallback
      stays neutral so a workspace never claims the wrong one. */
