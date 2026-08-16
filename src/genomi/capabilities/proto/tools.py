@@ -31,16 +31,24 @@ def search_tools(
         result = native.search_tools(
             query=clean_query,
             deployed_only=True,
-            limit=limit,
+            limit=10_000,
             device=DEFAULT_DEVICE,
             environment=DEFAULT_ENVIRONMENT,
             client=client,
         )
     except Exception:
         return _unavailable("proto.search_tools", "request_failed")
-    tools = result.get("tools", []) if isinstance(result, dict) else []
+    discovered = result.get("tools", []) if isinstance(result, dict) else []
+    tools = [
+        item
+        for item in discovered
+        if isinstance(item, dict)
+        and item.get("deployed") is True
+        and item.get("runs_in_process") is not True
+    ]
     if category:
         tools = [item for item in tools if isinstance(item, dict) and item.get("category") == category]
+    tools = tools[:limit]
     return {
         "status": "completed" if tools else "in_scope_empty",
         "provider": "proto",
@@ -82,6 +90,9 @@ def run_tool(
         return _unavailable("proto.run_tool", "client_missing", query_scope)
     if client is None:
         return _unavailable("proto.run_tool", "credential_missing", query_scope)
+    remote_state = _remote_deployment_state(native, client, tool_key)
+    if remote_state != "deployed":
+        return _unavailable("proto.run_tool", remote_state, query_scope)
     try:
         result = native.run_tool(
             tool_key=tool_key.strip(),
@@ -108,6 +119,13 @@ def run_tool(
                 guidance=["not_assessed:inspect_tool_result_and_revise_research_call"],
             ),
         }
+    reported_device = str(result.get("ran_on") or "").strip().lower()
+    if reported_device != DEFAULT_DEVICE:
+        return _unavailable(
+            "proto.run_tool",
+            "remote_execution_not_confirmed",
+            {**query_scope, "reported_device": reported_device or "unreported"},
+        )
     return {
         "status": "completed",
         "provider": "proto",
@@ -145,6 +163,25 @@ def _modal_client() -> tuple[Any, Any | None]:
     except Exception:
         return credentials, None
     return credentials, client
+
+
+def _remote_deployment_state(native: Any, client: Any, tool_key: str) -> str:
+    try:
+        tools = native.list_tools(
+            deployed_only=False,
+            device=DEFAULT_DEVICE,
+            environment=DEFAULT_ENVIRONMENT,
+            client=client,
+        )
+    except Exception:
+        return "remote_catalog_unavailable"
+    for item in tools if isinstance(tools, list) else []:
+        if not isinstance(item, dict) or item.get("tool_key") != tool_key.strip():
+            continue
+        if item.get("deployed") is True and item.get("runs_in_process") is not True:
+            return "deployed"
+        return "remote_deployment_unavailable"
+    return "remote_tool_unavailable"
 
 
 def _sanitize(value: Any, *, key: str = "") -> Any:

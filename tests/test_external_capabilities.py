@@ -8,7 +8,7 @@ from unittest.mock import patch
 from genomi.capabilities.biohub.esmc import compare_protein_embeddings
 from genomi.capabilities.paperclip.read import retrieve_document_evidence
 from genomi.capabilities.paperclip.search import search_biomedical
-from genomi.capabilities.proto.tools import run_tool
+from genomi.capabilities.proto.tools import run_tool, search_tools
 from genomi.evidence import envelope as evidence_envelope
 from genomi.operations.registry.table import call_operation, list_operations
 from genomi.runtime.external_credentials import external_credential_session
@@ -304,8 +304,17 @@ class ExternalCapabilityTests(unittest.TestCase):
     def test_proto_preserves_result_and_prunes_paths(self) -> None:
         class Native:
             @staticmethod
+            def list_tools(**_: object) -> list[dict[str, object]]:
+                return [{"tool_key": "example-tool", "deployed": True}]
+
+            @staticmethod
             def run_tool(**_: object) -> dict[str, object]:
-                return {"ok": True, "score": 0.7, "_saved_to": "/private/result.json"}
+                return {
+                    "ok": True,
+                    "ran_on": "modal",
+                    "score": 0.7,
+                    "_saved_to": "/private/result.json",
+                }
 
         with patch("genomi.capabilities.proto.tools._native_tools", return_value=Native()):
             with patch("genomi.capabilities.proto.tools._modal_client", return_value=(object(), object())):
@@ -318,6 +327,83 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(result["result"]["score"], 0.7)
         self.assertEqual(result["result"]["artifact_state"], "materialized_not_presented")
         self.assertNotIn("/private/result.json", json.dumps(result))
+
+    def test_proto_discovery_excludes_local_fallbacks(self) -> None:
+        class Native:
+            @staticmethod
+            def search_tools(**_: object) -> dict[str, object]:
+                return {
+                    "tools": [
+                        {
+                            "tool_key": "local-tool",
+                            "deployed": False,
+                            "runs_in_process": True,
+                        },
+                        {"tool_key": "remote-tool", "deployed": True},
+                    ]
+                }
+
+        with patch("genomi.capabilities.proto.tools._native_tools", return_value=Native()):
+            with patch("genomi.capabilities.proto.tools._modal_client", return_value=(object(), object())):
+                result = search_tools(query="public protein analysis", limit=1)
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(
+            [item["tool_key"] for item in result["tools"]], ["remote-tool"]
+        )
+
+    def test_proto_refuses_undeployed_tool_before_execution(self) -> None:
+        class Native:
+            @staticmethod
+            def list_tools(**_: object) -> list[dict[str, object]]:
+                return [
+                    {
+                        "tool_key": "local-tool",
+                        "deployed": False,
+                        "runs_in_process": True,
+                    }
+                ]
+
+            @staticmethod
+            def run_tool(**_: object) -> dict[str, object]:
+                raise AssertionError("an undeployed tool must not execute locally")
+
+        with patch("genomi.capabilities.proto.tools._native_tools", return_value=Native()):
+            with patch("genomi.capabilities.proto.tools._modal_client", return_value=(object(), object())):
+                result = run_tool(
+                    tool_key="local-tool",
+                    inputs={"value": 1},
+                    input_scope="public_or_approved_research_artifact",
+                    external_transfer_approved=True,
+                )
+
+        self.assertEqual(result["status"], "source_unavailable")
+        self.assertEqual(result["reason_code"], "remote_deployment_unavailable")
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "not_assessed")
+
+    def test_proto_rejects_unexpected_local_execution_result(self) -> None:
+        class Native:
+            @staticmethod
+            def list_tools(**_: object) -> list[dict[str, object]]:
+                return [{"tool_key": "remote-tool", "deployed": True}]
+
+            @staticmethod
+            def run_tool(**_: object) -> dict[str, object]:
+                return {"ok": True, "ran_on": "local", "score": 0.7}
+
+        with patch("genomi.capabilities.proto.tools._native_tools", return_value=Native()):
+            with patch("genomi.capabilities.proto.tools._modal_client", return_value=(object(), object())):
+                result = run_tool(
+                    tool_key="remote-tool",
+                    inputs={"value": 1},
+                    input_scope="public_or_approved_research_artifact",
+                    external_transfer_approved=True,
+                )
+
+        self.assertEqual(result["status"], "source_unavailable")
+        self.assertEqual(result["reason_code"], "remote_execution_not_confirmed")
+        self.assertNotIn("result", result)
+        self.assertEqual(result["evidence_envelope"]["finding_state"], "not_assessed")
 
     def test_proto_refuses_unapproved_or_wrong_scope_without_provider_call(self) -> None:
         class Native:
