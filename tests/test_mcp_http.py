@@ -20,6 +20,7 @@ from genomi.interfaces import portal_project_events
 from genomi.interfaces import portal_run_events
 from genomi.interfaces import portal_store
 from genomi.interfaces import portal_workspaces
+from genomi.runtime import context as runtime_context
 from tests.support.runtime.genomi import IsolatedGenomiHomeTestCase
 
 _PRIVATE_PATH_RE = re.compile(r"(?:/Users|/home|/tmp|/private/tmp|/var/folders|/opt/homebrew|/usr/local|/Applications|/Volumes|~)(?:/|$)")
@@ -413,10 +414,25 @@ class MCPHTTPTests(IsolatedGenomiHomeTestCase):
         self.assertTrue(all("runnable" in agent for agent in agents))
         self.assertTrue(
             all(
-                set(agent) == {"id", "label", "command", "summary", "available", "runnable", "status"}
+                {"id", "label", "command", "summary", "available", "runnable", "status", "selected", "active"}
+                <= set(agent)
                 for agent in agents
             )
         )
+        self.assertEqual(
+            set(payload["assistant"]),
+            {
+                "state",
+                "source",
+                "active_agent_id",
+                "active_label",
+                "selected_agent_id",
+                "unavailable_agent_id",
+                "unavailable_label",
+            },
+        )
+        active_ids = [agent["id"] for agent in agents if agent["active"]]
+        self.assertEqual(active_ids, [payload["assistant"]["active_agent_id"]] if active_ids else [])
 
     def test_portal_json_api_is_same_origin_and_uses_public_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}):
@@ -820,7 +836,10 @@ class MCPHTTPTests(IsolatedGenomiHomeTestCase):
     def test_project_request_creates_persistent_frame_messages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}), mock.patch(
             "genomi.interfaces.portal_runs.run_agent", lambda run: None
-        ), mock.patch("genomi.interfaces.portal_agents.default_agent_id", return_value="codex"):
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+        ):
             with _running_server() as address:
                 status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Portal Test"})
                 self.assertEqual(status, 201)
@@ -854,10 +873,108 @@ class MCPHTTPTests(IsolatedGenomiHomeTestCase):
         self.assertEqual(frames["frames"][0]["request"], "Resolve rs429358")
         self.assertEqual(frames["frames"][0]["title"], "Resolve rs429358")
 
+    def test_workspace_assistant_choice_is_saved_and_runs_the_next_turn(self) -> None:
+        started_runs: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"GENOMI_HOME": tmp, **{name: "" for name in runtime_context.AGENT_SESSION_ENVS}, "CODEX_THREAD_ID": "thread-1"},
+        ), mock.patch(
+            "genomi.interfaces.portal_runs.run_agent", lambda run: started_runs.append(run.agent_id)
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: f"/usr/local/bin/{command}" if command in {"codex", "claude"} else None,
+        ):
+            with _running_server() as address:
+                status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Assistant choice"})
+                self.assertEqual(status, 201)
+                project_id = project_payload["project"]["project_id"]
+
+                bootstrap_status, bootstrap = _request_json("GET", address, f"/api/agents?projectId={project_id}")
+                select_status, selected = _request_json(
+                    "POST",
+                    address,
+                    f"/api/projects/{project_id}/assistant",
+                    {"agentId": "claude"},
+                )
+                reload_status, reloaded = _request_json("GET", address, f"/api/agents?projectId={project_id}")
+                unsupported_status, unsupported = _request_json(
+                    "POST",
+                    address,
+                    f"/api/projects/{project_id}/assistant",
+                    {"agentId": "gemini"},
+                )
+                run_status, run_payload = _request_json(
+                    "POST",
+                    address,
+                    f"/api/projects/{project_id}/request",
+                    {"message": "Resolve rs429358"},
+                )
+                frame_status, frame = _request_json("GET", address, f"/api/frames/{run_payload['frameId']}")
+
+        self.assertEqual(bootstrap_status, 200)
+        self.assertEqual(bootstrap["assistant"]["active_agent_id"], "codex")
+        self.assertEqual(bootstrap["assistant"]["source"], "bootstrap_host_agent")
+        self.assertEqual(select_status, 200)
+        self.assertEqual(selected["assistant"]["active_agent_id"], "claude")
+        self.assertEqual(selected["assistant"]["source"], "workspace_choice")
+        self.assertEqual(reload_status, 200)
+        self.assertEqual(reloaded["assistant"]["selected_agent_id"], "claude")
+        self.assertEqual([agent["id"] for agent in reloaded["agents"] if agent["selected"]], ["claude"])
+        self.assertEqual(unsupported_status, 400)
+        self.assertEqual(unsupported["error"]["code"], "assistant_not_runnable")
+        self.assertEqual(run_status, 202)
+        self.assertEqual(frame_status, 200)
+        self.assertEqual(frame["agent_id"], "claude")
+        self.assertEqual(started_runs, ["claude"])
+
+    def test_a_plain_terminal_launch_asks_which_assistant_before_running_a_turn(self) -> None:
+        started_runs: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            os.environ,
+            {"GENOMI_HOME": tmp, **{name: "" for name in runtime_context.AGENT_SESSION_ENVS}},
+        ), mock.patch(
+            "genomi.interfaces.portal_runs.run_agent", lambda run: started_runs.append(run.agent_id)
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: f"/usr/local/bin/{command}" if command in {"codex", "claude"} else None,
+        ):
+            with _running_server() as address:
+                status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Plain terminal"})
+                self.assertEqual(status, 201)
+                project_id = project_payload["project"]["project_id"]
+
+                undecided_status, undecided = _request_json("GET", address, f"/api/agents?projectId={project_id}")
+                blocked_status, blocked = _request_json(
+                    "POST",
+                    address,
+                    f"/api/projects/{project_id}/request",
+                    {"message": "Resolve rs429358"},
+                )
+                _request_json("POST", address, f"/api/projects/{project_id}/assistant", {"agentId": "claude"})
+                allowed_status, allowed = _request_json(
+                    "POST",
+                    address,
+                    f"/api/projects/{project_id}/request",
+                    {"message": "Resolve rs429358"},
+                )
+
+        self.assertEqual(undecided_status, 200)
+        self.assertEqual(undecided["assistant"]["state"], "choice_required")
+        self.assertEqual(blocked_status, 400)
+        self.assertEqual(blocked["error"]["code"], "assistant_choice_required")
+        self.assertIn("Codex CLI, Claude Code", blocked["error"]["message"])
+        self.assertIn("Workspace details → Local assistant → Assistant troubleshooting", blocked["error"]["message"])
+        self.assertEqual(allowed_status, 202)
+        self.assertEqual(started_runs, ["claude"])
+        self.assertTrue(allowed["frameId"])
+
     def test_project_conversation_rename_persists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}), mock.patch(
             "genomi.interfaces.portal_runs.run_agent", lambda run: None
-        ), mock.patch("genomi.interfaces.portal_agents.default_agent_id", return_value="codex"):
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+        ):
             with _running_server() as address:
                 status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Rename API"})
                 self.assertEqual(status, 201)
@@ -896,7 +1013,10 @@ class MCPHTTPTests(IsolatedGenomiHomeTestCase):
 
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}), mock.patch(
             "genomi.interfaces.portal_run_service._start_run_thread", _finish_run
-        ), mock.patch("genomi.interfaces.portal_agents.default_agent_id", return_value="codex"):
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+        ):
             with _running_server() as address:
                 status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Run API"})
                 self.assertEqual(status, 201)
@@ -951,7 +1071,10 @@ class MCPHTTPTests(IsolatedGenomiHomeTestCase):
 
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}), mock.patch(
             "genomi.interfaces.portal_run_service._start_run_thread", _finish_run
-        ), mock.patch("genomi.interfaces.portal_agents.default_agent_id", return_value="codex"):
+        ), mock.patch(
+            "genomi.interfaces.portal_agents.shutil.which",
+            side_effect=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+        ):
             with _running_server() as address:
                 status, project_payload = _request_json("POST", address, "/api/projects", {"name": "Run handoff"})
                 self.assertEqual(status, 201)

@@ -68,7 +68,8 @@ class RunFailure:
 
 
 _SWITCH_ASSISTANT_STEP = (
-    "Switch to another local assistant under Workspace details → Local assistant, then ask again."
+    "Pick a different assistant under Workspace details → Local assistant → Assistant troubleshooting, "
+    "then send the question again."
 )
 _RESEND_STEP = "Send the question again once the assistant is available; your records stay in this workspace."
 
@@ -105,7 +106,7 @@ def classify_run_failure(error: str, *, status: str = "failed") -> RunFailure:
             reason="assistant_unavailable",
             headline="Genomi could not start a local assistant for this turn.",
             next_steps=(
-                "Check Workspace details -> Local assistant to see which assistants Genomi can find.",
+                "Check Workspace details → Local assistant → Assistant troubleshooting to see which assistants Genomi can run.",
                 _RESEND_STEP,
             ),
             detail=detail,

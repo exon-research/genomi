@@ -147,41 +147,120 @@ class PortalFrontendAssetTests(unittest.TestCase):
         self.assertNotIn("genomeContextMode", focused_body)
         self.assertEqual(focused_body["selectedEvidence"][0]["context_kind"], "workspace_file")
 
-    def test_runtime_status_module_renders_assistant_readiness(self) -> None:
+    def test_local_assistant_panel_says_which_assistant_this_workspace_uses(self) -> None:
         runtime_url = (Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates/portal_runtime_status.js").as_uri()
         script = textwrap.dedent(
-            f"""
-            const runtime = await import({runtime_url!r});
-            const ready = [
-              {{ id: 'codex', label: 'Codex', runnable: true, available: true, status: 'ready' }},
-              {{ id: 'claude', label: 'Claude', runnable: true, available: true, status: 'ready' }}
-            ];
-            const setupOnly = [{{ id: 'codex', label: 'Codex', runnable: false, available: true, status: 'setup_only' }}];
-            const unsafe = [{{ id: 'bad', label: '<script>alert(1)</script>', runnable: false, available: false, status: 'bad`state' }}];
-            const target = {{ innerHTML: '' }};
-            runtime.renderRuntimeDetails(target, unsafe);
-            const emptyTarget = {{ innerHTML: '' }};
-            runtime.renderRuntimeDetails(emptyTarget, []);
-            const result = {{
-              readyLabel: runtime.runtimeStatusLabel(ready, ready),
-              setupLabel: runtime.runtimeStatusLabel([], setupOnly),
-              missingLabel: runtime.runtimeStatusLabel([], []),
-              unsafeHtml: target.innerHTML,
-              emptyHtml: emptyTarget.innerHTML
-            }};
-            process.stdout.write(JSON.stringify(result));
             """
-        )
+            const runtime = await import(__MODULE_URL__);
+            __DOM_SHIM__
+            globalThis.document = { createElement: (tagName) => new Element(tagName) };
+            const agents = [
+              { id: 'codex', label: 'Codex CLI', runnable: true, available: true, last_run_failure: 'assistant_usage_limit_reached' },
+              { id: 'claude', label: 'Claude Code', runnable: true, available: true },
+              { id: 'gemini', label: 'Gemini CLI', runnable: false, available: true },
+              { id: 'opencode', label: 'OpenCode', runnable: false, available: false }
+            ];
+            const bootstrap = { state: 'ready', source: 'bootstrap_host_agent', active_agent_id: 'claude', active_label: 'Claude Code', selected_agent_id: '' };
+            const chosen = { state: 'ready', source: 'workspace_choice', active_agent_id: 'codex', active_label: 'Codex CLI', selected_agent_id: 'codex' };
+            const gone = { state: 'workspace_choice_unavailable', source: '', active_agent_id: '', active_label: '', unavailable_label: 'Claude Code' };
+            const launched = { state: 'ready', source: 'launch_option', active_agent_id: 'claude', active_label: 'Claude Code', selected_agent_id: '' };
+            const onlyOne = { state: 'ready', source: 'only_runnable', active_agent_id: 'claude', active_label: 'Claude Code', selected_agent_id: '' };
+            const survivor = { state: 'ready', source: 'only_one_working_here', active_agent_id: 'claude', active_label: 'Claude Code', selected_agent_id: '' };
+            const undecided = { state: 'choice_required', source: '', active_agent_id: '', active_label: '', selected_agent_id: '' };
+            const selections = [];
+            const target = document.createElement('div');
+            runtime.renderAssistantChoice(target, { agents, assistant: bootstrap }, { onSelect: (id) => selections.push(id) });
+            const readText = (node) => [node.textContent, ...node.children.map(readText)].filter(Boolean).join(' ');
+            const rows = target.querySelectorAll('[data-runtime-state]').map((row) => ({
+              testid: row.getAttribute('data-testid'),
+              state: row.getAttribute('data-runtime-state'),
+              text: readText(row)
+            }));
+            const inputs = target.querySelectorAll('input').map((input) => ({
+              type: input.type,
+              name: input.name,
+              value: input.value,
+              checked: Boolean(input.checked),
+              disabled: Boolean(input.disabled)
+            }));
+            const codexInput = target.querySelectorAll('input').find((input) => input.value === 'codex');
+            codexInput.eventListeners.change.forEach((handler) => handler());
+            const geminiInput = target.querySelectorAll('input').find((input) => input.value === 'gemini');
+            geminiInput.eventListeners.change.forEach((handler) => handler());
+            const emptyTarget = document.createElement('div');
+            runtime.renderAssistantChoice(emptyTarget, { agents: [], assistant: {} });
+            const undecidedTarget = document.createElement('div');
+            runtime.renderAssistantChoice(undecidedTarget, { agents, assistant: undecided });
+            process.stdout.write(JSON.stringify({
+              bootstrapLabel: runtime.assistantSummaryLabel(bootstrap, agents),
+              chosenLabel: runtime.assistantSummaryLabel(chosen, agents),
+              goneLabel: runtime.assistantSummaryLabel(gone, agents),
+              missingLabel: runtime.assistantSummaryLabel({ state: 'none_available' }, []),
+              legend: target.querySelector('legend').textContent,
+              launchedLabel: runtime.assistantSummaryLabel(launched, agents),
+              onlyOneLabel: runtime.assistantSummaryLabel(onlyOne, agents),
+              survivorLabel: runtime.assistantSummaryLabel(survivor, agents),
+              undecidedLabel: runtime.assistantSummaryLabel(undecided, agents),
+              workingLabel: runtime.assistantWorkingLabel(bootstrap),
+              workingLabelUnknown: runtime.assistantWorkingLabel({}),
+              undecidedLegend: undecidedTarget.querySelector('legend').textContent,
+              undecidedChecked: undecidedTarget.querySelectorAll('input').filter((input) => input.checked).length,
+              rows,
+              inputs,
+              selections,
+              emptyText: readText(emptyTarget)
+            }));
+            """
+        ).replace("__MODULE_URL__", json.dumps(runtime_url)).replace("__DOM_SHIM__", _dom_shim_script())
 
         result = _run_node_json(self, script)
 
-        self.assertEqual(result["readyLabel"], "Codex ready +1 ready")
-        self.assertEqual(result["setupLabel"], "1 local assistant setup found")
+        self.assertEqual(result["bootstrapLabel"], "Using Claude Code - the assistant that started GenomiLab")
+        self.assertEqual(result["chosenLabel"], "Using Codex CLI - chosen for this workspace")
+        # The streaming placeholder names the assistant actually running the
+        # turn, so a workspace never claims a different one.
+        self.assertEqual(result["workingLabel"], "Claude Code is working\u2026")
+        self.assertEqual(result["workingLabelUnknown"], "Your assistant is working\u2026")
+        self.assertEqual(result["launchedLabel"], "Using Claude Code - named with --agent when GenomiLab started")
+        self.assertEqual(result["onlyOneLabel"], "Using Claude Code - the only assistant installed here")
+        self.assertEqual(
+            result["survivorLabel"],
+            "Using Claude Code - the only installed assistant that has not failed in this workspace",
+        )
+        self.assertEqual(result["undecidedLabel"], "Choose which local assistant this workspace uses")
+        self.assertEqual(result["undecidedLegend"], "Choose the assistant for this workspace")
+        self.assertEqual(result["undecidedChecked"], 0)
+        self.assertEqual(result["goneLabel"], "Claude Code is not available here - choose another below")
         self.assertEqual(result["missingLabel"], "No local assistant available")
-        self.assertIn("data-runtime-state=\"bad&#96;state\"", result["unsafeHtml"])
-        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", result["unsafeHtml"])
-        self.assertIn("Unavailable", result["unsafeHtml"])
-        self.assertEqual(result["emptyHtml"], '<div class="runtime-empty">No local assistant available.</div>')
+        self.assertEqual(result["legend"], "Assistant for this workspace")
+        self.assertEqual(
+            result["inputs"],
+            [
+                {"type": "radio", "name": "workspace-assistant", "value": "codex", "checked": False, "disabled": False},
+                {"type": "radio", "name": "workspace-assistant", "value": "claude", "checked": True, "disabled": False},
+                {"type": "radio", "name": "workspace-assistant", "value": "gemini", "checked": False, "disabled": True},
+                {"type": "radio", "name": "workspace-assistant", "value": "opencode", "checked": False, "disabled": True},
+            ],
+        )
+        self.assertEqual(result["selections"], ["codex"])
+        self.assertEqual(
+            [row["testid"] for row in result["rows"]],
+            [
+                "genomi-assistant-option-codex",
+                "genomi-assistant-option-claude",
+                "genomi-assistant-option-gemini",
+                "genomi-assistant-option-opencode",
+            ],
+        )
+        self.assertEqual([row["state"] for row in result["rows"]], ["runnable", "runnable", "unavailable", "unavailable"])
+        self.assertIn("Installed", result["rows"][0]["text"])
+        self.assertIn("In use: the assistant that started GenomiLab.", result["rows"][1]["text"])
+        self.assertIn("Last turn here stopped: usage allowance reached.", result["rows"][0]["text"])
+        self.assertIn("Not supported yet", result["rows"][2]["text"])
+        self.assertIn("Genomi has no verified driver for this assistant yet.", result["rows"][2]["text"])
+        self.assertIn("Not installed", result["rows"][3]["text"])
+        self.assertIn("Genomi did not find this assistant on this machine.", result["rows"][3]["text"])
+        self.assertEqual(result["emptyText"], "No local assistant available.")
 
     def test_tool_catalog_models_source_lookup_detail(self) -> None:
         catalog_url = (Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates/portal_tool_catalog.js").as_uri()
@@ -668,13 +747,10 @@ class PortalFrontendAssetTests(unittest.TestCase):
             portal.index("const sourceFrameId = forceNewFrame ? state.frameId : '';"),
             portal.index("if (forceNewFrame) newChat();"),
         )
-        self.assertNotIn('id="agent-select"', html)
-        self.assertNotIn("runtime-picker", html)
-        self.assertNotIn("const agentId = $('agent-select').value", portal)
         self.assertIn('id="agent-list"', html)
         self.assertIn("portal_runtime_status.js", portal_assets.template_asset_names())
-        self.assertIn("renderRuntimeDetails($('agent-list'), state.agents)", portal)
-        self.assertNotIn("function runtimeStatusLabel", portal)
+        self.assertIn("renderAssistantChoice($('agent-list')", portal)
+        self.assertIn("api.selectWorkspaceAssistant(projectId, agentId)", portal)
 
         self.assertIn("submitTurnDraft({ message, selectedEvidence }).catch", portal)
         self.assertIn("if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;", portal)

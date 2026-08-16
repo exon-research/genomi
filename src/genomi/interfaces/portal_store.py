@@ -30,6 +30,9 @@ _MESSAGE_PROJECT_REFRESH_REASONS = {"appended", "created", "message_started", "c
 STALE_AFTER_RESTART_STATUS = "stale_after_restart"
 STALE_AFTER_RESTART_ERROR = "Portal run was interrupted by a server restart before it could finish."
 _PROCESSING_FRAME_STATUS = "processing"
+_TERMINAL_FRAME_STATUSES = frozenset(
+    {"completed", *portal_run_failures.FAILED_RUN_STATUSES, *portal_run_failures.CANCELED_RUN_STATUSES, STALE_AFTER_RESTART_STATUS}
+)
 _ACTIVE_MESSAGE_STREAM_STATUSES = {"running", "streaming"}
 _TERMINAL_TOOL_EVENT_TYPES = {"error", "tool_result"}
 DEFAULT_PROJECT_NAME = "GenomiLab Workspace"
@@ -40,6 +43,7 @@ _PRIVATE_PROJECT_KEYS = {
     _PROJECT_GENOME_BINDING_KEY,
     "assistant_permissions",
     "genomilab_binding",
+    "selected_assistant",
 }
 
 
@@ -195,6 +199,34 @@ def list_project_frames(project_id: str, root: str | Path | None = None) -> Json
         frames.append(summary)
     frames.sort(key=lambda frame: str(frame.get("updated_at") or ""), reverse=True)
     return {"project_id": project_id, "frames": frames}
+
+
+def latest_agent_run_failures(project_id: str, root: str | Path | None = None) -> JsonObject:
+    """Assistants in this workspace whose most recent finished turn failed.
+
+    Keyed by agent id, so the workspace can say what actually happened the last
+    time it used that assistant instead of only that its binary exists.
+    """
+
+    clean_project_id = str(project_id or "").strip()
+    if not clean_project_id:
+        return {}
+    latest: JsonObject = {}
+    for frame in portal_state.read_state(root)["frames"].values():
+        if not isinstance(frame, dict) or frame.get("project_id") != clean_project_id:
+            continue
+        agent_id = str(frame.get("agent_id") or "").strip()
+        status = str(frame.get("status") or "").strip().lower()
+        if not agent_id or status not in _TERMINAL_FRAME_STATUSES:
+            continue
+        finished_at = str(frame.get("completed_at") or frame.get("updated_at") or "")
+        known = latest.get(agent_id)
+        if known is not None and str(known.get("at") or "") > finished_at:
+            continue
+        output_data = frame.get("output_data")
+        reason = str(output_data.get("failure_reason") or "").strip() if isinstance(output_data, dict) else ""
+        latest[agent_id] = {"reason": reason, "at": finished_at}
+    return {agent_id: outcome for agent_id, outcome in latest.items() if outcome.get("reason")}
 
 
 def rename_frame(
@@ -1465,7 +1497,7 @@ def finish_frame(
         frame["completed_at"] = now
         frame["updated_at"] = now
         frame_error = failure.headline if failure else portal_turns.prompt_safe_text(error or "")
-        frame["output_data"] = {"error": frame_error or None}
+        frame["output_data"] = {"error": frame_error or None, "failure_reason": failure.reason if failure else None}
         project = state["projects"].get(str(frame.get("project_id")))
         if project is not None:
             project["updated_at"] = now

@@ -1,5 +1,5 @@
 import { renderToolDetails, toolInputSummary, toolNameLabel, toolResultSummary } from './portal_evidence.js';
-import { frameTraceMessagesFromToolRecord, frameTraceSummaryPayload } from './portal_frame_trace.js';
+import { frameTraceMessagesFromToolRecord, frameTraceSummaryPayload, isGuardrailRefusal } from './portal_frame_trace.js';
 import { formatPayload } from './portal_format.js';
 import { sourceOperation } from './portal_tool_result_presentation.js';
 import { promptSafeText, selectedEvidencePayload as buildSelectedEvidencePayload } from './portal_selected_evidence.js';
@@ -8,6 +8,13 @@ import { welcomeMessageMarkup } from './portal_starter_cards.js';
 import { isSpecialistToolName, renderSpecialistLane } from './portal_specialists.js';
 import { markdownContentElement } from './portal_workspace_file_previews.js';
 
+// A typed guardrail refusal that the assistant then worked around is part of
+// the work, not a fault. Only a call that genuinely broke reads as an error.
+function toolRecordStatus(result) {
+  if (!result.isError) return 'done';
+  return isGuardrailRefusal(result) ? 'adjusted' : 'error';
+}
+
 export function toolWorkGroupSummary(statuses = []) {
   const values = (Array.isArray(statuses) ? statuses : [])
     .map((status) => String(status || '').trim())
@@ -15,7 +22,8 @@ export function toolWorkGroupSummary(statuses = []) {
   const total = values.length;
   const running = values.filter((status) => status === 'running').length;
   const errors = values.filter((status) => status === 'error').length;
-  const done = values.filter((status) => status === 'done' || status === 'completed').length;
+  const adjusted = values.filter((status) => status === 'adjusted').length;
+  const done = values.filter((status) => status === 'done' || status === 'completed' || status === 'adjusted').length;
   const status = errors ? 'error' : running ? 'running' : total ? 'done' : 'running';
   return {
     total,
@@ -27,6 +35,7 @@ export function toolWorkGroupSummary(statuses = []) {
     summary: [
       done ? done + ' done' : '',
       running ? running + ' running' : '',
+      adjusted ? adjusted + ' adjusted' : '',
       errors ? errors + ' error' + (errors === 1 ? '' : 's') : ''
     ].filter(Boolean).join(' · ') || 'Waiting for assistant work'
   };
@@ -561,7 +570,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     if (isSpecialistToolName(name)) {
       return {
         title: 'Research workstream',
-        status: record.result ? (record.result.isError ? 'error' : 'done') : 'running',
+        status: record.result ? toolRecordStatus(record.result) : 'running',
         summary,
         technical: true
       };
@@ -576,7 +585,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     }
     return {
       title: recoveredOperation ? toolNameLabel(recoveredOperation) : toolNameLabel(name),
-      status: record.result ? (record.result.isError ? 'error' : 'done') : 'running',
+      status: record.result ? toolRecordStatus(record.result) : 'running',
       summary,
       technical: isTechnicalToolRecord(record, name, summary, recoveredOperation)
     };

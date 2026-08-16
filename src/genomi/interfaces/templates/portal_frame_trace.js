@@ -715,8 +715,40 @@ function frameTraceStepTitle(operation) {
     .join(' ');
 }
 
+// Genomi's guardrails answer a malformed or out-of-scope call with a typed
+// refusal and the assistant rewrites the call. That exchange is the system
+// working, so it reads as an adjusted step rather than a red error -- only a
+// call that actually broke should look broken to the person reading along.
+const GUARDRAIL_REFUSAL_CODES = new Set([
+  'approval_required',
+  'invalid_lab_narrative',
+  'invalid_lab_request',
+  'invalid_params',
+  'missing_context',
+  'out_of_scope_for_input',
+  'requires_library_install',
+  'source_unavailable',
+  'tool_not_dispatchable',
+  'unknown_operation'
+]);
+
+export function isGuardrailRefusal(result) {
+  if (!result || !result.isError) return false;
+  const payload = result.payload && typeof result.payload === 'object' ? result.payload : {};
+  const code = String(payload.error || (payload.error && payload.error.code) || '').trim();
+  if (code && GUARDRAIL_REFUSAL_CODES.has(code)) return true;
+  const text = String(result.content || '');
+  if (!text) return false;
+  for (const known of GUARDRAIL_REFUSAL_CODES) {
+    if (text.includes('"' + known + '"')) return true;
+  }
+  return false;
+}
+
 function traceStatus(record, ledger) {
-  if (record.result && record.result.isError) return 'error';
+  if (record.result && record.result.isError) {
+    return isGuardrailRefusal(record.result) ? 'adjusted' : 'error';
+  }
   if (ledger.status) return String(ledger.status);
   if (record.result) return 'completed';
   return 'running';

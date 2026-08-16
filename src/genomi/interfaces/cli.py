@@ -109,6 +109,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("PORT", os.environ.get("GENOMI_HTTP_PORT", str(mcp.DEFAULT_HTTP_PORT)))),
         help="HTTP bind port when --transport=http.",
     )
+    serve_parser.add_argument(
+        "--agent",
+        default=None,
+        help="Local assistant the web workspace runs turns on. Defaults to the assistant that launched Genomi.",
+    )
     serve_parser.set_defaults(func=_cmd_serve)
 
     install_parser = subparsers.add_parser(
@@ -171,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Start the workspace without opening a browser.",
     )
+    lab_parser.add_argument(
+        "--agent",
+        default=None,
+        help="Local assistant the workspace runs turns on. Defaults to the assistant that launched Genomi.",
+    )
     lab_parser.set_defaults(func=_cmd_lab)
 
     workflow_parser = subparsers.add_parser("workflow", help="Print the agent runtime and evidence contracts.")
@@ -190,7 +200,25 @@ def _cmd_call(args: argparse.Namespace) -> dict[str, Any]:
     return present_result(args.operation, payload)
 
 
+def _apply_launch_agent(agent_id: str | None) -> None:
+    """Bind `--agent` for this process, refusing an assistant that cannot run."""
+
+    requested = str(agent_id or "").strip()
+    if not requested:
+        return
+    from . import portal_agents
+
+    runnable = portal_agents.runnable_agent_ids()
+    if requested not in runnable:
+        choices = ", ".join(runnable) if runnable else "none detected on PATH"
+        raise SystemExit(
+            f"genomi: --agent {requested!r} is not a runnable assistant here. Available: {choices}"
+        )
+    portal_agents.set_launch_agent_id(requested)
+
+
 def _cmd_serve(args: argparse.Namespace) -> None:
+    _apply_launch_agent(getattr(args, "agent", None))
     auto_app = args.transport == "auto" and _serve_auto_opens_app()
     if args.app or args.transport == "http" or auto_app:
         raise SystemExit(
@@ -236,6 +264,7 @@ def _cmd_lab(args: argparse.Namespace) -> dict[str, Any] | None:
         return run_lab_setup(check=bool(args.check))
     if args.check:
         raise ValueError("--check requires `genomi lab setup`")
+    _apply_launch_agent(getattr(args, "agent", None))
     # This is an alias for the existing Genomi web workspace, not a second Lab
     # runtime or orchestration thread.
     mcp.serve_http(

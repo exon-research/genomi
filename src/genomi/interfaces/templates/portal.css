@@ -441,22 +441,43 @@ body[data-active-workspace-section="tool-launcher"] .right-stack > .pane:not(#to
   color: var(--text4);
   font-size: 11px;
 }
+.runtime-choice {
+  display: grid;
+  gap: 6px;
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.runtime-choice legend {
+  padding: 0 0 6px;
+  color: var(--text4);
+  font-size: 11px;
+}
 .runtime-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 8px;
   background: var(--surface);
   font-size: 11px;
 }
+.runtime-item[data-runtime-state="runnable"] { cursor: pointer; }
+.runtime-item:has(input:checked) { border-color: var(--green); }
+.runtime-item input { margin: 0; accent-color: var(--green); }
+.runtime-item input:disabled { cursor: not-allowed; }
 .runtime-item strong {
   color: var(--text2);
   font-weight: 650;
 }
 .runtime-item span {
   color: var(--text4);
+}
+.runtime-item .runtime-note {
+  grid-column: 2 / -1;
+  line-height: 1.35;
 }
 .chat { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; height: calc(100vh - 109px); }
 .messages { overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; background: #0c0c0c; }
@@ -504,7 +525,9 @@ body[data-active-workspace-section="tool-launcher"] .right-stack > .pane:not(#to
 .message .role { color: var(--text4); font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; margin-bottom: 6px; }
 .message .body { color: var(--text2); white-space: pre-wrap; line-height: 1.55; font-size: 13px; }
 .message.assistant.streaming .message-answer-text:empty::after {
-  content: "Codex is working…";
+  /* Names whichever assistant is actually running this turn. The fallback
+     stays neutral so a workspace never claims the wrong one. */
+  content: var(--assistant-working-label, "Your assistant is working…");
   color: var(--muted);
   font-size: 11px;
 }
@@ -642,6 +665,9 @@ body[data-active-workspace-section="tool-launcher"] .right-stack > .pane:not(#to
 .tool-chip-head:hover { background: #1a1a1a; }
 .tool-status { width: 8px; height: 8px; border-radius: 99px; background: var(--amber); }
 .tool-status.done { background: var(--green); }
+/* A guardrail refused the call and the assistant rewrote it: work happened, so
+   this reads as a completed step, not a fault. */
+.tool-status.adjusted { background: var(--green); }
 .tool-status.error { background: var(--rose); }
 .tool-title { color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .tool-summary { color: var(--muted); font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

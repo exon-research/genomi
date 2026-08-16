@@ -17,13 +17,16 @@ DEFAULT_USER_AUTO_SELECTION_KEY = "default_user_auto_selection"
 GENOMI_CONTEXT_ENV = "GENOMI_CONTEXT"
 GENOMI_SESSION_ENV = "GENOMI_SESSION_ID"
 GENOMI_CONTEXT_POLICY_ENV = "GENOMI_CONTEXT_POLICY"
-AGENT_SESSION_ENVS = (
-    "CODEX_THREAD_ID",
-    "OPENHARNESS_DATA_DIR",
-    "OPENHARNESS_CONFIG_DIR",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_SESSION_ID",
-)
+# The one mapping from a host agent's session environment to the agent that set
+# it. Session identity and portal assistant selection both read this table; do
+# not restate it elsewhere.
+AGENT_SESSION_ENVS: dict[str, str] = {
+    "CODEX_THREAD_ID": "codex",
+    "OPENHARNESS_DATA_DIR": "opencode",
+    "OPENHARNESS_CONFIG_DIR": "opencode",
+    "CLAUDE_CODE_SESSION_ID": "claude",
+    "CLAUDE_SESSION_ID": "claude",
+}
 DEFAULT_CONTEXT_POLICY = "explicit"
 AGI_RECORD_FIELDS = frozenset(
     {
@@ -424,6 +427,15 @@ def _agent_session_id() -> str | None:
         if raw_value:
             return f"{env_name}:{raw_value}"
     return None
+
+
+def bootstrap_agent_id() -> str:
+    """Return the host agent that launched this Genomi process, or empty."""
+
+    for env_name, agent_id in AGENT_SESSION_ENVS.items():
+        if str(os.environ.get(env_name) or "").strip():
+            return agent_id
+    return ""
 
 
 def _redact_session_value(value: str) -> str:

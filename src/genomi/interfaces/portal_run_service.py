@@ -8,6 +8,7 @@ from typing import Any, Literal
 from . import (
     portal_active_context,
     portal_agents,
+    portal_project_assistant,
     portal_project_permissions,
     portal_run_events,
     portal_run_logs,
@@ -188,9 +189,10 @@ def start_frame_review(
     source_messages = portal_store.frame_review_source_messages(frame_id)
     if not any(item.get("role") == "assistant" for item in source_messages):
         return {"status": "no_answer"}
-    reviewer_agent_id = str(agent_id or frame.get("agent_id") or portal_agents.default_agent_id() or "").strip()
-    if not reviewer_agent_id:
+    resolution = portal_project_assistant.resolve_agent(project_id, requested_agent_id=agent_id)
+    if resolution.state != portal_project_assistant.READY:
         return {"status": "unavailable"}
+    reviewer_agent_id = resolution.agent_id
     run = portal_run_events.create_run(
         kind="conversation_review",
         agent_id=reviewer_agent_id,

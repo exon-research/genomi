@@ -31,7 +31,8 @@ class RunFailureClassificationTests(unittest.TestCase):
             failure.next_steps,
             (
                 "Wait until your assistant's allowance resets, then ask again.",
-                "Switch to another local assistant under Workspace details → Local assistant, then ask again.",
+                "Pick a different assistant under Workspace details → Local assistant → Assistant troubleshooting, "
+                "then send the question again.",
                 "Your question and attached records stay in this conversation, so nothing needs to be re-entered.",
             ),
         )

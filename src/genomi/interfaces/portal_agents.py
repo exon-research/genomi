@@ -8,6 +8,11 @@ from typing import Any, Callable, Protocol
 
 JsonObject = dict[str, Any]
 
+# Set once from `genomi lab --agent` / `genomi serve --agent`. It outranks the
+# launching host agent because it is the only signal the person typed on
+# purpose, and a workspace's own saved choice still outranks it.
+_LAUNCH_AGENT_ID = ""
+
 
 class StreamAdapter(Protocol):
     def parse_line(self, line: str) -> "StreamParseOutcome":
@@ -59,15 +64,30 @@ def detect_agents() -> list[JsonObject]:
     return agents
 
 
-def default_agent_id() -> str | None:
-    agents = detect_agents()
-    codex = next((agent for agent in agents if agent.get("id") == "codex"), None)
-    if codex and codex.get("runnable"):
-        return "codex"
-    for agent in agents:
-        if agent.get("runnable"):
-            return str(agent["id"])
-    return None
+def bootstrap_agent_id() -> str:
+    """The host agent that launched this Genomi process, if it has a driver."""
+
+    from ..runtime import context as runtime_context
+
+    agent_id = runtime_context.bootstrap_agent_id()
+    return agent_id if agent_id in _AGENT_DRIVER_BY_ID else ""
+
+
+def runnable_agent_ids() -> list[str]:
+    return [str(agent["id"]) for agent in detect_agents() if agent.get("runnable")]
+
+
+def set_launch_agent_id(agent_id: str) -> None:
+    """Record the assistant named by `--agent` when this portal was started."""
+
+    global _LAUNCH_AGENT_ID
+    _LAUNCH_AGENT_ID = str(agent_id or "").strip()
+
+
+def launch_agent_id() -> str:
+    """The assistant `--agent` named at launch, if it has a runnable driver."""
+
+    return _LAUNCH_AGENT_ID if _LAUNCH_AGENT_ID in runnable_agent_ids() else ""
 
 
 def agent_invocation(agent_id: str, *, approved_tools: list[str] | tuple[str, ...] | None = None) -> list[str] | None:

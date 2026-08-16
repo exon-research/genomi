@@ -1,24 +1,54 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest import mock
 
 from genomi.interfaces import portal_agents
+from genomi.runtime import context as runtime_context
+
+
+def _installed(*commands: str):
+    return mock.patch(
+        "genomi.interfaces.portal_agents.shutil.which",
+        side_effect=lambda command: f"/usr/local/bin/{command}" if command in set(commands) else None,
+    )
+
+
+def _host_agent_session(**session_env: str):
+    cleared = {name: "" for name in runtime_context.AGENT_SESSION_ENVS}
+    return mock.patch.dict(os.environ, {**cleared, **session_env}, clear=False)
 
 
 class PortalAgentDriverTests(unittest.TestCase):
-    def test_codex_is_default_when_codex_and_claude_are_both_runnable(self) -> None:
-        with mock.patch(
-            "genomi.interfaces.portal_agents.shutil.which",
-            side_effect=lambda command: f"/usr/local/bin/{command}" if command in {"codex", "claude"} else None,
-        ):
+    def test_the_host_agent_session_environment_names_the_launching_agent(self) -> None:
+        with _installed("codex", "claude"), _host_agent_session(CLAUDE_CODE_SESSION_ID="session-1"):
             agents = portal_agents.detect_agents()
 
-            self.assertEqual(portal_agents.default_agent_id(), "codex")
+            self.assertEqual(portal_agents.bootstrap_agent_id(), "claude")
+
+        with _installed("codex", "claude"), _host_agent_session(CODEX_THREAD_ID="thread-1"):
+            self.assertEqual(portal_agents.bootstrap_agent_id(), "codex")
+
+        with _installed("codex", "claude"), _host_agent_session(OPENHARNESS_DATA_DIR="/opt/openharness"):
+            self.assertEqual(portal_agents.bootstrap_agent_id(), "opencode")
+
+        with _installed("codex", "claude"), _host_agent_session():
+            self.assertEqual(portal_agents.bootstrap_agent_id(), "")
 
         runnable_ids = [agent["id"] for agent in agents if agent["runnable"]]
         self.assertEqual(runnable_ids, ["codex", "claude"])
+
+    def test_launch_agent_is_kept_only_while_it_can_run_here(self) -> None:
+        self.addCleanup(portal_agents.set_launch_agent_id, "")
+
+        with _installed("codex", "claude"):
+            portal_agents.set_launch_agent_id("claude")
+            self.assertEqual(portal_agents.launch_agent_id(), "claude")
+
+        with _installed("codex"):
+            self.assertEqual(portal_agents.launch_agent_id(), "")
 
     def test_detected_setup_only_agent_is_not_runnable_or_selectable_default(self) -> None:
         def fake_which(command: str) -> str | None:
@@ -26,10 +56,12 @@ class PortalAgentDriverTests(unittest.TestCase):
                 return f"/usr/local/bin/{command}"
             return None
 
-        with mock.patch("genomi.interfaces.portal_agents.shutil.which", side_effect=fake_which):
+        with mock.patch("genomi.interfaces.portal_agents.shutil.which", side_effect=fake_which), _host_agent_session(
+            OPENHARNESS_DATA_DIR="/tmp/openharness"
+        ):
             agents = {agent["id"]: agent for agent in portal_agents.detect_agents()}
             invocation = portal_agents.agent_invocation("opencode")
-            default_agent_id = portal_agents.default_agent_id()
+            runnable_ids = portal_agents.runnable_agent_ids()
 
         self.assertTrue(agents["opencode"]["available"])
         self.assertFalse(agents["opencode"]["runnable"])
@@ -46,7 +78,7 @@ class PortalAgentDriverTests(unittest.TestCase):
             {"id", "label", "command", "summary", "available", "runnable", "status"},
         )
         self.assertIsNone(invocation)
-        self.assertEqual(default_agent_id, "codex")
+        self.assertEqual(runnable_ids, ["codex"])
 
     def test_driver_registry_owns_stream_contract(self) -> None:
         line = json.dumps(

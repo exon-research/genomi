@@ -14,7 +14,7 @@
     import { createPromptContextController } from './portal_prompt_context.js';
     import { initializePortalSession } from './portal_session.js';
     import { watchProject } from './portal_project_stream.js';
-    import { renderRuntimeDetails, runtimeStatusLabel } from './portal_runtime_status.js';
+    import { applyAssistantWorkingLabel, assistantSummaryLabel, renderAssistantChoice } from './portal_runtime_status.js';
     import { watchRun } from './portal_run_stream.js';
     import { createWorkTraceController } from './portal_work_trace_controller.js';
     import { createWorkspaceFileController, importedWorkspaceFileContextPayload } from './portal_workspace_files.js';
@@ -29,6 +29,7 @@
     const maxImportBytes = 4 * 1024 * 1024;
     const state = {
       agents: [],
+      assistant: {},
       context: null,
       genomeInventory: null,
       project: null,
@@ -651,9 +652,9 @@
       $('prompt').focus();
     }
     function selectedAgent() {
-      return state.agents.find((agent) => agent.id === 'codex' && agent.runnable)
-        || state.agents.find((agent) => agent.runnable)
-        || { id: 'server-default', label: 'Assistant runtime' };
+      const activeId = state.assistant && state.assistant.active_agent_id;
+      return state.agents.find((agent) => agent.id === activeId)
+        || { id: '', label: 'Assistant runtime' };
     }
     function handleToolRecord(record) {
       if (!record) evidenceLedger.reset();
@@ -702,14 +703,35 @@
     }
     async function loadContext() {
       const runtime = await api.loadPortalRuntime();
-      state.agents = runtime.agents;
-      const runnable = state.agents.filter((a) => a.runnable);
-      const detected = state.agents.filter((a) => a.available);
-      $('agent-dot').className = 'status-dot ' + (runnable.length ? 'ready' : '');
-      $('agent-status').textContent = runtimeStatusLabel(runnable, detected);
-      renderRuntimeDetails($('agent-list'), state.agents);
+      applyWorkspaceAssistant(runtime);
       await loadWorkspace();
       restoreHashWorkspaceSection();
+    }
+    function applyWorkspaceAssistant(runtime) {
+      state.agents = (runtime && runtime.agents) || [];
+      state.assistant = (runtime && runtime.assistant) || {};
+      $('agent-dot').className = 'status-dot ' + (state.assistant.state === 'ready' ? 'ready' : '');
+      $('agent-status').textContent = assistantSummaryLabel(state.assistant, state.agents);
+      applyAssistantWorkingLabel(state.assistant);
+      renderAssistantChoice($('agent-list'), { agents: state.agents, assistant: state.assistant }, {
+        onSelect: selectWorkspaceAssistant
+      });
+      if (state.assistant.state === 'choice_required') revealAssistantChoice();
+    }
+    function revealAssistantChoice() {
+      for (let node = $('agent-list'); node; node = node.parentElement) {
+        if (node.tagName === 'DETAILS') node.open = true;
+      }
+    }
+    async function selectWorkspaceAssistant(agentId) {
+      const projectId = state.project && state.project.project_id;
+      if (!projectId || !agentId) return;
+      try {
+        const payload = await api.selectWorkspaceAssistant(projectId, agentId);
+        applyWorkspaceAssistant(payload);
+      } catch (error) {
+        $('agent-status').textContent = 'Could not switch assistant: ' + (error.message || 'request failed');
+      }
     }
     async function loadProjectGenomeContext() {
       const projectId = state.project && state.project.project_id;
@@ -720,6 +742,7 @@
       ]);
       state.context = runtime.context;
       state.genomeInventory = genomeInventory;
+      applyWorkspaceAssistant(runtime);
       $('context').textContent = JSON.stringify(state.context, null, 2);
       renderGenomeContext($('context-summary'), state.context, {
         onUseContext: appendPromptContext,
@@ -1576,6 +1599,9 @@
       } catch (error) {
         if (typeof onError === 'function') onError(error);
         body.textContent = error.message;
+        if (error.code === 'assistant_choice_required' || error.code === 'workspace_assistant_unavailable') {
+          revealAssistantChoice();
+        }
         $('send').disabled = false;
         throw error;
       }

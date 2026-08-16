@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from ..operations import OperationError, operation_discovery_payload
 from ..runtime import portal_routes
 from ..lab.local_sqlite import LocalSQLiteError
-from . import portal_active_context, portal_agents, portal_artifact_bundles, portal_artifact_exports, portal_artifact_renderers, portal_assets, portal_bundle_files, portal_context, portal_file_imports, portal_frame_bundles, portal_genomes, portal_genomilab, portal_project_events, portal_prompt_suggestions, portal_router, portal_run_event_pages, portal_run_events, portal_run_packages, portal_run_service, portal_source_lookups, portal_state, portal_store, portal_turns, portal_workspace_files
+from . import portal_active_context, portal_agents, portal_artifact_bundles, portal_artifact_exports, portal_artifact_renderers, portal_assets, portal_bundle_files, portal_context, portal_file_imports, portal_frame_bundles, portal_genomes, portal_genomilab, portal_project_assistant, portal_project_events, portal_prompt_suggestions, portal_router, portal_run_event_pages, portal_run_events, portal_run_packages, portal_run_service, portal_source_lookups, portal_state, portal_store, portal_turns, portal_workspace_files
 
 JsonObject = dict[str, Any]
 MAX_PORTAL_REQUEST_BYTES = 8 * 1024 * 1024
@@ -133,6 +133,7 @@ def _post_routes() -> tuple[portal_router.RouteSpec, ...]:
         portal_router.RouteSpec("/api/genomes/select", _post_genome_select),
         portal_router.RouteSpec("/api/projects/{project_id}/select", _post_project_select),
         portal_router.RouteSpec("/api/projects/{project_id}/rename", _post_project_rename),
+        portal_router.RouteSpec("/api/projects/{project_id}/assistant", _post_project_assistant),
         portal_router.RouteSpec("/api/projects/{project_id}/request", _post_project_request),
         portal_router.RouteSpec("/api/prompt/suggestion", _post_prompt_suggestion),
         portal_router.RouteSpec("/api/projects/{project_id}/active-context", _post_project_active_context),
@@ -322,8 +323,12 @@ def _get_genomes(handler: BaseHTTPRequestHandler, _params: dict[str, str], query
         _send_json(handler, HTTPStatus.BAD_REQUEST, exc.to_json(operation="active_genome_index.list"))
 
 
-def _get_agents(handler: BaseHTTPRequestHandler, _params: dict[str, str], _query: str) -> None:
-    _send_json(handler, HTTPStatus.OK, {"agents": portal_agents.detect_agents()})
+def _get_agents(handler: BaseHTTPRequestHandler, _params: dict[str, str], query: str) -> None:
+    project_id = _single_query_value(query, "projectId")
+    if project_id and portal_store.get_project(project_id) is None:
+        _send_json(handler, HTTPStatus.NOT_FOUND, {"error": {"code": "not_found", "message": "project not found"}})
+        return
+    _send_json(handler, HTTPStatus.OK, portal_project_assistant.workspace_assistants(project_id))
 
 
 def _get_projects(handler: BaseHTTPRequestHandler, _params: dict[str, str], _query: str) -> None:
@@ -597,6 +602,26 @@ def _post_project_rename(handler: BaseHTTPRequestHandler, params: dict[str, str]
     _send_json(handler, HTTPStatus.OK, {"project": project})
 
 
+def _post_project_assistant(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
+    payload = _read_json_body(body)
+    if payload is None:
+        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "JSON object required"}})
+        return
+    agent_id = _payload_text(payload, "agentId", "agent_id")
+    if agent_id not in portal_agents.runnable_agent_ids():
+        _send_json(
+            handler,
+            HTTPStatus.BAD_REQUEST,
+            {"error": {"code": "assistant_not_runnable", "message": "Choose a local assistant Genomi can run."}},
+        )
+        return
+    project_id = params["project_id"]
+    if portal_project_assistant.select_agent(project_id, agent_id) is None:
+        _send_json(handler, HTTPStatus.NOT_FOUND, {"error": {"code": "not_found", "message": "project not found"}})
+        return
+    _send_json(handler, HTTPStatus.OK, portal_project_assistant.workspace_assistants(project_id))
+
+
 def _post_project_request(handler: BaseHTTPRequestHandler, params: dict[str, str], body: bytes) -> None:
     payload = _read_json_body(body)
     if payload is None:
@@ -629,10 +654,14 @@ def _start_run_from_payload(
         _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "bad_request", "message": "message required"}})
         return
     selected_evidence = portal_turns.selected_evidence_from_payload(payload)
-    agent_id = _runnable_agent_id_from_payload(payload)
-    if not agent_id:
-        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": {"code": "no_agent_available", "message": "No supported assistant CLI was found on PATH."}})
+    resolution = portal_project_assistant.resolve_agent(
+        project_id,
+        requested_agent_id=_payload_text(payload, "agentId", "agent_id"),
+    )
+    if resolution.state != portal_project_assistant.READY:
+        _send_json(handler, HTTPStatus.BAD_REQUEST, {"error": _assistant_unavailable_error(resolution)})
         return
+    agent_id = resolution.agent_id
     if frame_id:
         response = portal_run_service.start_frame_message(
             frame_id=frame_id,
@@ -816,12 +845,31 @@ def _post_run_approve_permission(handler: BaseHTTPRequestHandler, params: dict[s
         _send_json(handler, HTTPStatus.ACCEPTED, result)
 
 
-def _runnable_agent_id_from_payload(payload: JsonObject) -> str | None:
-    requested = _payload_text(payload, "agentId", "agent_id")
-    if requested:
-        agents = {str(agent["id"]): agent for agent in portal_agents.detect_agents()}
-        return requested if agents.get(requested, {}).get("runnable") else None
-    return portal_agents.default_agent_id()
+def _assistant_unavailable_error(resolution: portal_project_assistant.AssistantResolution) -> JsonObject:
+    if resolution.state == portal_project_assistant.CHOICE_REQUIRED:
+        installed = ", ".join(portal_project_assistant.agent_label(agent_id) for agent_id in resolution.candidate_agent_ids)
+        return {
+            "code": "assistant_choice_required",
+            "message": (
+                f"More than one local assistant is installed ({installed}), and nothing says which one this "
+                "workspace should use. Pick one under Workspace details → Local assistant → Assistant "
+                "troubleshooting, then send the question again."
+            ),
+        }
+    if resolution.state == portal_project_assistant.CHOICE_UNAVAILABLE:
+        return {
+            "code": "workspace_assistant_unavailable",
+            "message": (
+                f"{resolution.unavailable_label} is this workspace's assistant, but Genomi cannot run it here. "
+                "Choose another one under Workspace details → Local assistant → Assistant troubleshooting."
+            ),
+        }
+    if resolution.state == portal_project_assistant.REQUESTED_UNAVAILABLE:
+        return {
+            "code": "assistant_not_runnable",
+            "message": f"Genomi cannot run {resolution.unavailable_label} here.",
+        }
+    return {"code": "no_agent_available", "message": "No supported assistant CLI was found on PATH."}
 
 
 def _payload_text(payload: JsonObject, *keys: str) -> str:

@@ -10,7 +10,6 @@ def _genomi_start_portal_run(params: JsonObject) -> JsonObject:
     message = portal_turns.message_from_payload(params)
     if not message:
         raise OperationError("invalid_params", "message is required")
-    agent_id = _runnable_agent_id_from_params(params)
     project_id = _optional_str(params, "project_id")
     if project_id:
         if portal_store.get_project(project_id) is None:
@@ -18,6 +17,7 @@ def _genomi_start_portal_run(params: JsonObject) -> JsonObject:
     else:
         project = portal_store.ensure_default_project()
         project_id = str(project["project_id"])
+    agent_id = _workspace_agent_id(project_id, params)
     selected_evidence = portal_turns.selected_evidence_from_payload(params)
     frame_id = _optional_str(params, "frame_id")
     if frame_id:
@@ -169,19 +169,18 @@ def _genomi_retrieve_portal_run_event_page(params: JsonObject) -> JsonObject:
     return page
 
 
-def _runnable_agent_id_from_params(params: JsonObject) -> str:
-    from ...interfaces import portal_agents
+def _workspace_agent_id(project_id: str, params: JsonObject) -> str:
+    from ...interfaces import portal_project_assistant
 
-    requested = _optional_str(params, "agent_id")
-    if requested:
-        agents = {str(agent["id"]): agent for agent in portal_agents.detect_agents()}
-        if agents.get(requested, {}).get("runnable"):
-            return requested
-        raise OperationError("no_agent_available", f"requested portal agent is not runnable: {requested}")
-    agent_id = portal_agents.default_agent_id()
-    if not agent_id:
+    resolution = portal_project_assistant.resolve_agent(
+        project_id,
+        requested_agent_id=_optional_str(params, "agent_id"),
+    )
+    if resolution.state == portal_project_assistant.READY:
+        return resolution.agent_id
+    if resolution.state == portal_project_assistant.NONE_AVAILABLE:
         raise OperationError("no_agent_available", "No supported assistant CLI was found on PATH.")
-    return agent_id
+    raise OperationError("no_agent_available", f"portal assistant is not runnable here: {resolution.unavailable_agent_id}")
 
 
 def _required_run_id(params: JsonObject) -> str:

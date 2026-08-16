@@ -15,11 +15,15 @@ export async function postJson(path, payload = {}) {
 }
 
 export async function loadPortalRuntime(projectId = '') {
-  const [context, agents] = await Promise.all([
+  const [context, assistants] = await Promise.all([
     fetchJson('/api/context' + projectQuery(projectId)),
-    fetchJson('/api/agents')
+    fetchJson('/api/agents' + projectQuery(projectId))
   ]);
-  return { context, agents: agents.agents || [] };
+  return { context, agents: assistants.agents || [], assistant: assistants.assistant || {} };
+}
+
+export async function selectWorkspaceAssistant(projectId, agentId) {
+  return postJson('/api/projects/' + encodeURIComponent(projectId) + '/assistant', { agentId });
 }
 
 export async function loadGenomeInventory(projectId = '') {
