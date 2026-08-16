@@ -5,6 +5,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 .env
+/api.md
 .claude/
 .openharness/
 dist/
