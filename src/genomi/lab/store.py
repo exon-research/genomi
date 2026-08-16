@@ -9,8 +9,8 @@ from typing import Callable, Iterator
 
 from ..runtime.paths import genomi_data_root
 from .local_sqlite import LocalSQLiteDatabase
-from .disease_relations import DiseaseRelationStoreMixin
-from .evidence_store import EvidenceStoreMixin
+from .evidence_record_store import EvidenceRecordStoreMixin
+from .evidence_snapshot_store import EvidenceSnapshotStoreMixin
 from .health_store import HealthRecordStoreMixin
 from .information_gap_store import InformationGapStoreMixin
 from .investigation_store import InvestigationStoreMixin
@@ -54,8 +54,8 @@ class GenomiLabStore(
     ProfileEntityStoreMixin,
     SnapshotStoreMixin,
     InvestigationStoreMixin,
-    DiseaseRelationStoreMixin,
-    EvidenceStoreMixin,
+    EvidenceRecordStoreMixin,
+    EvidenceSnapshotStoreMixin,
 ):
     """SQLite-backed GenomiLab domain state with one connection per operation."""
 

@@ -179,21 +179,6 @@ CREATE TABLE IF NOT EXISTS evidence_records (
     created_at TEXT NOT NULL,
     UNIQUE(investigation_id, patient_molecular_snapshot_id, deduplication_key)
 );
-CREATE TABLE IF NOT EXISTS hypotheses (
-    hypothesis_id TEXT PRIMARY KEY,
-    logical_hypothesis_id TEXT NOT NULL,
-    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
-    patient_molecular_snapshot_id TEXT NOT NULL REFERENCES profile_snapshots(patient_molecular_snapshot_id),
-    supersedes_hypothesis_id TEXT REFERENCES hypotheses(hypothesis_id),
-    version INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    statement TEXT NOT NULL,
-    status TEXT NOT NULL,
-    evidence_record_ids_json TEXT NOT NULL,
-    profile_revision_ids_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    UNIQUE(investigation_id, logical_hypothesis_id, version)
-);
 CREATE TABLE IF NOT EXISTS evidence_snapshots (
     evidence_snapshot_id TEXT PRIMARY KEY,
     investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
@@ -373,7 +358,6 @@ CREATE INDEX IF NOT EXISTS idx_evidence_investigation_profile
     ON evidence_records(investigation_id, patient_molecular_snapshot_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_snapshots_investigation_version
     ON evidence_snapshots(investigation_id, version);
-CREATE INDEX IF NOT EXISTS idx_hypotheses_logical_version
-    ON hypotheses(investigation_id, logical_hypothesis_id, version);
+DROP TABLE IF EXISTS hypotheses;
 PRAGMA optimize;
 """

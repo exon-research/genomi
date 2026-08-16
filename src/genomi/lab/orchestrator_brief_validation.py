@@ -6,8 +6,10 @@ import json
 from collections.abc import Mapping
 from typing import Any, ContextManager, Protocol
 
-from .artifact_validation import BRIEF_CLINICAL_BOUNDARY
-from .informational_narrative import validate_informational_narrative
+from .informational_narrative import (
+    INFORMATIONAL_CLINICAL_BOUNDARY,
+    validate_informational_narrative,
+)
 from .models import (
     JsonObject,
     compact_json,
@@ -47,7 +49,7 @@ def validate_orchestrator_brief(
     summary = required_text(brief.get("summary"), "brief.summary", 10_000)
     validate_informational_narrative(title, "brief.title", kind="brief_title")
     validate_informational_narrative(summary, "brief.summary", kind="brief_summary")
-    if brief.get("clinical_boundary") != BRIEF_CLINICAL_BOUNDARY:
+    if brief.get("clinical_boundary") != INFORMATIONAL_CLINICAL_BOUNDARY:
         raise ValueError("brief must preserve the informational clinical boundary")
 
     claims = brief.get("claims")

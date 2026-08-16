@@ -7,6 +7,11 @@ from .models import QUESTION_MAX, required_text
 from .research_narrative import NarrativeKind, _unsafe_narrative
 
 
+INFORMATIONAL_CLINICAL_BOUNDARY = (
+    "Research support only; this is not a diagnosis or treatment decision."
+)
+
+
 def validate_informational_narrative(
     value: object,
     field: str,
@@ -36,4 +41,4 @@ def validate_informational_narrative(
     return text
 
 
-__all__ = ["validate_informational_narrative"]
+__all__ = ["INFORMATIONAL_CLINICAL_BOUNDARY", "validate_informational_narrative"]

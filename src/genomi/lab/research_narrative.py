@@ -14,17 +14,11 @@ from typing import Literal
 from . import narrative_forms as _forms
 from . import narrative_safety_patterns as _safety
 from .models import QUESTION_MAX, required_text
-from .narrative_contract import declared_narrative
 
 
 NarrativeKind = Literal[
     "assertion",
     "meta",
-    "plan_summary",
-    "plan_role_objective",
-    "plan_step_title",
-    "plan_step_rationale",
-    "execution_summary",
     "brief_title",
     "brief_summary",
     "change_summary",
@@ -49,8 +43,6 @@ def validate_research_narrative(
     """Validate one patient-visible narrative field at the research boundary."""
 
     text = required_text(value, field, QUESTION_MAX)
-    if declared_narrative(text, kind) is not None:
-        return text
     if kind == "professional_question":
         _validate_professional_question(text, field)
         return text

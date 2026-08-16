@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from genomi.lab.artifact_validation import validate_research_narrative
+from genomi.lab.research_narrative import validate_research_narrative
 
 
 class GenomiLabArtifactValidationTests(unittest.TestCase):

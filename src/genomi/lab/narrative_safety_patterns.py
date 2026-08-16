@@ -8,11 +8,6 @@ _ERROR = "cannot contain a diagnosis or treatment directive"
 _FORM_ERROR = "must use a declared research narrative form"
 _RESEARCH_PROCESS_KINDS = {
     "meta",
-    "plan_summary",
-    "plan_role_objective",
-    "plan_step_title",
-    "plan_step_rationale",
-    "execution_summary",
     "change_summary",
     "confirmation_need",
 }

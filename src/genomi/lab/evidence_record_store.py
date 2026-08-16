@@ -6,7 +6,6 @@ import uuid
 from typing import Any, ContextManager, Protocol
 
 from ..evidence import envelope as canonical_evidence_envelope
-from .disease_relations import validate_reserved_relation_commit
 from .models import (
     JsonObject,
     compact_json,
@@ -45,7 +44,6 @@ class EvidenceRecordStoreMixin:
         deduplication_key: object,
         expected_disclosure_receipt_id: object = None,
         expected_consent_receipt_id: object = None,
-        _reserved_operation_token: object = None,
     ) -> JsonObject:
         envelope = evidence.get("evidence_envelope")
         if not isinstance(envelope, dict):
@@ -58,7 +56,6 @@ class EvidenceRecordStoreMixin:
         validate_private_payload(sanitized)
         source = required_text(source_family, "source_family", 100)
         operation_value = required_text(operation, "operation", 200)
-        validate_reserved_relation_commit(operation_value, _reserved_operation_token)
         dedup = required_text(deduplication_key, "deduplication_key", 300)
         expected_disclosure = (
             required_text(

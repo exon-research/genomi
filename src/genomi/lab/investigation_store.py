@@ -64,177 +64,19 @@ class InvestigationStoreMixin:
                 "SELECT * FROM investigations WHERE investigation_id = ?",
                 (investigation_id,),
             ).fetchone()
-            if row is None:
-                raise KeyError(investigation_id)
-            evidence = connection.execute(
-                "SELECT * FROM evidence_records WHERE investigation_id = ? ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            hypotheses = connection.execute(
-                "SELECT * FROM hypotheses WHERE investigation_id = ? "
-                "ORDER BY logical_hypothesis_id, version",
-                (investigation_id,),
-            ).fetchall()
-            profile_snapshots = connection.execute(
-                "SELECT * FROM profile_snapshots WHERE investigation_id = ? "
-                "ORDER BY version",
-                (investigation_id,),
-            ).fetchall()
-            evidence_snapshots = connection.execute(
-                "SELECT * FROM evidence_snapshots WHERE investigation_id = ? "
-                "ORDER BY version",
-                (investigation_id,),
-            ).fetchall()
-            briefs = connection.execute(
-                "SELECT * FROM brief_versions WHERE investigation_id = ? ORDER BY version",
-                (investigation_id,),
-            ).fetchall()
-        result = row_dict(row)
-        result["evidence_records"] = [row_dict(item) for item in evidence]
-        result["hypotheses"] = [row_dict(item) for item in hypotheses]
-        active_profile_snapshot_id = result.get("patient_molecular_snapshot_id")
-        current_evidence = [
-            row_dict(item)
-            for item in evidence
-            if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-        ]
-        current_hypothesis_rows = [
-            item
-            for item in hypotheses
-            if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-        ]
-        superseded = {
-            str(item["supersedes_hypothesis_id"])
-            for item in current_hypothesis_rows
-            if item["supersedes_hypothesis_id"]
-        }
-        result["current_hypotheses"] = [
-            row_dict(item)
-            for item in current_hypothesis_rows
-            if str(item["hypothesis_id"]) not in superseded
-        ]
-        result["current_evidence_records"] = current_evidence
-        result["profile_snapshot_history"] = [
-            row_dict(item) for item in profile_snapshots
-        ]
-        result["evidence_snapshots"] = [row_dict(item) for item in evidence_snapshots]
-        current_evidence_snapshot = next(
-            (
-                row_dict(item)
-                for item in reversed(evidence_snapshots)
-                if str(item["evidence_snapshot_id"])
-                == str(result.get("evidence_snapshot_id") or "")
-                and item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
-            ),
-            None,
-        )
-        result["current_evidence_snapshot"] = current_evidence_snapshot
-        result["brief_versions"] = [row_dict(item) for item in briefs]
-        current_evidence_ids = {
-            str(item["evidence_record_id"]) for item in current_evidence
-        }
-        current_hypothesis_created = max(
-            (str(item["created_at"]) for item in current_hypothesis_rows),
-            default="",
-        )
-        current_brief = None
-        for item in reversed(briefs):
-            if item["patient_molecular_snapshot_id"] != active_profile_snapshot_id:
-                continue
-            if str(item["evidence_snapshot_id"] or "") != str(
-                result.get("evidence_snapshot_id") or ""
-            ):
-                continue
-            pinned = current_evidence_snapshot or {}
-            if set(pinned.get("evidence_record_ids") or []) != current_evidence_ids:
-                continue
-            if current_hypothesis_created and current_hypothesis_created > str(
-                item["created_at"]
-            ):
-                continue
-            current_brief = row_dict(item)
-            break
-        result["current_brief_version"] = current_brief
-        result["brief"] = current_brief.get("brief") if current_brief else None
-        result["refresh_lifecycle"] = self._refresh_lifecycle(
-            profile_snapshots=result["profile_snapshot_history"],
-            historical_evidence=result["evidence_records"],
-            current_evidence=current_evidence,
-            historical_hypotheses=result["hypotheses"],
-            current_hypotheses=result["current_hypotheses"],
-            historical_briefs=result["brief_versions"],
-            current_brief=current_brief,
-        )
-        return result
-
-    @staticmethod
-    def _refresh_lifecycle(
-        *,
-        profile_snapshots: list[JsonObject],
-        historical_evidence: list[JsonObject],
-        current_evidence: list[JsonObject],
-        historical_hypotheses: list[JsonObject],
-        current_hypotheses: list[JsonObject],
-        historical_briefs: list[JsonObject],
-        current_brief: JsonObject | None,
-    ) -> JsonObject:
-        context_version = (
-            int(profile_snapshots[-1]["version"]) if profile_snapshots else None
-        )
-        refreshed = bool(context_version and context_version > 1)
-        requires_evidence_rerun = refreshed and not current_evidence
-        latest_evidence_created = max(
-            (str(item.get("created_at") or "") for item in current_evidence),
-            default="",
-        )
-        latest_hypothesis_created = max(
-            (str(item.get("created_at") or "") for item in current_hypotheses),
-            default="",
-        )
-        requires_hypothesis_refresh = refreshed and (
-            not current_hypotheses
-            or latest_evidence_created > latest_hypothesis_created
-        )
-        requires_new_brief = bool(
-            profile_snapshots
-            and current_brief is None
-            and (
-                refreshed or current_evidence or current_hypotheses or historical_briefs
-            )
-        )
-        if not profile_snapshots:
-            state = "context_not_approved"
-        elif requires_evidence_rerun or requires_hypothesis_refresh:
-            state = "evidence_and_hypothesis_rerun_required"
-        elif requires_new_brief:
-            state = "new_brief_required"
-        elif current_brief is not None:
-            state = "current"
-        else:
-            state = "investigation_in_progress"
-        return {
-            "state": state,
-            "profile_context_version": context_version,
-            "requires_evidence_rerun": requires_evidence_rerun,
-            "requires_hypothesis_refresh": requires_hypothesis_refresh,
-            "requires_new_brief": requires_new_brief,
-            "historical_evidence_record_count": len(historical_evidence)
-            - len(current_evidence),
-            "historical_hypothesis_count": len(historical_hypotheses)
-            - len(current_hypotheses),
-            "historical_brief_count": len(historical_briefs)
-            - (1 if current_brief is not None else 0),
-        }
+        if row is None:
+            raise KeyError(investigation_id)
+        return row_dict(row)
 
     def list_investigations(self: _StoreContract, user_id: str) -> list[JsonObject]:
         self._require_workspace(user_id)
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT investigation_id FROM investigations WHERE user_id = ? "
+                "SELECT * FROM investigations WHERE user_id = ? "
                 "ORDER BY created_at DESC",
                 (user_id,),
             ).fetchall()
-        return [self.get_investigation(str(row["investigation_id"])) for row in rows]
+        return [row_dict(row) for row in rows]
 
     def set_investigation_status(
         self: _StoreContract,
