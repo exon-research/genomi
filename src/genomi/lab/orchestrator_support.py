@@ -165,16 +165,16 @@ def require_cycle(
     return row_dict(row)
 
 
-def require_current_snapshot_facts(
+def resolve_current_snapshot_fact_ids(
     store: OrchestratorStoreContract,
     investigation: Mapping[str, Any],
-    fact_ids: list[str],
-) -> None:
+    fact_ids: list[str] | None,
+) -> list[str]:
     snapshot_id = investigation.get("patient_molecular_snapshot_id")
     if not snapshot_id:
         if fact_ids:
             raise ValueError("patient facts require an approved profile snapshot")
-        return
+        return []
     with store._connect() as connection:
         row = connection.execute(
             "SELECT observation_revision_ids_json FROM profile_snapshots "
@@ -183,9 +183,17 @@ def require_current_snapshot_facts(
         ).fetchone()
     if row is None:
         raise ValueError("the current profile snapshot is unavailable")
-    allowed = set(json.loads(str(row["observation_revision_ids_json"])))
+    snapshot_fact_ids = json.loads(str(row["observation_revision_ids_json"]))
+    if not isinstance(snapshot_fact_ids, list) or not all(
+        isinstance(item, str) for item in snapshot_fact_ids
+    ):
+        raise ValueError("the current profile snapshot is invalid")
+    if fact_ids is None:
+        return snapshot_fact_ids
+    allowed = set(snapshot_fact_ids)
     if not set(fact_ids).issubset(allowed):
         raise ValueError("source fact IDs must belong to the current approved profile snapshot")
+    return fact_ids
 
 
 __all__ = [
@@ -195,7 +203,7 @@ __all__ = [
     "json_array",
     "json_object",
     "json_sha256",
-    "require_current_snapshot_facts",
+    "resolve_current_snapshot_fact_ids",
     "require_cycle",
     "require_investigation_revision",
     "save_command",

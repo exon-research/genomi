@@ -12,7 +12,7 @@ from .orchestrator_support import (
     advance_investigation_revision,
     command_replay,
     json_sha256,
-    require_current_snapshot_facts,
+    resolve_current_snapshot_fact_ids,
     require_cycle,
     require_investigation_revision,
     save_command,
@@ -65,7 +65,11 @@ class SpecialistStoreMixin:
         rationale_value = required_text(rationale, "rationale", 4_000)
         purpose_value = required_text(purpose, "purpose", 2_000)
         session = required_text(workspace_session_id, "workspace_session_id", 300)
-        fact_ids = unique_ids(source_fact_ids, "source_fact_ids")
+        requested_fact_ids = (
+            None
+            if source_fact_ids is None
+            else unique_ids(source_fact_ids, "source_fact_ids")
+        )
         evidence_ids = unique_ids(
             public_evidence_record_ids, "public_evidence_record_ids"
         )
@@ -77,7 +81,7 @@ class SpecialistStoreMixin:
             "public_concepts": public_concepts,
             "abstract_relations": abstract_relations,
             "public_evidence_record_ids": evidence_ids,
-            "source_fact_ids": fact_ids,
+            "source_fact_ids": requested_fact_ids,
             "rationale": rationale_value,
             "purpose": purpose_value,
             "workspace_session_id": session,
@@ -97,7 +101,9 @@ class SpecialistStoreMixin:
                 self, investigation_id, expected_revision
             )
             cycle = require_cycle(self, investigation_id, cycle_id)
-            require_current_snapshot_facts(self, investigation, fact_ids)
+            fact_ids = resolve_current_snapshot_fact_ids(
+                self, investigation, requested_fact_ids
+            )
             public_evidence = self._specialist_public_evidence(
                 investigation_id, evidence_ids
             )

@@ -189,6 +189,80 @@ class LabSpecialistFactBindingTests(unittest.TestCase):
         )
         self.assertEqual(len(self.store.list_profile_observations("user-a")), 2)
 
+    def test_specialist_brief_defaults_to_deduped_current_profile_snapshot(
+        self,
+    ) -> None:
+        first = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="First synthetic inquiry",
+            command_id="create-first-brief-default-investigation",
+        )
+        self.store.update_health_profile(
+            "user-a",
+            first["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Recurrent synthetic episodes",
+                    "original_wording": "The synthetic episodes keep happening",
+                }
+            ],
+            purpose="Capture the first extraction",
+            command_id="update-first-brief-default-investigation",
+            expected_revision=1,
+        )
+        second = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Second synthetic inquiry",
+            command_id="create-second-brief-default-investigation",
+        )
+        updated = self.store.update_health_profile(
+            "user-a",
+            second["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Repeated synthetic episode",
+                    "original_wording": "I continue to experience the synthetic event",
+                }
+            ],
+            purpose="Capture the equivalent extraction",
+            command_id="update-second-brief-default-investigation",
+            expected_revision=1,
+        )
+        cycle = self.store.create_investigation_cycle(
+            second["investigation"]["investigation_id"],
+            purpose="Research a public mechanism",
+            command_id="create-brief-default-cycle",
+            expected_revision=2,
+        )
+
+        brief = self.store.prepare_specialist_brief(
+            second["investigation"]["investigation_id"],
+            cycle_id=cycle["cycle"]["cycle_id"],
+            specialist_role="Public evidence reviewer",
+            execution_policy="reasoning_only",
+            research_question="Compare public evidence for a reference mechanism.",
+            public_concepts=[],
+            abstract_relations=[],
+            public_evidence_record_ids=[],
+            source_fact_ids=None,
+            rationale="Research a public mechanism",
+            purpose="Research a public mechanism",
+            workspace_session_id="session-a",
+            command_id="prepare-brief-from-current-snapshot",
+            expected_revision=3,
+        )
+
+        self.assertEqual(
+            brief["internal_derivation"]["source_fact_ids"],
+            updated["profile_snapshot"]["observation_revision_ids"],
+        )
+
     def test_semantic_fact_identity_survives_conservative_extraction_drift(
         self,
     ) -> None:

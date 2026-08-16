@@ -264,7 +264,7 @@
           "public_evidence_record_ids": {"$ref": "#/schema_fragments/properties/string_array"},
           "source_fact_ids": {
             "$ref": "#/schema_fragments/properties/string_array",
-            "description": "Use the exact source_fact_ids returned by lab.update_health_profile; these bind immutable revisions in the current approved profile snapshot."
+            "description": "Optional exact subset from lab.update_health_profile. Omit to bind the brief derivation to every fact in the investigation's current approved profile snapshot."
           },
           "purpose": {"type": "string"},
           "command_id": {"type": "string"},
@@ -273,7 +273,7 @@
         "required": [
           "investigation_id", "cycle_id", "specialist_role", "execution_policy",
           "research_question", "public_concepts", "abstract_event_relations",
-          "public_evidence_record_ids", "source_fact_ids", "purpose",
+          "public_evidence_record_ids", "purpose",
           "command_id", "expected_revision"
         ],
         "additionalProperties": false
