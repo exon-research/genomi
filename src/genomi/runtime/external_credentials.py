@@ -6,6 +6,8 @@ import contextlib
 import contextvars
 import os
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterator, Mapping
 
 
@@ -21,6 +23,44 @@ _ENV_KEYS = {
         ("token_secret", "MODAL_TOKEN_SECRET"),
     ),
 }
+
+
+CREDENTIALS_FILE_NAME = "credentials.env"
+
+
+@lru_cache(maxsize=1)
+def _credentials_file_values() -> dict[str, str]:
+    """Read provider keys Genomi owns, so they survive any shell.
+
+    Exporting in a shell profile only reaches Genomi when it is launched from
+    that shell -- not from a desktop launcher, and not from zsh when the keys
+    live in .bashrc. A file under GENOMI_HOME works in every case.
+    """
+
+    from .paths import genomi_data_root
+
+    try:
+        text = (genomi_data_root() / CREDENTIALS_FILE_NAME).read_text(encoding="utf-8")
+    except (FileNotFoundError, NotADirectoryError, OSError, UnicodeError):
+        return {}
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        if entry.startswith("export "):
+            entry = entry[len("export ") :].strip()
+        name, separator, value = entry.partition("=")
+        if not separator:
+            continue
+        values[name.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def credentials_file_path() -> Path:
+    from .paths import genomi_data_root
+
+    return genomi_data_root() / CREDENTIALS_FILE_NAME
 
 
 @dataclass(frozen=True)
@@ -59,6 +99,10 @@ def resolve_external_credentials(provider: str) -> ExternalCredentials:
     environment = _values_from_mapping(normalized, os.environ)
     if _complete(normalized, environment):
         return ExternalCredentials(normalized, environment, "environment")
+
+    stored = _values_from_mapping(normalized, _credentials_file_values())
+    if _complete(normalized, stored):
+        return ExternalCredentials(normalized, stored, "credentials_file")
     return ExternalCredentials(normalized, {}, "missing")
 
 
