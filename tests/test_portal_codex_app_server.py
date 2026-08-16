@@ -147,14 +147,15 @@ class CodexAppServerSessionTests(unittest.TestCase):
 
         self.assertEqual([event["type"] for event in events], ["tool_call", "tool_result", "tool_call", "tool_result"])
         self.assertEqual(events[0]["name"], "genomi.genomi.invoke")
-        self.assertEqual(events[1]["content"], {"headline": "data_returned"})
+        self.assertEqual(events[1]["content"], '{"headline": "data_returned"}')
+        self.assertEqual(events[1]["payload"], {"headline": "data_returned"})
         self.assertEqual(events[2]["name"], "spawn_agent")
         self.assertEqual(events[2]["input"]["agentsStates"]["specialist-1"]["status"], "running")
         self.assertEqual(events[2]["input"]["message"], "Review evidence")
         self.assertEqual(events[2]["input"]["agent_id"], "specialist-1")
-        self.assertEqual(events[3]["content"]["agentsStates"]["specialist-1"]["status"], "completed")
-        self.assertEqual(events[3]["content"]["updates"], [{"agent_id": "specialist-1", "status": "completed"}])
-        self.assertNotIn("status", events[3]["content"])
+        self.assertEqual(events[3]["payload"]["agentsStates"]["specialist-1"]["status"], "completed")
+        self.assertEqual(events[3]["payload"]["updates"], [{"agent_id": "specialist-1", "status": "completed"}])
+        self.assertEqual(events[3]["payload"]["status"], "completed")
 
     def test_native_specialist_protocol_is_isolated_from_main_answer_until_root_completion(self) -> None:
         output = io.StringIO(
@@ -671,7 +672,7 @@ class CodexAppServerPortalRunTests(unittest.TestCase):
         completed_sequence = next(
             event.id
             for event in run.events
-            if event.event == "status" and event.data.get("status") == "succeeded"
+            if event.event == "end" and event.data.get("status") == "succeeded"
         )
         self.assertLess(max(delta_sequences), completed_sequence)
         self.assertEqual(run.output, "First second")
