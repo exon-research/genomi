@@ -93,6 +93,102 @@ class LabSpecialistFactBindingTests(unittest.TestCase):
             updated["source_fact_ids"],
         )
 
+    def test_repeated_fact_across_investigations_reuses_one_logical_observation(
+        self,
+    ) -> None:
+        first = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="First synthetic inquiry",
+            command_id="create-first-dedup-investigation",
+        )
+        first_update = self.store.update_health_profile(
+            "user-a",
+            first["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Synthetic recurring feature",
+                    "original_wording": "I repeatedly observe the synthetic feature",
+                }
+            ],
+            purpose="Capture the first inquiry",
+            command_id="update-first-dedup-investigation",
+            expected_revision=1,
+        )
+        second = self.store.create_lab_investigation(
+            "user-a",
+            workspace_session_id="session-a",
+            question="Second synthetic inquiry",
+            command_id="create-second-dedup-investigation",
+        )
+        second_update = self.store.update_health_profile(
+            "user-a",
+            second["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Synthetic recurring feature",
+                    "original_wording": "I repeatedly observe the synthetic feature",
+                }
+            ],
+            purpose="Capture the second inquiry",
+            command_id="update-second-dedup-investigation",
+            expected_revision=1,
+        )
+
+        first_observation = first_update["observations"][0]
+        repeated_observation = second_update["observations"][0]
+        self.assertEqual(
+            repeated_observation["observation_revision_id"],
+            first_observation["observation_revision_id"],
+        )
+        self.assertEqual(
+            second_update["source_fact_ids"],
+            [first_observation["observation_revision_id"]],
+        )
+        self.assertEqual(
+            len(self.store.list_profile_observations("user-a", current_only=True)),
+            1,
+        )
+        self.assertEqual(len(self.store.list_profile_observations("user-a")), 1)
+
+        revised = self.store.update_health_profile(
+            "user-a",
+            second["investigation"]["investigation_id"],
+            workspace_session_id="session-a",
+            facts=[
+                {
+                    "modality": "phenotype",
+                    "label": "Synthetic recurring feature, clarified",
+                    "original_wording": "I repeatedly observe the synthetic feature",
+                }
+            ],
+            purpose="Preserve a corrected extraction as a revision",
+            command_id="revise-second-dedup-investigation",
+            expected_revision=2,
+        )
+        revised_observation = revised["observations"][0]
+        self.assertNotEqual(
+            revised_observation["observation_revision_id"],
+            first_observation["observation_revision_id"],
+        )
+        self.assertEqual(
+            revised_observation["logical_observation_id"],
+            first_observation["logical_observation_id"],
+        )
+        self.assertEqual(
+            revised_observation["supersedes_revision_id"],
+            first_observation["observation_revision_id"],
+        )
+        self.assertEqual(
+            len(self.store.list_profile_observations("user-a", current_only=True)),
+            1,
+        )
+        self.assertEqual(len(self.store.list_profile_observations("user-a")), 2)
+
     def test_incomplete_selected_agi_is_an_evidence_gap_not_a_profile_blocker(
         self,
     ) -> None:

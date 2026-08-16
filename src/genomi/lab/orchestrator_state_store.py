@@ -15,6 +15,11 @@ from .models import (
     row_dict,
     utc_now,
 )
+from .profile_fact_identity import (
+    extracted_fact_content,
+    extracted_fact_identity,
+    unique_current_profile_observations,
+)
 from .orchestrator_support import (
     OrchestratorStoreContract,
     advance_investigation_revision,
@@ -117,8 +122,45 @@ class OrchestratorStateStoreMixin:
             investigation = require_investigation_revision(self, investigation_id, expected_revision)
             if investigation.get("user_id") != user_id:
                 raise ValueError("investigation belongs to another user")
-            observations = [self.add_profile_observation(user_id, fact) for fact in normalized_facts]  # type: ignore[attr-defined]
-            current = self.list_profile_observations(user_id, current_only=True)  # type: ignore[attr-defined]
+            prior_current = self.list_profile_observations(  # type: ignore[attr-defined]
+                user_id, current_only=True
+            )
+            current_by_identity = {
+                extracted_fact_identity(item): item
+                for item in reversed(prior_current)
+                if item.get("source_class") == "model_extracted"
+            }
+            observations: list[JsonObject] = []
+            for fact in normalized_facts:
+                identity = extracted_fact_identity(fact)
+                prior = current_by_identity.get(identity)
+                if prior is not None and extracted_fact_content(
+                    prior
+                ) == extracted_fact_content(fact):
+                    observation = prior
+                else:
+                    observation_input = dict(fact)
+                    if prior is not None:
+                        observation_input.update(
+                            {
+                                "logical_observation_id": prior[
+                                    "logical_observation_id"
+                                ],
+                                "supersedes_revision_id": prior[
+                                    "observation_revision_id"
+                                ],
+                            }
+                        )
+                    observation = self.add_profile_observation(  # type: ignore[attr-defined]
+                        user_id, observation_input
+                    )
+                current_by_identity[identity] = observation
+                observations.append(observation)
+            current = unique_current_profile_observations(
+                self.list_profile_observations(  # type: ignore[attr-defined]
+                    user_id, current_only=True
+                )
+            )
             current_ids = [str(item["observation_revision_id"]) for item in current]
             candidate = self.profile_snapshot_candidate(  # type: ignore[attr-defined]
                 user_id,
