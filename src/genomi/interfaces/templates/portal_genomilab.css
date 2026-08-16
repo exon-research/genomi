@@ -125,6 +125,22 @@
 .genomilab-board-content article:last-child { grid-column: 1 / -1; }
 .genomilab-board-content h4 { margin: 0; color: var(--text2); font-size: 12px; }
 .genomilab-board-content p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.genomilab-board-list { margin: 8px 0 0; padding-left: 17px; display: grid; gap: 6px; color: var(--text3); font-size: 10px; line-height: 1.5; }
+.genomilab-workstreams { padding: 0; list-style: none; }
+.genomilab-workstreams li { padding: 7px 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 7px; }
+.genomilab-workstreams b { color: var(--text2); font-size: 10px; }
+.genomilab-workstreams span, .genomilab-brief-heading span { color: var(--green); font: 9px var(--mono); }
+.genomilab-brief-heading { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.genomilab-brief-heading h5 { margin: 0; color: var(--ink); font-size: 14px; }
+.genomilab-doctor-brief section { margin-top: 12px; }
+.genomilab-doctor-brief h6 { margin: 0; color: var(--text2); font-size: 10px; letter-spacing: .02em; }
+.genomilab-brief-claims { padding: 0; list-style: none; }
+.genomilab-brief-claims > li { padding: 8px; border-left: 2px solid #10b98166; background: var(--surface2); }
+.genomilab-brief-claims > li > p { margin: 0; color: var(--text2); }
+.genomilab-claim-anchors { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+.genomilab-claim-anchors a, .genomilab-claim-anchors span { padding: 3px 6px; border: 1px solid var(--border2); border-radius: 999px; color: var(--text3); font: 9px var(--mono); text-decoration: none; }
+.genomilab-claim-anchors a:hover { border-color: #10b98166; color: var(--green); }
+.genomilab-board-content .genomilab-clinical-boundary { margin-top: 13px; padding: 8px; border: 1px solid #f59e0b44; border-radius: 7px; color: #fbbf24; }
 @media (max-width: 780px) {
   #research-workspace.chat { height: auto; min-height: 0; }
   .genomilab-intake, #research-workspace > .composer, #research-workspace > .messages, .genomilab-step-panel { margin-left: 10px; margin-right: 10px; }

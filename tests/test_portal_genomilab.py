@@ -114,8 +114,39 @@ class PortalGenomiLabTests(unittest.TestCase):
                     },
                 ],
                 "brief_versions": [
-                    {"version": 2, "brief": {"summary": "Current brief"}},
+                    {
+                        "version": 2,
+                        "brief": {
+                            "title": "Clinician discussion brief",
+                            "summary": "Current brief",
+                            "claims": [
+                                {
+                                    "statement": "The reported pattern merits clinical review.",
+                                    "evidence_record_ids": ["evidence-a"],
+                                    "profile_revision_ids": ["profile-a"],
+                                }
+                            ],
+                            "hypothesis_ids": ["logical-a"],
+                            "gap_ids": [],
+                            "confirmation_needs": ["Review the original laboratory report."],
+                            "professional_questions": ["What testing would distinguish the leading explanations?"],
+                            "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
+                        },
+                    },
                     {"version": 1, "brief": {"summary": "Historical brief"}},
+                ],
+                "specialist_assignments": [
+                    {"specialist_role": "rare_disease_specialist", "state": "completed"}
+                ],
+                "evidence_records": [
+                    {
+                        "evidence_record_id": "evidence-a",
+                        "source_family": "biomedical_literature",
+                        "operation": "paperclip.retrieve_document_evidence",
+                    }
+                ],
+                "research_artifacts": [
+                    {"research_artifact_id": "artifact-a", "artifact_kind": "evidence_map"}
                 ],
             }
         ]
@@ -133,7 +164,15 @@ class PortalGenomiLabTests(unittest.TestCase):
             {"logical-a": "version-a2", "logical-b": "version-b1"},
         )
         self.assertEqual(board["current_brief_version"], 2)
-        self.assertEqual(board["current_brief"], "Current brief")
+        self.assertEqual(board["current_brief"]["brief"]["summary"], "Current brief")
+        self.assertEqual(board["specialist_count"], 1)
+        self.assertEqual(board["specialist_workstreams"][0]["state"], "completed")
+        self.assertEqual(board["evidence_count"], 1)
+        self.assertEqual(board["research_artifact_count"], 1)
+        self.assertEqual(
+            board["current_brief"]["brief"]["professional_questions"],
+            ["What testing would distinguish the leading explanations?"],
+        )
 
     def test_board_respects_explicit_empty_current_projections(self) -> None:
         board = portal_genomilab._board_investigation(
@@ -422,6 +461,82 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertFalse(state["ignored"])
         self.assertEqual(state["profileLoads"], 1)
         self.assertEqual(state["boardLoads"], 1)
+
+    def test_board_models_render_durable_workstreams_and_complete_brief(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is required for the frontend board model check")
+        script_path = (
+            Path(__file__).resolve().parents[1]
+            / "src/genomi/interfaces/templates/portal_genomilab.js"
+        )
+        node_script = f"""
+          const module = await import({script_path.as_uri()!r});
+          const investigation = {{
+            current_brief_version: 3,
+            current_brief: {{
+              version: 3,
+              brief: {{
+                title: 'Clinician discussion brief',
+                summary: 'A shared explanation remains possible but unconfirmed.',
+                claims: [{{
+                  statement: 'One public report supports further review.',
+                  evidence_record_ids: ['evidence-a'],
+                  profile_revision_ids: ['profile-a']
+                }}],
+                hypothesis_ids: ['logical-a'],
+                gap_ids: ['logical-gap'],
+                confirmation_needs: ['Confirm the historical laboratory result.'],
+                professional_questions: ['Which test would best distinguish the alternatives?'],
+                clinical_boundary: 'Research support only; this is not a diagnosis or treatment decision.'
+              }}
+            }},
+            hypotheses: [
+              {{ logical_hypothesis_id: 'logical-a', statement: 'A shared mechanism is possible.' }},
+              {{ logical_hypothesis_id: 'logical-gap', statement: 'An independent explanation remains open.', unresolved_gaps: ['Medication timing is not documented.'] }}
+            ],
+            evidence_records: [{{
+              evidence_record_id: 'evidence-a',
+              source_family: 'biomedical_literature',
+              evidence: {{ records: [{{ title: 'Public source', pmid: '12345' }}] }}
+            }}],
+            specialist_workstreams: [
+              {{ specialist_role: 'rare_disease_specialist', state: 'completed' }},
+              {{ specialist_role: 'medication_safety_specialist', state: 'spawned' }}
+            ]
+          }};
+          process.stdout.write(JSON.stringify({{
+            workstreams: module.specialistWorkstreamModels(investigation.specialist_workstreams),
+            brief: module.doctorBriefModel(investigation)
+          }}));
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "-e", node_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        state = json.loads(completed.stdout)
+        self.assertEqual(
+            state["workstreams"],
+            [
+                {"role": "Rare disease", "status": "Findings added"},
+                {"role": "Medication safety", "status": "Researching"},
+            ],
+        )
+        brief = state["brief"]
+        self.assertEqual(brief["version"], 3)
+        self.assertEqual(brief["hypotheses"], ["A shared mechanism is possible."])
+        self.assertEqual(brief["gaps"], ["Medication timing is not documented."])
+        self.assertEqual(brief["claims"][0]["profileCount"], 1)
+        self.assertEqual(
+            brief["claims"][0]["evidence"][0]["url"],
+            "https://pubmed.ncbi.nlm.nih.gov/12345/",
+        )
+        self.assertEqual(
+            brief["professionalQuestions"],
+            ["Which test would best distinguish the alternatives?"],
+        )
+        self.assertIn("not a diagnosis", brief["clinicalBoundary"])
 
 
 if __name__ == "__main__":

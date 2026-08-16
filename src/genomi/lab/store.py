@@ -26,6 +26,7 @@ from .orchestrator_brief_store import OrchestratorBriefStoreMixin
 from .orchestrator_hypothesis_store import OrchestratorHypothesisStoreMixin
 from .profile_fact_identity import unique_current_profile_observations
 from .profile_entities import ProfileEntityStoreMixin
+from .portal_investigation_store import PortalInvestigationStoreMixin
 from .result_receipts import ResultReceiptStoreMixin
 from .schema_migrations import upgrade_lab_schema
 from .snapshot_store import SnapshotStoreMixin
@@ -41,6 +42,7 @@ def default_store_path(root: str | Path | None = None) -> Path:
 
 
 class GenomiLabStore(
+    PortalInvestigationStoreMixin,
     OrchestratorStateStoreMixin,
     OrchestratorHypothesisStoreMixin,
     OrchestratorBriefStoreMixin,

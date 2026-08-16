@@ -502,7 +502,7 @@ class _PortalGenomiLabApplication:
                 if not investigation_id:
                     continue
                 try:
-                    view = self.store.read_orchestrator_investigation(
+                    view = self.store.read_portal_investigation(
                         investigation_id, include_history=True
                     )
                 except (KeyError, ValueError):
@@ -522,7 +522,7 @@ class _PortalGenomiLabApplication:
         authorized = False
         with self._current_user() as user_id:
             try:
-                candidate = self.store.read_orchestrator_investigation(
+                candidate = self.store.read_portal_investigation(
                     investigation_id, include_history=True
                 )
             except (KeyError, ValueError):
@@ -717,11 +717,11 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
                 investigation.get("hypothesis_versions") or []
             ).values()
         )
-    workstreams = investigation.get("panel_assignments") or investigation.get(
-        "specialist_workstreams"
-    ) or []
-    patient_questions = investigation.get("patient_questions") or []
-    next_steps = investigation.get("recommended_next_steps") or []
+    workstreams = [
+        item
+        for item in investigation.get("specialist_assignments") or []
+        if isinstance(item, dict)
+    ]
     brief_versions = investigation.get("brief_versions") or []
     if "current_brief_version" in investigation:
         current_brief = investigation.get("current_brief_version")
@@ -734,6 +734,17 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     evidence_snapshots = investigation.get("evidence_snapshots") or []
     cycles = investigation.get("cycles") or []
     research_artifacts = investigation.get("research_artifacts") or []
+    evidence_records = investigation.get("evidence_records") or []
+    brief = current_brief.get("brief") if isinstance(current_brief, dict) else None
+    brief = brief if isinstance(brief, dict) else {}
+    information_gaps: list[str] = []
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, dict):
+            continue
+        for gap in hypothesis.get("unresolved_gaps") or []:
+            gap_text = str(gap or "").strip()
+            if gap_text and gap_text not in information_gaps:
+                information_gaps.append(gap_text)
     result.update(
         {
             "private_context_status": investigation.get("private_context_status"),
@@ -742,29 +753,23 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
             "evidence_snapshots": evidence_snapshots,
             "brief_versions": brief_versions,
             "research_artifacts": research_artifacts,
-            "evidence_count": len(investigation.get("evidence_records") or []),
+            "research_artifact_count": len(research_artifacts),
+            "evidence_records": evidence_records,
+            "evidence_count": len(evidence_records),
             "hypothesis_count": len(hypotheses),
-            "gap_count": len(investigation.get("information_gaps") or []),
+            "gap_count": len(information_gaps),
             "specialist_count": len(workstreams),
             "hypotheses": hypotheses,
             "specialist_workstreams": workstreams,
-            "information_gaps": investigation.get("information_gaps") or [],
-            "patient_questions": patient_questions,
-            "recommended_next_steps": next_steps,
+            "information_gaps": information_gaps,
+            "patient_questions": brief.get("professional_questions") or [],
+            "recommended_next_steps": brief.get("confirmation_needs") or [],
             "current_brief_version": (
                 current_brief.get("version")
                 if isinstance(current_brief, dict)
                 else current_brief
             ),
-            "current_brief": (
-                (current_brief.get("brief") or {}).get("summary")
-                or (current_brief.get("brief") or {}).get("title")
-                or current_brief.get("summary")
-                or current_brief.get("title")
-                or "Evidence-linked doctor brief ready."
-                if isinstance(current_brief, dict)
-                else None
-            ),
+            "current_brief": current_brief,
             "domain_revision": record.get("domain_revision"),
         }
     )
