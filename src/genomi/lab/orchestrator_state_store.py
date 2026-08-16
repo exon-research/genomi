@@ -425,15 +425,17 @@ class OrchestratorStateStoreMixin:
                     prior is None or str(prior["cycle_id"]) != prior_id
                 ):
                     raise ValueError("prior_cycle_id must be the latest investigation cycle")
-                selected_snapshot = snapshot_id or investigation.get(
-                    "patient_molecular_snapshot_id"
-                )
                 if public_only:
-                    if selected_snapshot:
+                    if snapshot_id:
                         raise ValueError("public_only cycles cannot include a profile snapshot")
-                elif not selected_snapshot:
+                    selected_snapshot = None
+                else:
+                    selected_snapshot = snapshot_id or investigation.get(
+                        "patient_molecular_snapshot_id"
+                    )
+                if not public_only and not selected_snapshot:
                     raise ValueError("a private cycle requires an approved profile snapshot")
-                elif selected_snapshot != investigation.get("patient_molecular_snapshot_id"):
+                if not public_only and selected_snapshot != investigation.get("patient_molecular_snapshot_id"):
                     raise ValueError("cycle profile snapshot must be the investigation's current snapshot")
                 ordinal = int(prior["ordinal"]) + 1 if prior is not None else 1
                 cycle_id = f"cycle-{uuid.uuid4().hex}"
