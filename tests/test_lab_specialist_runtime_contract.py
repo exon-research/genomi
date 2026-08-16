@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -40,23 +42,39 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             state["outbound_brief"]["allowed_tools"],
             ["paperclip.search_biomedical", "paperclip.retrieve_document_evidence"],
         )
-        process_receipt_id = EVIDENCE_RESULT_RECEIPTS.issue(
-            session_id="session-a",
-            operation="paperclip.search_biomedical",
-            params={"query": "synthetic public mechanism"},
-            result={
-                "evidence_envelope": {
-                    "operation": "paperclip.search_biomedical",
-                    "headline": "paperclip.search_biomedical: data_returned",
-                    "finding_state": "evidence_present",
-                    "answer_readiness": "answer_supported",
-                    "guidance": [],
-                    "negative_inference": {"allowed": False, "requires": []},
-                    "coverage": {"consulted_sources": ["pmc"]},
-                },
-                "records": [{"title": "Synthetic public result", "source": "pmc"}],
-            },
+        repository_root = Path(__file__).resolve().parents[1]
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = str(repository_root / "src")
+        issued = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from genomi.operations.registry.evidence_result_receipts "
+                    "import EVIDENCE_RESULT_RECEIPTS; "
+                    "print(EVIDENCE_RESULT_RECEIPTS.issue("
+                    "session_id='session-a', "
+                    "operation='paperclip.search_biomedical', "
+                    "params={'query': 'synthetic public mechanism'}, "
+                    "result={'evidence_envelope': {"
+                    "'operation': 'paperclip.search_biomedical', "
+                    "'headline': 'paperclip.search_biomedical: data_returned', "
+                    "'finding_state': 'evidence_present', "
+                    "'answer_readiness': 'answer_supported', "
+                    "'guidance': [], "
+                    "'negative_inference': {'allowed': False, 'requires': []}, "
+                    "'coverage': {'consulted_sources': ['pmc']}}, "
+                    "'records': [{'title': 'Synthetic public result', "
+                    "'source': 'pmc'}]}))"
+                ),
+            ],
+            cwd=repository_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=True,
         )
+        process_receipt_id = issued.stdout.strip()
 
         @contextmanager
         def authorized_store():
