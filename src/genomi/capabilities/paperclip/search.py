@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -30,13 +29,9 @@ SUPPORTED_SOURCES = (
     "uniprot",
 )
 DEFAULT_SOURCES = ("pmc", "abstracts")
-_PROTEIN_SOURCES = frozenset({"proteins", "uniprot"})
-_PROTEIN_ALPHABET = frozenset("ACDEFGHIKLMNPQRSTVWYBXZJUO")
 _UNIPROT_ACCESSION = re.compile(
     r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})\Z"
 )
-_BIOHUB_SEQUENCE_MIN = 20
-_BIOHUB_SEQUENCE_MAX = 4096
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -89,7 +84,7 @@ def search_biomedical(
         return _unavailable(query_scope, "request_failed")
     if completed.returncode != 0:
         return _unavailable(query_scope, "request_failed")
-    records, result_id, declared_count = _parse_search_output(completed.stdout, selected_sources)
+    records, result_ids, declared_count = _parse_search_output(completed.stdout, selected_sources)
     if not records and declared_count is None:
         return _unavailable(query_scope, "invalid_response")
     coverage = {
@@ -122,8 +117,8 @@ def search_biomedical(
         "records": records,
         "evidence_envelope": envelope,
     }
-    if result_id:
-        result["result_id"] = result_id
+    if result_ids:
+        result["result_ids"] = result_ids
     return result
 
 
@@ -142,224 +137,222 @@ def _unavailable(query_scope: dict[str, Any], reason_code: str) -> dict[str, Any
     }
 
 
-def _rows(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [row for row in payload if isinstance(row, dict)]
-    if not isinstance(payload, dict):
-        return []
-    for key in ("results", "records", "papers", "items", "data"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            return [row for row in value if isinstance(row, dict)]
-        if isinstance(value, dict):
-            nested = _rows(value)
-            if nested:
-                return nested
-    return []
-
-
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-_RESULT_HEADER = re.compile(r"Found\s+(\d+)\s+(?:papers?|records?)\b(?:\s+\[(s_[A-Za-z0-9_-]+)\])?")
-_RESULT_ENTRY = re.compile(r"\n(?=\s*\d+\.\s)")
-_RESULT_FIRST_LINE = re.compile(r"\s*\d+\.\s+(.+)")
+# Every source family prints a result header, numbered entries, and a
+# saved-result footer that both carry the reusable `s_...` result handle.
+_RESULT_HEADER = re.compile(r"^Found\s+(\d+)\s+\w+\b\s*(?:\[(s_[A-Za-z0-9_-]+)\])?")
+_RESULT_FOOTER = re.compile(r"^\[[^\]]*\bsaved to\s+(s_[A-Za-z0-9_-]+)\]$")
+_ENTRY_START = re.compile(r"^\d+\.\s+(.+)$")
+# Paperclip's own document handle, the id `paperclip cat /<collection>/<id>` takes.
+_DOCUMENT_HANDLE = re.compile(r"[a-z]{2,6}_[A-Za-z0-9.]{4,}\Z")
+_PUBLISHED = re.compile(r"\d{4}(?:-\d{2}(?:-\d{2})?)?\Z")
+_PROTEIN_LENGTH = re.compile(r"\d+\s*aa\Z")
+_METADATA_SEPARATOR = "·"
+_SECTION_MARKER = "§"
 _DISPLAY_SOURCE_LABELS = {
     "pmc",
     "biorxiv",
     "medrxiv",
     "arxiv",
     "abstracts",
-    "fda",
-    "trials",
     "proteins",
     "uniprot",
+}
+# The handle prefix routes the document, so it also fixes the read collection.
+# Non-US regulatory documents carry `tri_` handles and are read under /trials/.
+_HANDLE_COLLECTIONS = {
+    "fda_": "fda",
+    "tri_": "trials",
+    "bio_": "papers",
+    "med_": "papers",
+    "arx_": "papers",
+    "oa_": "papers",
+    "PMC": "papers",
+}
+# `tri_` is shared by trials/*, fda/jp, and fda/eu, so it names no single source.
+_HANDLE_SOURCES = {
+    "fda_": "fda",
+    "bio_": "biorxiv",
+    "med_": "medrxiv",
+    "arx_": "arxiv",
+    "oa_": "abstracts",
+    "PMC": "pmc",
+}
+_SOURCE_COLLECTIONS = {
+    "pmc": "papers",
+    "biorxiv": "papers",
+    "medrxiv": "papers",
+    "arxiv": "papers",
+    "abstracts": "papers",
+    "fda": "fda",
+    "fda/jp": "trials",
+    "fda/eu": "trials",
+    "trials": "trials",
+    "trials/us": "trials",
+    "trials/eu": "trials",
+    "trials/jp": "trials",
+    "trials/cn": "trials",
+    "proteins": "proteins",
+    "uniprot": "proteins",
 }
 
 
 def _parse_search_output(
     output: str, selected_sources: tuple[str, ...]
-) -> tuple[list[dict[str, Any]], str | None, int | None]:
-    """Accept both structured responses and Paperclip's documented CLI display."""
-    text = _ANSI_ESCAPE.sub("", str(output or "")).strip()
-    payload = _decode_json_prefix(text)
-    if payload is not None:
-        records = [
-            _normalize_record(row, selected_sources=selected_sources)
-            for row in _rows(payload)
-        ]
-        return [record for record in records if record], _payload_result_id(payload), None
+) -> tuple[list[dict[str, Any]], list[str], int | None]:
+    """Parse Paperclip's CLI display, the only shape `paperclip search` emits."""
+    records: list[dict[str, Any]] = []
+    result_ids: list[str] = []
+    declared_count: int | None = None
+    entry_lines: list[str] = []
 
-    header = _RESULT_HEADER.search(text)
-    declared_count = int(header.group(1)) if header else None
-    result_id = header.group(2) if header and header.group(2) else None
-    records = [
-        record
-        for entry in _RESULT_ENTRY.split(text)
-        if (record := _parse_display_entry(entry, selected_sources))
-    ]
-    return records, result_id, declared_count
+    def flush() -> None:
+        nonlocal entry_lines
+        if entry_lines:
+            record = _parse_display_entry(entry_lines, selected_sources=selected_sources)
+            if record:
+                records.append(record)
+        entry_lines = []
 
+    def remember(result_id: str | None) -> None:
+        if result_id and result_id not in result_ids:
+            result_ids.append(result_id)
 
-def _decode_json_prefix(text: str) -> Any:
-    try:
-        payload, _ = json.JSONDecoder().raw_decode(text.lstrip())
-    except (TypeError, json.JSONDecodeError):
-        return None
-    return payload
-
-
-def _payload_result_id(payload: Any) -> str | None:
-    if not isinstance(payload, dict):
-        return None
-    value = payload.get("result_id") or payload.get("results_id")
-    return str(value) if value else None
+    for raw_line in _ANSI_ESCAPE.sub("", str(output or "")).splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if header := _RESULT_HEADER.match(line):
+            flush()
+            declared_count = (declared_count or 0) + int(header.group(1))
+            remember(header.group(2))
+            continue
+        if footer := _RESULT_FOOTER.match(line):
+            flush()
+            remember(footer.group(1))
+            continue
+        if _ENTRY_START.match(line):
+            flush()
+            entry_lines = [line]
+            continue
+        if entry_lines:
+            entry_lines.append(line)
+    flush()
+    return records, result_ids, declared_count
 
 
 def _parse_display_entry(
-    entry: str, selected_sources: tuple[str, ...]
+    lines: list[str],
+    *,
+    selected_sources: tuple[str, ...],
 ) -> dict[str, Any]:
-    lines = [line.strip() for line in entry.strip().splitlines() if line.strip()]
-    if not lines:
+    title = _ENTRY_START.match(lines[0])
+    if not title:
         return {}
-    first_line = _RESULT_FIRST_LINE.match(lines[0])
-    if not first_line:
-        return {}
-    record: dict[str, Any] = {"title": first_line.group(1).strip()}
-    protein_scope = len(selected_sources) == 1 and selected_sources[0] in _PROTEIN_SOURCES
+    record: dict[str, Any] = {"title": title.group(1).strip()}
+    metadata_seen = False
+    quoted_abstract = False
+    abstract_lines: list[str] = []
     for line in lines[1:]:
-        if line.startswith("[") and "saved to" in line:
-            continue
-        if protein_scope and _UNIPROT_ACCESSION.fullmatch(line.upper()):
-            record["record_id"] = line.upper()
-            record["accession"] = line.upper()
-        elif protein_scope and (sequence := _validated_protein_sequence(line)):
-            record["reference_sequence"] = sequence
-        elif line.startswith("https://"):
+        if line.startswith("https://"):
             record.setdefault("url", line)
             doi_marker = "doi.org/"
             if doi_marker in line:
                 record.setdefault("doi", line.split(doi_marker, 1)[1])
         elif line.startswith('"'):
             record["abstract"] = line.strip('"')
-        elif "·" in line:
-            parts = [part.strip() for part in line.split("·")]
-            if parts:
-                record["record_id"] = parts[0]
-            if len(parts) >= 2:
-                if parts[1].lower() in _DISPLAY_SOURCE_LABELS:
-                    record["source"] = parts[1].lower()
-                else:
-                    record["journal"] = parts[1]
-            if len(parts) >= 3:
-                record["published"] = parts[2]
-        elif "authors" not in record:
-            record["authors"] = line
-    record_id = str(record.get("record_id") or "")
-    source = _source_from_record_id(record_id)
+            quoted_abstract = True
+        elif not metadata_seen and _UNIPROT_ACCESSION.fullmatch(line.upper()):
+            record["record_id"] = line.upper()
+            record["accession"] = line.upper()
+        elif not metadata_seen and _DOCUMENT_HANDLE.fullmatch(line):
+            record["record_id"] = line
+        elif not metadata_seen and _METADATA_SEPARATOR in line:
+            _apply_metadata_line(record, line)
+            metadata_seen = True
+        elif not metadata_seen:
+            record.setdefault("authors", line)
+        elif not quoted_abstract:
+            abstract_lines.append(line)
+    if abstract_lines and not quoted_abstract:
+        record["abstract"] = " ".join(abstract_lines)
+    collection = _resolve_collection(record, selected_sources)
+    if collection:
+        record["collection"] = collection
+    source = _resolve_source(record, collection, selected_sources)
     if source:
         record["source"] = source
-    elif len(selected_sources) == 1:
-        record["source"] = selected_sources[0]
-    record["collection"] = _collection_from_source(str(record.get("source") or ""))
     return record
 
 
-def _source_from_record_id(record_id: str) -> str | None:
-    if record_id.startswith("PMC"):
-        return "pmc"
-    if record_id.startswith("bio_"):
-        return "biorxiv"
-    if record_id.startswith("med_"):
-        return "medrxiv"
-    if record_id.startswith(("arx_", "arxiv_")):
-        return "arxiv"
-    if record_id.startswith("fda_"):
-        return "fda"
-    if record_id.startswith(("tri_", "NCT")):
-        return "trials"
-    return None
+def _apply_metadata_line(record: dict[str, Any], line: str) -> None:
+    """Read one `a · b · § c` metadata line by part meaning, not by position."""
+    free: list[str] = []
+    for part in (piece.strip() for piece in line.split(_METADATA_SEPARATOR)):
+        if not part:
+            continue
+        if part.startswith(_SECTION_MARKER):
+            section = part[len(_SECTION_MARKER) :].strip()
+            if section:
+                record["section"] = section
+        elif _PUBLISHED.fullmatch(part):
+            record["published"] = part
+        elif part.lower() in _DISPLAY_SOURCE_LABELS:
+            record.setdefault("source", part.lower())
+        elif not _PROTEIN_LENGTH.fullmatch(part):
+            free.append(part)
+    if record.get("accession"):
+        if free:
+            record["organism"] = free[0]
+    elif record.get("record_id"):
+        # A handle line already carried the canonical id, so the leading free
+        # part is the public registry or application identifier.
+        if len(free) >= 2:
+            record["external_id"] = free[0]
+        if free:
+            record["journal"] = free[-1]
+    else:
+        if free:
+            record["record_id"] = free[0]
+        if len(free) >= 2:
+            record["journal"] = free[1]
 
 
-def _collection_from_source(source: str) -> str:
-    if source.startswith("fda"):
-        return "fda"
-    if source.startswith("trials"):
-        return "trials"
-    if source.startswith("proteins") or source == "uniprot":
-        return "proteins"
-    return "papers"
-
-
-def _normalize_record(
-    row: dict[str, Any], *, selected_sources: tuple[str, ...] = ()
-) -> dict[str, Any]:
-    aliases = {
-        "record_id": ("id", "paper_id", "document_id", "pmcid", "pmid", "doi"),
-        "title": ("title",),
-        "authors": ("authors", "author"),
-        "year": ("year", "publication_year", "pub_year", "published", "pub_date"),
-        "journal": ("journal", "venue"),
-        "doi": ("doi",),
-        "pmcid": ("pmcid", "pmc_id"),
-        "pmid": ("pmid", "pubmed_id"),
-        "source": ("source", "database"),
-        "url": ("url", "link"),
-        "abstract": ("abstract", "snippet", "summary"),
-    }
-    normalized: dict[str, Any] = {}
-    for target, names in aliases.items():
-        value = next((row.get(name) for name in names if row.get(name) not in (None, "", [])), None)
-        if value is not None:
-            normalized[target] = value
-    if not normalized.get("source") and len(selected_sources) == 1:
-        normalized["source"] = selected_sources[0]
-    normalized["collection"] = _collection_from_source(str(normalized.get("source") or ""))
-    if normalized["collection"] == "proteins":
-        accession = _protein_accession(row, normalized)
-        if accession is not None:
-            normalized["accession"] = accession
-            sequence = _protein_sequence(row)
-            if sequence is not None:
-                normalized["reference_sequence"] = sequence
-    if normalized.get("doi") and not normalized.get("url"):
-        normalized["url"] = f"https://doi.org/{normalized['doi']}"
-    return normalized
-
-
-def _protein_accession(
-    row: dict[str, Any], normalized: dict[str, Any]
+def _resolve_collection(
+    record: dict[str, Any],
+    selected_sources: tuple[str, ...],
 ) -> str | None:
-    value = next(
-        (
-            row.get(field)
-            for field in ("accession", "primaryAccession", "document_id", "id")
-            if row.get(field) not in (None, "")
-        ),
-        normalized.get("record_id"),
-    )
-    accession = str(value or "").strip().upper()
-    return accession if _UNIPROT_ACCESSION.fullmatch(accession) else None
+    handle_collection = _by_handle_prefix(record, _HANDLE_COLLECTIONS)
+    if handle_collection:
+        return handle_collection
+    if record.get("accession"):
+        return "proteins"
+    collections = {_SOURCE_COLLECTIONS[entry] for entry in selected_sources}
+    return collections.pop() if len(collections) == 1 else None
 
 
-def _protein_sequence(row: dict[str, Any]) -> str | None:
-    value: object = next(
-        (
-            row.get(field)
-            for field in ("sequence", "protein_sequence", "amino_acid_sequence")
-            if row.get(field) not in (None, "")
-        ),
+def _resolve_source(
+    record: dict[str, Any],
+    collection: str | None,
+    selected_sources: tuple[str, ...],
+) -> str | None:
+    if len(selected_sources) == 1:
+        return selected_sources[0]
+    label = record.get("source")
+    if label:
+        return str(label)
+    prefix_source = _by_handle_prefix(record, _HANDLE_SOURCES)
+    if prefix_source:
+        return prefix_source
+    candidates = [
+        entry for entry in selected_sources if _SOURCE_COLLECTIONS[entry] == collection
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _by_handle_prefix(record: dict[str, Any], table: dict[str, str]) -> str | None:
+    record_id = str(record.get("record_id") or "")
+    return next(
+        (value for prefix, value in table.items() if record_id.startswith(prefix)),
         None,
     )
-    if isinstance(value, dict):
-        value = value.get("value")
-    if not isinstance(value, str):
-        return None
-    return _validated_protein_sequence(value)
-
-
-def _validated_protein_sequence(value: str) -> str | None:
-    sequence = "".join(value.split()).upper()
-    if not _BIOHUB_SEQUENCE_MIN <= len(sequence) <= _BIOHUB_SEQUENCE_MAX:
-        return None
-    if set(sequence) - _PROTEIN_ALPHABET:
-        return None
-    return sequence

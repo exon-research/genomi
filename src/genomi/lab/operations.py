@@ -14,6 +14,7 @@ from ..operations.registry.evidence_result_receipts import (
     EVIDENCE_RESULT_RECEIPTS,
 )
 from ..runtime.context import context_authority_lock, context_scope, describe_context
+from .narrative_safety_patterns import NarrativeSafetyError
 from .result_receipts import durable_genomi_result_receipt_id
 from .specialist_policies import policy_manifest
 from .store import GenomiLabStore
@@ -52,6 +53,26 @@ def _run(action: Callable[[GenomiLabStore, str, str], JsonObject]) -> JsonObject
         raise
     except KeyError as exc:
         raise OperationError("lab_record_not_found", str(exc)) from exc
+    except NarrativeSafetyError as exc:
+        raise OperationError(
+            "invalid_lab_narrative",
+            str(exc),
+            observations={
+                "rejected_field": exc.field,
+                "rejected_text": exc.rejected_text,
+            },
+            next_actions=[
+                {
+                    "action": "rewrite_narrative_text",
+                    "field": exc.field,
+                    "rejected_text": exc.rejected_text,
+                }
+            ],
+            guidance=[
+                "narrative_asserts_diagnosis_or_directs_care:"
+                "rewrite_rejected_text_as_descriptive_research_wording"
+            ],
+        ) from exc
     except ValueError as exc:
         raise OperationError("invalid_lab_request", str(exc)) from exc
     if not isinstance(result, dict):

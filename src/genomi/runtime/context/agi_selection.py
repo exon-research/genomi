@@ -63,21 +63,25 @@ def set_active_agi_from_source(
     grant_access: bool = False,
     root: str | Path | None = None,
 ) -> JsonObject:
-    run = infer_agi_record(
-        agi_intake_source_path,
-        agi_source_format=agi_source_format,
-        operation_result=operation_result,
-        status=status,
-        db=db,
-        agi_path=agi_path,
-        matches=matches,
-        shared_db=shared_db,
-        reference_fasta=reference_fasta,
-        genotype_reference_fasta=genotype_reference_fasta,
-        genome_build=genome_build,
-        root=root,
-    )
+    # Publishing the revision and writing the binding are one critical section.
+    # A background reference pass rebinds under this same lock, so it cannot
+    # land between the two and leave the record pinned to a superseded
+    # snapshot.
     with context_authority_lock(root):
+        run = infer_agi_record(
+            agi_intake_source_path,
+            agi_source_format=agi_source_format,
+            operation_result=operation_result,
+            status=status,
+            db=db,
+            agi_path=agi_path,
+            matches=matches,
+            shared_db=shared_db,
+            reference_fasta=reference_fasta,
+            genotype_reference_fasta=genotype_reference_fasta,
+            genome_build=genome_build,
+            root=root,
+        )
         context = load_context(root)
         registry = load_registry(root)
         agi_id = str(run["agi_id"])

@@ -405,13 +405,9 @@ def append_reference_pass(
     agi_path = require_mutable_agi_build_path(agi_path)
     readiness = _active_genome_index_readiness_from_path(agi_path)
     if readiness.get("complete"):
-        return {
-            "status": "completed",
-            "active_genome_index_complete": True,
-            "agi_path": str(agi_path),
-            "reference_pending": False,
-            "note": "Reference pass already complete; nothing to do.",
-        }
+        return _completed_reference_pass_result(
+            agi_path, note="Reference pass already complete; nothing to do."
+        )
     # When the caller passes an explicit vcf_path it owns that file's lifecycle;
     # only a canonical we resolved ourselves (the index's own metadata.vcf_path)
     # is ours to reclaim once the reference tail lands.
@@ -421,12 +417,7 @@ def append_reference_pass(
     with _active_genome_index_build_lock(agi_path):
         readiness = _active_genome_index_readiness_from_path(agi_path)
         if readiness.get("complete"):
-            return {
-                "status": "completed",
-                "active_genome_index_complete": True,
-                "agi_path": str(agi_path),
-                "reference_pending": False,
-            }
+            return _completed_reference_pass_result(agi_path)
         connection = connect_existing(agi_path)
         shard_paths: list[Path] = []
         try:
@@ -462,14 +453,40 @@ def append_reference_pass(
         for stale in (vcf_path, Path(str(vcf_path) + ".gzi")):
             with contextlib.suppress(OSError):
                 stale.unlink()
-    return {
+    return _completed_reference_pass_result(
+        agi_path, vcf_path=str(vcf_path), parallel_workers=len(tasks)
+    )
+
+
+def _completed_reference_pass_result(agi_path: Path, **extra: Any) -> dict[str, Any]:
+    """The result shape of a completed Phase B, with the registry bound to it.
+
+    Phase B mints a fresh snapshot identity, so the Phase A revision the
+    registry is still bound to would otherwise stay the only artifact readers
+    resolve — readiness would report variants_ready forever even though the
+    build is complete. Publishing on every completed return covers every Phase B
+    entry point (the background job, the inline pass, and a direct call) and
+    heals an index that completed before this binding existed, because a re-run
+    reaches the already-complete early return.
+
+    The snapshot id is reported only when a registered record was rebound; an
+    unregistered build has no binding yet, and whichever call registers it next
+    reads the completed build directly.
+    """
+
+    from ..runtime.context.agi_registry import publish_agi_build_revision
+
+    published = publish_agi_build_revision(agi_path)
+    result: dict[str, Any] = {
         "status": "completed",
         "active_genome_index_complete": True,
         "reference_pending": False,
         "agi_path": str(agi_path),
-        "vcf_path": str(vcf_path),
-        "parallel_workers": len(tasks),
+        **extra,
     }
+    if published:
+        result["agi_snapshot_id"] = str(published["agi_snapshot_id"])
+    return result
 
 
 def _rotate_agi_snapshot_identity(connection: sqlite3.Connection) -> None:

@@ -346,7 +346,7 @@ def permission_label(tool: str) -> str:
     if tool == "mcp__genomi__genomi_describe_context":
         return "Read current Genomi context"
     if tool == "mcp__genomi__genomi_parse_source":
-        return "Add a genome source"
+        return "Add a genome"
     if tool == "mcp__genomi__research_build_target_packet":
         return "Build an evidence packet"
     if tool == "mcp__genomi__variant_resolve":

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
+from unittest import mock
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
 
@@ -14,7 +16,10 @@ from genomi.active_genome_index.active_genome_index import (
 )
 from genomi.active_genome_index._agi_schema import _upsert_metadata
 from genomi.active_genome_index.canonical import canonical_paths_for_active_genome_index
+from genomi.interfaces import portal_genomes, portal_store
+from genomi.operations import call_operation
 from genomi.operations.registry import agi_access
+from genomi.operations.registry.errors import OperationError
 from genomi.operations.registry.table import _stamp_reference_pending_if_due
 from genomi.runtime import background_jobs
 from genomi.runtime import context as runtime_context
@@ -188,6 +193,136 @@ class ReferencePassChokepointTests(GenomiRuntimeTestCase):
         # so it must never carry a reference_pending stamp.
         result = _stamp_reference_pending_if_due("variant.resolve", {}, {"status": "completed"})
         self.assertFalse("reference_pending" in result)
+
+
+class ReferencePassRegistryBindingTests(GenomiRuntimeTestCase):
+    """A completed Phase B publishes its index as the bound revision.
+
+    A two-phase parse registers the Phase A snapshot while the reference tail is
+    still building. Phase B mints a new snapshot identity, so it must publish
+    that revision and advance the registry binding — otherwise every registry
+    reader (active_genome_index.list, the portal genome picker) keeps resolving
+    the frozen Phase A artifact and reports variants_ready forever.
+    """
+
+    def _parse_with_deferred_reference_pass(self) -> dict[str, Any]:
+        """Parse a gVCF the way the MCP server does: Phase B is launched as a
+        background job and has not run yet. Returns that job's params."""
+
+        source = self.genomi_home / "phase-b-patient.g.vcf"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        _write_gvcf(source)
+        launched: list[dict[str, Any]] = []
+
+        def _defer(operation: str, params: dict[str, Any]) -> dict[str, Any]:
+            launched.append({"operation": operation, "params": dict(params)})
+            return {"job_id": "reference-pass-not-started-yet", "status": "in_progress"}
+
+        with (
+            mock.patch.dict(os.environ, {"GENOMI_MCP_BACKGROUND": "1"}),
+            mock.patch.object(background_jobs, "start_operation_job", _defer),
+        ):
+            call_operation(
+                "genomi.parse_source",
+                {"source": str(source), "user_nickname": "Phase B patient"},
+            )
+
+        self.assertEqual(len(launched), 1)
+        self.assertEqual(launched[0]["operation"], "active_genome_index.build_reference_pass")
+        return launched[0]["params"]
+
+    def _inventory_record(self) -> dict[str, Any]:
+        inventory = call_operation("active_genome_index.list", {})
+        records = inventory["active_genome_indexes"]
+        self.assertEqual(len(records), 1)
+        return records[0]
+
+    def test_completed_reference_pass_rebinds_registry_to_the_live_snapshot(self) -> None:
+        job_params = self._parse_with_deferred_reference_pass()
+        build_path = Path(str(job_params["agi_path"]))
+
+        pending = self._inventory_record()
+        self.assertEqual(
+            pending["active_genome_index_readiness"]["status"], "variants_ready"
+        )
+        phase_a_snapshot_id = str(pending["agi_snapshot_id"])
+
+        call_operation("active_genome_index.build_reference_pass", job_params)
+
+        live = active_genome_index_readiness(build_path)
+        self.assertTrue(live["complete"])
+        self.assertNotEqual(live["agi_snapshot_id"], phase_a_snapshot_id)
+
+        record = self._inventory_record()
+        readiness = record["active_genome_index_readiness"]
+        self.assertTrue(readiness["complete"])
+        self.assertEqual(readiness["status"], "completed")
+        self.assertEqual(record["agi_snapshot_id"], live["agi_snapshot_id"])
+        self.assertEqual(readiness["agi_snapshot_id"], live["agi_snapshot_id"])
+
+        # The superseded Phase A revision stays registered and readable: a
+        # session that already bound it keeps a verifiable artifact.
+        history = {
+            str(revision["agi_snapshot_id"]): revision
+            for revision in record["revisions"]
+        }
+        self.assertEqual(
+            set(history), {phase_a_snapshot_id, str(live["agi_snapshot_id"])}
+        )
+        self.assertTrue(history[str(live["agi_snapshot_id"])]["current"])
+        self.assertFalse(history[phase_a_snapshot_id]["current"])
+        self.assertTrue(all(revision["available"] for revision in history.values()))
+
+    def test_portal_selects_the_genome_once_the_reference_pass_completes(self) -> None:
+        job_params = self._parse_with_deferred_reference_pass()
+        agi_id = str(self._inventory_record()["agi_id"])
+        project_id = str(portal_store.create_project(name="Phase B")["project_id"])
+
+        with self.assertRaises(OperationError) as blocked:
+            portal_genomes.select_active_genome({"agiId": agi_id}, project_id=project_id)
+        self.assertEqual(blocked.exception.code, "active_genome_index_not_ready")
+
+        call_operation("active_genome_index.build_reference_pass", job_params)
+
+        selection = portal_genomes.select_active_genome(
+            {"agiId": agi_id}, project_id=project_id
+        )
+        self.assertEqual(selection["selection"]["active_agi_id"], agi_id)
+        genome = next(
+            item
+            for item in selection["inventory"]["genomes"]
+            if item["agi_id"] == agi_id
+        )
+        self.assertTrue(genome["readiness"]["complete"])
+        self.assertTrue(genome["active"])
+
+    def test_inline_reference_pass_lands_on_a_registered_complete_revision(self) -> None:
+        # Background jobs off (the synchronous CLI/test default): parse_source
+        # runs Phase B inline, so the parse must already land on a complete,
+        # registered, portal-selectable revision.
+        source = self.genomi_home / "inline-patient.g.vcf"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        _write_gvcf(source)
+        call_operation(
+            "genomi.parse_source",
+            {"source": str(source), "user_nickname": "Inline patient"},
+        )
+
+        record = self._inventory_record()
+        readiness = record["active_genome_index_readiness"]
+        self.assertTrue(readiness["complete"])
+        self.assertEqual(readiness["status"], "completed")
+
+        registry_record = runtime_context.load_registry()["agis"][record["agi_id"]]
+        live = active_genome_index_readiness(Path(str(registry_record["agi_build_path"])))
+        self.assertTrue(live["complete"])
+        self.assertEqual(record["agi_snapshot_id"], live["agi_snapshot_id"])
+
+        project_id = str(portal_store.create_project(name="Inline")["project_id"])
+        selection = portal_genomes.select_active_genome(
+            {"agiId": record["agi_id"]}, project_id=project_id
+        )
+        self.assertEqual(selection["selection"]["active_agi_id"], record["agi_id"])
 
 
 if __name__ == "__main__":

@@ -307,7 +307,7 @@ class PortalGenomiLabTests(unittest.TestCase):
 
         self.assertEqual(intake.count("<button"), 1)
         self.assertIn('data-nav-target="genome-index"', intake)
-        self.assertIn("Active Genome Index", intake)
+        self.assertIn("Active genome", intake)
         self.assertIn("Ask in your own words", intake)
         self.assertIn("Genomi will organize the details", intake)
         self.assertIn("Tell Genomi naturally", html)

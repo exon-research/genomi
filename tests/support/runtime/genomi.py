@@ -37,11 +37,28 @@ DEFAULT_TASK_ENTRY_TOOLS = {
 }
 
 
-class GenomiRuntimeTestCase(unittest.TestCase):
+class IsolatedGenomiHomeTestCase(unittest.TestCase):
+    """Base case that binds every test to its own throwaway ``GENOMI_HOME``.
+
+    Genomi resolves the data root from ``GENOMI_HOME`` on every call, so any
+    test that reaches production storage (portal projects and workspaces,
+    Active Genome Index artifacts, evidence stores, result receipts) writes
+    into the operator's real home unless the environment is redirected first.
+    Subclass this for any test that exercises such code.
+    """
+
     def setUp(self) -> None:
         self._home_tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._home_tmp.cleanup)
         self.genomi_home = Path(self._home_tmp.name) / "genomi-home"
+        self._home_env = mock.patch.dict(os.environ, {"GENOMI_HOME": str(self.genomi_home)})
+        self._home_env.start()
+        self.addCleanup(self._home_env.stop)
+
+
+class GenomiRuntimeTestCase(IsolatedGenomiHomeTestCase):
+    def setUp(self) -> None:
+        super().setUp()
         self._env = mock.patch.dict(
             os.environ,
             {

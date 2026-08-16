@@ -15,17 +15,21 @@ from .cell_markers import (
     _retrieve_table_cell_type_markers,
 )
 from .constants import (
+    DEFAULT_PROTEIN_TAXON_ID,
     HPA_API_BASE,
     HPA_TSV_DOWNLOAD_BASE,
     KEGG_REST_API_BASE,
     NOT_INTEGRATED_CELL_MARKER_SOURCES,
     NOT_INTEGRATED_PATHWAY_SOURCES,
+    NOT_INTEGRATED_PROTEIN_SEQUENCE_SOURCES,
     NOT_INTEGRATED_REGION_SOURCES,
     REACTOME_CONTENT_SERVICE_BASE,
     SUPPORTED_CELL_MARKER_SOURCES,
     SUPPORTED_PATHWAY_SOURCES,
     SUPPORTED_REGION_ASSEMBLIES,
+    UNIPROT_API_BASE,
 )
+from .proteins import retrieve_reference_protein_sequence
 from .helpers import (
     _ccre_class,
     _cell_marker_source_label,

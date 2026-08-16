@@ -387,13 +387,45 @@ class LabPublishBriefContractTests(unittest.TestCase):
                 "The evidence establishes the diagnosis and requires treatment."
             )
             unsafe["command_id"] = "unsafe-clinical-claim"
-            with self.assertRaisesRegex(
-                OperationError, "diagnosis or treatment directive"
-            ):
+            with self.assertRaises(OperationError) as caught:
                 call_operation(
                     "genomi.invoke",
                     {"tool": "lab.publish_brief", "params": unsafe},
                 )
+            self._assert_actionable_narrative_rejection(
+                caught.exception, field="brief claim statement"
+            )
+
+            directive_title = copy.deepcopy(params)
+            directive_title["brief"]["title"] = (
+                "Start immunoglobulin replacement therapy: clinician brief"
+            )
+            directive_title["command_id"] = "unsafe-brief-title"
+            with self.assertRaises(OperationError) as caught:
+                call_operation(
+                    "genomi.invoke",
+                    {"tool": "lab.publish_brief", "params": directive_title},
+                )
+            self._assert_actionable_narrative_rejection(
+                caught.exception, field="brief.title", span="Start immunoglobulin"
+            )
+
+            descriptive_title = copy.deepcopy(params)
+            descriptive_title["brief"]["title"] = (
+                "Exercise-associated fatigue with disrupted sleep and "
+                "pre-treatment observations: cycle 1 evidence review"
+            )
+            descriptive_title["command_id"] = "descriptive-brief-title"
+            descriptive = call_operation(
+                "genomi.invoke",
+                {"tool": "lab.publish_brief", "params": descriptive_title},
+            )
+            self.assertEqual(
+                descriptive["brief_version"]["brief"]["title"],
+                descriptive_title["brief"]["title"],
+            )
+            params = copy.deepcopy(params)
+            params["expected_revision"] = descriptive["domain_revision"]
 
             result = call_operation(
                 "genomi.invoke",
@@ -401,7 +433,7 @@ class LabPublishBriefContractTests(unittest.TestCase):
             )
 
         self.assertEqual(result["dispatched_tool"], "lab.publish_brief")
-        self.assertEqual(result["brief_version"]["version"], 1)
+        self.assertEqual(result["brief_version"]["version"], 2)
         self.assertEqual(result["brief_version"]["brief"], brief)
         with mock.patch.object(
             lab_operations, "_authorized_store", authorized_store
@@ -429,6 +461,39 @@ class LabPublishBriefContractTests(unittest.TestCase):
             revised_gap["information_gap_version"]["information_gap_version_id"],
         )
         self.assertEqual(len(history["information_gap_versions"]), 2)
+
+    def _assert_actionable_narrative_rejection(
+        self, error: OperationError, *, field: str, span: str | None = None
+    ) -> None:
+        """A rejected narrative names the offending text, once, in typed fields."""
+
+        payload = error.to_json(operation="lab.publish_brief")
+        envelope = payload["evidence_envelope"]
+        self.assertEqual(
+            envelope["guidance"],
+            [
+                "narrative_asserts_diagnosis_or_directs_care:"
+                "rewrite_rejected_text_as_descriptive_research_wording"
+            ],
+        )
+        self.assertEqual(envelope["observations"]["rejected_field"], field)
+        rejected_text = envelope["observations"]["rejected_text"]
+        self.assertTrue(rejected_text)
+        if span is not None:
+            self.assertIn(span, rejected_text)
+        self.assertEqual(
+            envelope["next_actions"],
+            [
+                {
+                    "action": "rewrite_narrative_text",
+                    "field": field,
+                    "rejected_text": rejected_text,
+                }
+            ],
+        )
+        notes = envelope["notes"]
+        self.assertEqual(notes.count(error.message), 1)
+        self.assertEqual(len(notes), len(set(notes)))
 
     @staticmethod
     def _publish_schema() -> dict[str, object]:

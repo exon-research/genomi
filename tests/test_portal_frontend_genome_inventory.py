@@ -215,8 +215,8 @@ class PortalFrontendGenomeInventoryTests(unittest.TestCase):
 
         result = _run_node_json(self, script)
 
-        self.assertEqual(result["title"], "Choose active genome")
-        self.assertEqual(result["displayTitle"], "Choose active genome")
+        self.assertEqual(result["title"], "Choose a genome")
+        self.assertEqual(result["displayTitle"], "Choose a genome")
         self.assertEqual(result["switchLabel"], "Choose")
         self.assertTrue(result["canSwitch"])
 

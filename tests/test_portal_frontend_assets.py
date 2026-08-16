@@ -505,15 +505,11 @@ class PortalFrontendAssetTests(unittest.TestCase):
         )
         self.assertIn('data-evidence-ledger-nav data-nav-target="evidence-ledger-pane"', mobile_nav)
         source_handoff_assets = "\n".join([html, tool_catalog, tool_request_builder])
+        self.assertIn('data-starter-card-id="investigate-health-question"', html)
+        self.assertIn('data-starter-card-id="review-a-medication"', html)
         self.assertIn('data-source-operation="genomi.parse_source"', html)
-        self.assertIn('data-source-operation="research.build_target_packet"', html)
-        self.assertIn('data-source-operation="variant.resolve"', html)
-        self.assertIn('data-source-params=\'{"target_type":"topic"}\'', html)
-        self.assertIn('data-source-params=\'{"rsid":"rs429358"}\'', html)
         self.assertIn("portal_starter_cards.js", messages)
         self.assertNotIn('data-source-operation="genomi.parse_source"', messages)
-        self.assertNotIn('data-source-operation="research.build_target_packet"', messages)
-        self.assertNotIn('data-source-operation="variant.resolve"', messages)
         self.assertNotIn('{"target_type":"topic"}', messages)
         self.assertNotIn('{"rsid":"rs429358"}', messages)
         self.assertNotIn("Plan public evidence", html)
@@ -549,7 +545,7 @@ class PortalFrontendAssetTests(unittest.TestCase):
         intake = html.split('<section class="genomilab-intake"', 1)[1].split('</section>', 1)[0]
         self.assertEqual(intake.count('<button'), 1)
         self.assertIn('data-nav-target="genome-index"', intake)
-        self.assertIn('Active Genome Index', intake)
+        self.assertIn('Active genome', intake)
         self.assertIn('Ask in your own words', intake)
         self.assertNotIn('data-genomilab-open', html)
         self.assertNotIn('id="patient-context-pane"', html)
@@ -776,16 +772,22 @@ class PortalFrontendAssetTests(unittest.TestCase):
         rendered_html = portal_assets._portal_html("test-csrf-token")
 
         self.assertEqual(
-            [card["sourceOperation"] for card in model["cards"]],
-            ["genomi.parse_source", "research.build_target_packet", "variant.resolve"],
+            [card["id"] for card in model["cards"]],
+            ["investigate-health-question", "review-a-medication", "add-genome"],
         )
-        self.assertEqual(model["cards"][1]["sourceParams"], {"target_type": "topic"})
-        self.assertEqual(model["cards"][2]["sourceParams"], {"rsid": "rs429358"})
-        self.assertTrue(all("prompt" not in card for card in model["cards"]))
+        self.assertEqual(
+            [card["label"] for card in model["cards"]],
+            ["Investigate a health question", "Review a medication", "Add your genome"],
+        )
+        self.assertEqual(
+            [card.get("sourceOperation", "") for card in model["cards"]],
+            ["", "", "genomi.parse_source"],
+        )
+        self.assertTrue(model["cards"][0]["prompt"].strip())
+        self.assertTrue(model["cards"][1]["prompt"].strip())
         self.assertIn('id="genomi-starter-cards" type="application/json"', rendered_html)
+        self.assertIn('data-starter-card-id="investigate-health-question"', rendered_html)
         self.assertIn('data-source-operation="genomi.parse_source"', rendered_html)
-        self.assertIn('data-source-operation="research.build_target_packet"', rendered_html)
-        self.assertIn('data-source-operation="variant.resolve"', rendered_html)
         self.assertNotIn("Use this genome source for this workspace", rendered_html)
         self.assertIn("closest('[data-source-operation], [data-prompt]')", (root / "portal.js").read_text())
 
@@ -803,10 +805,8 @@ class PortalFrontendAssetTests(unittest.TestCase):
             process.stdout.write(JSON.stringify({{
               cardCount: (markup.match(/class="suggestion-chip"/g) || []).length,
               parseSource: markup.includes('data-source-operation="genomi.parse_source"'),
-              targetPacket: markup.includes('data-source-operation="research.build_target_packet"'),
-              targetParams: markup.includes("data-source-params='{{\\"target_type\\":\\"topic\\"}}'"),
-              variant: markup.includes('data-source-operation="variant.resolve"'),
-              variantParams: markup.includes("data-source-params='{{\\"rsid\\":\\"rs429358\\"}}'"),
+              investigate: markup.includes('data-starter-card-id="investigate-health-question"'),
+              medication: markup.includes('data-starter-card-id="review-a-medication"'),
               promptAttrs: (markup.match(/data-prompt=/g) || []).length,
               rawGenomePrompt: markup.includes('Use this genome source for this workspace')
             }}));
@@ -817,11 +817,9 @@ class PortalFrontendAssetTests(unittest.TestCase):
 
         self.assertEqual(result["cardCount"], 3)
         self.assertTrue(result["parseSource"])
-        self.assertTrue(result["targetPacket"])
-        self.assertTrue(result["targetParams"])
-        self.assertTrue(result["variant"])
-        self.assertTrue(result["variantParams"])
-        self.assertEqual(result["promptAttrs"], 0)
+        self.assertTrue(result["investigate"])
+        self.assertTrue(result["medication"])
+        self.assertEqual(result["promptAttrs"], 2)
         self.assertFalse(result["rawGenomePrompt"])
 
     def test_source_starter_unavailable_state_is_visible(self) -> None:

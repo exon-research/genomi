@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from ..runtime.context import GENOMI_SESSION_ENV
+from ..runtime.context import GENOMI_SESSION_ENV, environment_scope_id
 from . import (
     portal_active_context,
     portal_agents,
@@ -370,7 +370,10 @@ def run_agent(run: PortalRun) -> None:
         workspace_snapshot = portal_workspace_files.workspace_file_snapshot(cwd) if run.project_id else {}
         presentation.configure_workspace_tracking(cwd, workspace_snapshot)
         environment = _run_environment(run.project_id, run.frame_id)
-        session_id = str(environment.get(GENOMI_SESSION_ENV) or "")
+        # Receipts and other durable Genomi state are keyed by the session
+        # scope the host's Genomi runtime computes for itself, not by the
+        # portal's GENOMI_SESSION_ID input.
+        session_id = environment_scope_id(environment)
         if agent_id == "codex" and Path(command[0]).name == "codex":
             command = [
                 *command,
@@ -493,7 +496,10 @@ def _consume_codex_app_server(
         stdin=process.stdin,
         stdout=process.stdout,
         on_event=presentation.handle_agent_event,
-        session_id=str(environment.get(GENOMI_SESSION_ENV) or ""),
+        # Receipts are minted under the scope the child Genomi runtime computes
+        # for itself, which a bound portal project derives from GENOMI_CONTEXT
+        # rather than from the portal's GENOMI_SESSION_ID input.
+        session_id=environment_scope_id(environment),
     )
     session.run(
         prompt=prompt,

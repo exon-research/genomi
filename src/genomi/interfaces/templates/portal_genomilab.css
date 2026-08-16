@@ -2,9 +2,20 @@
 #research-workspace > .pane-header { order: 0; flex: 0 0 auto; }
 #research-workspace > .genomilab-intake { order: 1; flex: 0 0 auto; }
 #research-workspace > .composer { order: 2; flex: 0 0 auto; }
-#research-workspace > .messages { order: 3; flex: 0 0 auto; min-height: 0; overflow: visible; }
-#research-workspace > .conversation-review { order: 4; flex: 0 0 auto; }
-#research-workspace > .genomilab-case-board { order: 5; flex: 0 0 auto; }
+#research-workspace > .conversation-attachments { order: 3; flex: 0 0 auto; }
+#research-workspace > .messages { order: 4; flex: 0 0 auto; min-height: 0; overflow: visible; }
+#research-workspace > .conversation-review { order: 5; flex: 0 0 auto; }
+#research-workspace > .genomilab-case-board { order: 6; flex: 0 0 auto; }
+
+.conversation-attachments { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface2); }
+.conversation-attachments-heading h3 { margin: 0; color: var(--text2); font-size: 12px; }
+.conversation-attachments-heading p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
+.conversation-attachments-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.conversation-attachment { max-width: 100%; padding: 7px 9px; display: grid; gap: 2px; border: 1px solid var(--border2); border-radius: 8px; background: #0d0d0d; color: inherit; text-align: left; cursor: pointer; }
+.conversation-attachment:hover { border-color: #10b98166; background: #101513; }
+.conversation-attachment:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.conversation-attachment strong { overflow: hidden; color: var(--text2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-attachment span { color: var(--text4); font: 9px var(--mono); }
 
 .genomilab-intake { margin: 10px 14px 0; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface2); }
 .genomilab-intake h2 { margin: 0; color: var(--ink); font-size: 17px; line-height: 1.2; }
@@ -81,7 +92,7 @@
 .genomilab-board-content .genomilab-clinical-boundary { margin-top: 13px; padding: 8px; border: 1px solid #f59e0b44; border-radius: 7px; color: #fbbf24; }
 @media (max-width: 780px) {
   #research-workspace.chat { height: auto; min-height: 0; }
-  .genomilab-intake, #research-workspace > .composer, #research-workspace > .messages { margin-left: 10px; margin-right: 10px; }
+  .genomilab-intake, #research-workspace > .composer, #research-workspace > .messages, .conversation-attachments { margin-left: 10px; margin-right: 10px; }
   #research-workspace > .messages { padding-left: 0; padding-right: 0; }
   .genomilab-context-strip { display: flex; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
   .genomilab-context-strip button { flex: 0 0 min(72vw, 230px); }

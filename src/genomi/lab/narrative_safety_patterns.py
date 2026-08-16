@@ -6,6 +6,22 @@ import re
 
 _ERROR = "cannot contain a diagnosis or treatment directive"
 _FORM_ERROR = "must use a declared research narrative form"
+
+
+class NarrativeSafetyError(ValueError):
+    """A patient-visible narrative asserted a clinical claim or directed care.
+
+    ``rejected_text`` carries the exact span that tripped the rule so the host
+    agent can rewrite that wording instead of retrying the same narrative.
+    """
+
+    def __init__(self, field: str, rejected_text: str) -> None:
+        super().__init__(f"{field} {_ERROR}")
+        self.field = field
+        self.rejected_text = rejected_text
+
+
+
 _RESEARCH_PROCESS_KINDS = {
     "meta",
     "change_summary",
@@ -183,7 +199,9 @@ _ELIGIBILITY = re.compile(
 _DOSING_STATEMENT = re.compile(
     r"\b(?:[a-z][a-z0-9'\-/]*(?:\s+[a-z][a-z0-9'\-/]*){0,5})\s+"
     r"(?:at|of|:)?\s*\d+(?:\.\d+)?\s*(?:mg|mcg|μg|g|ml|units?)\b|"
-    r"(?:^|[.!?;,:]\s*)\d+(?:\.\d+)?\s*(?:mg|mcg|μg|g|ml|units?)\b",
+    # A quantity only reads as a dose when it opens a clause. Requiring the
+    # separating space keeps HGVS coding notation such as `c.228G>C` out.
+    r"(?:^|[.!?;,:]\s+)\d+(?:\.\d+)?\s*(?:mg|mcg|μg|g|ml|units?)\b",
     re.IGNORECASE,
 )
 
@@ -541,11 +559,21 @@ _SAFE_TITLE = re.compile(
     r"relation|research|draft)|Review)\.?$",
     re.IGNORECASE,
 )
+# A brief title must not assert a diagnosis, assert causality or
+# pathogenicity, or direct care. Descriptive clinical vocabulary — disease and
+# symptom names, chronological qualifiers such as "pre-treatment" or
+# "post-transplant", and variant identifiers such as Q76H or c.228G>C — is
+# legitimate brief content, so the title rules below test the assertion shape
+# rather than the presence of a clinical word.
 _UNSAFE_TITLE_TERM = re.compile(
-    r"\b(?:diagnosis|diagnostic|treatment|therapy|medication|regimen|dose|"
-    r"pathogenic|pathogenicity|actionable|causal|causative|etiologic|confirmed|"
-    r"established|assigned|required|eligible|eligibility|best|chemotherapy|"
-    r"immunotherapy|first[- ]line|recommendation|recommended|q\d+[a-z]*)\b",
+    # `actionable` asserts the finding warrants a care action;
+    # `eligible`/`eligibility` asserts a treatment or trial determination;
+    # `contraindicated` states a care prohibition;
+    # `recommend*` directs care regardless of who is quoted as recommending;
+    # `first-line`/`second-line` names a therapy-ordering directive.
+    r"\b(?:actionable|eligible|eligibility|contraindicated|"
+    r"recommendations?|recommended|recommends?|"
+    r"first[- ]line|second[- ]line)\b",
     re.IGNORECASE,
 )
 _CLINICAL_DISEASE_TOKEN = re.compile(
@@ -554,12 +582,72 @@ _CLINICAL_DISEASE_TOKEN = re.compile(
     r"neuropathy|myopathy|cardiomyopathy)\b",
     re.IGNORECASE,
 )
-_UNSAFE_TITLE_CLAIM = re.compile(
-    r"\b(?:patient\s+has|patient\s+is\s+diagnosed|is\s+present|causes?|"
-    r"leads?\s+to|causative|etiologic|patient\s+lives?\s+with|belongs?\s+to\s+"
-    r"(?:this|the)\s+patient|definitive)\b",
+# A disease name only becomes a diagnosis claim when the title also asserts
+# that it is settled or that it belongs to the patient.
+_CLINICAL_ASSERTION_WORD = re.compile(
+    r"\b(?:patient|definitive|definitively|assigned|established|confirmed|"
+    r"proven|proved|belongs?|lives?\s+with)\b",
     re.IGNORECASE,
 )
+_UNSAFE_TITLE_CLAIM = re.compile(
+    r"\b(?:"
+    # diagnosis asserted about the patient or asserted as settled
+    r"patient\s+has|patient\s+is\s+diagnosed|patient\s+lives?\s+with|"
+    r"belongs?\s+to\s+(?:this|the)\s+patient|is\s+present|definitive|"
+    r"(?:confirmed|established|assigned|proven|proved)\s+"
+    r"(?:diagnosis|cause|etiology|aetiology|explanation)|"
+    r"diagnosis\s+(?:is\s+)?(?:confirmed|established|assigned|resolved|"
+    r"settled)|diagnostic\s+(?:conclusion|certainty|answer)|"
+    # causality asserted
+    r"causes?|leads?\s+to|causative|etiologic|aetiologic|"
+    r"causal\s+(?:variant|mutation|allele|driver|agent)|"
+    r"causal\s+(?:link|role|relation(?:ship)?)\s+"
+    r"(?:is\s+)?(?:confirmed|established|proven|proved|demonstrated)|"
+    r"explains?\s+the\s+(?:patient|phenotype|presentation|disease|condition|"
+    r"finding|presentation)|"
+    # pathogenicity asserted
+    r"(?:is|are|was|were|now|confirmed|established|proven|proved|"
+    r"demonstrated)\s+(?:likely\s+)?pathogenic|"
+    r"(?:likely[- ])?pathogenic\s+(?:variant|mutation|allele|finding|change)|"
+    r"pathogenicity\s+(?:is\s+)?(?:confirmed|established|resolved|proven|"
+    r"proved|determined|settled)|"
+    # care directed
+    r"(?:start|starting|begin|beginning|initiate|initiating|commence|switch|"
+    r"stop|stopping|discontinue|hold|escalate|de[- ]escalate|taper|resume|"
+    r"prescribe|administer|treat)\s+"
+    r"(?:the\s+|this\s+|her\s+|his\s+|their\s+|an?\s+|patient\s+on\s+)?"
+    r"(?:treatment|therapy|medication|drug|regimen|dose|dosing|"
+    r"immunoglobulin|chemotherapy|immunotherapy|replacement|"
+    r"[a-z]+(?:mab|nib|zumab|cept))|"
+    r"should\s+(?:start|stop|receive|switch|begin|be\s+treated|be\s+started|"
+    r"be\s+given)|"
+    r"treatment\s+of\s+choice|"
+    r"best\s+(?:treatment|therapy|option|regimen|medication|drug|management)|"
+    r"needs?\s+(?:treatment|therapy|chemotherapy|immunotherapy|"
+    r"immunoglobulin)|"
+    r"requires?\s+(?:treatment|therapy|chemotherapy|immunotherapy|"
+    r"immunoglobulin)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def unsafe_title_span(text: str) -> str | None:
+    """Return the span that makes a brief title unsafe, or None when it is safe.
+
+    Unsafe means the title asserts a diagnosis, asserts causality or
+    pathogenicity, or directs care.
+    """
+
+    for pattern in (_UNSAFE_TITLE_TERM, _UNSAFE_TITLE_CLAIM):
+        match = pattern.search(text)
+        if match is not None:
+            return match.group(0)
+    if _CLINICAL_DISEASE_TOKEN.search(text):
+        assertion = _CLINICAL_ASSERTION_WORD.search(text)
+        if assertion is not None:
+            return assertion.group(0)
+    return None
 _SAFE_OPERATION = re.compile(
     r"^(?P<verb>use|review|investigate|continue|avoid|begin|project|resolve|"
     r"retrieve|search|synthesize|register|record|preserve|curate|extract|"

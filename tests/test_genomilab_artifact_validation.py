@@ -2,7 +2,115 @@ from __future__ import annotations
 
 import unittest
 
+from genomi.lab.informational_narrative import validate_informational_narrative
+from genomi.lab.narrative_safety_patterns import NarrativeSafetyError
 from genomi.lab.research_narrative import validate_research_narrative
+
+
+class BriefTitleSafetyTests(unittest.TestCase):
+    """A brief title carries descriptive clinical wording but never a directive.
+
+    The safety property is the assertion, not the vocabulary: a title must not
+    assert a diagnosis, assert causality or pathogenicity, or direct care.
+    Disease and symptom names, chronological qualifiers, and variant
+    identifiers are required clinician-brief content.
+    """
+
+    ACCEPTED = (
+        "Crohn's-like enteropathy with recurrent sinopulmonary infection, "
+        "adolescent thrombocytopenia and pre-treatment hypogammaglobulinaemia: "
+        "cycle 1 evidence review",
+        "CTLA4 Q76H uncertain-significance finding: evidence review",
+        "post-transplant lymphoproliferative findings review",
+        "Treatment-naive baseline immunoglobulin findings review",
+        "On-therapy infection frequency evidence review",
+        "CTLA4 NM_005214.5 c.228G>C p.Gln76His classification review",
+        "rs429358 carrier-status evidence review",
+        "Transendocytosis assay and normal staining result: evidence review",
+        "Medication-effect hypothesis and open alternatives: cycle 2 review",
+    )
+
+    REJECTED = (
+        # diagnosis asserted
+        ("Confirmed CTLA4 deficiency syndrome: clinician brief", "Confirmed"),
+        (
+            "Patient has common variable immunodeficiency disorder: review",
+            "Patient has",
+        ),
+        ("Diagnosis is established: cycle 1 evidence report", "Diagnosis is"),
+        ("Definitive CTLA4 haploinsufficiency finding review", "Definitive"),
+        # causality asserted
+        ("CTLA4 Q76H causes the enteropathy: evidence review", "CTLA4 Q76H causes"),
+        (
+            "Causal variant identified in CTLA4: evidence brief",
+            "Causal variant",
+        ),
+        (
+            "CTLA4 Q76H explains the presentation: cycle 3 review",
+            "explains",
+        ),
+        # pathogenicity asserted
+        ("CTLA4 Q76H is pathogenic: evidence review", "is pathogenic"),
+        (
+            "Pathogenic CTLA4 variant review",
+            "Pathogenic CTLA4 variant",
+        ),
+        (
+            "Pathogenicity established for CTLA4 Q76H: evidence report",
+            "Pathogenicity established",
+        ),
+        # care directed
+        ("Start immunoglobulin replacement therapy: brief", "Start immunoglobulin"),
+        (
+            "Patient should start abatacept: evidence review",
+            "Patient should start",
+        ),
+        (
+            "Best treatment for recurrent sinopulmonary infection: review",
+            "Best treatment",
+        ),
+        ("Recommended first-line therapy review", "Recommended"),
+        ("Actionable CTLA4 finding review", "Actionable"),
+        ("Trial eligibility determination review", "eligibility"),
+        ("Prednisone: 20 mg daily review", ": 20 mg"),
+    )
+
+    def test_descriptive_clinical_titles_are_accepted(self) -> None:
+        for title in self.ACCEPTED:
+            with self.subTest(title=title):
+                self.assertEqual(
+                    validate_informational_narrative(
+                        title, "brief.title", kind="brief_title"
+                    ),
+                    title,
+                )
+
+    def test_diagnostic_causal_and_care_directive_titles_are_rejected(self) -> None:
+        for title, expected_span in self.REJECTED:
+            with self.subTest(title=title):
+                with self.assertRaises(NarrativeSafetyError) as caught:
+                    validate_informational_narrative(
+                        title, "brief.title", kind="brief_title"
+                    )
+                self.assertEqual(caught.exception.field, "brief.title")
+                self.assertIn(
+                    expected_span.casefold(),
+                    caught.exception.rejected_text.casefold(),
+                )
+
+    def test_rejection_names_the_span_the_host_must_rewrite(self) -> None:
+        with self.assertRaises(NarrativeSafetyError) as caught:
+            validate_informational_narrative(
+                "Start immunoglobulin replacement therapy: brief",
+                "brief.title",
+                kind="brief_title",
+            )
+        self.assertEqual(caught.exception.field, "brief.title")
+        self.assertIn("Start immunoglobulin", caught.exception.rejected_text)
+        self.assertIn(
+            "cannot contain a diagnosis or treatment directive",
+            str(caught.exception),
+        )
 
 
 class GenomiLabArtifactValidationTests(unittest.TestCase):

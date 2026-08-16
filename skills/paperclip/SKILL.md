@@ -20,11 +20,17 @@ evidence terms. Cite only the returned line-pinned excerpts using their
 `citation_url`. An empty excerpt result means only that those literal terms were
 not observed in that document.
 
-For a `proteins` or `uniprot` search, a record may also carry a validated public
-`accession` and `reference_sequence`. The sequence remains discovery context,
-not capturable evidence. Main may pass it into a de-identified
-`protein_model_research` brief as `public_concepts.reference_sequence`, then use
-BioHub only after approval for that exact public sequence transfer.
+`record_id` is the readable document handle and `collection` is the collection
+that handle resolves in. A record may also carry `external_id`, the public
+registry or application number such as an NCT, UMIN, ChiCTR, or BLA identifier.
+Use `external_id` for citation and lookup outside Genomi, not as the
+`retrieve_document_evidence` handle: one application number covers many
+documents.
+
+For a `proteins` or `uniprot` search, a record carries the public UniProt
+`accession` and `organism`. Paperclip does not serve amino-acid sequences, so a
+BioHub comparison needs its public reference sequence from the user or another
+declared source, and the accession identifies which sequence that is.
 
 Paperclip receives only the public search query. Do not put patient identifiers,
 record text, raw genome data, or private Lab state in the query.

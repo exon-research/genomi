@@ -6,6 +6,8 @@ REACTOME_CONTENT_SERVICE_BASE = entity_relationships.REACTOME_CONTENT_SERVICE_BA
 KEGG_REST_API_BASE = entity_relationships.KEGG_REST_API_BASE
 HPA_API_BASE = entity_relationships.HPA_API_BASE
 HPA_TSV_DOWNLOAD_BASE = entity_relationships.HPA_TSV_DOWNLOAD_BASE
+UNIPROT_API_BASE = entity_relationships.UNIPROT_API_BASE
+DEFAULT_PROTEIN_TAXON_ID = 9606
 
 SUPPORTED_PATHWAY_SOURCES = {
     "reactome": "Reactome human pathway participants.",
@@ -29,6 +31,12 @@ NOT_INTEGRATED_CELL_MARKER_SOURCES = [
     "Azimuth reference annotations",
     "CellTypist models",
     "single-cell atlas free-text cluster labels",
+]
+NOT_INTEGRATED_PROTEIN_SEQUENCE_SOURCES = [
+    "RefSeq protein records",
+    "Ensembl protein translations",
+    "PDB structure-derived sequences",
+    "patient-derived or locally assembled protein sequences",
 ]
 NOT_INTEGRATED_REGION_SOURCES = [
     "custom annotation tracks",

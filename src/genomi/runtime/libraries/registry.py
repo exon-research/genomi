@@ -431,6 +431,18 @@ _SPECS: tuple[LibrarySpec, ...] = (
         freshness=Freshness.LIVE,
     ),
     LibrarySpec(
+        id="uniprot",
+        title="UniProt Knowledgebase (live REST API)",
+        helps="fetches the public reference amino-acid sequence and entry provenance for a declared UniProt accession or reviewed gene symbol",
+        kind=Kind.ONLINE,
+        size_class="online",
+        source=Source(
+            api_base="https://rest.uniprot.org",
+            urls=("https://www.uniprot.org/",),
+        ),
+        freshness=Freshness.LIVE,
+    ),
+    LibrarySpec(
         id="chembl",
         title="ChEMBL API",
         helps="fetches molecule, mechanism, and target records for analytical drug-target grounding",

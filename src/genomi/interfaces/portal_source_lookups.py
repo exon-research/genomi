@@ -19,7 +19,7 @@ SOURCE_LOOKUP_ORDER = (
 )
 
 DISPLAY_LABELS = {
-    "genomi.parse_source": "Add genome file",
+    "genomi.parse_source": "Add a genome",
     "genomi.search_indexes": "Search public sources",
     "variant.resolve": "Variant lookup",
     "research.build_target_packet": "Target evidence report",

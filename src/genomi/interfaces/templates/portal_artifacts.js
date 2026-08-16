@@ -134,6 +134,9 @@ export function artifactsForRun(artifacts, frameId, runId) {
   const cleanRunId = String(runId || '').trim();
   if (!cleanFrameId || !cleanRunId || !Array.isArray(artifacts)) return [];
   return artifacts.filter((artifact) => {
+    // Records the person attached to the conversation belong to the
+    // conversation's attachment strip, not to what an assistant turn produced.
+    if (artifact && artifact.operation === 'portal.import_file') return false;
     const origin = artifactOriginRunContext(artifact);
     return origin.frameId === cleanFrameId && origin.runIds.includes(cleanRunId);
   });

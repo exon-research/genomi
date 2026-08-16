@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import parse_qs
 
-from . import portal_run_logs, portal_turns, portal_workspaces
+from . import portal_run_failures, portal_run_logs, portal_turns, portal_workspaces
 
 JsonObject = dict[str, Any]
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "canceled", "stale_after_restart", "awaiting_permission"}
@@ -80,11 +80,20 @@ class PortalRun:
             return record
 
     def finish(self, status: str, *, error: str | None = None) -> None:
+        """Close the run and report the outcome the conversation should show.
+
+        A terminal error is provider machinery; the reader gets the classified
+        sentence instead, and the raw payload stays in the work trail.
+        """
+
         self.status = status
         self.updated_at = time.time()
         if error:
             self.error = error
-        self.emit("end", {"status": status, "error": error})
+        visible_error = error
+        if error and str(status or "").strip().lower() in portal_run_failures.FAILED_RUN_STATUSES:
+            visible_error = portal_run_failures.failure_message_text(error, status=status)
+        self.emit("end", {"status": status, "error": visible_error})
 
 
 def create_run(

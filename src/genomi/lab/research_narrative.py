@@ -46,8 +46,11 @@ def validate_research_narrative(
     if kind == "professional_question":
         _validate_professional_question(text, field)
         return text
-    if _unsafe_narrative(text, kind=kind):
-        raise ValueError(f"{field} {_safety._ERROR}")
+    rejected = _unsafe_narrative(text, kind=kind)
+    if rejected is None and kind == "brief_title":
+        rejected = _safety.unsafe_title_span(text)
+    if rejected is not None:
+        raise _safety.NarrativeSafetyError(field, rejected)
     if not _uses_declared_research_form(text, kind=kind):
         if kind == "confirmation_need" and not _safety._CONFIRMATION_FORM.search(text):
             raise ValueError(
@@ -64,18 +67,7 @@ def _uses_declared_research_form(text: str, *, kind: NarrativeKind) -> bool:
         return bool(
             _safety._SAFE_TITLE.fullmatch(text.strip())
             and _forms._tokens_are_closed(text, _forms._TITLE_WORDS)
-        ) and not bool(
-            _safety._UNSAFE_TITLE_TERM.search(text)
-            or _safety._UNSAFE_TITLE_CLAIM.search(text)
-            or (
-                _safety._CLINICAL_DISEASE_TOKEN.search(text)
-                and re.search(
-                    r"\b(?:patient|definitive|assigned|established|confirmed|"
-                    r"belongs?|lives?\s+with)\b",
-                    text,
-                    re.IGNORECASE,
-                )
-            )
+            and _safety.unsafe_title_span(text) is None
         )
     units = _narrative_units(text)
     if not units:
@@ -417,55 +409,59 @@ def _confirmation_form(text: str) -> bool:
     )
 
 
-def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> bool:
-    if kind == "professional_question" and any(
-        pattern.search(text)
+def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> str | None:
+    """Return the span that makes a narrative unsafe, or None when it is safe."""
+
+    if kind == "professional_question":
         for pattern in (
             _safety._QUESTION_CLINICAL_PREMISE,
             _safety._QUESTION_APPENDED_ASSERTION,
             _safety._QUESTION_APPENDED_CARE_ACTION,
-        )
+        ):
+            match = pattern.search(text)
+            if match is not None:
+                return match.group(0)
+    for pattern in (
+        _safety._NO_CONFIRMATION_REQUIRED,
+        _safety._CONFIRMATION_DISAVOWAL,
+        _safety._ASSERTION_LAUNDERING,
+        _safety._PATIENT_MODAL_ACTION,
+        _safety._PATIENT_NEEDS_PRODUCT,
+        _safety._IMPERATIVE_DIAGNOSIS_OR_TREATMENT_REVIEW,
+        _safety._LABELLED_CARE_DECISION,
+        _safety._BEST_TREATMENT,
+        _safety._PATIENT_BENEFIT,
+        _safety._ELIGIBILITY,
     ):
-        return True
-    if (
-        _safety._NO_CONFIRMATION_REQUIRED.search(text)
-        or _safety._CONFIRMATION_DISAVOWAL.search(text)
-        or _safety._ASSERTION_LAUNDERING.search(text)
-        or _safety._PATIENT_MODAL_ACTION.search(text)
-        or _safety._PATIENT_NEEDS_PRODUCT.search(text)
-        or _safety._IMPERATIVE_DIAGNOSIS_OR_TREATMENT_REVIEW.search(text)
-        or _safety._LABELLED_CARE_DECISION.search(text)
-        or _safety._BEST_TREATMENT.search(text)
-        or _safety._PATIENT_BENEFIT.search(text)
-        or _safety._ELIGIBILITY.search(text)
-    ):
-        return True
+        match = pattern.search(text)
+        if match is not None:
+            return match.group(0)
 
     for match in _safety._IMPERATIVE_CARE_ACTION.finditer(text):
         if kind in _safety._RESEARCH_PROCESS_KINDS and _safety._SAFE_RESEARCH_OBJECT.search(
             match.group("object")
         ):
             continue
-        return True
+        return match.group(0)
     for pattern in (_safety._DIRECT_RECOMMENDATION, _safety._LABELLED_RECOMMENDATION):
         for match in pattern.finditer(text):
             if not _safety._SAFE_RECOMMENDATION_OBJECT.search(match.group("object")):
-                return True
+                return match.group(0)
     for pattern in (_safety._PRODUCT_MODAL_ACTION, _safety._CARE_PREDICATE):
         for match in pattern.finditer(text):
             if not _safety._SAFE_PROCESS_SUBJECT.search(match.group("subject")):
-                return True
+                return match.group(0)
     for match in _safety._DOSING_STATEMENT.finditer(text):
         if not _is_directly_source_attributed(text, match):
-            return True
+            return match.group(0)
     for match in _safety._DECISION_TO_CARE.finditer(text):
         if _safety._CONFIRMATION_BEFORE_CARE.search(match.group(0)):
             continue
         decision_context = text[max(0, match.start() - 45) : match.end()]
         if _safety._DOUBLE_NEGATIVE_DECISION.search(decision_context):
-            return True
+            return match.group(0)
         if not _safety._NEGATED_DECISION.search(decision_context):
-            return True
+            return match.group(0)
 
     clinical_claim_patterns = (
         _safety._PATIENT_DIAGNOSIS,
@@ -497,8 +493,8 @@ def _unsafe_narrative(text: str, *, kind: NarrativeKind) -> bool:
                 continue
             if kind in _safety._RESEARCH_PROCESS_KINDS and _is_research_target(text, match):
                 continue
-            return True
-    return False
+            return match.group(0)
+    return None
 
 
 def _validate_professional_question(text: str, field: str) -> None:

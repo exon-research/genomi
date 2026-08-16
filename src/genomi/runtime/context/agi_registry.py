@@ -4,8 +4,10 @@ from pathlib import Path
 
 from ...active_genome_index.revisions import (
     ActiveGenomeIndexArtifactIntegrityError,
+    materialize_immutable_agi_revision,
     verify_immutable_agi_revision,
 )
+from ..paths import expand_user_path
 from .agi_inference import _resolved_intake_source_path
 from .agi_records import _is_digitized_agi_record
 from .normalize import (
@@ -110,6 +112,99 @@ def _register_agi_revision(registry: JsonObject, run: JsonObject) -> None:
         )
         return
     revisions[snapshot_id] = revision
+
+
+def publish_agi_build_revision(
+    agi_build_path: str | Path,
+    root: str | Path | None = None,
+) -> JsonObject | None:
+    """Publish a finished AGI build and rebind its registry record onto it.
+
+    A two-phase parse registers its Phase A snapshot while the reference pass is
+    still appending the reference tail. That pass mints a new snapshot identity
+    in the build file when it completes, so the registry binding has to advance
+    to the newly published revision — otherwise every reader keeps resolving the
+    frozen Phase A artifact and reports ``variants_ready`` forever.
+
+    Superseded revisions stay on disk and stay registered: a session that
+    already bound the older snapshot keeps a verifiable artifact, and AGI
+    removal already reclaims every revision it registered.
+
+    Returns None when no registered record tracks this build path yet — the
+    caller that registers it next reads the completed build directly.
+    """
+
+    build_path = expand_user_path(agi_build_path)
+    if not build_path.is_file():
+        return None
+    revision = materialize_immutable_agi_revision(build_path)
+    snapshot_id = str(revision.get("agi_snapshot_id") or "")
+    if not snapshot_id:
+        return None
+    revision_path = str(revision["agi_revision_path"])
+    with context_authority_lock(root):
+        registry = load_registry(root)
+        context = load_context(root)
+        rebound: list[str] = []
+        for agi_id, run in list(registry.get("agis", {}).items()):
+            if not isinstance(run, dict) or not _tracks_agi_build_path(run, build_path):
+                continue
+            if str(run.get("agi_snapshot_id") or "") == snapshot_id and _same_path(
+                run.get("agi_path"), revision_path
+            ):
+                continue
+            updated = _normalize_agi_record(
+                {
+                    **run,
+                    "agi_snapshot_id": snapshot_id,
+                    "agi_build_revision": revision.get("agi_build_revision"),
+                    "agi_snapshot_created_at": revision.get("agi_snapshot_created_at"),
+                    "agi_schema_version": revision.get("schema_version"),
+                    "source_content_sha256": revision.get("source_content_sha256"),
+                    "genome_build": revision.get("genome_build"),
+                    "agi_path": revision_path,
+                    "agi_build_path": str(build_path),
+                    "agi_artifact_sha256": revision.get("agi_artifact_sha256"),
+                    "updated_at": _now(),
+                }
+            )
+            registry["agis"][agi_id] = updated
+            _register_agi_revision(registry, updated)
+            if isinstance(context.get("agis"), dict) and agi_id in context["agis"]:
+                context["agis"][agi_id] = updated
+            rebound.append(str(agi_id))
+        if not rebound:
+            return None
+        save_context_and_registry(context, registry, root)
+    return {
+        "agi_snapshot_id": snapshot_id,
+        "agi_path": revision_path,
+        "agi_build_path": str(build_path),
+        "rebound_agi_ids": rebound,
+    }
+
+
+def _tracks_agi_build_path(run: JsonObject, build_path: Path) -> bool:
+    """True when this record's index was built at ``build_path``.
+
+    A registered record points ``agi_path`` at an immutable revision and keeps
+    the mutable build file in ``agi_build_path``; a record registered before any
+    revision existed still points ``agi_path`` at the build file itself.
+    """
+
+    return any(
+        _same_path(run.get(key), build_path)
+        for key in ("agi_build_path", "agi_path")
+    )
+
+
+def _same_path(value: object, other: str | Path) -> bool:
+    if value in (None, ""):
+        return False
+    return (
+        Path(str(value)).expanduser().resolve(strict=False)
+        == Path(str(other)).expanduser().resolve(strict=False)
+    )
 
 
 def require_registered_agi_revision(

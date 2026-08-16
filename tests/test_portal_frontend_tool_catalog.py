@@ -25,7 +25,7 @@ class PortalToolCatalogFrontendTest(unittest.TestCase):
               sourceLookup: {{
                 name: 'genomi.parse_source',
                 operationId: 'genomi.parse_source',
-                displayLabel: 'Add genome file',
+                displayLabel: 'Add a genome',
                 area: 'genomi',
                 description: 'Use a local genome file for approved evidence work.',
                 badges: ['Privacy: Local private', 'Updates workspace', '1 required input'],
@@ -92,10 +92,10 @@ class PortalToolCatalogFrontendTest(unittest.TestCase):
 
         result = _run_node_json(self, script)
 
-        self.assertEqual(result["builder"]["displayLabel"], "Add genome file")
+        self.assertEqual(result["builder"]["displayLabel"], "Add a genome")
         self.assertEqual(result["builder"]["fields"][0]["label"], "Genome source")
         self.assertEqual(result["builder"]["fields"][1]["enumValues"], ["GRCh37", "GRCh38"])
-        self.assertEqual(result["inspector"]["displayLabel"], "Add genome file")
+        self.assertEqual(result["inspector"]["displayLabel"], "Add a genome")
         self.assertEqual(result["inspector"]["area"], "Genomi")
         self.assertEqual(result["inspector"]["sections"][0]["title"], "Inputs")
         self.assertEqual(result["inspector"]["technicalSections"][0]["title"], "Operation")

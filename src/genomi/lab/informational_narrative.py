@@ -21,13 +21,11 @@ def validate_informational_narrative(
     """Reject clinical conclusions without constraining evidence-specific wording."""
 
     text = required_text(value, field, QUESTION_MAX)
-    if kind == "brief_title" and (
-        _safety._UNSAFE_TITLE_TERM.search(text)
-        or _safety._UNSAFE_TITLE_CLAIM.search(text)
-    ):
-        raise ValueError(f"{field} {_safety._ERROR}")
-    if _unsafe_narrative(text, kind=kind):
-        raise ValueError(f"{field} {_safety._ERROR}")
+    rejected = _unsafe_narrative(text, kind=kind)
+    if rejected is None and kind == "brief_title":
+        rejected = _safety.unsafe_title_span(text)
+    if rejected is not None:
+        raise _safety.NarrativeSafetyError(field, rejected)
     if kind == "confirmation_need" and not _safety._CONFIRMATION_FORM.search(text):
         raise ValueError(f"{field} must describe a confirmation or evidence need")
     if kind == "professional_question":

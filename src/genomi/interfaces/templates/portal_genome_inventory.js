@@ -77,7 +77,7 @@ export function activeGenomeHeaderModel(payload = {}, fallback = {}) {
   if (model.genomes.length) {
     return headerWithControls({
       status: fallback.status || 'pending',
-      title: 'Choose active genome',
+      title: 'Choose a genome',
       subtitle: model.summary
     }, model);
   }
@@ -94,7 +94,7 @@ export function inquiryGenomeStateLabel(header = {}) {
   if (header.status === 'needs_rebuild') {
     return title + ' needs rebuilding; choose another ready genome or add the source again.';
   }
-  return 'Choose an Active Genome Index for this workspace.';
+  return 'Choose an active genome for this workspace.';
 }
 
 function inventoryHead(model, options) {

@@ -167,6 +167,14 @@ def _region_retrieve_feature_annotation(params: JsonObject) -> JsonObject:
     )
 
 
+def _protein_retrieve_reference_sequence(params: JsonObject) -> JsonObject:
+    return analytical_grounding.retrieve_reference_protein_sequence(
+        accession=params.get("accession"),
+        gene_symbol=params.get("gene_symbol"),
+        organism_taxon_id=_int(params, "organism_taxon_id", analytical_grounding.DEFAULT_PROTEIN_TAXON_ID),
+    )
+
+
 def _disease_compare_phenotype_evidence(params: JsonObject) -> JsonObject:
     resolved = _with_context(params, db=True, allow_shared_db_without_vcf=True)
     return phenotype.compare_disease_phenotype_evidence(

@@ -210,6 +210,7 @@ from .handlers_evidence_phenotype import (
     _phenotype_compare_gene_hpo_evidence,
     _phenotype_normalize,
     _population_fetch,
+    _protein_retrieve_reference_sequence,
     _region_retrieve_feature_annotation,
     _result_has_source_records,
     _risk_investigate,

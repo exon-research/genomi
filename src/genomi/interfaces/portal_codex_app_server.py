@@ -12,6 +12,7 @@ from ..operations.registry.evidence_result_receipts import (
     EVIDENCE_RESULT_RECEIPTS,
     EvidenceResultReceiptError,
 )
+from . import portal_specialist_lane
 
 JsonObject = dict[str, Any]
 EventHandler = Callable[[JsonObject], None]
@@ -335,39 +336,18 @@ class CodexAppServerSession:
         arguments = _object(item.get("arguments"))
         if str(item.get("server") or "") != "genomi" or str(item.get("tool") or "") != "genomi.invoke":
             return
-        if str(arguments.get("tool") or "") not in {
-            "lab.create_specialist_assignment",
-            "lab.read_investigation",
-            "lab.transition_specialist_assignment",
-        }:
+        if (
+            str(arguments.get("tool") or "")
+            not in portal_specialist_lane.LAB_ASSIGNMENT_OPERATIONS
+        ):
             return
-        payload = _find_result_object(item.get("result"))
-        assignments: list[JsonObject] = []
-        assignment = payload.get("assignment")
-        if isinstance(assignment, dict):
-            assignments.append(assignment)
-        listed = payload.get("specialist_assignments")
-        if isinstance(listed, list):
-            assignments.extend(value for value in listed if isinstance(value, dict))
-        for value in assignments:
+        for value in portal_specialist_lane.assignment_records(item.get("result")):
             assignment_id = str(value.get("specialist_assignment_id") or "")
-            policy = str(value.get("execution_policy") or "")
-            state = str(value.get("state") or "")
-            if not assignment_id or not policy or state not in {"proposed", "spawned", "completed", "failed", "cancelled"}:
-                continue
-            existing = self._specialist_assignments.get(assignment_id, {})
-            self._specialist_assignments[assignment_id] = {
-                **existing,
-                "assignment_id": assignment_id,
-                "execution_policy": policy,
-                "specialist_brief_id": str(
-                    value.get("specialist_brief_id")
-                    or existing.get("specialist_brief_id")
-                    or ""
-                ),
-                "specialist_role": str(value.get("specialist_role") or existing.get("specialist_role") or ""),
-                "state": state,
-            }
+            merged = portal_specialist_lane.merged_assignment(
+                self._specialist_assignments.get(assignment_id, {}), value
+            )
+            if merged is not None:
+                self._specialist_assignments[assignment_id] = merged
 
     def _specialist_policy_violation(self, thread_id: str, item: JsonObject) -> str:
         item_type = str(item.get("type") or "")
@@ -462,7 +442,7 @@ class CodexAppServerSession:
             "agent_id": agent_id,
             "task_name": str(specialist.get("task_name") or agent_id),
             "status": "running",
-            "message": _specialist_progress_message(operation),
+            "message": portal_specialist_lane.progress_message(operation),
         }
         assignment_id = str(specialist.get("assignment_id") or "")
         if assignment_id:
@@ -537,7 +517,7 @@ class CodexAppServerSession:
         native_agent_id = str(specialist.get("agent_id") or "")
         if not all((self.session_id, assignment_id, brief_id, policy, native_agent_id)):
             return
-        for receipt_id in sorted(set(_RESULT_RECEIPT_PATTERN.findall(message))):
+        for receipt_id in portal_specialist_lane.observed_result_receipt_ids(message):
             try:
                 EVIDENCE_RESULT_RECEIPTS.authorize_specialist_result(
                     receipt_id,
@@ -594,9 +574,6 @@ _COLLAB_TOOL_NAMES = {
     "wait": "wait_agent",
     "closeAgent": "interrupt_agent",
 }
-
-_RESULT_RECEIPT_PATTERN = re.compile(r"result-receipt-[A-Za-z0-9_-]{24,128}")
-
 
 def _tool_item(item: JsonObject) -> tuple[str, JsonObject, Any] | None:
     item_type = str(item.get("type") or "")
@@ -660,47 +637,8 @@ def _object(value: Any) -> JsonObject:
     return value if isinstance(value, dict) else {"value": value} if value is not None else {}
 
 
-def _find_result_object(value: Any, depth: int = 0) -> JsonObject:
-    if depth > 5:
-        return {}
-    if isinstance(value, str):
-        try:
-            return _find_result_object(json.loads(value), depth + 1)
-        except json.JSONDecodeError:
-            return {}
-    if isinstance(value, list):
-        for child in value:
-            found = _find_result_object(child, depth + 1)
-            if found:
-                return found
-        return {}
-    if not isinstance(value, dict):
-        return {}
-    if value.get("assignment") is not None or value.get("specialist_assignments") is not None:
-        return value
-    for key in ("structuredContent", "structured_content", "result", "payload", "content", "text"):
-        if key not in value:
-            continue
-        found = _find_result_object(value[key], depth + 1)
-        if found:
-            return found
-    return {}
-
-
 def _specialist_allowed_operations(policy: str) -> frozenset[str]:
     return _specialist_policy_operations().get(policy, frozenset())
-
-
-def _specialist_progress_message(operation: str) -> str:
-    if operation == "paperclip.search_biomedical":
-        return "Searching public biomedical literature"
-    if operation == "paperclip.retrieve_document_evidence":
-        return "Reading line-pinned public evidence"
-    if operation.startswith("biohub."):
-        return "Running the bounded BioHub analysis"
-    if operation.startswith("proto."):
-        return "Running the bounded Proto analysis"
-    return "Running the authorized specialist operation"
 
 
 @lru_cache(maxsize=1)

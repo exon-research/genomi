@@ -2,18 +2,20 @@
   "capabilities": {
     "analytical-grounding": {
       "title": "Analytical Grounding",
-      "start_when": "The task needs canonical pathway members, cell-type marker records, or interval feature annotations from declared sources.",
+      "start_when": "The task needs canonical pathway members, cell-type marker records, interval feature annotations, or public reference protein sequences from declared sources.",
       "skill_documents": [
         "skills/analytical-grounding/SKILL.md"
       ],
       "entry_operations": [
         "pathway.retrieve_members",
         "cell_type.retrieve_markers",
-        "region.retrieve_features"
+        "region.retrieve_features",
+        "protein.retrieve_reference_sequence"
       ],
       "operations": [
         "cell_type.retrieve_markers",
         "pathway.retrieve_members",
+        "protein.retrieve_reference_sequence",
         "region.retrieve_features"
       ]
     }
@@ -277,6 +279,66 @@
       "external_io": [
         "local_gencode_gtf",
         "local_encode_ccre_bed"
+      ],
+      "data_access": [
+        "public_catalog_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "protein.retrieve_reference_sequence": {
+      "capability": "analytical-grounding",
+      "namespace": "protein",
+      "description": "Retrieve the public UniProt reference amino-acid sequence and entry provenance for a declared accession or reviewed gene symbol.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "accession": {
+            "type": "string"
+          },
+          "gene_symbol": {
+            "type": "string"
+          },
+          "organism_taxon_id": {
+            "type": "integer",
+            "default": 9606,
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "Applied to gene_symbol resolution; an accession lookup returns the organism recorded on the entry."
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "accession"
+            ]
+          },
+          {
+            "required": [
+              "gene_symbol"
+            ]
+          }
+        ]
+      },
+      "skill": "skills/analytical-grounding/SKILL.md",
+      "area": "protein",
+      "requires": [
+        "public_uniprot_accession_or_reviewed_gene_symbol"
+      ],
+      "produces": [
+        "protein",
+        "coverage_state",
+        "source_coverage",
+        "resolution_candidates"
+      ],
+      "context_optional": [],
+      "privacy_scope": "public_metadata",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "uniprot_api"
       ],
       "data_access": [
         "public_catalog_metadata"

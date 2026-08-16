@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -9,13 +10,25 @@ from typing import Any
 
 from ...evidence import envelope as evidence_envelope
 from ...runtime.external_credentials import resolve_external_credentials
-from .search import _decode_json_prefix, _normalize_record
 
 
 COLLECTIONS = ("papers", "fda", "trials")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 _DOCUMENT_ID = re.compile(r"^[A-Za-z0-9_.:-]+$")
 _LINE = re.compile(r"^L(\d+):(.*)$")
+_METADATA_ALIASES = {
+    "external_id": ("identifier",),
+    "title": ("title", "tradename"),
+    "authors": ("authors", "author"),
+    "published": ("pub_date", "pub_year", "publication_date", "year", "publication_year"),
+    "journal": ("journal", "venue"),
+    "doi": ("doi",),
+    "pmcid": ("pmc_id", "pmcid"),
+    "pmid": ("pmid", "pubmed_id"),
+    "source": ("source", "database", "source_type"),
+    "url": ("url", "link", "public_url"),
+    "abstract": ("abstract", "snippet", "summary"),
+}
 
 
 def retrieve_document_evidence(
@@ -88,10 +101,10 @@ def retrieve_document_evidence(
         collection=clean_collection,
         document_id=clean_id,
     )
-    document = _normalize_record(metadata_payload)
-    document["record_id"] = str(
-        metadata_payload.get("document_id") or metadata_payload.get("id") or clean_id
-    )
+    document = _normalize_document(metadata_payload)
+    # The handle the caller read is the addressable id, and the one the
+    # excerpt citation URLs point at.
+    document["record_id"] = clean_id
     document["collection"] = clean_collection
     coverage = {
         "consulted_sources": [f"paperclip:{clean_collection}/{clean_id}"],
@@ -122,6 +135,26 @@ def retrieve_document_evidence(
         "excerpts": excerpts,
         "evidence_envelope": envelope,
     }
+
+
+def _decode_json_prefix(text: str) -> Any:
+    """Paperclip `cat` prints JSON followed by a timing trailer."""
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(str(text or "").lstrip())
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return payload
+
+
+def _normalize_document(row: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for target, names in _METADATA_ALIASES.items():
+        value = next((row.get(name) for name in names if row.get(name) not in (None, "", [])), None)
+        if value is not None:
+            normalized[target] = value if target != "published" else str(value)
+    if normalized.get("doi") and not normalized.get("url"):
+        normalized["url"] = f"https://doi.org/{normalized['doi']}"
+    return normalized
 
 
 def _run(

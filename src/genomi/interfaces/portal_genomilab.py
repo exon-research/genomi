@@ -269,7 +269,7 @@ class _PortalGenomiLabApplication:
         if not expected:
             raise PortalGenomiLabError(
                 "genomi_user_required",
-                "Select a Genomi user and Active Genome Index for this workspace.",
+                "Select a Genomi user and active genome for this workspace.",
                 http_status=409,
             )
 
@@ -293,7 +293,7 @@ class _PortalGenomiLabApplication:
             return {
                 "status": "setup_required",
                 "setup": {
-                    "action": "Select a Genomi user and Active Genome Index for this workspace."
+                    "action": "Select a Genomi user and active genome for this workspace."
                 },
             }
         with self._current_user():

@@ -803,6 +803,22 @@ class Element {
     this.children.push(child);
     return child;
   }
+  append(...nodes) {
+    nodes.forEach((node) => this.appendChild(node));
+  }
+  replaceChildren(...nodes) {
+    this.children = [];
+    this.textContent = '';
+    nodes.forEach((node) => this.appendChild(node));
+  }
+  closest(selector) {
+    let node = this;
+    while (node) {
+      if (matches(node, selector)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
   setAttribute(name, value) {
     const text = String(value);
     this.attributes[name] = text;

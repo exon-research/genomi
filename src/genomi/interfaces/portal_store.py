@@ -15,6 +15,7 @@ from . import (
     portal_artifact_work_steps,
     portal_conversation_reviews,
     portal_project_events,
+    portal_run_failures,
     portal_state,
     portal_turns,
     portal_workspaces,
@@ -1445,23 +1446,26 @@ def finish_frame(
         if frame is None:
             return None
         now = _now()
-        if output:
+        failure = _terminal_run_failure(status, error, output)
+        visible_text = output or (failure.message_text() if failure else "")
+        if visible_text:
             messages = state["messages"].setdefault(frame_id, [])
             message = _find_assistant_run_message(messages, run_id) if run_id else None
             if message is None:
-                message = _message("assistant", text=output)
+                message = _message("assistant", text=visible_text)
                 if run_id:
                     message["run_id"] = run_id
                 messages.append(message)
             else:
-                message["text"] = output
+                message["text"] = visible_text
             message["stream_status"] = status
             message["updated_at"] = now
         frame["message_count"] = len(state["messages"].get(frame_id, []))
         frame["status"] = status
         frame["completed_at"] = now
         frame["updated_at"] = now
-        frame["output_data"] = {"error": portal_turns.prompt_safe_text(error or "") or None}
+        frame_error = failure.headline if failure else portal_turns.prompt_safe_text(error or "")
+        frame["output_data"] = {"error": frame_error or None}
         project = state["projects"].get(str(frame.get("project_id")))
         if project is not None:
             project["updated_at"] = now
@@ -1471,6 +1475,17 @@ def finish_frame(
     if isinstance(frame, dict):
         _notify_project_workspace_changed(frame, ("frame", "messages"), reason="completed", root=root)
     return frame
+
+
+def _terminal_run_failure(status: str, error: str | None, output: str) -> portal_run_failures.RunFailure | None:
+    """The conversation-visible outcome for a run that ended without an answer."""
+
+    clean_status = str(status or "").strip().lower()
+    if clean_status not in portal_run_failures.FAILED_RUN_STATUSES:
+        return None
+    if output.strip():
+        return None
+    return portal_run_failures.classify_run_failure(error or "", status=clean_status)
 
 
 def _mark_frame_stale_after_restart(state: JsonObject, frame: JsonObject, *, run_id: str, now: str) -> None:

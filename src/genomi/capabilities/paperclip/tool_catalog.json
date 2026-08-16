@@ -32,7 +32,7 @@
       "skill": "skills/paperclip/SKILL.md",
       "area": "paperclip",
       "requires": ["paperclip_credentials"],
-      "produces": ["public_biomedical_source_records", "validated_public_protein_reference_sequences"],
+      "produces": ["public_biomedical_source_records", "public_protein_accessions"],
       "context_optional": ["source_families"],
       "privacy_scope": "public_target_only",
       "operation_scope": "read",

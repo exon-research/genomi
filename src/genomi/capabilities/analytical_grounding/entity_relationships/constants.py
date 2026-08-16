@@ -10,6 +10,7 @@ KEGG_REST_API_BASE = library_manager.api_base("kegg")
 HPA_API_BASE = library_manager.api_base("hpa")
 HPA_TSV_DOWNLOAD_BASE = library_manager.source_url("hpa")
 CHEMBL_API_BASE = library_manager.api_base("chembl")
+UNIPROT_API_BASE = library_manager.api_base("uniprot")
 DEFAULT_TAXON_ID = "9606"
 DEFAULT_SPECIES = "Homo sapiens"
 

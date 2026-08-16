@@ -128,11 +128,11 @@ class PortalPromptContextFrontendTest(unittest.TestCase):
               prompt_text: 'Prepared Genomi evidence-source request: research.build_target_packet\\nParameters: {{"target_type":"topic","topic":"rs429358"}}'
             }};
             const serverProvidedToolRequestContext = {{
-              label: 'Evidence source: Add genome file',
+              label: 'Evidence source: Add a genome',
               context_kind: 'tool_request',
               source_operation: 'genomi.parse_source',
               selected_nodes: [
-                {{ label: 'Evidence source', text: 'Evidence source: Add genome file' }},
+                {{ label: 'Evidence source', text: 'Evidence source: Add a genome' }},
                 {{ label: 'Inputs provided', text: 'Inputs provided: No inputs supplied yet.' }}
               ]
             }};
@@ -367,7 +367,7 @@ class PortalPromptContextFrontendTest(unittest.TestCase):
         self.assertEqual(result["workspaceFileTray"]["items"][0]["action"]["draftLabel"], "Draft from file")
         self.assertNotIn("genomi.portal.workspace_file", json.dumps(result["workspaceFileTray"]))
         self.assertNotIn("research.build_target_packet", json.dumps(result["promptOnlyToolRequestTray"]))
-        self.assertEqual(result["serverProvidedToolRequestTray"]["items"][0]["label"], "Evidence source: Add genome file")
+        self.assertEqual(result["serverProvidedToolRequestTray"]["items"][0]["label"], "Evidence source: Add a genome")
         self.assertNotIn("Genomi Parse Source", json.dumps(result["serverProvidedToolRequestTray"]))
         self.assertEqual(result["trayModel"]["countLabel"], "2 included items")
         self.assertEqual(result["trayModel"]["items"][0]["kindLabel"], "Evidence")

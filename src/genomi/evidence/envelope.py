@@ -774,6 +774,12 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
                 if isinstance(value, list) and value:
                     observations[f"{child_key}.{key}_count"] = len(value)
 
+    # An operation may state case-specific facts directly. Those override the
+    # shapes derived above so the host reads the operation's own account.
+    explicit_observations = result.get("observations")
+    if isinstance(explicit_observations, dict):
+        observations.update(explicit_observations)
+
     query_scope = dict(result.get("query") or result.get("target") or {})
     coverage = _coverage(consulted_sources=[], unavailable_sources=[])
 
@@ -797,7 +803,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             observations=observations,
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
     if status == "in_progress":
         return envelope(
@@ -814,7 +820,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             ),
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
     if status == OUT_OF_SCOPE_FOR_INPUT or coverage_state == OUT_OF_SCOPE_FOR_INPUT:
         return out_of_scope_for_input(
@@ -823,7 +829,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             coverage=coverage,
             observations=observations,
             next_actions=_status_next_actions(OUT_OF_SCOPE_FOR_INPUT, result),
-            guidance=_status_guidance(OUT_OF_SCOPE_FOR_INPUT),
+            guidance=_status_guidance(OUT_OF_SCOPE_FOR_INPUT, result),
         )
     if status in {"source_unavailable", "source_unavailable_no_evidence", "error", "unavailable", "failed"}:
         return not_assessed(
@@ -834,7 +840,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             observations=observations,
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
     if status.startswith(("invalid", "missing", "wrong", "blocked", "needs", "requires", "not_")):
         return not_assessed(
@@ -845,7 +851,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             observations=observations,
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
     if coverage_state == "metadata_only":
         return not_assessed(
@@ -856,7 +862,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             observations=observations,
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
 
     positive_count = 0
@@ -873,7 +879,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             coverage=coverage,
             observations=observations,
             answer_readiness=SCOPED_ANSWER_ONLY,
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
 
     # zero-count fall-through
@@ -885,7 +891,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
             observations=observations,
             next_actions=_status_next_actions(status, result),
             notes=_string_notes(result),
-            guidance=_status_guidance(status),
+            guidance=_status_guidance(status, result),
         )
     return not_assessed(
         operation=operation,
@@ -895,7 +901,7 @@ def derive_default_envelope(operation: str, result: dict[str, Any]) -> dict[str,
         observations=observations,
         next_actions=_status_next_actions(status, result),
         notes=_string_notes(result),
-        guidance=_status_guidance(status),
+        guidance=_status_guidance(status, result),
     )
 
 
@@ -913,20 +919,29 @@ def _extract_library_status(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _string_notes(result: dict[str, Any]) -> list[str]:
-    notes = []
+    candidates: list[str] = []
     for key in ("message", "reason", "error", "how_it_helps"):
         value = result.get(key)
         if isinstance(value, str) and value:
-            notes.append(value)
+            candidates.append(value)
     error = result.get("error")
     if isinstance(error, dict):
         message = error.get("message")
         if isinstance(message, str) and message:
-            notes.append(message)
+            candidates.append(message)
+    notes: list[str] = []
+    for note in candidates:
+        if note not in notes:
+            notes.append(note)
     return notes
 
 
-def _status_guidance(status: str) -> list[str]:
+def _status_guidance(status: str, result: dict[str, Any]) -> list[str]:
+    explicit = result.get("guidance")
+    if isinstance(explicit, list):
+        codes = [str(code) for code in explicit if isinstance(code, str) and code]
+        if codes:
+            return codes
     if status == "in_progress":
         return ["in_progress:poll_runtime_check_background_job"]
     if status in {"requires_library_install", "needs_library_install"}:
@@ -954,6 +969,11 @@ def _status_guidance(status: str) -> list[str]:
 
 
 def _status_next_actions(status: str, result: dict[str, Any]) -> list[dict[str, Any]]:
+    explicit = result.get("next_actions")
+    if isinstance(explicit, list):
+        actions = [dict(action) for action in explicit if isinstance(action, dict)]
+        if actions:
+            return actions
     if status == "in_progress":
         job_id = result.get("job_id")
         return [

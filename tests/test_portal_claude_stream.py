@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import json
+import os
 import unittest
 from unittest import mock
 
@@ -8,7 +10,10 @@ from genomi.interfaces import (
     portal_agents,
     portal_claude_runtime,
     portal_claude_stream,
+    portal_run_events,
+    portal_runs,
 )
+from genomi.runtime import context
 
 
 ORCHESTRATOR_TEXT = json.dumps(
@@ -541,6 +546,133 @@ class ClaudeSpecialistLaneTests(unittest.TestCase):
         )
         self.assertEqual(events[1], {"type": "text_delta", "delta": "Bash is blocked in this session."})
 
+    def test_continued_specialist_completes_on_its_task_notification(self) -> None:
+        session = _bound_session()
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ):
+            _events(session, TASK_NOTIFICATION, TOOL_USE_RESULT)
+        follow_up_receipt = "result-receipt-zyxwvutsrqponmlkjihgfedcba987654"
+        send_message = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_01SVUVSnka1jYzMPM259wx74",
+                            "name": "SendMessage",
+                            "input": {
+                                "to": "a5651591ae9299c63",
+                                "summary": "Re-run key literature retrievals for receipts",
+                                "message": "Same brief, same policy.",
+                            },
+                        }
+                    ],
+                },
+                "parent_tool_use_id": None,
+            }
+        )
+        continued_task_started = json.dumps(
+            {
+                "type": "system",
+                "subtype": "task_started",
+                "task_id": "a5651591ae9299c63",
+                "tool_use_id": "toolu_01SVUVSnka1jYzMPM259wx74",
+                "description": "CTLA4 literature review",
+                "subagent_type": "public_literature",
+                "task_type": "local_agent",
+                "prompt": "Same brief, same policy.",
+            }
+        )
+        resume_ack = json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "tool_use_id": "toolu_01SVUVSnka1jYzMPM259wx74",
+                            "type": "tool_result",
+                            "content": "Resuming agent a565159",
+                        }
+                    ],
+                },
+                "parent_tool_use_id": None,
+                "tool_use_result": {
+                    "success": True,
+                    "message": "Resuming agent a565159",
+                    "resumedAgentId": "a5651591ae9299c63",
+                    "pin": {},
+                },
+            }
+        )
+        continued_notification = json.dumps(
+            {
+                "type": "system",
+                "subtype": "task_notification",
+                "task_id": "a5651591ae9299c63",
+                "tool_use_id": "toolu_01SVUVSnka1jYzMPM259wx74",
+                "status": "completed",
+                "summary": f"Second pass. Provider receipt: {follow_up_receipt}",
+            }
+        )
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            events = _events(
+                session,
+                _create_assignment_call("toolu_second_assignment"),
+                _create_assignment_result(
+                    "toolu_second_assignment", assignment_id="assignment-2"
+                ),
+                send_message,
+                continued_task_started,
+                resume_ack,
+                continued_notification,
+            )
+
+        # The resume acknowledgement is not the child's terminal result.
+        self.assertEqual(
+            [event["id"] for event in events if event["type"] == "tool_result" and event["name"] is None],
+            ["toolu_second_assignment"],
+        )
+        completion = next(
+            event
+            for event in events
+            if event.get("name") == "spawn_agent" and event["type"] == "tool_result"
+        )
+        self.assertEqual(completion["id"], "toolu_01SVUVSnka1jYzMPM259wx74")
+        self.assertEqual(completion["payload"]["status"], "completed")
+        self.assertEqual(
+            completion["payload"]["updates"][0]["assignment_id"], "assignment-2"
+        )
+        authorize.assert_called_once_with(
+            follow_up_receipt,
+            session_id="portal:project:frame",
+            specialist_assignment_id="assignment-2",
+            specialist_brief_id="brief-1",
+            native_agent_id="a5651591ae9299c63",
+            execution_policy="public_literature",
+        )
+
+    def test_replayed_user_text_is_not_presented_as_host_work(self) -> None:
+        session = portal_claude_stream.ClaudeStreamSession()
+        replayed = json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "My original question."}],
+                },
+                "parent_tool_use_id": None,
+            }
+        )
+
+        self.assertEqual(_events(session, replayed), [])
+
     def test_each_run_owns_its_specialist_state(self) -> None:
         first = portal_agents.new_stream_adapter("claude", session_id="portal:a:1")
         second = portal_agents.new_stream_adapter("claude", session_id="portal:b:2")
@@ -603,6 +735,68 @@ class ClaudeRuntimeBindingTests(unittest.TestCase):
         self.assertEqual(command[-3:], ["--allowedTools", "mcp__genomi__*", "Task"])
         self.assertIn("--agents", command)
         self.assertLess(command.index("--agents"), command.index("--allowedTools"))
+
+
+class ClaudePortalRunTests(unittest.TestCase):
+    def test_portal_binds_the_session_the_child_genomi_runtime_computes(self) -> None:
+        environment = {
+            "GENOMI_CONTEXT": "/private/project/context.json",
+            "GENOMI_SESSION_ID": "portal:project:frame",
+        }
+
+        with mock.patch.dict(os.environ, environment, clear=False):
+            self.assertEqual(
+                context.context_scope()["id"],
+                context.environment_scope_id(environment),
+            )
+
+    def test_claude_run_streams_answer_text_through_a_run_scoped_adapter(self) -> None:
+        run = portal_run_events.create_run(
+            kind="host_agent", agent_id="claude", message="Question"
+        )
+        self.addCleanup(portal_run_events.discard_run, run.id)
+
+        class ClaudeProcess:
+            stdin = io.StringIO()
+            stdout = [ORCHESTRATOR_TEXT + "\n", TERMINAL_RESULT + "\n"]
+            stderr = None
+
+            def poll(self) -> int:
+                return 0
+
+            def wait(self, timeout: int | None = None) -> int:
+                return 0
+
+        commands: list[list[str]] = []
+
+        def fake_popen(command: list[str], **_kwargs: object) -> object:
+            commands.append(command)
+            return ClaudeProcess()
+
+        with mock.patch(
+            "genomi.interfaces.portal_agents.agent_invocation",
+            return_value=[
+                "/usr/local/bin/claude",
+                "-p",
+                "--allowedTools",
+                "mcp__genomi__*",
+                "Task",
+            ],
+        ), mock.patch(
+            "genomi.interfaces.portal_runs.subprocess.Popen", side_effect=fake_popen
+        ), mock.patch(
+            "genomi.interfaces.portal_run_logs.append_run_event"
+        ):
+            portal_runs.run_agent(run)
+
+        self.assertEqual(run.status, "succeeded")
+        self.assertEqual(run.output, "CTLA4 is an inhibitory T-cell receptor.")
+        self.assertIn("--strict-mcp-config", commands[0])
+        servers = json.loads(commands[0][commands[0].index("--mcp-config") + 1])
+        self.assertIn("genomi", servers["mcpServers"])
+        agents = json.loads(commands[0][commands[0].index("--agents") + 1])
+        self.assertIn("public_literature", agents)
+        self.assertEqual(commands[0][-3:], ["--allowedTools", "mcp__genomi__*", "Task"])
 
 
 class ClaudeDriverInvocationTests(unittest.TestCase):

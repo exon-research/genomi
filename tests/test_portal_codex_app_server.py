@@ -10,16 +10,22 @@ from unittest import mock
 from genomi.interfaces import (
     portal_codex_app_server,
     portal_codex_runtime,
+    portal_project_genomes,
     portal_run_events,
     portal_runs,
 )
+from genomi.operations.registry.evidence_result_receipts import (
+    EVIDENCE_RESULT_RECEIPTS,
+)
+from genomi.runtime import context
+from tests.support.runtime.genomi import IsolatedGenomiHomeTestCase
 
 
 def _line(payload: object) -> str:
     return json.dumps(payload) + "\n"
 
 
-class CodexAppServerSessionTests(unittest.TestCase):
+class CodexAppServerSessionTests(IsolatedGenomiHomeTestCase):
     def test_streams_agent_deltas_without_duplicating_completed_message(self) -> None:
         output = io.StringIO(
             "".join(
@@ -637,7 +643,7 @@ class CodexAppServerSessionTests(unittest.TestCase):
         self.assertIn({"id": 91, "result": {"action": "accept", "content": {}}}, messages)
 
 
-class CodexAppServerPortalRunTests(unittest.TestCase):
+class CodexAppServerPortalRunTests(IsolatedGenomiHomeTestCase):
     def test_consumer_passes_selected_portal_context_to_nested_genomi_mcp(self) -> None:
         class Process:
             stdin = io.StringIO()
@@ -675,6 +681,83 @@ class CodexAppServerPortalRunTests(unittest.TestCase):
         self.assertEqual(
             nested_environment["GENOMI_SESSION_ID"],
             "portal:project:frame",
+        )
+
+    def test_codex_session_authorizes_receipts_minted_by_its_own_genomi_runtime(self) -> None:
+        """A portal project scopes receipts by GENOMI_CONTEXT, not GENOMI_SESSION_ID."""
+
+        class Process:
+            stdin = io.StringIO()
+            stdout = io.StringIO()
+
+            def poll(self) -> int:
+                return 0
+
+        environment = dict(os.environ)
+        environment.update(
+            portal_project_genomes.agent_environment("project-receipt-scope")
+        )
+        environment["GENOMI_SESSION_ID"] = "portal:project-receipt-scope:frame-1"
+        with mock.patch.dict(os.environ, environment, clear=True):
+            minting_scope = str(context.context_scope()["id"])
+            receipt_id = EVIDENCE_RESULT_RECEIPTS.issue(
+                session_id=minting_scope,
+                operation="paperclip.retrieve_document_evidence",
+                params={"document_id": "PMC1", "collection": "papers"},
+                result={"status": "completed"},
+            )
+        self.addCleanup(EVIDENCE_RESULT_RECEIPTS.clear)
+
+        sessions: list[portal_codex_app_server.CodexAppServerSession] = []
+        real_session = portal_codex_app_server.CodexAppServerSession
+
+        def build(**kwargs: object) -> object:
+            session = real_session(**kwargs)
+            sessions.append(session)
+            return session
+
+        with mock.patch.object(real_session, "run"), mock.patch.object(
+            portal_codex_app_server, "CodexAppServerSession", side_effect=build
+        ):
+            portal_runs._consume_codex_app_server(
+                Process(),
+                "Question",
+                Path("/tmp/workspace"),
+                mock.Mock(),
+                environment,
+            )
+
+        self.assertEqual(sessions[0].session_id, minting_scope)
+        sessions[0]._specialist_assignments["assignment-1"] = {
+            "assignment_id": "assignment-1",
+            "specialist_brief_id": "brief-1",
+            "execution_policy": "public_literature",
+            "state": "spawned",
+        }
+        sessions[0]._specialists_by_thread_id["child-thread"] = {
+            "call_id": "spawn-1",
+            "agent_id": "native-specialist-a",
+            "assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+        }
+        sessions[0]._specialist_final_messages["child-thread"] = (
+            f"Public literature analysis. Provider receipt: {receipt_id}"
+        )
+        sessions[0]._complete_specialist(
+            "child-thread", {"status": "completed", "items": []}
+        )
+
+        resolved = EVIDENCE_RESULT_RECEIPTS.resolve(
+            receipt_id, session_id=minting_scope
+        )
+        self.assertEqual(
+            resolved["specialist_authorization"],
+            {
+                "specialist_assignment_id": "assignment-1",
+                "specialist_brief_id": "brief-1",
+                "native_agent_id": "native-specialist-a",
+                "execution_policy": "public_literature",
+            },
         )
 
     def test_live_deltas_are_emitted_in_order_before_terminal_completion(self) -> None:

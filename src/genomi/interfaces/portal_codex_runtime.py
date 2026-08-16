@@ -49,6 +49,11 @@ def exec_config_args(
 ) -> list[str]:
     config = genomi_mcp_server_config(environment)
     args = [
+        # The portal, not the machine's owner, decides what a private genomics
+        # inquiry turn may reach. Without this, $CODEX_HOME/config.toml adds its
+        # own MCP servers, trusted-project sandbox posture, and model choice to
+        # the turn. Auth still resolves from CODEX_HOME.
+        "--ignore-user-config",
         "-c",
         f"mcp_servers.genomi.command={json.dumps(config['command'])}",
         "-c",

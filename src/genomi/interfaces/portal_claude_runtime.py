@@ -38,6 +38,14 @@ def runtime_args(environment: dict[str, str] | None = None) -> list[str]:
         # Without this, the operator's ambient ~/.claude MCP configuration is
         # merged in and unrelated connectors reach the portal turn.
         "--strict-mcp-config",
+        # A portal turn is a private genomics inquiry workspace, so the portal
+        # decides what the host may touch. Loading no setting sources leaves
+        # this process's own flags -- permission mode, allowed tools, MCP
+        # servers, specialist agents -- as the whole policy. `--settings` only
+        # merges more settings on top of the discovered sources, so it cannot
+        # revoke an operator allow rule and is not a substitute for this.
+        "--setting-sources",
+        "",
         "--agents",
         _compact(specialist_agent_definitions()),
     ]

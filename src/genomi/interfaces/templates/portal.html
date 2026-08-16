@@ -133,9 +133,9 @@
           <section class="genomilab-intake" data-workspace-nav aria-labelledby="genomilab-intake-title">
             <h2 id="genomilab-intake-title">What would you like to investigate?</h2>
             <p>Ask in your own words. Describe your health history, medications, testing, and any uploaded records that matter; Genomi will organize the details and use Lab when the investigation needs it.</p>
-            <div class="genomilab-context-strip" aria-label="Active Genome Index selection">
+            <div class="genomilab-context-strip" aria-label="Active genome selection">
               <button type="button" data-nav-target="genome-index">
-                <span>Active Genome Index</span><strong id="onboarding-agi-state">Checking context…</strong>
+                <span>Active genome</span><strong id="onboarding-agi-state">Checking context…</strong>
               </button>
             </div>
           </section>
@@ -151,6 +151,13 @@
               <button id="send" class="primary" type="submit">Send</button>
             </div>
           </form>
+          <section id="conversation-attachments" class="conversation-attachments" aria-labelledby="conversation-attachments-title" hidden>
+            <div class="conversation-attachments-heading">
+              <h3 id="conversation-attachments-title">Records in this conversation</h3>
+              <p class="small" data-conversation-attachment-summary></p>
+            </div>
+            <div class="conversation-attachments-list" data-conversation-attachment-list></div>
+          </section>
           <div id="messages" class="messages">
             {PORTAL_WELCOME_MESSAGE}
           </div>

@@ -148,7 +148,7 @@ class PortalGenomesTests(unittest.TestCase):
             ) as bind,
             self.assertRaisesRegex(
                 portal_genomes.OperationError,
-                "does not own the selected Active Genome Index",
+                "does not own the selected active genome",
             ),
         ):
             portal_genomes.select_active_genome(

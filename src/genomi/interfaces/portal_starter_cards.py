@@ -8,8 +8,8 @@ from typing import Any, Mapping
 JsonObject = dict[str, Any]
 
 WELCOME_INTRO = (
-    "Start with a genetics question, a genome-source path, or a public evidence workflow. "
-    "Genomi keeps the workspace visible while your assistant does the reasoning."
+    "Ask about symptoms, a diagnosis, a medication, or your genome. "
+    "Genomi researches the question and keeps every record and source it used in this workspace."
 )
 
 
@@ -39,24 +39,32 @@ class StarterCard:
 
 STARTER_CARDS: tuple[StarterCard, ...] = (
     StarterCard(
+        card_id="investigate-health-question",
+        label="Investigate a health question",
+        detail=(
+            "Bring symptoms, diagnoses, and test results. Genomi keeps competing explanations, "
+            "evidence, and open questions together as the investigation grows."
+        ),
+        prompt=(
+            "I have been dealing with the following: describe your symptoms, when they started, "
+            "and anything that makes them better or worse. My diagnoses so far: list them. "
+            "Medications I take: list them. What I want to understand: say it in your own words."
+        ),
+    ),
+    StarterCard(
+        card_id="review-a-medication",
+        label="Review a medication",
+        detail="Ask how your genetics could change how a drug you take, or are about to start, works for you.",
+        prompt=(
+            "How could my genetics affect the way I respond to this medication: name the drug. "
+            "I am taking it for: say the reason."
+        ),
+    ),
+    StarterCard(
         card_id="add-genome",
-        label="Add a genome",
-        detail="Paste a local VCF, BAM, FASTQ, array export, or genome bundle path.",
+        label="Add your genome",
+        detail="Point Genomi at a 23andMe, AncestryDNA, MyHeritage, VCF, or BAM export saved on this computer.",
         source_operation="genomi.parse_source",
-    ),
-    StarterCard(
-        card_id="target-evidence-report",
-        label="Target evidence report",
-        detail="Choose a gene, variant, drug, condition, or topic to review.",
-        source_operation="research.build_target_packet",
-        source_params={"target_type": "topic"},
-    ),
-    StarterCard(
-        card_id="variant-evidence",
-        label="Variant evidence",
-        detail="Run a public-first variant lookup and preserve limitations.",
-        source_operation="variant.resolve",
-        source_params={"rsid": "rs429358"},
     ),
 )
 

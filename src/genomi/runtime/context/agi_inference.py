@@ -5,7 +5,10 @@ import sqlite3
 from pathlib import Path
 
 from ...active_genome_index.active_genome_index import default_agi_path
-from ...active_genome_index.identity import read_agi_snapshot_identity
+from ...active_genome_index.identity import (
+    AGI_SNAPSHOT_METADATA_FIELDS,
+    read_agi_snapshot_identity,
+)
 from ...active_genome_index.revisions import materialize_immutable_agi_revision
 from ..paths import (
     ACTIVE_GENOME_INDEX_DB_NAME,
@@ -82,6 +85,14 @@ def infer_agi_record(
     agi_artifact_sha256: str | None = None
     if snapshot_identity:
         revision = materialize_immutable_agi_revision(resolved_agi_path)
+        # The published artifact carries the identity of record. A two-phase
+        # build can rotate to its completed snapshot between the read above and
+        # publication, and the record must describe the artifact it points at.
+        snapshot_identity = {
+            key: value
+            for key, value in revision.items()
+            if key in AGI_SNAPSHOT_METADATA_FIELDS
+        }
         agi_revision_path = Path(str(revision["agi_revision_path"]))
         agi_artifact_sha256 = str(revision["agi_artifact_sha256"])
     run: JsonObject = {

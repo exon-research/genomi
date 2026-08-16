@@ -105,13 +105,21 @@ function diagnosticRecordModel(events) {
   };
 }
 
-export function createMessageSurface({ list, onUseContext, onAskContext, onAskNewContext, onDraftContext, onAskFollowUp, onToolRecord, onApprovePermission }) {
+export function createMessageSurface({ list, onUseContext, onAskContext, onAskNewContext, onDraftContext, onAskFollowUp, onToolRecord, onApprovePermission, onConversationStateChange }) {
   let lastToolParent = null;
   let toolCards = new Map();
   let assistantMessagesByRunId = new Map();
   let toolStacksByRunId = new Map();
   let pendingStoredToolMessagesByRunId = new Map();
   let permissionRecordsByRunId = new Map();
+
+  function conversationIsEmpty() {
+    return Boolean(list.querySelector('[data-testid="genomi-chat-welcome"]')) || !list.querySelector('.message');
+  }
+
+  function reportConversationState() {
+    if (typeof onConversationStateChange === 'function') onConversationStateChange({ empty: conversationIsEmpty() });
+  }
 
   function reset() {
     list.innerHTML = welcomeMessageMarkup();
@@ -122,6 +130,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     pendingStoredToolMessagesByRunId = new Map();
     permissionRecordsByRunId = new Map();
     if (typeof onToolRecord === 'function') onToolRecord(null);
+    reportConversationState();
   }
 
   function addMessage(role, text, selectedEvidence, bridge = {}) {
@@ -148,6 +157,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     list.appendChild(el);
     scrollBottom();
     lastToolParent = role === 'assistant' ? el : null;
+    reportConversationState();
     return body;
   }
 
@@ -262,6 +272,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
         && message.stream_status !== 'streaming'
       ) finishRun(message.run_id, message.stream_status);
     });
+    reportConversationState();
   }
 
   function renderStoredMessage(message, replay = {}) {

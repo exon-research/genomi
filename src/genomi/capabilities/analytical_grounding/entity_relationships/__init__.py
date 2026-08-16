@@ -17,6 +17,7 @@ from .constants import (
     SUPPORTED_SOURCES,
     TAG_RE,
     TOKEN_RE,
+    UNIPROT_API_BASE,
 )
 from .helpers import (
     _candidate_label_matches,

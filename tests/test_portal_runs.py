@@ -540,7 +540,10 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertEqual(run.status, "failed")
         self.assertNotIn(run.id, portal_run_events.active_run_ids())
         self.assertEqual(frame["status"], "failed")
-        self.assertIn("could not be attached", frame["output_data"]["error"])
+        self.assertEqual(
+            frame["output_data"]["error"],
+            "Genomi could not start a local assistant for this turn.",
+        )
 
     def test_project_request_thread_start_failure_terminalizes_attached_run(self) -> None:
         project = portal_store.create_project(name="Thread start failure")
@@ -565,7 +568,10 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertEqual(run.status, "failed")
         self.assertEqual(frame["run_id"], run.id)
         self.assertEqual(frame["status"], "failed")
-        self.assertIn("could not be started", frame["output_data"]["error"])
+        self.assertEqual(
+            frame["output_data"]["error"],
+            "Genomi could not start a local assistant for this turn.",
+        )
         self.assertEqual(run.events[-1].event, "end")
         self.assertEqual(run.events[-1].data["status"], "failed")
 

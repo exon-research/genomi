@@ -20,6 +20,7 @@ from genomi.interfaces import portal_project_events
 from genomi.interfaces import portal_run_events
 from genomi.interfaces import portal_store
 from genomi.interfaces import portal_workspaces
+from tests.support.runtime.genomi import IsolatedGenomiHomeTestCase
 
 _PRIVATE_PATH_RE = re.compile(r"(?:/Users|/home|/tmp|/private/tmp|/var/folders|/opt/homebrew|/usr/local|/Applications|/Volumes|~)(?:/|$)")
 _PRIVATE_KEYS = {
@@ -34,7 +35,7 @@ _PRIVATE_KEYS = {
 }
 
 
-class MCPHTTPTests(unittest.TestCase):
+class MCPHTTPTests(IsolatedGenomiHomeTestCase):
     def test_health_endpoint_reports_http_transport(self) -> None:
         with _running_server() as address:
             status, payload = _request_json("GET", address, "/health")
@@ -213,9 +214,9 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertIn("/assets/portal.js", text)
         self.assertIn('id="artifact-workspace"', text)
         self.assertIn('id="genomi-starter-cards" type="application/json"', text)
+        self.assertIn('data-starter-card-id="investigate-health-question"', text)
+        self.assertIn('data-starter-card-id="review-a-medication"', text)
         self.assertIn('data-source-operation="genomi.parse_source"', text)
-        self.assertIn('data-source-operation="research.build_target_packet"', text)
-        self.assertIn('data-source-operation="variant.resolve"', text)
 
     def test_project_artifact_version_deep_link_serves_portal_workspace(self) -> None:
         with _running_server() as address:
@@ -247,6 +248,20 @@ class MCPHTTPTests(unittest.TestCase):
                     status, _headers, _body = _request_raw("GET", address, "/")
 
         self.assertEqual(status, 500)
+
+    def test_portal_project_creation_stays_inside_the_active_genomi_home(self) -> None:
+        with _running_server() as address:
+            create_status, created = _request_json("POST", address, "/api/projects", {"name": "Scoped project"})
+            list_status, listed = _request_json("GET", address, "/api/projects")
+
+        self.assertEqual(create_status, 201)
+        self.assertEqual(list_status, 200)
+        project_id = created["project"]["project_id"]
+        self.assertEqual([project["name"] for project in listed["projects"]], ["Scoped project"])
+        state = json.loads((self.genomi_home / "portal" / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(state["projects"]), [project_id])
+        self.assertEqual(state["active_project_id"], project_id)
+        self.assertTrue((self.genomi_home / "workspace" / project_id).is_dir())
 
     def test_portal_state_error_response_omits_local_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"GENOMI_HOME": tmp}):
@@ -489,7 +504,7 @@ class MCPHTTPTests(unittest.TestCase):
         self.assertNotIn("genomi.install", tools_by_name)
         self.assertNotIn("genomi.check_libraries", tools_by_name)
         self.assertNotIn("inputSchema", tools_by_name["variant.resolve"])
-        self.assertEqual(tools_by_name["genomi.parse_source"]["sourceLookup"]["displayLabel"], "Add genome file")
+        self.assertEqual(tools_by_name["genomi.parse_source"]["sourceLookup"]["displayLabel"], "Add a genome")
         self.assertEqual(tools_by_name["genomi.search_indexes"]["sourceLookup"]["displayLabel"], "Search public sources")
         self.assertEqual(tools_by_name["variant.resolve"]["sourceLookup"]["displayLabel"], "Variant lookup")
         self.assertEqual(

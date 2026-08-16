@@ -1,5 +1,6 @@
     import * as api from './portal_api.js';
     import { createActiveContextClient } from './portal_active_context_client.js';
+    import { conversationAttachmentModels, renderConversationAttachments } from './portal_conversation_attachments.js';
     import { createConversationReviewController } from './portal_conversation_review_controller.js';
     import { ARTIFACT_ACTIONS, isArtifactStateAction } from './portal_artifact_actions.js';
     import { artifactDisplayModel, artifactPreviewModel, artifactRecordsOutsideWorkspaceFiles, createArtifactLibraryController, renderArtifactPreview } from './portal_artifacts.js';
@@ -92,7 +93,8 @@
       onDraftContext: draftPromptContext,
       onAskFollowUp: askToolFollowUp,
       onToolRecord: handleToolRecord,
-      onApprovePermission: approvePermissionRequest
+      onApprovePermission: approvePermissionRequest,
+      onConversationStateChange: renderConversationIntake
     });
     const conversationReview = createConversationReviewController({
       container: $('conversation-review'),
@@ -451,6 +453,10 @@
     function activeConversation() {
       return state.frames.find((frame) => frame && frame.id === state.frameId) || null;
     }
+    function renderConversationIntake({ empty } = {}) {
+      const intake = document.querySelector('.genomilab-intake');
+      if (intake) intake.hidden = !empty;
+    }
     function renderConversationIdentity() {
       const frame = activeConversation();
       const title = frame ? frameTitle(frame) : 'New conversation';
@@ -747,7 +753,7 @@
       const addGenome = $('context-add-genome');
       if (addGenome) {
         addGenome.textContent = genomeHeader.addLabel || 'Add genome';
-        addGenome.setAttribute('aria-label', 'Add a genome source');
+        addGenome.setAttribute('aria-label', 'Add a genome');
       }
     }
     async function loadGenomeInventorySafe(projectId) {
@@ -865,6 +871,11 @@
       return title && title !== 'Untitled conversation' ? '"' + title + '"' : 'the current conversation';
     }
     function renderMessageArtifacts() {
+      renderConversationAttachments(
+        $('conversation-attachments'),
+        conversationAttachmentModels(state.artifacts, state.frameId),
+        { onOpenAttachment: openAttachedRecord }
+      );
       messageSurface.renderInlineArtifacts(state.artifacts, {
         frameId: state.frameId,
         onUseContext: appendPromptContext,
@@ -1011,10 +1022,12 @@
       setFileImportStatus(attachToPrompt, attachToPrompt ? 'Attaching...' : 'Importing...');
       try {
         const contentBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+        const conversationId = attachToPrompt ? String(state.frameId || '').trim() : '';
         const payload = await api.importProjectFile(state.project.project_id, {
           filename: file.name,
           contentType: file.type || 'application/octet-stream',
-          contentBase64
+          contentBase64,
+          ...(conversationId ? { frameId: conversationId } : {})
         });
         const artifact = payload.artifact || {};
         if (artifact.id) {
@@ -1173,6 +1186,10 @@
       hydrateActiveArtifactPreview();
       activateWorkspaceSection('artifact-workspace', { replaceHash: false });
       scheduleActiveContextSync();
+    }
+    function openAttachedRecord(artifactId) {
+      const artifact = (state.artifacts || []).find((item) => item && item.id === artifactId);
+      if (artifact) previewArtifact(artifact);
     }
     function closeArtifactPreview() {
       state.activeArtifactId = null;
@@ -1586,6 +1603,10 @@
         throw error;
       }
     }
+    function answerBreak(body) {
+      const written = String((body && body.dataset && body.dataset.rawText) || '').trim();
+      return written ? '\n\n' : '';
+    }
     function attachRun(runId, body) {
       const frameId = state.frameId;
       stopActiveRun({ resetSend: false });
@@ -1611,7 +1632,7 @@
         onInterrupt: () => {
           if (!isCurrentRun(runId, frameId)) return;
           assistantMessage?.classList.remove('streaming');
-          messageSurface.appendText(body, '\\n\\nRun stream interrupted. Refresh this conversation or send the turn again.');
+          messageSurface.appendText(body, answerBreak(body) + 'The connection to the assistant dropped before this turn finished. Refresh this conversation or send the question again.');
           $('send').disabled = false;
           state.activeRun = null;
           loadFrames().catch(() => undefined);
@@ -1620,7 +1641,7 @@
           if (!isCurrentRun(runId, frameId)) return;
           assistantMessage?.classList.remove('streaming');
           messageSurface.finishRun(runId, data.status || 'completed');
-          if (data.status !== 'succeeded' && data.error) messageSurface.appendText(body, '\\n\\nRun ' + data.status + ': ' + data.error);
+          if (data.status !== 'succeeded' && data.error) messageSurface.appendText(body, answerBreak(body) + data.error);
           loadFrames().catch(() => undefined);
           $('send').disabled = false;
           state.activeRun = null;
@@ -1695,7 +1716,7 @@
       state.activeToolName = null;
       renderToolWorkspace();
       showEvidenceSourceUnavailable(
-        'Add genome file',
+        'Add a genome',
         sourceSuggestionUnavailableMessage('genomi.parse_source') + ' Refresh evidence sources or add the genome from chat with a local file path.'
       );
       return false;
@@ -1706,7 +1727,7 @@
         state.activeToolName = null;
         renderToolWorkspace();
         showEvidenceSourceUnavailable(
-          'Add genome file',
+          'Add a genome',
           (error && error.message) || 'Genome-source setup is unavailable. Refresh evidence sources or add the genome from chat with a local file path.'
         );
       });

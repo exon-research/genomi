@@ -111,7 +111,7 @@ def _selection_user_id(
         if not selected_user_id or selected_user_id not in owner_ids:
             raise OperationError(
                 "invalid_params",
-                "That Genomi user does not own the selected Active Genome Index.",
+                "That Genomi user does not own the selected active genome.",
             )
         return selected_user_id
     return next(iter(owner_ids)) if len(owner_ids) == 1 else ""

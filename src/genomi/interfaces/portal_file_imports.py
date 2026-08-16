@@ -21,6 +21,7 @@ class ImportFile:
     filename: str
     content_type: str
     body: bytes
+    frame_id: str = ""
 
 
 def import_project_file(
@@ -48,8 +49,36 @@ def import_project_file(
             "workspace_write_failed",
             "File could not be saved to the project workspace.",
         )
-    artifact = portal_store.add_artifact_from_bytes(
-        clean_project_id,
+    try:
+        artifact = _store_imported_file(clean_project_id, request, workspace_relative_path, root=root)
+    except portal_store.ArtifactOriginError:
+        return HTTPStatus.BAD_REQUEST, _error(
+            "conversation_not_found",
+            "That conversation is not part of this project.",
+        )
+    if artifact is None:
+        return HTTPStatus.NOT_FOUND, _error("not_found", "project not found")
+    return HTTPStatus.CREATED, {
+        "artifact": portal_store.public_artifact_detail(artifact, root=root),
+        "imported": {
+            "filename": request.filename,
+            "workspace_relative_path": workspace_relative_path,
+            "content_type": request.content_type,
+            "size_bytes": len(request.body),
+            "sha256": _sha256_bytes(request.body),
+        },
+    }
+
+
+def _store_imported_file(
+    project_id: str,
+    request: ImportFile,
+    workspace_relative_path: str,
+    *,
+    root: str | Path | None,
+) -> JsonObject | None:
+    return portal_store.add_artifact_from_bytes(
+        project_id,
         kind="project_file",
         renderer="project_file",
         title=workspace_relative_path,
@@ -58,6 +87,7 @@ def import_project_file(
         original_filename=request.filename,
         content_type=request.content_type,
         body=request.body,
+        frame_id=request.frame_id or None,
         summary={
             "kind": "project_file",
             "source": "portal_import",
@@ -76,18 +106,6 @@ def import_project_file(
         open_label="Open file",
         root=root,
     )
-    if artifact is None:
-        return HTTPStatus.NOT_FOUND, _error("not_found", "project not found")
-    return HTTPStatus.CREATED, {
-        "artifact": portal_store.public_artifact_detail(artifact, root=root),
-        "imported": {
-            "filename": request.filename,
-            "workspace_relative_path": workspace_relative_path,
-            "content_type": request.content_type,
-            "size_bytes": len(request.body),
-            "sha256": _sha256_bytes(request.body),
-        },
-    }
 
 
 def _import_file_from_payload(payload: JsonObject) -> ImportFile | JsonObject:
@@ -103,6 +121,7 @@ def _import_file_from_payload(payload: JsonObject) -> ImportFile | JsonObject:
         filename=filename,
         content_type=_safe_content_type(payload.get("contentType")),
         body=body,
+        frame_id=portal_turns.prompt_safe_text(str(payload.get("frameId") or "")).strip(),
     )
 
 

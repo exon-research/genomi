@@ -4,7 +4,7 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Mapping
 
 try:  # POSIX is the supported production boundary; tests retain a thread lock.
     import fcntl
@@ -326,15 +326,32 @@ def set_response_profile_id(profile_id: str | None, root: str | Path | None = No
         return save_registry(registry, root)
 
 
+def environment_scope_id(environment: Mapping[str, str]) -> str:
+    """Return the session scope id a Genomi process with this environment uses.
+
+    Callers that launch a Genomi runtime in a child process (portal host-agent
+    runs, nested MCP servers) need the same session identity that child will
+    compute for itself, for example to bind receipts it issued.
+    """
+
+    configured_context = str(environment.get(GENOMI_CONTEXT_ENV) or "")
+    if configured_context:
+        return _path_str(configured_context) or ""
+    session_id = str(environment.get(GENOMI_SESSION_ENV) or "")
+    if session_id:
+        return _stable_session_id(session_id)
+    return ""
+
+
 def context_scope(root: str | Path | None = None) -> JsonObject:
     if root is not None:
         return {"type": "explicit_root", "id": _path_str(genomi_data_root(root))}
     configured_context = os.environ.get(GENOMI_CONTEXT_ENV)
     if configured_context:
-        return {"type": "context_file_env", "env": GENOMI_CONTEXT_ENV, "id": _path_str(configured_context)}
+        return {"type": "context_file_env", "env": GENOMI_CONTEXT_ENV, "id": environment_scope_id(os.environ)}
     session_id = os.environ.get(GENOMI_SESSION_ENV)
     if session_id:
-        return {"type": "session_env", "env": GENOMI_SESSION_ENV, "id": _stable_session_id(session_id)}
+        return {"type": "session_env", "env": GENOMI_SESSION_ENV, "id": environment_scope_id(os.environ)}
     agent_session = _agent_session_id()
     if agent_session:
         env_name, raw_value = agent_session.split(":", 1)

@@ -5,13 +5,21 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+from genomi.capabilities.biohub import esmc as biohub_esmc
 from genomi.capabilities.biohub.esmc import compare_protein_embeddings
-from genomi.capabilities.paperclip.read import retrieve_document_evidence
-from genomi.capabilities.paperclip.search import search_biomedical
+from genomi.capabilities.paperclip.read import COLLECTIONS, retrieve_document_evidence
+from genomi.capabilities.paperclip.search import SUPPORTED_SOURCES, search_biomedical
+from genomi.capabilities.proto import tools as proto_tools
 from genomi.capabilities.proto.tools import run_tool, search_tools
 from genomi.evidence import envelope as evidence_envelope
 from genomi.operations.registry.table import call_operation, list_operations
 from genomi.runtime.external_credentials import external_credential_session
+from tests.support.capabilities.paperclip_cli import (
+    FDA_DISPLAY,
+    PMC_ABSTRACTS_DISPLAY,
+    PROTEINS_DISPLAY,
+    TRIALS_JP_DISPLAY,
+)
 
 
 class ExternalCapabilityTests(unittest.TestCase):
@@ -35,47 +43,179 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(result["dispatched_tool"], "paperclip.search_biomedical")
         self.assertIn(result["status"], {"source_unavailable", "completed", "in_scope_empty"})
 
+    def test_provider_scope_gates_are_discoverable_from_the_tool_definition(self) -> None:
+        # The runtime accepts exactly one scope literal per provider and fails
+        # closed on anything else. A host agent reads the tool definition, not
+        # the handler, so the accepted literal has to be in the schema.
+        cases = (
+            (
+                "biohub",
+                "biohub.compare_protein_embeddings",
+                "sequence_scope",
+                biohub_esmc.PUBLIC_SEQUENCE_SCOPE,
+            ),
+            (
+                "proto",
+                "proto.run_tool",
+                "input_scope",
+                proto_tools.PUBLIC_INPUT_SCOPE,
+            ),
+        )
+        for capability, name, field, accepted in cases:
+            with self.subTest(operation=name):
+                definition = next(
+                    tool
+                    for tool in list_operations(capability=capability)
+                    if tool["name"] == name
+                )
+                schema = definition["inputSchema"]
+                self.assertIn(field, schema["required"])
+                self.assertEqual(schema["properties"][field]["enum"], [accepted])
+
+    def _search_display(
+        self, display: str, sources: list[str]
+    ) -> dict[str, object]:
+        def runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            self.assertNotIn("--json", command)
+            return subprocess.CompletedProcess(command, 0, display, "")
+
+        with external_credential_session({"PAPERCLIP_API_KEY": "paperclip-test-secret"}):
+            with patch(
+                "genomi.capabilities.paperclip.search.shutil.which",
+                return_value="paperclip",
+            ):
+                return search_biomedical(
+                    query="public question", sources=sources, limit=2, runner=runner
+                )
+
+    def test_every_declared_source_resolves_a_readable_collection(self) -> None:
+        for source in SUPPORTED_SOURCES:
+            with self.subTest(source=source):
+                record = self._search_display(TRIALS_JP_DISPLAY, [source])["records"][0]
+                self.assertEqual(record["source"], source)
+                # The `tri_` handle in this capture is read under /trials/
+                # whichever declared source the host asked for, including the
+                # `fda/jp` and `fda/eu` regulatory sources.
+                self.assertEqual(record["collection"], "trials")
+                self.assertIn(record["collection"], COLLECTIONS)
+
     def test_paperclip_uses_secret_only_in_child_environment(self) -> None:
         seen: dict[str, object] = {}
 
         def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             seen["command"] = command
             seen["env"] = kwargs["env"]
-            payload = {"results": [{"id": "PMC1", "title": "Public paper", "source": "pmc"}]}
-            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+            return subprocess.CompletedProcess(command, 0, PMC_ABSTRACTS_DISPLAY, "")
 
         with external_credential_session({"PAPERCLIP_API_KEY": "paperclip-test-secret"}):
             with patch("genomi.capabilities.paperclip.search.shutil.which", return_value="paperclip"):
                 result = search_biomedical(query="public question", runner=runner)
-        self.assertEqual(result["records"][0]["title"], "Public paper")
+        self.assertEqual(result["records"][0]["record_id"], "PMC5435412")
         self.assertNotIn("paperclip-test-secret", json.dumps(result))
         self.assertNotIn("paperclip-test-secret", seen["command"])
         self.assertEqual(seen["env"]["PAPERCLIP_API_KEY"], "paperclip-test-secret")
 
-    def test_paperclip_parses_current_cli_search_display(self) -> None:
-        display = """Found 1 paper  [s_abc123]
-
-  1. Public mechanism paper
-     Ada Author, Ben Researcher
-     PMC1234567 · Example Journal · 2024-04-02
-     https://doi.org/10.1000/example
-     \"A public evidence summary.\"
-
-[20ms, saved to s_abc123]
-"""
-
-        def runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-            self.assertNotIn("--json", command)
-            return subprocess.CompletedProcess(command, 0, display, "")
-
-        with external_credential_session({"PAPERCLIP_API_KEY": "paperclip-test-secret"}):
-            with patch("genomi.capabilities.paperclip.search.shutil.which", return_value="paperclip"):
-                result = search_biomedical(query="public question", sources=["pmc"], runner=runner)
+    def test_paperclip_parses_paper_display_entries(self) -> None:
+        result = self._search_display(PMC_ABSTRACTS_DISPLAY, ["pmc", "abstracts"])
         self.assertEqual(result["status"], "completed")
-        self.assertEqual(result["result_id"], "s_abc123")
-        self.assertEqual(result["records"][0]["record_id"], "PMC1234567")
-        self.assertEqual(result["records"][0]["collection"], "papers")
-        self.assertEqual(result["records"][0]["doi"], "10.1000/example")
+        self.assertEqual(result["result_ids"], ["s_6b726a6f"])
+        first, second = result["records"]
+        self.assertEqual(
+            first,
+            {
+                "title": (
+                    "Antibody-mediated neutralization of soluble MIC significantly "
+                    "enhances CTLA4 blockade therapy"
+                ),
+                "authors": (
+                    "Jingyu Zhang, Dai Liu, Guangfu Li, Kevin F. Staveley-O’Carroll, "
+                    "Julie N. Graff, Zihai Li, Jennifer D..."
+                ),
+                "record_id": "PMC5435412",
+                "journal": "Science Advances",
+                "published": "2017-05-01",
+                "url": "https://doi.org/10.1126/sciadv.1602133",
+                "doi": "10.1126/sciadv.1602133",
+                "abstract": (
+                    "This study investigated the combined therapeutic effect of "
+                    "anti-CTLA4 and anti-sMIC antibodies. Soluble MIC neutralization "
+                    "significantly enhances CTLA4 blockade therapy."
+                ),
+                "collection": "papers",
+                "source": "pmc",
+            },
+        )
+        self.assertEqual(second["record_id"], "PMC3300183")
+        self.assertEqual(second["authors"], "A Korman")
+        self.assertEqual(second["journal"], "Breast Cancer Research : BCR")
+        self.assertEqual(second["collection"], "papers")
+
+    def test_paperclip_parses_regulatory_display_entries(self) -> None:
+        result = self._search_display(FDA_DISPLAY, ["fda"])
+        self.assertEqual(result["result_ids"], ["s_4561f9c3"])
+        first, second = result["records"]
+        self.assertEqual(first["title"], "Yervoy")
+        self.assertEqual(first["record_id"], "fda_0100f40f7361")
+        self.assertEqual(first["collection"], "fda")
+        self.assertEqual(first["source"], "fda")
+        self.assertEqual(first["external_id"], "BLA125377")
+        self.assertEqual(first["journal"], "TOC Review")
+        self.assertEqual(
+            first["section"],
+            "Study title: Biophysical characterization of protein reagents used in "
+            "MDX-010 SPR experiments",
+        )
+        self.assertTrue(
+            first["abstract"].startswith("Bristol-Myers Squibb submitted an original")
+        )
+        # One application number covers many documents, so the readable handle
+        # is what separates them.
+        self.assertEqual(second["external_id"], "BLA125377")
+        self.assertEqual(second["record_id"], "fda_6b679bd504e9")
+        self.assertEqual(second["section"], "Market approval status")
+
+    def test_paperclip_parses_trial_registry_display_entries(self) -> None:
+        result = self._search_display(TRIALS_JP_DISPLAY, ["trials/jp"])
+        self.assertEqual(result["result_ids"], ["s_974f9f85"])
+        first, second = result["records"]
+        self.assertEqual(first["record_id"], "tri_316b07644307")
+        self.assertEqual(first["external_id"], "UMIN000028085")
+        self.assertEqual(first["journal"], "umin_registry")
+        self.assertEqual(first["section"], "primary_outcomes")
+        self.assertEqual(first["source"], "trials/jp")
+        self.assertEqual(first["collection"], "trials")
+        self.assertEqual(
+            first["abstract"],
+            "Malignant melanoma Patients with malignant melanoma None Disease "
+            "specific survival",
+        )
+        self.assertEqual(second["record_id"], "tri_6e3c56bf266b")
+        self.assertEqual(second["collection"], "trials")
+
+    def test_paperclip_parses_protein_display_entries(self) -> None:
+        result = self._search_display(PROTEINS_DISPLAY, ["proteins"])
+        self.assertEqual(result["result_ids"], ["s_1818459d"])
+        self.assertEqual(
+            result["records"],
+            [
+                {
+                    "title": "CTLA4 - Cytotoxic T-lymphocyte protein 4",
+                    "record_id": "P16410",
+                    "accession": "P16410",
+                    "organism": "Homo sapiens",
+                    "collection": "proteins",
+                    "source": "proteins",
+                },
+                {
+                    "title": "CTLA4 - Cytotoxic T-lymphocyte protein 4",
+                    "record_id": "P42072",
+                    "accession": "P42072",
+                    "organism": "Oryctolagus cuniculus",
+                    "collection": "proteins",
+                    "source": "proteins",
+                },
+            ],
+        )
 
     def test_paperclip_reads_line_pinned_public_evidence(self) -> None:
         seen: list[list[str]] = []
@@ -108,6 +248,7 @@ class ExternalCapabilityTests(unittest.TestCase):
                     runner=runner,
                 )
         self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["document"]["record_id"], "PMC1234567")
         self.assertEqual(result["excerpts"][0]["line_start"], 16)
         self.assertEqual(
             result["excerpts"][0]["citation_url"],
@@ -116,6 +257,53 @@ class ExternalCapabilityTests(unittest.TestCase):
         self.assertEqual(seen[0][1], "cat")
         self.assertEqual(seen[1][1], "grep")
         self.assertNotIn("paperclip-test-secret", json.dumps(result))
+
+    def test_paperclip_reads_the_handle_a_regulatory_search_returned(self) -> None:
+        read_paths: list[str] = []
+
+        def runner(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            read_paths.append(next(part for part in command if part.startswith("/fda/")))
+            if command[1] == "cat":
+                payload = {
+                    "document_id": "0100f40f-7361-5695-80fc-b480dcdb52d5",
+                    "source_type": "toc_review",
+                    "identifier": "BLA125377",
+                    "tradename": "Yervoy",
+                    "public_url": (
+                        "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2011/"
+                        "125377Orig1s000PharmR.pdf"
+                    ),
+                    "total_pages": 131,
+                }
+                return subprocess.CompletedProcess(
+                    command, 0, json.dumps(payload) + "\n[30ms]\n", ""
+                )
+            return subprocess.CompletedProcess(
+                command, 0, "L14:Bristol Myers-Squibb Corp. (BMS) has submitted a BLA.\n", ""
+            )
+
+        record = self._search_display(FDA_DISPLAY, ["fda"])["records"][0]
+        with external_credential_session({"PAPERCLIP_API_KEY": "paperclip-test-secret"}):
+            with patch(
+                "genomi.capabilities.paperclip.read.shutil.which", return_value="paperclip"
+            ):
+                result = retrieve_document_evidence(
+                    document_id=record["record_id"],
+                    collection=record["collection"],
+                    patterns=["Bristol"],
+                    runner=runner,
+                )
+        self.assertEqual(read_paths[0], "/fda/fda_0100f40f7361/meta.json")
+        self.assertEqual(read_paths[1], "/fda/fda_0100f40f7361/content.lines")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["document"]["record_id"], "fda_0100f40f7361")
+        self.assertEqual(result["document"]["external_id"], "BLA125377")
+        self.assertEqual(result["document"]["title"], "Yervoy")
+        self.assertEqual(result["document"]["collection"], "fda")
+        self.assertEqual(
+            result["excerpts"][0]["citation_url"],
+            "https://paperclip.gxl.ai/citations/fda/fda_0100f40f7361#L14",
+        )
 
     def test_biohub_returns_metrics_without_secret_or_embeddings(self) -> None:
         vectors = iter(([1.0, 0.0], [0.8, 0.2]))
@@ -188,59 +376,24 @@ class ExternalCapabilityTests(unittest.TestCase):
                     "out_of_scope_for_input",
                 )
 
-    def test_public_paperclip_protein_sequence_can_feed_biohub(self) -> None:
-        def paperclip_runner(
-            command: list[str], **_: object
-        ) -> subprocess.CompletedProcess[str]:
-            self.assertEqual(command[1:4], ["search", "-s", "proteins"])
-            payload = {
-                "results": [
-                    {
-                        "document_id": "P16410",
-                        "accession": "P16410",
-                        "uniprot_id": "CTLA4_HUMAN",
-                        "protein_name": "Cytotoxic T-lymphocyte protein 4",
-                        "source": "uniprot",
-                        "sequence": {
-                            "value": self.CTLA4_REFERENCE_SEQUENCE,
-                            "length": len(self.CTLA4_REFERENCE_SEQUENCE),
-                        },
-                    }
-                ]
-            }
-            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+    def test_paperclip_accession_identifies_the_biohub_reference_sequence(self) -> None:
+        # Paperclip serves the accession and organism; the public reference
+        # sequence for that accession is what BioHub compares.
+        protein = self._search_display(PROTEINS_DISPLAY, ["proteins"])["records"][0]
+        reference = self.CTLA4_REFERENCE_SEQUENCE
+        changed_index = reference.index("Q")
+        alternate = reference[:changed_index] + "H" + reference[changed_index + 1 :]
+        vectors = iter(([1.0, 0.0], [0.9, 0.1]))
 
-        with external_credential_session(
-            {
-                "PAPERCLIP_API_KEY": "paperclip-test-secret",
-                "BIOHUB_API_KEY": "biohub-test-secret",
-            }
-        ):
-            with patch(
-                "genomi.capabilities.paperclip.search.shutil.which",
-                return_value="paperclip",
-            ):
-                search_result = search_biomedical(
-                    query="UniProt P16410",
-                    sources=["proteins"],
-                    limit=1,
-                    runner=paperclip_runner,
-                )
+        def biohub_transport(
+            path: str, payload: dict[str, object], token: str
+        ) -> dict[str, object]:
+            self.assertEqual(token, "biohub-test-secret")
+            if path.endswith("encode"):
+                return {"outputs": {"sequence": [1, 2, 3]}}
+            return {"mean_embedding": [[list(next(vectors))]]}
 
-            protein = search_result["records"][0]
-            reference = protein["reference_sequence"]
-            changed_index = reference.index("Q")
-            alternate = reference[:changed_index] + "H" + reference[changed_index + 1 :]
-            vectors = iter(([1.0, 0.0], [0.9, 0.1]))
-
-            def biohub_transport(
-                path: str, payload: dict[str, object], token: str
-            ) -> dict[str, object]:
-                self.assertEqual(token, "biohub-test-secret")
-                if path.endswith("encode"):
-                    return {"outputs": {"sequence": [1, 2, 3]}}
-                return {"mean_embedding": [[list(next(vectors))]]}
-
+        with external_credential_session({"BIOHUB_API_KEY": "biohub-test-secret"}):
             comparison = compare_protein_embeddings(
                 reference_sequence=reference,
                 alternate_sequence=alternate,
@@ -250,56 +403,12 @@ class ExternalCapabilityTests(unittest.TestCase):
             )
 
         self.assertEqual(protein["accession"], "P16410")
-        self.assertEqual(reference, self.CTLA4_REFERENCE_SEQUENCE)
-        self.assertEqual(search_result["status"], "completed")
+        self.assertEqual(protein["organism"], "Homo sapiens")
         self.assertEqual(comparison["status"], "completed")
         self.assertEqual(
             comparison["comparison"]["changed_positions"][0]["position"],
             changed_index + 1,
         )
-        self.assertNotIn("patient", json.dumps(search_result).lower())
-        self.assertNotIn("agi", json.dumps(search_result).lower())
-
-    def test_invalid_public_protein_sequence_is_omitted(self) -> None:
-        payload = {
-            "results": [
-                {
-                    "document_id": "P16410",
-                    "accession": "P16410",
-                    "source": "uniprot",
-                    "sequence": {"value": "ACGT*"},
-                },
-                {
-                    "document_id": "not-an-accession",
-                    "accession": "not-an-accession",
-                    "source": "uniprot",
-                    "sequence": {"value": self.CTLA4_REFERENCE_SEQUENCE},
-                },
-            ]
-        }
-
-        def runner(
-            command: list[str], **_: object
-        ) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-
-        with external_credential_session(
-            {"PAPERCLIP_API_KEY": "paperclip-test-secret"}
-        ):
-            with patch(
-                "genomi.capabilities.paperclip.search.shutil.which",
-                return_value="paperclip",
-            ):
-                result = search_biomedical(
-                    query="public protein accessions",
-                    sources=["uniprot"],
-                    runner=runner,
-                )
-
-        self.assertEqual(result["records"][0]["accession"], "P16410")
-        self.assertNotIn("reference_sequence", result["records"][0])
-        self.assertNotIn("accession", result["records"][1])
-        self.assertNotIn("reference_sequence", result["records"][1])
 
     def test_proto_preserves_result_and_prunes_paths(self) -> None:
         class Native:
