@@ -8,6 +8,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
+from ..operations.registry.evidence_result_receipts import (
+    EVIDENCE_RESULT_RECEIPTS,
+    EvidenceResultReceiptError,
+)
+
 JsonObject = dict[str, Any]
 EventHandler = Callable[[JsonObject], None]
 
@@ -25,6 +30,7 @@ class CodexAppServerSession:
     stdin: TextIO
     stdout: TextIO
     on_event: EventHandler
+    session_id: str = ""
     _next_request_id: int = 1
     _turn_started: bool = False
     _turn_submitted: bool = False
@@ -354,6 +360,11 @@ class CodexAppServerSession:
                 **existing,
                 "assignment_id": assignment_id,
                 "execution_policy": policy,
+                "specialist_brief_id": str(
+                    value.get("specialist_brief_id")
+                    or existing.get("specialist_brief_id")
+                    or ""
+                ),
                 "specialist_role": str(value.get("specialist_role") or existing.get("specialist_role") or ""),
                 "state": state,
             }
@@ -494,6 +505,8 @@ class CodexAppServerSession:
             update["assignment_id"] = assignment_id
         if message:
             update["message"] = message
+        if succeeded and message:
+            self._authorize_specialist_receipts(specialist, message)
         output: JsonObject = {
             "status": "completed" if succeeded else "failed",
             "updates": [update],
@@ -511,6 +524,34 @@ class CodexAppServerSession:
             }
         )
         self._completed_specialist_threads.add(thread_id)
+
+    def _authorize_specialist_receipts(
+        self, specialist: JsonObject, message: str
+    ) -> None:
+        """Bind only receipts observed in this child's terminal response."""
+
+        assignment_id = str(specialist.get("assignment_id") or "")
+        assignment = self._specialist_assignments.get(assignment_id, {})
+        brief_id = str(assignment.get("specialist_brief_id") or "")
+        policy = str(specialist.get("execution_policy") or "")
+        native_agent_id = str(specialist.get("agent_id") or "")
+        if not all((self.session_id, assignment_id, brief_id, policy, native_agent_id)):
+            return
+        for receipt_id in sorted(set(_RESULT_RECEIPT_PATTERN.findall(message))):
+            try:
+                EVIDENCE_RESULT_RECEIPTS.authorize_specialist_result(
+                    receipt_id,
+                    session_id=self.session_id,
+                    specialist_assignment_id=assignment_id,
+                    specialist_brief_id=brief_id,
+                    native_agent_id=native_agent_id,
+                    execution_policy=policy,
+                )
+            except EvidenceResultReceiptError:
+                # Search receipts may expire before a long specialist turn ends,
+                # and arbitrary receipt-looking prose is not trusted. Capture
+                # still fails closed because it requires a valid authorization.
+                continue
 
     def _item_events(self, item: JsonObject, *, completed: bool) -> list[JsonObject]:
         item_type = str(item.get("type") or "")
@@ -553,6 +594,8 @@ _COLLAB_TOOL_NAMES = {
     "wait": "wait_agent",
     "closeAgent": "interrupt_agent",
 }
+
+_RESULT_RECEIPT_PATTERN = re.compile(r"result-receipt-[A-Za-z0-9_-]{24,128}")
 
 
 def _tool_item(item: JsonObject) -> tuple[str, JsonObject, Any] | None:

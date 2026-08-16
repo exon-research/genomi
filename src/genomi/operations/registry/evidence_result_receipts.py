@@ -55,6 +55,7 @@ _RECEIPT_KEYS = frozenset(
         "params",
         "result",
         "issued_at",
+        "specialist_authorization",
         "payload_sha256",
     }
 )
@@ -99,6 +100,7 @@ class EvidenceResultReceiptIssuer:
             "params": copy.deepcopy(params),
             "result": copy.deepcopy(result),
             "issued_at": time.time(),
+            "specialist_authorization": None,
         }
         payload["payload_sha256"] = _payload_digest(payload)
         with self._store_lock():
@@ -110,6 +112,54 @@ class EvidenceResultReceiptIssuer:
             )
             self._enforce_bound_locked()
         return receipt_id
+
+    def authorize_specialist_result(
+        self,
+        receipt_id: object,
+        *,
+        session_id: str,
+        specialist_assignment_id: str,
+        specialist_brief_id: str,
+        native_agent_id: str,
+        execution_policy: str,
+    ) -> None:
+        """Bind a provider receipt observed in one completed native child turn.
+
+        Provider operations and Main orchestration share a portal session.  A
+        session digest alone therefore cannot prove that a result came from the
+        assigned child rather than from Main.  The portal app-server observer
+        adds this immutable binding only for opaque receipts returned by the
+        terminal child message.
+        """
+
+        identifier, session = self._validated_lookup(receipt_id, session_id)
+        authorization = {
+            "specialist_assignment_id": _required_binding(
+                specialist_assignment_id, "specialist_assignment_id"
+            ),
+            "specialist_brief_id": _required_binding(
+                specialist_brief_id, "specialist_brief_id"
+            ),
+            "native_agent_id": _required_binding(native_agent_id, "native_agent_id"),
+            "execution_policy": _required_binding(
+                execution_policy, "execution_policy"
+            ),
+        }
+        with self._store_lock():
+            receipt = self._load_locked(identifier)
+            self._validate_session(receipt, session)
+            existing = receipt.get("specialist_authorization")
+            if existing not in (None, authorization):
+                raise EvidenceResultReceiptError(
+                    "the evidence result receipt already belongs to another specialist"
+                )
+            receipt["specialist_authorization"] = authorization
+            receipt["payload_sha256"] = _payload_digest(receipt)
+            atomic_write_private_json(
+                self._receipt_path(identifier),
+                receipt,
+                private_root=genomi_data_root(),
+            )
 
     def resolve(self, receipt_id: object, *, session_id: str) -> JsonObject:
         identifier, session = self._validated_lookup(receipt_id, session_id)
@@ -230,6 +280,9 @@ class EvidenceResultReceiptIssuer:
             or not isinstance(payload.get("params"), dict)
             or not isinstance(payload.get("result"), dict)
             or not isinstance(payload.get("issued_at"), (int, float))
+            or not _valid_specialist_authorization(
+                payload.get("specialist_authorization")
+            )
         ):
             raise EvidenceResultReceiptError(
                 "the evidence result receipt is invalid or tampered"
@@ -311,12 +364,33 @@ def _payload_digest(payload: JsonObject) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _required_binding(value: object, field: str) -> str:
+    text = str(value or "").strip()
+    if not text or len(text) > 500:
+        raise EvidenceResultReceiptError(f"{field} is required")
+    return text
+
+
+def _valid_specialist_authorization(value: object) -> bool:
+    if value is None:
+        return True
+    return isinstance(value, dict) and frozenset(value) == {
+        "specialist_assignment_id",
+        "specialist_brief_id",
+        "native_agent_id",
+        "execution_policy",
+    } and all(isinstance(item, str) and item for item in value.values())
+
+
 def _presented_receipt(receipt: JsonObject) -> JsonObject:
     return {
         "result_receipt_id": receipt["receipt_id"],
         "operation": receipt["operation"],
         "params": copy.deepcopy(receipt["params"]),
         "result": copy.deepcopy(receipt["result"]),
+        "specialist_authorization": copy.deepcopy(
+            receipt["specialist_authorization"]
+        ),
     }
 
 

@@ -78,6 +78,7 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             check=True,
         )
         process_receipt_id = issued.stdout.strip()
+        self._authorize_specialist_receipt(state, process_receipt_id)
 
         @contextmanager
         def authorized_store():
@@ -114,6 +115,7 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             params={},
             result={"status": "completed"},
         )
+        self._authorize_specialist_receipt(state, process_receipt_id)
 
         @contextmanager
         def authorized_store():
@@ -137,6 +139,51 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "invalid_lab_request")
         EVIDENCE_RESULT_RECEIPTS.resolve(process_receipt_id, session_id="session-a")
+
+    def test_main_provider_receipt_cannot_be_labeled_as_specialist_work(self) -> None:
+        state = self._completed_public_literature_assignment()
+        process_receipt_id = EVIDENCE_RESULT_RECEIPTS.issue(
+            session_id="session-a",
+            operation="paperclip.retrieve_document_evidence",
+            params={"document_id": "PMC1", "collection": "papers"},
+            result={
+                "status": "completed",
+                "evidence_envelope": {
+                    "operation": "paperclip.retrieve_document_evidence",
+                    "headline": "paperclip.retrieve_document_evidence: data_returned",
+                    "finding_state": "evidence_present",
+                    "answer_readiness": "answer_supported",
+                    "guidance": [],
+                    "negative_inference": {"allowed": False, "requires": []},
+                    "coverage": {"consulted_sources": ["paperclip:papers/PMC1"]},
+                },
+                "excerpts": [
+                    {"line_start": 1, "line_end": 1, "text": "Public evidence."}
+                ],
+            },
+        )
+
+        @contextmanager
+        def authorized_store():
+            yield self.store, "user-a", "session-a"
+
+        with mock.patch.object(
+            lab_operations, "_authorized_store", authorized_store
+        ), self.assertRaisesRegex(
+            OperationError, "not observed in the matching native specialist turn"
+        ):
+            lab_operations.capture_provider_result(
+                {
+                    "investigation_id": state["investigation_id"],
+                    "cycle_id": state["cycle_id"],
+                    "assignment_id": state["assignment_id"],
+                    "specialist_brief_id": state["specialist_brief_id"],
+                    "result_receipt_id": process_receipt_id,
+                    "purpose": "Reject Main-owned provider output",
+                    "command_id": "reject-main-provider-output",
+                    "expected_revision": state["domain_revision"],
+                }
+            )
 
     def test_cross_process_model_provider_receipts_become_research_artifacts(self) -> None:
         cases = (
@@ -204,6 +251,7 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
                     check=True,
                 )
                 process_receipt_id = issued.stdout.strip()
+                self._authorize_specialist_receipt(state, process_receipt_id)
 
                 @contextmanager
                 def authorized_store():
@@ -258,6 +306,7 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
                 },
             },
         )
+        self._authorize_specialist_receipt(state, process_receipt_id)
 
         @contextmanager
         def authorized_store():
@@ -523,6 +572,8 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             "specialist_brief_id": brief["specialist_brief_id"],
             "outbound_brief": brief["outbound_brief"],
             "assignment_id": assignment_id,
+            "native_agent_id": "native-specialist-a",
+            "execution_policy": "public_literature",
             "evidence_snapshot_id": updated["evidence_snapshot"][
                 "evidence_snapshot_id"
             ],
@@ -611,8 +662,22 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             "cycle_id": cycle_id,
             "specialist_brief_id": brief["specialist_brief_id"],
             "assignment_id": assignment_id,
+            "native_agent_id": f"native-{suffix}-specialist",
+            "execution_policy": policy,
             "domain_revision": completed["domain_revision"],
         }
+
+    def _authorize_specialist_receipt(
+        self, state: dict[str, object], receipt_id: str
+    ) -> None:
+        EVIDENCE_RESULT_RECEIPTS.authorize_specialist_result(
+            receipt_id,
+            session_id="session-a",
+            specialist_assignment_id=str(state["assignment_id"]),
+            specialist_brief_id=str(state["specialist_brief_id"]),
+            native_agent_id=str(state["native_agent_id"]),
+            execution_policy=str(state["execution_policy"]),
+        )
 
 
 if __name__ == "__main__":

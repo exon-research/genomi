@@ -400,6 +400,17 @@ def capture_provider_result(params: JsonObject) -> JsonObject:
         def persist(resolved: JsonObject) -> JsonObject:
             operation = str(resolved.get("operation") or "")
             exact_result = resolved.get("result")
+            specialist_authorization = resolved.get("specialist_authorization")
+            expected_authorization = {
+                "specialist_assignment_id": assignment_id,
+                "specialist_brief_id": specialist_brief_id,
+                "native_agent_id": str(assignment["native_agent_id"] or ""),
+                "execution_policy": policy_id,
+            }
+            if specialist_authorization != expected_authorization:
+                raise ValueError(
+                    "provider result receipt was not observed in the matching native specialist turn"
+                )
             if operation not in allowed_operations:
                 raise ValueError(
                     "provider result operation is outside the specialist execution policy"

@@ -528,6 +528,54 @@ class CodexAppServerSessionTests(unittest.TestCase):
         )
         self.assertEqual(violation["message"], "specialist_policy_binding_missing")
 
+    def test_terminal_child_message_authorizes_only_its_observed_provider_receipt(self) -> None:
+        session = portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), io.StringIO(), lambda _event: None,
+            session_id="portal:project:frame",
+        )
+        session._root_thread_id = "main-thread"
+        assignment = {
+            "specialist_assignment_id": "assignment-1",
+            "specialist_brief_id": "brief-1",
+            "execution_policy": "public_literature",
+            "specialist_role": "Public-literature reviewer",
+            "state": "proposed",
+        }
+        session._specialist_assignments["assignment-1"] = {
+            "assignment_id": "assignment-1",
+            "specialist_brief_id": "brief-1",
+            "execution_policy": "public_literature",
+            "specialist_role": "Public-literature reviewer",
+            "state": "proposed",
+        }
+        session._specialists_by_thread_id["child-thread"] = {
+            "call_id": "spawn-1",
+            "agent_id": "/root/literature_reviewer",
+            "assignment_id": "assignment-1",
+            "execution_policy": "public_literature",
+        }
+        receipt = "result-receipt-abcdefghijklmnopqrstuvwxyz012345"
+
+        with mock.patch.object(
+            portal_codex_app_server.EVIDENCE_RESULT_RECEIPTS,
+            "authorize_specialist_result",
+        ) as authorize:
+            session._specialist_final_messages["child-thread"] = (
+                f"Public analysis. Provider receipt: {receipt}"
+            )
+            session._complete_specialist(
+                "child-thread", {"status": "completed", "items": []}
+            )
+
+        authorize.assert_called_once_with(
+            receipt,
+            session_id="portal:project:frame",
+            specialist_assignment_id=assignment["specialist_assignment_id"],
+            specialist_brief_id=assignment["specialist_brief_id"],
+            native_agent_id="/root/literature_reviewer",
+            execution_policy=assignment["execution_policy"],
+        )
+
     def test_inbound_approval_request_with_colliding_id_is_declined_without_hanging(self) -> None:
         output = io.StringIO(
             "".join(

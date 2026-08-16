@@ -485,6 +485,7 @@ def _consume_codex_app_server(
         stdin=process.stdin,
         stdout=process.stdout,
         on_event=presentation.handle_agent_event,
+        session_id=str(environment.get(GENOMI_SESSION_ENV) or ""),
     )
     session.run(
         prompt=prompt,
