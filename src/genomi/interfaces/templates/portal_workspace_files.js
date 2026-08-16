@@ -1,4 +1,7 @@
-import { workspaceFileContextPayload as workspaceFileContextPayloadFromModel } from './portal_workspace_file_context.js';
+import {
+  importedWorkspaceFileContextPayload as importedWorkspaceFileContextPayloadFromResponse,
+  workspaceFileContextPayload as workspaceFileContextPayloadFromModel
+} from './portal_workspace_file_context.js';
 import { workspaceFilePreviewContentElement } from './portal_workspace_file_previews.js';
 
 export function createWorkspaceFileController({
@@ -219,6 +222,10 @@ export function workspaceFilePreviewModel(value) {
 
 export function workspaceFileContextPayload(value) {
   return workspaceFileContextPayloadFromModel(workspaceFilePreviewModel(value));
+}
+
+export function importedWorkspaceFileContextPayload(importResponse, previewResponse = {}) {
+  return importedWorkspaceFileContextPayloadFromResponse(importResponse, workspaceFilePreviewModel(previewResponse) || {});
 }
 
 export function renderWorkspaceFiles(container, payload, options = {}) {

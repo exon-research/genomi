@@ -143,7 +143,11 @@
             <div id="prompt-context" class="prompt-context" hidden></div>
             <textarea id="prompt" placeholder="Describe what has been happening, relevant health history or tests, and what you want to understand."></textarea>
             <div class="composer-row">
-              <span class="small">Tell Genomi naturally; it will organize your context and research the question.</span>
+              <div class="composer-support">
+                <label id="chat-file-attachment-action" class="secondary file-import-action" for="chat-file-attachment">Attach records</label>
+                <input id="chat-file-attachment" class="file-import-input" type="file">
+                <span id="chat-file-attachment-status" class="small" role="status">Tell Genomi naturally; it will organize your context and research the question.</span>
+              </div>
               <button id="send" class="primary" type="submit">Send</button>
             </div>
           </form>

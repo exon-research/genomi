@@ -289,6 +289,16 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertNotIn("addGenomiLabObservation", api_script)
         self.assertNotIn("changeGenomiLabIntegration", api_script)
 
+    def test_chat_composer_accepts_records_beside_natural_language_request(self) -> None:
+        html = portal_assets._portal_html("test-csrf-token")
+        composer = html.split('<form id="composer"', 1)[1].split("</form>", 1)[0]
+
+        self.assertIn('for="chat-file-attachment"', composer)
+        self.assertIn('id="chat-file-attachment"', composer)
+        self.assertIn("Attach records", composer)
+        self.assertIn('id="prompt"', composer)
+        self.assertIn('id="send"', composer)
+
     def test_completed_lab_tool_result_triggers_projection_refresh_contract(self) -> None:
         script_path = (
             Path(__file__).resolve().parents[1]

@@ -135,6 +135,41 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertIn("There is no lab.help operation", prompt)
         self.assertIn("# User request\nHelp me investigate a changing health picture.\n", prompt)
 
+    def test_arbitrary_health_narrative_and_attached_record_reach_lab_chat_contract(self) -> None:
+        request = (
+            "Some mornings I wake up exhausted, meals sometimes make me shaky, and an old "
+            "report had values my clinician wanted to recheck. I attached that report. Help me "
+            "organize what matters and work out what should be investigated."
+        )
+        prompt = portal_runs.compose_prompt(
+            request,
+            selected_evidence=[
+                {
+                    "context_kind": "workspace_file",
+                    "label": "Project file: records/older-labs.txt",
+                    "source_operation": "genomi.portal.workspace_file",
+                    "selected_nodes": [
+                        {
+                            "label": "File",
+                            "text": "Project file / File: records/older-labs.txt",
+                        },
+                        {
+                            "label": "Visible preview excerpt",
+                            "text": "Project file / Visible preview excerpt: Platelet count flagged low on prior report.",
+                        },
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("Decide this semantically; never use keyword, phrase, prompt-template, or disease-name matching.", prompt)
+        self.assertIn("# Focused Genomi Lab capability guidance", prompt)
+        self.assertIn('"lab.update_health_profile"', prompt)
+        self.assertIn('"lab.create_investigation"', prompt)
+        self.assertIn("## Project file: records/older-labs.txt", prompt)
+        self.assertIn("Platelet count flagged low on prior report.", prompt)
+        self.assertIn(f"# User request\n{request}\n", prompt)
+
     def test_follow_up_prompt_resumes_canonical_lab_investigation(self) -> None:
         project = portal_store.create_project(name="Lab continuation")
         project_id = str(project["project_id"])

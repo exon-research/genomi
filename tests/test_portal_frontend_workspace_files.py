@@ -655,6 +655,46 @@ class PortalFrontendWorkspaceFilesTests(unittest.TestCase):
         self.assertTrue(any(node["label"] == "Notebook outline" for node in result["direct"]["selected_nodes"]))
         self.assertTrue(any("markdown cell 1" in node["text"] for node in result["direct"]["selected_nodes"]))
 
+    def test_imported_chat_record_becomes_workspace_file_attachment(self) -> None:
+        module_url = (
+            Path(__file__).resolve().parents[1]
+            / "src/genomi/interfaces/templates/portal_workspace_files.js"
+        ).as_uri()
+        script = textwrap.dedent(
+            """
+            const workspace = await import(__MODULE_URL__);
+            const context = workspace.importedWorkspaceFileContextPayload({
+              imported: {
+                workspace_relative_path: 'records/older-labs.txt',
+                content_type: 'text/plain',
+                size_bytes: 68
+              }
+            }, {
+              status: 'available',
+              preview_kind: 'text',
+              relative_path: 'records/older-labs.txt',
+              content_type: 'text/plain',
+              size_label: '68 bytes',
+              text: 'Platelet count flagged low on prior report.'
+            });
+            process.stdout.write(JSON.stringify(context));
+            """
+        ).replace("__MODULE_URL__", json.dumps(module_url))
+
+        result = _run_node_json(self, script)
+
+        self.assertEqual(result["context_kind"], "workspace_file")
+        self.assertEqual(result["label"], "Project file: records/older-labs.txt")
+        self.assertEqual(result["source_operation"], "genomi.portal.workspace_file")
+        self.assertTrue(any(node["label"] == "File" for node in result["selected_nodes"]))
+        self.assertTrue(
+            any(
+                node["label"] == "Visible preview excerpt"
+                and "Platelet count flagged low" in node["text"]
+                for node in result["selected_nodes"]
+            )
+        )
+
     def test_workspace_file_preview_keeps_generated_record_origin_actions(self) -> None:
         module_url = (
             Path(__file__).resolve().parents[1]

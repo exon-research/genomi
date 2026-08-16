@@ -945,6 +945,9 @@ textarea { width: 100%; resize: vertical; min-height: 88px; border-radius: 10px;
 textarea::placeholder { color: var(--muted); }
 textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px #10b98118; }
 .composer-row { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-top: 10px; }
+.composer-support { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.composer-support .file-import-action { flex: 0 0 auto; }
+.composer-support .small { min-width: 0; }
 .primary { border: 0; background: var(--green); color: #05110d; border-radius: 8px; padding: 9px 13px; font-weight: 700; }
 .primary:hover { filter: brightness(1.06); }
 .primary:disabled { opacity: .45; cursor: not-allowed; }
@@ -1339,6 +1342,7 @@ select { padding: 8px 10px; }
   }
   .chat { height: auto; min-height: 620px; }
   .composer-row { align-items: stretch; flex-direction: column; }
+  .composer-support { align-items: flex-start; flex-direction: column; }
   .composer-row .primary { width: 100%; min-width: 0; }
 }
 

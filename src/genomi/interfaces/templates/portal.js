@@ -16,7 +16,7 @@
     import { renderRuntimeDetails, runtimeStatusLabel } from './portal_runtime_status.js';
     import { watchRun } from './portal_run_stream.js';
     import { createWorkTraceController } from './portal_work_trace_controller.js';
-    import { createWorkspaceFileController } from './portal_workspace_files.js';
+    import { createWorkspaceFileController, importedWorkspaceFileContextPayload } from './portal_workspace_files.js';
     import { artifactRoutePath, artifactRouteState, artifactWithSelectedVersion, frameRoutePath, parsePortalRoute, projectRoutePath, resolveArtifactRouteSelection, validateRequestedArtifactVersion } from './portal_artifact_route_model.js';
     import { renderToolCatalog, renderToolCatalogStatus, renderToolInspector, visibleTools } from './portal_tool_catalog.js';
     import { clearStarterCardState, markStarterSourceUnavailable, setStarterCardPending } from './portal_starter_cards.js';
@@ -997,14 +997,14 @@
       if (!state.project || !file || !file.path) return null;
       return api.loadProjectWorkspaceFilePreview(state.project.project_id, file.path);
     }
-    async function importArtifactFile(file) {
+    async function importArtifactFile(file, { attachToPrompt = false } = {}) {
       if (!file) return;
       if (!state.project) await loadWorkspace();
       if (file.size > maxImportBytes) {
-        setArtifactImportStatus('Too large');
+        setFileImportStatus(attachToPrompt, 'Too large');
         return;
       }
-      setArtifactImportStatus('Importing...');
+      setFileImportStatus(attachToPrompt, attachToPrompt ? 'Attaching...' : 'Importing...');
       try {
         const contentBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
         const payload = await api.importProjectFile(state.project.project_id, {
@@ -1022,11 +1022,34 @@
         }
         await loadArtifacts();
         await loadWorkspaceFiles();
-        if (artifact.id) activateWorkspaceSection('artifact-workspace', { replaceHash: false });
-        setArtifactImportStatus('Imported');
+        if (attachToPrompt) {
+          const imported = payload.imported || {};
+          const relativePath = String(imported.workspace_relative_path || '').trim();
+          let preview = {};
+          if (relativePath) {
+            try {
+              preview = await api.loadProjectWorkspaceFilePreview(state.project.project_id, relativePath);
+            } catch {}
+          }
+          const context = importedWorkspaceFileContextPayload(payload, preview);
+          if (context) appendPromptContext(context);
+          activateWorkspaceSection('research-workspace', { replaceHash: false });
+          setFileImportStatus(true, context ? 'Record attached' : 'Imported');
+        } else {
+          if (artifact.id) activateWorkspaceSection('artifact-workspace', { replaceHash: false });
+          setFileImportStatus(false, 'Imported');
+        }
       } catch (error) {
-        setArtifactImportStatus(error.message || 'Import failed');
+        setFileImportStatus(attachToPrompt, error.message || 'Import failed');
       }
+    }
+    function setFileImportStatus(chatAttachment, message) {
+      if (chatAttachment) {
+        const status = $('chat-file-attachment-status');
+        if (status) status.textContent = String(message || '').trim();
+        return;
+      }
+      setArtifactImportStatus(message);
     }
     function setArtifactImportStatus(message) {
       const status = $('artifact-import-status');
@@ -1782,6 +1805,13 @@
       const input = event.currentTarget;
       const file = input && input.files && input.files[0];
       importArtifactFile(file).finally(() => {
+        if (input) input.value = '';
+      });
+    });
+    $('chat-file-attachment').addEventListener('change', (event) => {
+      const input = event.currentTarget;
+      const file = input && input.files && input.files[0];
+      importArtifactFile(file, { attachToPrompt: true }).finally(() => {
         if (input) input.value = '';
       });
     });

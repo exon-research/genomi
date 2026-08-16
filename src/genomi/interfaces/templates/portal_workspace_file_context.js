@@ -13,6 +13,20 @@ export function workspaceFileContextPayload(value) {
   });
 }
 
+export function importedWorkspaceFileContextPayload(importResponse, previewResponse = {}) {
+  const imported = importResponse && importResponse.imported && typeof importResponse.imported === 'object'
+    ? importResponse.imported
+    : {};
+  const preview = previewResponse && typeof previewResponse === 'object' ? previewResponse : {};
+  return workspaceFileContextPayload({
+    status: 'available',
+    relative_path: imported.workspace_relative_path,
+    content_type: imported.content_type,
+    size_bytes: imported.size_bytes,
+    ...preview
+  });
+}
+
 function workspaceFileContextSummary(model) {
   return [
     model.kindLabel || workspaceFileKindLabel(model.fileKind),
