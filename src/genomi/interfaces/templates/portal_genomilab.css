@@ -50,11 +50,26 @@
 .genomilab-board-content p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .genomilab-board-list { margin: 8px 0 0; padding-left: 17px; display: grid; gap: 6px; color: var(--text3); font-size: 10px; line-height: 1.5; }
 .genomilab-workstreams { padding: 0; list-style: none; }
-.genomilab-workstreams li { padding: 7px 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 7px; }
+.genomilab-workstreams li { padding: 7px 8px; display: grid; gap: 5px; border: 1px solid var(--line); border-radius: 7px; }
+.genomilab-workstream-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .genomilab-workstreams b { color: var(--text2); font-size: 10px; }
 .genomilab-workstreams span, .genomilab-brief-heading span { color: var(--green); font: 9px var(--mono); }
+.genomilab-workstreams li > p { margin: 0; color: var(--text3); }
+.genomilab-inline-label { color: var(--text2); font: inherit; }
+.genomilab-inline-value { color: var(--muted) !important; font: inherit !important; }
+.genomilab-hypotheses { padding: 0; list-style: none; }
+.genomilab-hypotheses li, .genomilab-information-gaps li { padding: 8px; border: 1px solid var(--line); border-radius: 7px; }
+.genomilab-hypotheses li > p, .genomilab-information-gaps li > p { margin: 5px 0 0; color: var(--text2); }
+.genomilab-hypothesis-state, .genomilab-gap-state { display: inline-block; color: var(--text3); font: 9px var(--mono); }
+.genomilab-hypothesis-state.strengthened, .genomilab-gap-state.resolved { color: var(--green); }
+.genomilab-hypothesis-state.weakened, .genomilab-gap-state.open { color: #fbbf24; }
+.genomilab-hypothesis-state.rejected { color: #fca5a5; }
+.genomilab-hypothesis-rationale { color: var(--muted) !important; }
+.genomilab-information-gaps { padding: 0; list-style: none; }
 .genomilab-brief-heading { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .genomilab-brief-heading h5 { margin: 0; color: var(--ink); font-size: 14px; }
+.genomilab-brief-actions { display: flex; align-items: center; gap: 8px; }
+.genomilab-brief-download { padding: 5px 7px; font-size: 9px; }
 .genomilab-doctor-brief section { margin-top: 12px; }
 .genomilab-doctor-brief h6 { margin: 0; color: var(--text2); font-size: 10px; letter-spacing: .02em; }
 .genomilab-brief-claims { padding: 0; list-style: none; }

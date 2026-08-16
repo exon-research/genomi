@@ -488,6 +488,83 @@ def _latest_hypothesis_versions(items: object) -> dict[str, JsonObject]:
     return latest
 
 
+def _latest_information_gap_versions(items: object) -> dict[str, JsonObject]:
+    latest: dict[str, JsonObject] = {}
+    if not isinstance(items, list):
+        return latest
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        logical_id = str(item.get("logical_information_gap_id") or "").strip()
+        if not logical_id:
+            continue
+        current = latest.get(logical_id)
+        if current is None or int(item.get("version") or 0) > int(
+            current.get("version") or 0
+        ):
+            latest[logical_id] = item
+    return latest
+
+
+def _specialist_workstreams(investigation: JsonObject) -> list[JsonObject]:
+    analyses = {
+        str(item.get("specialist_assignment_id") or ""): item
+        for item in investigation.get("specialist_analyses") or []
+        if isinstance(item, dict) and item.get("specialist_assignment_id")
+    }
+    workstreams: list[JsonObject] = []
+    for assignment in investigation.get("specialist_assignments") or []:
+        if not isinstance(assignment, dict):
+            continue
+        projected = dict(assignment)
+        analysis = analyses.get(str(assignment.get("specialist_assignment_id") or ""))
+        if analysis:
+            finding = _specialist_finding(analysis.get("general_analysis"))
+            if finding:
+                projected["finding"] = finding
+            gaps = _specialist_gaps(analysis)
+            if gaps:
+                projected["gaps"] = gaps
+        workstreams.append(projected)
+    return workstreams
+
+
+def _specialist_finding(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, dict):
+        return ""
+    nested = value.get("general_analysis")
+    if isinstance(nested, str) and nested.strip():
+        return nested.strip()
+    if isinstance(nested, dict):
+        value = nested
+    for key in ("conclusion", "summary", "finding", "caution"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return ""
+
+
+def _specialist_gaps(analysis: JsonObject) -> list[str]:
+    direct = _text_list(analysis.get("gaps"))
+    if direct:
+        return direct
+    general = analysis.get("general_analysis")
+    if not isinstance(general, dict):
+        return []
+    nested = general.get("general_analysis")
+    if isinstance(nested, dict):
+        general = nested
+    return _text_list(general.get("key_gaps") or general.get("gaps"))
+
+
+def _text_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item or "").strip()]
+
+
 def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     if not isinstance(investigation, dict):
         return None
@@ -503,11 +580,7 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
                 investigation.get("hypothesis_versions") or []
             ).values()
         )
-    workstreams = [
-        item
-        for item in investigation.get("specialist_assignments") or []
-        if isinstance(item, dict)
-    ]
+    workstreams = _specialist_workstreams(investigation)
     brief_versions = investigation.get("brief_versions") or []
     if "current_brief_version" in investigation:
         current_brief = investigation.get("current_brief_version")
@@ -523,14 +596,14 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
     evidence_records = investigation.get("evidence_records") or []
     brief = current_brief.get("brief") if isinstance(current_brief, dict) else None
     brief = brief if isinstance(brief, dict) else {}
-    information_gaps: list[str] = []
-    for hypothesis in hypotheses:
-        if not isinstance(hypothesis, dict):
-            continue
-        for gap in hypothesis.get("unresolved_gaps") or []:
-            gap_text = str(gap or "").strip()
-            if gap_text and gap_text not in information_gaps:
-                information_gaps.append(gap_text)
+    information_gaps = list(
+        _latest_information_gap_versions(
+            investigation.get("information_gap_versions") or []
+        ).values()
+    )
+    open_information_gaps = [
+        item for item in information_gaps if str(item.get("status") or "open") == "open"
+    ]
     result.update(
         {
             "private_context_status": investigation.get("private_context_status"),
@@ -543,7 +616,7 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
             "evidence_records": evidence_records,
             "evidence_count": len(evidence_records),
             "hypothesis_count": len(hypotheses),
-            "gap_count": len(information_gaps),
+            "gap_count": len(open_information_gaps),
             "specialist_count": len(workstreams),
             "hypotheses": hypotheses,
             "specialist_workstreams": workstreams,

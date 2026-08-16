@@ -38,10 +38,19 @@ class PortalInvestigationStoreMixin:
                 "ORDER BY created_at",
                 (investigation_id,),
             ).fetchall()
+            specialist_analyses = connection.execute(
+                "SELECT analysis.* FROM specialist_analyses AS analysis "
+                "JOIN specialist_assignments AS assignment ON "
+                "assignment.specialist_assignment_id = "
+                "analysis.specialist_assignment_id "
+                "WHERE assignment.investigation_id = ? ORDER BY analysis.created_at",
+                (investigation_id,),
+            ).fetchall()
         return {
             **view,
             "evidence_records": [row_dict(row) for row in evidence_records],
             "research_artifacts": [row_dict(row) for row in research_artifacts],
+            "specialist_analyses": [row_dict(row) for row in specialist_analyses],
         }
 
 

@@ -1,4 +1,4 @@
-export function createGenomiLabController({ api, getProjectId }) {
+export function createGenomiLabController({ api, getProjectId, getFrameId = () => '' }) {
   const byId = (id) => document.getElementById(id);
 
   function bind() {
@@ -15,12 +15,18 @@ export function createGenomiLabController({ api, getProjectId }) {
 
   async function loadBoard() {
     const projectId = getProjectId();
-    if (!projectId) return;
+    const frameId = text(getFrameId());
+    if (!projectId || !frameId) {
+      renderBoard(null);
+      return;
+    }
     setStatus('genomilab-board-status', 'Loading the investigation workspace…');
     try {
       const payload = await api.loadGenomiLabBoard(projectId);
-      renderBoard(payload);
+      if (text(getFrameId()) !== frameId) return;
+      renderBoard(payload, frameId);
     } catch (error) {
+      if (text(getFrameId()) !== frameId) return;
       renderBoard(null);
       setStatus('genomilab-board-status', error.message || 'The investigation workspace is unavailable.', 'error');
     }
@@ -32,29 +38,38 @@ export function createGenomiLabController({ api, getProjectId }) {
     return true;
   }
 
-  function renderBoard(payload) {
+  function renderBoard(payload, frameId = text(getFrameId())) {
     const container = byId('genomilab-board-content');
     if (!container) return;
     container.replaceChildren();
-    const investigation = payload && payload.investigation && typeof payload.investigation === 'object' ? payload.investigation : null;
+    const investigation = investigationForFrame(payload, frameId);
     if (!investigation) {
       byId('genomilab-case-board').hidden = true;
       return;
     }
     byId('genomilab-case-board').hidden = false;
-    const investigationStatus = investigationStatusModel(investigation.status);
+    const investigationStatus = investigationStatusModel(investigation);
     setStatus('genomilab-board-status', investigationStatus.label, investigationStatus.kind);
     const brief = doctorBriefModel(investigation);
     container.append(
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
-      boardCard('Hypotheses', boardCollection(investigation.hypotheses, investigation.hypothesis_count, 'hypotheses recorded')),
+      hypothesisBoardCard(investigation.hypotheses),
       specialistWorkstreamsCard(investigation.specialist_workstreams),
+      informationGapsCard(investigation.information_gaps),
       evidenceBoardCard(investigation),
       doctorBriefCard(brief)
     );
   }
 
   return Object.freeze({ bind, loadAll, loadBoard, refreshFromToolRecord });
+}
+
+export function investigationForFrame(payload, frameId) {
+  const binding = payload && payload.binding && typeof payload.binding === 'object' ? payload.binding : null;
+  return binding && text(binding.frame_id) === text(frameId)
+    && payload && payload.investigation && typeof payload.investigation === 'object'
+    ? payload.investigation
+    : null;
 }
 
 export function completedLabOperation(record) {
@@ -78,11 +93,43 @@ function boardCard(titleText, value) {
   return article;
 }
 
-function boardCollection(values, count, fallbackLabel) {
-  const entries = array(values).map((item) => text(item.statement || item.title || item.summary || item.objective)).filter(Boolean);
-  if (entries.length) return entries.join(' · ');
-  const numeric = Number(count || 0);
-  return numeric ? `${numeric} ${fallbackLabel}.` : 'No update yet.';
+export function hypothesisModels(values) {
+  const labels = {
+    strengthened: 'More supported',
+    weakened: 'Less supported',
+    rejected: 'Not supported by current evidence',
+    retained: 'Still open',
+    open: 'Still open',
+    unresolved: 'Unresolved',
+    proposed: 'Under review'
+  };
+  return array(values).filter((item) => item && typeof item === 'object').map((item) => {
+    const status = text(item.status).toLowerCase() || 'proposed';
+    return {
+      statement: text(item.statement || item.title || item.summary),
+      status,
+      statusLabel: labels[status] || humanLabel(status),
+      rationale: text(item.revision_rationale)
+    };
+  }).filter((item) => item.statement);
+}
+
+export function informationGapModels(values) {
+  const labels = {
+    open: 'Open',
+    resolved: 'Resolved',
+    deferred: 'Deferred',
+    closed: 'Closed'
+  };
+  return array(values).filter((item) => item && typeof item === 'object').map((item) => {
+    const status = text(item.status).toLowerCase() || 'open';
+    return {
+      id: text(item.logical_information_gap_id || item.information_gap_version_id),
+      statement: text(item.statement),
+      status,
+      statusLabel: labels[status] || humanLabel(status)
+    };
+  }).filter((item) => item.statement);
 }
 
 export function specialistWorkstreamModels(values) {
@@ -95,12 +142,18 @@ export function specialistWorkstreamModels(values) {
   };
   return array(values).filter((item) => item && typeof item === 'object').map((item) => ({
     role: humanLabel(item.specialist_role || 'Research specialist'),
-    status: states[text(item.state)] || 'Status pending'
+    status: states[text(item.state)] || 'Status pending',
+    finding: text(item.finding),
+    gaps: array(item.gaps).map(text).filter(Boolean)
   }));
 }
 
 export function investigationStatusModel(value) {
-  const status = text(value).toLowerCase();
+  const investigation = value && typeof value === 'object' ? value : null;
+  if (investigation && investigation.current_brief) {
+    return { label: 'Doctor brief ready', kind: 'success' };
+  }
+  const status = text(investigation ? investigation.status : value).toLowerCase();
   if (status === 'completed') return { label: 'Doctor brief ready', kind: 'success' };
   if (['running', 'active', 'in_progress'].includes(status)) {
     return { label: 'Research in progress', kind: 'active' };
@@ -112,6 +165,7 @@ export function investigationStatusModel(value) {
     return { label: 'Investigation needs attention', kind: 'error' };
   }
   if (status === 'cancelled') return { label: 'Investigation stopped', kind: 'muted' };
+  if (status === 'approved') return { label: 'Investigation ready', kind: 'active' };
   if (['created', 'planning', ''].includes(status)) {
     return { label: 'Organizing your investigation', kind: 'active' };
   }
@@ -136,9 +190,14 @@ export function doctorBriefModel(investigation) {
   const evidenceById = new Map(array(investigation.evidence_records)
     .filter((item) => item && typeof item === 'object' && text(item.evidence_record_id))
     .map((item) => [text(item.evidence_record_id), item]));
+  const gapById = new Map();
+  informationGapModels(investigation.information_gaps).forEach((item) => {
+    if (item.id) gapById.set(item.id, item);
+  });
   return {
     version: Number(versionRecord.version || investigation.current_brief_version || 0),
     title: text(brief.title) || 'Clinician discussion brief',
+    question: text(investigation.question),
     summary: text(brief.summary),
     claims: array(brief.claims).filter((claim) => claim && typeof claim === 'object').map((claim) => ({
       statement: text(claim.statement),
@@ -147,11 +206,8 @@ export function doctorBriefModel(investigation) {
     })).filter((claim) => claim.statement),
     hypotheses: array(brief.hypothesis_ids).map((identifier) => hypothesisById.get(text(identifier)))
       .filter(Boolean).map((item) => text(item.statement)).filter(Boolean),
-    gaps: [
-      ...array(brief.gap_ids).map((identifier) => hypothesisById.get(text(identifier)))
-        .filter(Boolean).flatMap((item) => array(item.unresolved_gaps).length ? array(item.unresolved_gaps) : [item.statement]),
-      ...array(investigation.information_gaps)
-    ].map(text).filter((value, index, values) => value && values.indexOf(value) === index),
+    gaps: array(brief.gap_ids).map((identifier) => gapById.get(text(identifier)))
+      .filter(Boolean).map((item) => item.statement),
     confirmationNeeds: array(brief.confirmation_needs).map(text).filter(Boolean),
     professionalQuestions: array(brief.professional_questions).map(text).filter(Boolean),
     clinicalBoundary: text(brief.clinical_boundary)
@@ -173,7 +229,63 @@ function specialistWorkstreamsCard(values) {
     role.textContent = workstream.role;
     const status = document.createElement('span');
     status.textContent = workstream.status;
-    item.append(role, status);
+    const heading = document.createElement('div');
+    heading.className = 'genomilab-workstream-heading';
+    heading.append(role, status);
+    item.append(heading);
+    if (workstream.finding) item.append(boardParagraph(workstream.finding));
+    if (workstream.gaps.length) appendInlineList(item, 'Still needed', workstream.gaps);
+    list.append(item);
+  });
+  card.append(list);
+  return card;
+}
+
+function hypothesisBoardCard(values) {
+  const card = boardCardShell('Competing explanations');
+  const hypotheses = hypothesisModels(values);
+  if (!hypotheses.length) {
+    card.append(boardParagraph('Genomi will keep plausible explanations separate as evidence is reviewed.'));
+    return card;
+  }
+  const list = document.createElement('ol');
+  list.className = 'genomilab-board-list genomilab-hypotheses';
+  hypotheses.forEach((hypothesis) => {
+    const item = document.createElement('li');
+    const state = document.createElement('span');
+    state.className = `genomilab-hypothesis-state ${hypothesis.status}`;
+    state.textContent = hypothesis.statusLabel;
+    const statement = document.createElement('p');
+    statement.textContent = hypothesis.statement;
+    item.append(state, statement);
+    if (hypothesis.rationale) {
+      const rationale = boardParagraph(hypothesis.rationale);
+      rationale.className = 'genomilab-hypothesis-rationale';
+      item.append(rationale);
+    }
+    list.append(item);
+  });
+  card.append(list);
+  return card;
+}
+
+function informationGapsCard(values) {
+  const card = boardCardShell('What is still missing');
+  const gaps = informationGapModels(values);
+  if (!gaps.length) {
+    card.append(boardParagraph('No durable evidence gaps have been recorded yet.'));
+    return card;
+  }
+  const list = document.createElement('ul');
+  list.className = 'genomilab-board-list genomilab-information-gaps';
+  gaps.forEach((gap) => {
+    const item = document.createElement('li');
+    const state = document.createElement('span');
+    state.className = `genomilab-gap-state ${gap.status}`;
+    state.textContent = gap.statusLabel;
+    const statement = document.createElement('p');
+    statement.textContent = gap.statement;
+    item.append(state, statement);
     list.append(item);
   });
   card.append(list);
@@ -206,13 +318,22 @@ function doctorBriefCard(model) {
   heading.className = 'genomilab-brief-heading';
   const title = document.createElement('h5');
   title.textContent = model.title;
-  heading.append(title);
+  const headingActions = document.createElement('div');
+  headingActions.className = 'genomilab-brief-actions';
   if (model.version) {
     const version = document.createElement('span');
     version.textContent = `Version ${model.version}`;
-    heading.append(version);
+    headingActions.append(version);
   }
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'secondary genomilab-brief-download';
+  download.textContent = 'Download brief';
+  download.addEventListener('click', () => downloadDoctorBrief(model));
+  headingActions.append(download);
+  heading.append(title, headingActions);
   card.append(heading);
+  if (model.question) appendBriefList(card, 'Question investigated', [model.question]);
   if (model.summary) card.append(boardParagraph(model.summary));
   appendBriefClaims(card, model.claims);
   appendBriefList(card, 'Hypotheses under review', model.hypotheses);
@@ -251,13 +372,63 @@ function appendBriefClaims(card, claims) {
     });
     if (claim.profileCount) {
       const profile = document.createElement('span');
-      profile.textContent = `${claim.profileCount} health profile ${claim.profileCount === 1 ? 'anchor' : 'anchors'}`;
+      profile.textContent = `${claim.profileCount} ${claim.profileCount === 1 ? 'detail' : 'details'} from your health history`;
       anchors.append(profile);
     }
     if (anchors.childNodes.length) item.append(anchors);
     list.append(item);
   });
   section.append(list);
+}
+
+function appendInlineList(parent, titleText, values) {
+  const label = document.createElement('b');
+  label.className = 'genomilab-inline-label';
+  label.textContent = `${titleText}: `;
+  const detail = document.createElement('span');
+  detail.className = 'genomilab-inline-value';
+  detail.textContent = values.join(' · ');
+  const line = document.createElement('p');
+  line.append(label, detail);
+  parent.append(line);
+}
+
+export function doctorBriefMarkdown(model) {
+  if (!model) return '';
+  const lines = [`# ${model.title}`];
+  if (model.version) lines.push('', `Version ${model.version}`);
+  appendMarkdownSection(lines, 'Question investigated', model.question ? [model.question] : []);
+  if (model.summary) lines.push('', '## Summary', '', model.summary);
+  appendMarkdownSection(lines, 'Key findings', model.claims.map((claim) => {
+    const sources = claim.evidence.map((anchor) => anchor.url ? `[${anchor.label}](${anchor.url})` : anchor.label);
+    const support = [sources.length ? `Sources: ${sources.join('; ')}` : '', claim.profileCount ? `Health-history details: ${claim.profileCount}` : '']
+      .filter(Boolean).join(' — ');
+    return support ? `${claim.statement} (${support})` : claim.statement;
+  }));
+  appendMarkdownSection(lines, 'Competing explanations', model.hypotheses);
+  appendMarkdownSection(lines, 'What is still missing', model.gaps);
+  appendMarkdownSection(lines, 'Confirmation needed', model.confirmationNeeds);
+  appendMarkdownSection(lines, 'Questions for your clinician', model.professionalQuestions);
+  if (model.clinicalBoundary) lines.push('', '## Clinical boundary', '', model.clinicalBoundary);
+  return `${lines.join('\n').trim()}\n`;
+}
+
+function appendMarkdownSection(lines, titleText, values) {
+  if (!values.length) return;
+  lines.push('', `## ${titleText}`, '', ...values.map((value) => `- ${value}`));
+}
+
+function downloadDoctorBrief(model) {
+  const markdown = doctorBriefMarkdown(model);
+  if (!markdown || typeof Blob === 'undefined' || typeof URL === 'undefined') return;
+  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `genomi-doctor-brief-v${model.version || 1}.md`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function appendBriefList(card, titleText, values) {
@@ -327,8 +498,8 @@ function boardEvidenceSummary(investigation) {
   const artifactCount = Number(investigation.research_artifact_count || 0);
   const gapCount = Number(investigation.gap_count || 0);
   const questionCount = array(investigation.patient_questions).length;
-  if (evidenceCount) parts.push(`${evidenceCount} evidence records`);
-  if (artifactCount) parts.push(`${artifactCount} research ${artifactCount === 1 ? 'artifact' : 'artifacts'}`);
+  if (evidenceCount) parts.push(`${evidenceCount} source ${evidenceCount === 1 ? 'record' : 'records'}`);
+  if (artifactCount) parts.push(`${artifactCount} research ${artifactCount === 1 ? 'output' : 'outputs'}`);
   if (gapCount) parts.push(`${gapCount} open gaps`);
   if (questionCount) parts.push(`${questionCount} follow-up questions`);
   return parts.length ? parts.join(' · ') : 'New records and missing evidence will be tracked here.';

@@ -64,7 +64,8 @@
     const advancedWorkspaceSections = new Set(['evidence-ledger-pane', 'work-trace-pane', 'genome-index', 'tool-launcher']);
     const genomiLab = createGenomiLabController({
       api,
-      getProjectId: () => state.project && state.project.project_id
+      getProjectId: () => state.project && state.project.project_id,
+      getFrameId: () => state.frameId
     });
     const promptContext = createPromptContextController({
       tray: $('prompt-context'),
@@ -359,12 +360,14 @@
       rememberFrameId(frameId);
       setFrameRoute(frameId, { highlightRunId: options.highlightRunId, highlightStepId: options.highlightStepId });
       renderActiveFrameState();
+      genomiLab.loadBoard().catch(() => undefined);
     }
     function clearActiveFrame() {
       state.frameId = null;
       clearRememberedFrameId();
       clearFrameRoute();
       renderActiveFrameState();
+      genomiLab.loadBoard().catch(() => undefined);
     }
     function frameTitle(frame) {
       const title = (frame.title || frame.display_request || frame.displayRequest || frame.request || '').trim();
@@ -374,6 +377,7 @@
       const clean = String(status || '').trim();
       if (!clean) return 'Conversation';
       if (clean === 'needs_input') return 'Needs approval';
+      if (clean === 'stale_after_restart') return 'Interrupted — continue here';
       return clean.split(/[\s_-]+/).filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
     }
     function frameMessageCountLabel(count) {
@@ -382,7 +386,7 @@
       return String(safeCount) + ' message' + (safeCount === 1 ? '' : 's');
     }
     function frameDetailText(frame) {
-      const details = [frameStatusLabel(frame.status), frameMessageCountLabel(frame.message_count)];
+      const details = [frameStatusLabel(frame.status), frameMessageCountLabel(frame.turn_count ?? frame.message_count)];
       const startedFrom = frame && frame.started_from && String(frame.started_from.summary || '').trim();
       if (startedFrom) details.push(startedFrom);
       return details.filter(Boolean).join(' · ');

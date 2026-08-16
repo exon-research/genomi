@@ -107,7 +107,32 @@ class PortalStoreTests(GenomiRuntimeTestCase):
         self.assertEqual(by_id[old_frame["id"]]["request"], "First question")
         self.assertEqual(by_id[old_frame["id"]]["title"], "First question")
         self.assertEqual(by_id[old_frame["id"]]["message_count"], 2)
+        self.assertEqual(by_id[old_frame["id"]]["turn_count"], 2)
+        self.assertEqual(by_id[new_frame["id"]]["turn_count"], 1)
         self.assertEqual(by_id[new_frame["id"]]["agent_id"], "claude")
+
+    def test_project_frame_turn_count_excludes_collapsed_work_records(self) -> None:
+        project = portal_store.create_project(name="Patient conversation")
+        frame = portal_store.create_frame(
+            project_id=project["project_id"],
+            request="Could these findings be connected?",
+            agent_id="codex",
+        )
+        assert frame is not None
+        for index in range(12):
+            portal_store.append_message(
+                str(frame["id"]),
+                role="tool",
+                event={"type": "tool_result", "id": f"tool-{index}"},
+            )
+        portal_store.finish_frame(
+            str(frame["id"]), status="completed", output="The alternatives remain open."
+        )
+
+        listed = portal_store.list_project_frames(project["project_id"])["frames"][0]
+
+        self.assertEqual(listed["message_count"], 14)
+        self.assertEqual(listed["turn_count"], 2)
 
     def test_conversation_title_can_be_renamed_within_its_project(self) -> None:
         project = portal_store.create_project(name="Frames")

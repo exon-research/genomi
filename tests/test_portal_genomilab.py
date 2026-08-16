@@ -104,7 +104,36 @@ class PortalGenomiLabTests(unittest.TestCase):
                     {"version": 1, "brief": {"summary": "Historical brief"}},
                 ],
                 "specialist_assignments": [
-                    {"specialist_role": "rare_disease_specialist", "state": "completed"}
+                    {
+                        "specialist_assignment_id": "assignment-a",
+                        "specialist_role": "rare_disease_specialist",
+                        "state": "completed",
+                    }
+                ],
+                "specialist_analyses": [
+                    {
+                        "specialist_assignment_id": "assignment-a",
+                        "general_analysis": {
+                            "conclusion": "Review immune and treatment explanations in parallel."
+                        },
+                        "gaps": ["Medication dates remain unknown."],
+                    }
+                ],
+                "information_gap_versions": [
+                    {
+                        "logical_information_gap_id": "gap-a",
+                        "information_gap_version_id": "gap-a-v1",
+                        "version": 1,
+                        "status": "open",
+                        "statement": "Medication dates remain unknown.",
+                    },
+                    {
+                        "logical_information_gap_id": "gap-b",
+                        "information_gap_version_id": "gap-b-v1",
+                        "version": 1,
+                        "status": "resolved",
+                        "statement": "The source report was recovered.",
+                    },
                 ],
                 "evidence_records": [
                     {
@@ -135,6 +164,15 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(board["current_brief"]["brief"]["summary"], "Current brief")
         self.assertEqual(board["specialist_count"], 1)
         self.assertEqual(board["specialist_workstreams"][0]["state"], "completed")
+        self.assertEqual(
+            board["specialist_workstreams"][0]["finding"],
+            "Review immune and treatment explanations in parallel.",
+        )
+        self.assertEqual(board["gap_count"], 1)
+        self.assertEqual(
+            [item["logical_information_gap_id"] for item in board["information_gaps"]],
+            ["gap-a", "gap-b"],
+        )
         self.assertEqual(board["evidence_count"], 1)
         self.assertEqual(board["research_artifact_count"], 1)
         self.assertEqual(
@@ -312,7 +350,8 @@ class PortalGenomiLabTests(unittest.TestCase):
             api: {{
               loadGenomiLabBoard: async () => {{ boardLoads += 1; return {{}}; }}
             }},
-            getProjectId: () => 'project-1'
+            getProjectId: () => 'project-1',
+            getFrameId: () => 'frame-1'
           }});
           const completedLab = module.completedLabOperation({{
             call: {{ name: 'genomi.genomi.invoke', input: {{ tool: 'lab.update_health_profile' }} }},
@@ -360,6 +399,7 @@ class PortalGenomiLabTests(unittest.TestCase):
         node_script = f"""
           const module = await import({script_path.as_uri()!r});
           const investigation = {{
+            question: 'Could these findings share an explanation?',
             current_brief_version: 3,
             current_brief: {{
               version: 3,
@@ -379,22 +419,35 @@ class PortalGenomiLabTests(unittest.TestCase):
               }}
             }},
             hypotheses: [
-              {{ logical_hypothesis_id: 'logical-a', statement: 'A shared mechanism is possible.' }},
-              {{ logical_hypothesis_id: 'logical-gap', statement: 'An independent explanation remains open.', unresolved_gaps: ['Medication timing is not documented.'] }}
+              {{ logical_hypothesis_id: 'logical-a', statement: 'A shared mechanism is possible.', status: 'strengthened', revision_rationale: 'Two observations now align.' }},
+              {{ logical_hypothesis_id: 'logical-b', statement: 'An independent explanation remains open.', status: 'weakened' }}
             ],
+            information_gaps: [{{
+              logical_information_gap_id: 'logical-gap',
+              statement: 'Medication timing is not documented.',
+              status: 'open'
+            }}],
             evidence_records: [{{
               evidence_record_id: 'evidence-a',
               source_family: 'biomedical_literature',
               evidence: {{ records: [{{ title: 'Public source', pmid: '12345' }}] }}
             }}],
             specialist_workstreams: [
-              {{ specialist_role: 'rare_disease_specialist', state: 'completed' }},
+              {{ specialist_role: 'rare_disease_specialist', state: 'completed', finding: 'The pattern warrants parallel review.', gaps: ['Original report'] }},
               {{ specialist_role: 'medication_safety_specialist', state: 'spawned' }}
             ]
           }};
           process.stdout.write(JSON.stringify({{
             workstreams: module.specialistWorkstreamModels(investigation.specialist_workstreams),
+            hypotheses: module.hypothesisModels(investigation.hypotheses),
+            gaps: module.informationGapModels(investigation.information_gaps),
             brief: module.doctorBriefModel(investigation),
+            markdown: module.doctorBriefMarkdown(module.doctorBriefModel(investigation)),
+            briefStatus: module.investigationStatusModel(investigation),
+            frameScope: [
+              Boolean(module.investigationForFrame({{ binding: {{ frame_id: 'frame-a' }}, investigation }}, 'frame-a')),
+              Boolean(module.investigationForFrame({{ binding: {{ frame_id: 'frame-a' }}, investigation }}, 'frame-b'))
+            ],
             statuses: [
               module.investigationStatusModel('running'),
               module.investigationStatusModel('needs_input'),
@@ -413,14 +466,33 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertEqual(
             state["workstreams"],
             [
-                {"role": "Rare disease", "status": "Findings added"},
-                {"role": "Medication safety", "status": "Researching"},
+                {
+                    "role": "Rare disease",
+                    "status": "Findings added",
+                    "finding": "The pattern warrants parallel review.",
+                    "gaps": ["Original report"],
+                },
+                {
+                    "role": "Medication safety",
+                    "status": "Researching",
+                    "finding": "",
+                    "gaps": [],
+                },
             ],
+        )
+        self.assertEqual(state["hypotheses"][0]["statusLabel"], "More supported")
+        self.assertEqual(state["hypotheses"][1]["statusLabel"], "Less supported")
+        self.assertEqual(state["gaps"][0]["statusLabel"], "Open")
+        self.assertEqual(state["frameScope"], [True, False])
+        self.assertEqual(
+            state["briefStatus"],
+            {"label": "Doctor brief ready", "kind": "success"},
         )
         brief = state["brief"]
         self.assertEqual(brief["version"], 3)
         self.assertEqual(brief["hypotheses"], ["A shared mechanism is possible."])
         self.assertEqual(brief["gaps"], ["Medication timing is not documented."])
+        self.assertEqual(brief["question"], "Could these findings share an explanation?")
         self.assertEqual(brief["claims"][0]["profileCount"], 1)
         self.assertEqual(
             brief["claims"][0]["evidence"][0]["url"],
@@ -431,6 +503,9 @@ class PortalGenomiLabTests(unittest.TestCase):
             ["Which test would best distinguish the alternatives?"],
         )
         self.assertIn("not a diagnosis", brief["clinicalBoundary"])
+        self.assertIn("# Clinician discussion brief", state["markdown"])
+        self.assertIn("## Question investigated", state["markdown"])
+        self.assertIn("https://pubmed.ncbi.nlm.nih.gov/12345/", state["markdown"])
         self.assertEqual(
             state["statuses"],
             [

@@ -177,11 +177,21 @@ def list_project_frames(project_id: str, root: str | Path | None = None) -> Json
     state = portal_state.read_state(root)
     if project_id not in state["projects"]:
         return None
-    frames = [
-        _frame_summary(frame)
-        for frame in state["frames"].values()
-        if frame.get("project_id") == project_id and frame.get("parent_frame_id") is None
-    ]
+    frames: list[JsonObject] = []
+    for frame in state["frames"].values():
+        if frame.get("project_id") != project_id or frame.get("parent_frame_id") is not None:
+            continue
+        summary = _frame_summary(frame)
+        messages = state["messages"].get(str(frame.get("id") or ""), [])
+        summary["turn_count"] = len(
+            [
+                message
+                for message in messages
+                if isinstance(message, dict)
+                and message.get("role") in {"user", "assistant"}
+            ]
+        )
+        frames.append(summary)
     frames.sort(key=lambda frame: str(frame.get("updated_at") or ""), reverse=True)
     return {"project_id": project_id, "frames": frames}
 

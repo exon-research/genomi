@@ -28,6 +28,19 @@ class _Store(PortalInvestigationStoreMixin):
                 artifact_json TEXT,
                 created_at TEXT
             );
+            CREATE TABLE specialist_assignments (
+                specialist_assignment_id TEXT,
+                investigation_id TEXT
+            );
+            CREATE TABLE specialist_analyses (
+                specialist_analysis_id TEXT,
+                specialist_assignment_id TEXT,
+                general_analysis_json TEXT,
+                uncertainty_json TEXT,
+                alternatives_json TEXT,
+                gaps_json TEXT,
+                created_at TEXT
+            );
             """
         )
         self.include_history = None
@@ -66,6 +79,16 @@ class PortalInvestigationStoreTests(unittest.TestCase):
             "INSERT INTO research_artifacts VALUES "
             "('artifact-a', 'investigation-a', 'evidence_map', '{\"title\":\"Map\"}', '2026-01-03')"
         )
+        store.connection.execute(
+            "INSERT INTO specialist_assignments VALUES "
+            "('assignment-a', 'investigation-a')"
+        )
+        store.connection.execute(
+            "INSERT INTO specialist_analyses VALUES "
+            "('analysis-a', 'assignment-a', "
+            "'{\"conclusion\":\"Review the alternatives in parallel.\"}', "
+            "'[]', '[]', '[\"Timeline remains unknown.\"]', '2026-01-04')"
+        )
 
         view = store.read_portal_investigation(
             "investigation-a", include_history=True
@@ -85,6 +108,14 @@ class PortalInvestigationStoreTests(unittest.TestCase):
             "assignment-a",
         )
         self.assertEqual(view["brief_versions"][0]["version"], 1)
+        self.assertEqual(
+            view["specialist_analyses"][0]["general_analysis"]["conclusion"],
+            "Review the alternatives in parallel.",
+        )
+        self.assertEqual(
+            view["specialist_analyses"][0]["gaps"],
+            ["Timeline remains unknown."],
+        )
 
 
 if __name__ == "__main__":
