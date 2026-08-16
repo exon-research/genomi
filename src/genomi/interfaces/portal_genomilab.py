@@ -104,6 +104,44 @@ def project_board(
     }
 
 
+def project_resume_context(
+    project_id: str,
+    *,
+    service: _GenomiLabApplication | None = None,
+    root: str | Path | None = None,
+) -> JsonObject:
+    """Return the minimal canonical state needed to continue a Lab turn.
+
+    This projection deliberately excludes patient-authored content, hypothesis
+    statements, specialist analyses, and filesystem details. It carries only
+    opaque identifiers, revisions, and lifecycle states that the Main agent
+    needs to address the next canonical Lab operation.
+    """
+
+    _require_project(project_id, root=root)
+    application = service or _application_service(project_id, root=root)
+    workspace = application.bootstrap_workspace()
+    if workspace.get("status") != "ready":
+        return {"status": workspace.get("status", "setup_required")}
+
+    binding = project_binding(project_id, root=root)
+    investigations = application.list_investigations()
+    active: JsonObject | None = None
+    if binding:
+        try:
+            active = application.investigation(str(binding["investigation_id"]))
+        except PortalGenomiLabError as exc:
+            if exc.code != "investigation_not_found":
+                raise
+    if active is None and investigations:
+        candidate = investigations[0]
+        active = candidate if isinstance(candidate, dict) else None
+    return {
+        "status": "ready",
+        "active_investigation": _resume_investigation(active),
+    }
+
+
 def project_profile(
     project_id: str,
     *,
@@ -678,6 +716,110 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
         }
     )
     return result
+
+
+def _resume_investigation(investigation: JsonObject | None) -> JsonObject | None:
+    if not isinstance(investigation, dict):
+        return None
+    record = investigation.get("investigation")
+    record = record if isinstance(record, dict) else investigation
+    cycles = [
+        item for item in investigation.get("cycles") or [] if isinstance(item, dict)
+    ]
+    assignments = [
+        item
+        for item in investigation.get("specialist_assignments") or []
+        if isinstance(item, dict)
+    ]
+    evidence_snapshots = [
+        item
+        for item in investigation.get("evidence_snapshots") or []
+        if isinstance(item, dict)
+    ]
+    brief_versions = [
+        item
+        for item in investigation.get("brief_versions") or []
+        if isinstance(item, dict)
+    ]
+    latest_hypotheses: dict[str, JsonObject] = {}
+    for item in investigation.get("hypothesis_versions") or []:
+        if not isinstance(item, dict):
+            continue
+        logical_id = str(item.get("logical_hypothesis_id") or "").strip()
+        if not logical_id:
+            continue
+        current = latest_hypotheses.get(logical_id)
+        if current is None or int(item.get("version") or 0) > int(
+            current.get("version") or 0
+        ):
+            latest_hypotheses[logical_id] = item
+
+    latest_cycle = max(
+        cycles, key=lambda item: int(item.get("ordinal") or 0), default=None
+    )
+    latest_evidence = max(
+        evidence_snapshots,
+        key=lambda item: int(item.get("version") or 0),
+        default=None,
+    )
+    latest_brief = max(
+        brief_versions,
+        key=lambda item: int(item.get("version") or 0),
+        default=None,
+    )
+    return {
+        "investigation_id": record.get("investigation_id"),
+        "status": record.get("status"),
+        "domain_revision": record.get("domain_revision"),
+        "latest_cycle": _select_fields(latest_cycle, ("cycle_id", "ordinal")),
+        "specialist_assignments": [
+            _select_fields(
+                item,
+                (
+                    "specialist_assignment_id",
+                    "cycle_id",
+                    "specialist_brief_id",
+                    "state",
+                    "revision",
+                    "specialist_analysis_id",
+                ),
+            )
+            for item in assignments
+        ],
+        "latest_hypothesis_versions": [
+            _select_fields(
+                item,
+                (
+                    "logical_hypothesis_id",
+                    "hypothesis_version_id",
+                    "cycle_id",
+                    "version",
+                    "status",
+                    "evidence_snapshot_id",
+                ),
+            )
+            for item in latest_hypotheses.values()
+        ],
+        "latest_evidence_snapshot": _select_fields(
+            latest_evidence, ("evidence_snapshot_id", "version")
+        ),
+        "latest_brief_version": _select_fields(
+            latest_brief,
+            ("brief_version_id", "version", "evidence_snapshot_id"),
+        ),
+    }
+
+
+def _select_fields(
+    record: JsonObject | None, fields: tuple[str, ...]
+) -> JsonObject | None:
+    if not isinstance(record, dict):
+        return None
+    return {
+        field: record.get(field)
+        for field in fields
+        if record.get(field) is not None
+    }
 
 
 def _emit_status(

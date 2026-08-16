@@ -9,6 +9,7 @@ from unittest import mock
 from genomi.interfaces import (
     portal_active_context,
     portal_artifact_renderers,
+    portal_genomilab,
     portal_project_permissions,
     portal_run_events,
     portal_run_logs,
@@ -132,6 +133,82 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertIn('genomi.invoke with {"tool": "lab.<operation>"', prompt)
         self.assertIn("There is no lab.help operation", prompt)
         self.assertIn("# User request\nHelp me investigate a changing health picture.\n", prompt)
+
+    def test_follow_up_prompt_resumes_canonical_lab_investigation(self) -> None:
+        project = portal_store.create_project(name="Lab continuation")
+        project_id = str(project["project_id"])
+        portal_genomilab._SERVICES.clear()
+        self.addCleanup(portal_genomilab._SERVICES.clear)
+        application = portal_genomilab._application_service(project_id, root=None)
+        application.bootstrap_workspace()
+        created = application.create_investigation(
+            {
+                "question": "Sensitive patient wording must not enter the continuation summary.",
+                "disease_scope": "Sensitive condition label",
+            }
+        )
+        investigation_id = str(created["investigation_id"])
+        cycle = application.store.create_investigation_cycle(
+            investigation_id,
+            purpose="Synthetic public follow-up",
+            public_only=True,
+            command_id="resume-test-cycle",
+            expected_revision=1,
+        )
+        cycle_id = str(cycle["cycle"]["cycle_id"])
+        brief = application.store.prepare_specialist_brief(
+            investigation_id,
+            cycle_id=cycle_id,
+            specialist_role="Synthetic reviewer",
+            execution_policy="reasoning_only",
+            research_question="Review a synthetic public mechanism.",
+            public_concepts=[],
+            abstract_relations=[],
+            public_evidence_record_ids=[],
+            source_fact_ids=[],
+            rationale="Exercise continuation state",
+            purpose="Exercise continuation state",
+            workspace_session_id=f"portal:{project_id}",
+            command_id="resume-test-brief",
+            expected_revision=2,
+        )
+        assignment = application.store.create_specialist_assignment(
+            investigation_id,
+            cycle_id=cycle_id,
+            specialist_brief_id=brief["specialist_brief_id"],
+            command_id="resume-test-assignment",
+            expected_revision=3,
+        )
+        assignment_id = str(
+            assignment["assignment"]["specialist_assignment_id"]
+        )
+        application.store.transition_specialist_assignment(
+            investigation_id,
+            specialist_assignment_id=assignment_id,
+            to_state="spawned",
+            assignment_expected_revision=1,
+            command_id="resume-test-spawn",
+            expected_revision=4,
+            native_agent_id="synthetic-agent",
+        )
+
+        prompt = portal_runs.compose_prompt(
+            "Please continue the work already in progress.", project_id=project_id
+        )
+
+        self.assertIn("# Current Lab continuation state", prompt)
+        self.assertIn(f"- Active investigation: {investigation_id}", prompt)
+        self.assertIn("- Expected domain revision: 5", prompt)
+        self.assertIn(f"- Latest cycle: {cycle_id} (ordinal 1)", prompt)
+        self.assertIn(assignment_id, prompt)
+        self.assertIn("state=spawned", prompt)
+        self.assertIn("assignment_revision=2", prompt)
+        self.assertIn(str(brief["specialist_brief_id"]), prompt)
+        self.assertIn("do not inspect portal logs, files, or shell history", prompt)
+        self.assertNotIn("Sensitive patient wording", prompt)
+        self.assertNotIn("Sensitive condition label", prompt)
+        self.assertNotIn("synthetic-agent", prompt)
+        _assert_prompt_has_no_private_paths(prompt)
 
     def test_compose_prompt_includes_active_view_as_non_evidence_orientation(self) -> None:
         active_context = portal_active_context.update_project_active_context(

@@ -15,6 +15,7 @@ from . import (
     portal_codex_runtime,
     portal_context,
     portal_conversation_reviews,
+    portal_genomilab,
     portal_lab_skill_context,
     portal_project_genomes,
     portal_run_events,
@@ -519,12 +520,14 @@ def compose_prompt(
     workspace_section = portal_workspaces.project_workspace_prompt_section(project_id)
     evidence_section = portal_turns.selected_evidence_prompt_section(selected_evidence)
     lab_skill_section = portal_lab_skill_context.prompt_section()
+    lab_resume_section = _lab_resume_prompt_section(project_id)
     return (
         "You are operating inside GenomiLab, a local-first genomics workspace.\n"
         "Use the Genomi MCP tools already installed in this assistant session when evidence is needed.\n"
         "When the underlying intent requires durable patient-specific synthesis across observations or data sources, competing explanations, evidence revised over time, bounded specialist research, or a versioned brief, use the focused Lab guidance already included below and invoke canonical lab.* operations through genomi.invoke in this same conversation. Decide this semantically; never use keyword, phrase, prompt-template, or disease-name matching. Do not start another orchestration thread or Lab runner.\n"
         "Answer from evidence. Preserve Genomi privacy boundaries. Use informational medical language and recommend clinical confirmation for clinical decisions.\n\n"
         f"{lab_skill_section}"
+        f"{lab_resume_section}"
         f"{context_section}"
         f"{history_section}"
         f"{genome_boundary_section}"
@@ -534,6 +537,85 @@ def compose_prompt(
         "# User request\n"
         f"{message}\n"
     )
+
+
+def _lab_resume_prompt_section(project_id: str | None) -> str:
+    if not project_id:
+        return ""
+    try:
+        projection = portal_genomilab.project_resume_context(project_id)
+    except (portal_genomilab.PortalGenomiLabError, OSError, ValueError):
+        return ""
+    investigation = projection.get("active_investigation")
+    if not isinstance(investigation, dict):
+        return ""
+
+    def clean(value: object) -> str:
+        return " ".join(portal_turns.prompt_safe_text(str(value or "")).split())[:300]
+
+    investigation_id = clean(investigation.get("investigation_id"))
+    if not investigation_id:
+        return ""
+    lines = [
+        "# Current Lab continuation state",
+        "This compact identifier and lifecycle summary comes from the canonical Lab store. Resume this investigation with canonical lab.* operations; do not inspect portal logs, files, or shell history to recover Lab state. Do not create a replacement investigation unless the user asks to start a new one.",
+        f"- Active investigation: {investigation_id}",
+        f"- Investigation status: {clean(investigation.get('status'))}",
+        f"- Expected domain revision: {clean(investigation.get('domain_revision'))}",
+    ]
+    latest_cycle = investigation.get("latest_cycle")
+    if isinstance(latest_cycle, dict) and latest_cycle.get("cycle_id"):
+        lines.append(
+            f"- Latest cycle: {clean(latest_cycle.get('cycle_id'))} (ordinal {clean(latest_cycle.get('ordinal'))})"
+        )
+    assignments = investigation.get("specialist_assignments")
+    if isinstance(assignments, list) and assignments:
+        lines.append("- Specialist assignments:")
+        for item in assignments:
+            if not isinstance(item, dict):
+                continue
+            parts = [
+                clean(item.get("specialist_assignment_id")),
+                f"state={clean(item.get('state'))}",
+                f"assignment_revision={clean(item.get('revision'))}",
+                f"cycle={clean(item.get('cycle_id'))}",
+                f"brief={clean(item.get('specialist_brief_id'))}",
+            ]
+            if item.get("specialist_analysis_id"):
+                parts.append(f"analysis={clean(item.get('specialist_analysis_id'))}")
+            lines.append("  - " + " | ".join(part for part in parts if part))
+    hypotheses = investigation.get("latest_hypothesis_versions")
+    if isinstance(hypotheses, list) and hypotheses:
+        lines.append("- Current hypothesis versions:")
+        for item in hypotheses:
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                "  - "
+                + " | ".join(
+                    (
+                        clean(item.get("logical_hypothesis_id")),
+                        f"version_id={clean(item.get('hypothesis_version_id'))}",
+                        f"version={clean(item.get('version'))}",
+                        f"status={clean(item.get('status'))}",
+                        f"cycle={clean(item.get('cycle_id'))}",
+                        f"evidence_snapshot={clean(item.get('evidence_snapshot_id')) or 'none'}",
+                    )
+                )
+            )
+    latest_evidence = investigation.get("latest_evidence_snapshot")
+    if isinstance(latest_evidence, dict) and latest_evidence.get(
+        "evidence_snapshot_id"
+    ):
+        lines.append(
+            f"- Latest evidence snapshot: {clean(latest_evidence.get('evidence_snapshot_id'))} (version {clean(latest_evidence.get('version'))})"
+        )
+    latest_brief = investigation.get("latest_brief_version")
+    if isinstance(latest_brief, dict) and latest_brief.get("brief_version_id"):
+        lines.append(
+            f"- Latest doctor brief: {clean(latest_brief.get('brief_version_id'))} (version {clean(latest_brief.get('version'))})"
+        )
+    return "\n".join(lines) + "\n\n"
 
 
 def _genome_context_mode_prompt_section(mode: str | None) -> str:
