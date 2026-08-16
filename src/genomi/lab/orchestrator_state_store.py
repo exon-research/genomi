@@ -195,6 +195,14 @@ class OrchestratorStateStoreMixin:
                     "patient_molecular_snapshot_id"
                 ),
             )
+            evidence_snapshot = self.create_evidence_snapshot(  # type: ignore[attr-defined]
+                investigation_id,
+                reason="Refresh the longitudinal evidence basis for the approved profile",
+                force_new=True,
+                # The profile refresh is one canonical domain transition. The
+                # nested evidence snapshot must not advance the revision twice.
+                advance_revision=False,
+            )
             with self._connect() as connection:
                 revision = int(connection.execute(
                     "SELECT domain_revision FROM investigations WHERE investigation_id = ?",
@@ -203,6 +211,7 @@ class OrchestratorStateStoreMixin:
             response = {
                 "observations": observations,
                 "profile_snapshot": snapshot,
+                "evidence_snapshot": evidence_snapshot,
                 # Canonical handoff to operations deriving from this approved
                 # snapshot. Observation rows also carry stable logical IDs,
                 # while derivations must bind their immutable revisions.

@@ -21,11 +21,14 @@ class EvidenceSnapshotStoreMixin:
         *,
         reason: object,
         force_new: bool = False,
+        advance_revision: bool = True,
     ) -> JsonObject:
         """Pin the exact ledger and molecular context used for synthesis."""
 
         if not isinstance(force_new, bool):
             raise ValueError("force_new must be a boolean")
+        if not isinstance(advance_revision, bool):
+            raise ValueError("advance_revision must be a boolean")
         reason_value = required_text(reason, "evidence snapshot reason", 500)
         with self._connect() as connection:
             investigation = connection.execute(
@@ -35,16 +38,38 @@ class EvidenceSnapshotStoreMixin:
             ).fetchone()
             if investigation is None:
                 raise KeyError(investigation_id)
+            profile = None
+            if investigation["patient_molecular_snapshot_id"]:
+                profile = connection.execute(
+                    "SELECT agi_id, agi_snapshot_id FROM profile_snapshots "
+                    "WHERE patient_molecular_snapshot_id = ?",
+                    (investigation["patient_molecular_snapshot_id"],),
+                ).fetchone()
             evidence_ids = [
                 str(row["evidence_record_id"])
                 for row in connection.execute(
-                    "SELECT evidence_record_id FROM evidence_records "
-                    "WHERE investigation_id = ? "
-                    "AND patient_molecular_snapshot_id IS ? "
-                    "ORDER BY created_at, evidence_record_id",
+                    "SELECT evidence.evidence_record_id FROM evidence_records AS evidence "
+                    "WHERE evidence.investigation_id = ? AND ("
+                    "evidence.patient_molecular_snapshot_id IS ? "
+                    "OR EXISTS ("
+                    "SELECT 1 FROM captured_provider_results AS captured "
+                    "JOIN provider_result_receipts AS receipt "
+                    "ON receipt.provider_result_receipt_id = captured.provider_result_receipt_id "
+                    "WHERE captured.evidence_record_id = evidence.evidence_record_id "
+                    "AND receipt.result_kind = 'public_source_evidence'"
+                    ") OR EXISTS ("
+                    "SELECT 1 FROM captured_evidence_results AS captured "
+                    "JOIN genomi_result_receipts AS receipt "
+                    "ON receipt.result_receipt_id = captured.result_receipt_id "
+                    "WHERE captured.evidence_record_id = evidence.evidence_record_id "
+                    "AND (receipt.agi_snapshot_id IS NULL "
+                    "OR (receipt.agi_id IS ? AND receipt.agi_snapshot_id IS ?))"
+                    ")) ORDER BY evidence.created_at, evidence.evidence_record_id",
                     (
                         investigation_id,
                         investigation["patient_molecular_snapshot_id"],
+                        profile["agi_id"] if profile is not None else None,
+                        profile["agi_snapshot_id"] if profile is not None else None,
                     ),
                 ).fetchall()
             ]
@@ -106,12 +131,19 @@ class EvidenceSnapshotStoreMixin:
                     now,
                 ),
             )
-            connection.execute(
-                "UPDATE investigations SET evidence_snapshot_id = ?, "
-                "domain_revision = domain_revision + 1, updated_at = ? "
-                "WHERE investigation_id = ?",
-                (evidence_snapshot_id, now, investigation_id),
-            )
+            if advance_revision:
+                connection.execute(
+                    "UPDATE investigations SET evidence_snapshot_id = ?, "
+                    "domain_revision = domain_revision + 1, updated_at = ? "
+                    "WHERE investigation_id = ?",
+                    (evidence_snapshot_id, now, investigation_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE investigations SET evidence_snapshot_id = ? "
+                    "WHERE investigation_id = ?",
+                    (evidence_snapshot_id, investigation_id),
+                )
             row = connection.execute(
                 "SELECT * FROM evidence_snapshots WHERE evidence_snapshot_id = ?",
                 (evidence_snapshot_id,),

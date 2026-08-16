@@ -54,17 +54,14 @@ class LabPublicResearchCycleTests(unittest.TestCase):
         profile_snapshot_id = str(
             updated["profile_snapshot"]["patient_molecular_snapshot_id"]
         )
-        evidence_snapshot = self.store.create_evidence_snapshot(
-            investigation_id,
-            reason="Pin the evidence basis before research",
-        )
+        evidence_snapshot = updated["evidence_snapshot"]
         evidence_snapshot_id = str(evidence_snapshot["evidence_snapshot_id"])
 
         private_cycle = self.store.create_investigation_cycle(
             investigation_id,
             purpose="Assess the approved private context",
             command_id="create-private-cycle",
-            expected_revision=3,
+            expected_revision=updated["domain_revision"],
         )
         self.assertEqual(
             private_cycle["cycle"]["patient_molecular_snapshot_id"],
@@ -85,7 +82,7 @@ class LabPublicResearchCycleTests(unittest.TestCase):
                 prior_cycle_id=private_cycle["cycle"]["cycle_id"],
                 public_only=True,
                 command_id="reject-private-snapshot",
-                expected_revision=4,
+                expected_revision=private_cycle["domain_revision"],
             )
 
         public_cycle = self.store.create_investigation_cycle(
@@ -94,7 +91,7 @@ class LabPublicResearchCycleTests(unittest.TestCase):
             prior_cycle_id=private_cycle["cycle"]["cycle_id"],
             public_only=True,
             command_id="create-public-cycle",
-            expected_revision=4,
+            expected_revision=private_cycle["domain_revision"],
         )
 
         self.assertEqual(public_cycle["cycle"]["investigation_id"], investigation_id)
@@ -130,26 +127,26 @@ class LabPublicResearchCycleTests(unittest.TestCase):
             purpose="Public reference research",
             workspace_session_id="session-a",
             command_id="prepare-model-brief",
-            expected_revision=5,
+            expected_revision=public_cycle["domain_revision"],
         )
         assignment = self.store.create_specialist_assignment(
             investigation_id,
             cycle_id=public_cycle["cycle"]["cycle_id"],
             specialist_brief_id=brief["specialist_brief_id"],
             command_id="create-model-assignment",
-            expected_revision=6,
+            expected_revision=brief["domain_revision"],
         )
         assignment_id = str(
             assignment["assignment"]["specialist_assignment_id"]
         )
-        self.store.transition_specialist_assignment(
+        spawned = self.store.transition_specialist_assignment(
             investigation_id,
             specialist_assignment_id=assignment_id,
             to_state="spawned",
             assignment_expected_revision=1,
             native_agent_id="native-model-specialist",
             command_id="spawn-model-assignment",
-            expected_revision=7,
+            expected_revision=assignment["domain_revision"],
         )
         completed = self.store.transition_specialist_assignment(
             investigation_id,
@@ -163,7 +160,7 @@ class LabPublicResearchCycleTests(unittest.TestCase):
                 "gaps": [],
             },
             command_id="complete-model-assignment",
-            expected_revision=8,
+            expected_revision=spawned["domain_revision"],
         )
         receipt_id = self.store.issue_provider_result_receipt(
             provider="biohub-esm",

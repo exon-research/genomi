@@ -189,7 +189,7 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             self.store.get_investigation(state["investigation_id"])[
                 "evidence_snapshot_id"
             ],
-            None,
+            state["evidence_snapshot_id"],
         )
 
     def test_provider_capture_rejects_every_noncompleted_result_state(self) -> None:
@@ -366,6 +366,9 @@ class LabSpecialistRuntimeContractTests(unittest.TestCase):
             "specialist_brief_id": brief["specialist_brief_id"],
             "outbound_brief": brief["outbound_brief"],
             "assignment_id": assignment_id,
+            "evidence_snapshot_id": updated["evidence_snapshot"][
+                "evidence_snapshot_id"
+            ],
             "domain_revision": completed["domain_revision"],
         }
 
