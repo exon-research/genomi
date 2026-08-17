@@ -389,6 +389,97 @@ class PortalGenomiLabTests(unittest.TestCase):
         self.assertFalse(state["ignored"])
         self.assertEqual(state["boardLoads"], 1)
 
+    def test_rounds_report_what_each_cycle_changed_and_why(self) -> None:
+        # The illustration's arc: medication-only is rejected once the
+        # chronology lands, and the CTLA4 branch strengthens in the same round.
+        investigation = {
+            "cycles": [
+                {"cycle_id": "cycle-1", "ordinal": 1, "purpose": "First review"},
+                {"cycle_id": "cycle-2", "ordinal": 2, "purpose": "Weigh the chronology"},
+            ],
+            "hypothesis_versions": [
+                {
+                    "logical_hypothesis_id": "h-med",
+                    "cycle_id": "cycle-1",
+                    "version": 1,
+                    "statement": "Medication explains the infections.",
+                    "status": "open",
+                    "revision_rationale": "Raised as the explanation to beat.",
+                    "created_at": "2026-08-01T00:00:00Z",
+                },
+                {
+                    "logical_hypothesis_id": "h-med",
+                    "cycle_id": "cycle-2",
+                    "version": 2,
+                    "statement": "Medication explains the infections.",
+                    "status": "rejected",
+                    "revision_rationale": "The low immunoglobulins predate every drug.",
+                    "created_at": "2026-08-02T00:00:00Z",
+                },
+                {
+                    "logical_hypothesis_id": "h-ctla4",
+                    "cycle_id": "cycle-2",
+                    "version": 1,
+                    "statement": "A CTLA4-pathway defect connects the findings.",
+                    "status": "strengthened",
+                    "revision_rationale": "The functional assay was reduced twice.",
+                    "created_at": "2026-08-03T00:00:00Z",
+                },
+            ],
+        }
+
+        rounds = portal_genomilab._investigation_rounds(investigation)
+
+        self.assertEqual([item["ordinal"] for item in rounds], [1, 2])
+        self.assertEqual(rounds[0]["purpose"], "First review")
+        self.assertEqual(
+            rounds[0]["changes"],
+            [
+                {
+                    "statement": "Medication explains the infections.",
+                    "status": "open",
+                    "from_status": "",
+                    "rationale": "Raised as the explanation to beat.",
+                }
+            ],
+        )
+        second = rounds[1]["changes"]
+        self.assertEqual(
+            [(item["from_status"], item["status"]) for item in second],
+            [("open", "rejected"), ("", "strengthened")],
+        )
+        self.assertEqual(
+            second[0]["rationale"], "The low immunoglobulins predate every drug."
+        )
+
+    def test_a_restated_hypothesis_is_not_reported_as_a_change(self) -> None:
+        investigation = {
+            "cycles": [{"cycle_id": "cycle-1", "ordinal": 1, "purpose": "Review"}],
+            "hypothesis_versions": [
+                {
+                    "logical_hypothesis_id": "h-1",
+                    "cycle_id": "cycle-1",
+                    "version": 1,
+                    "statement": "An immune-dysregulation disorder connects these.",
+                    "status": "open",
+                    "revision_rationale": "Raised.",
+                },
+                {
+                    "logical_hypothesis_id": "h-1",
+                    "cycle_id": "cycle-1",
+                    "version": 2,
+                    "statement": "An immune-dysregulation disorder connects these.",
+                    "status": "open",
+                    "revision_rationale": "Wording clarified.",
+                },
+            ],
+        }
+
+        rounds = portal_genomilab._investigation_rounds(investigation)
+
+        self.assertEqual(len(rounds), 1)
+        self.assertEqual(len(rounds[0]["changes"]), 1)
+
     def test_board_models_render_durable_workstreams_and_complete_brief(self) -> None:
         if shutil.which("node") is None:
             self.skipTest("node is required for the frontend board model check")

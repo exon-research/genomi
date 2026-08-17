@@ -472,6 +472,66 @@ def _investigation_summary(investigation: JsonObject) -> JsonObject:
     }
 
 
+def _investigation_rounds(investigation: JsonObject) -> list[JsonObject]:
+    """What each round of the investigation changed, in order.
+
+    The board otherwise shows only where the explanations stand now, which
+    reads as a verdict. The version chain already records which round moved
+    each explanation and why, so the reader can follow the reasoning that got
+    there rather than being handed its conclusion.
+    """
+
+    cycles = [
+        item
+        for item in investigation.get("cycles") or []
+        if isinstance(item, dict) and item.get("cycle_id")
+    ]
+    if not cycles:
+        return []
+    versions = sorted(
+        (
+            item
+            for item in investigation.get("hypothesis_versions") or []
+            if isinstance(item, dict) and item.get("logical_hypothesis_id")
+        ),
+        # Within a round the order is when each move was recorded; version is
+        # only a tiebreak, since it counts per hypothesis rather than globally.
+        key=lambda item: (str(item.get("created_at") or ""), int(item.get("version") or 0)),
+    )
+    previous_status: dict[str, str] = {}
+    changes_by_cycle: dict[str, list[JsonObject]] = {}
+    for version in versions:
+        logical_id = str(version.get("logical_hypothesis_id") or "")
+        status = str(version.get("status") or "")
+        was = previous_status.get(logical_id, "")
+        previous_status[logical_id] = status
+        # A hypothesis that was restated without moving is not a change the
+        # reader needs a line for.
+        if was == status:
+            continue
+        changes_by_cycle.setdefault(str(version.get("cycle_id") or ""), []).append(
+            {
+                "statement": str(version.get("statement") or ""),
+                "status": status,
+                "from_status": was,
+                "rationale": str(version.get("revision_rationale") or ""),
+            }
+        )
+    rounds: list[JsonObject] = []
+    for cycle in sorted(cycles, key=lambda item: int(item.get("ordinal") or 0)):
+        changes = changes_by_cycle.get(str(cycle.get("cycle_id") or ""), [])
+        if not changes:
+            continue
+        rounds.append(
+            {
+                "ordinal": int(cycle.get("ordinal") or len(rounds) + 1),
+                "purpose": str(cycle.get("purpose") or ""),
+                "changes": changes,
+            }
+        )
+    return rounds
+
+
 def _latest_hypothesis_versions(items: object) -> dict[str, JsonObject]:
     latest: dict[str, JsonObject] = {}
     if not isinstance(items, list):
@@ -621,6 +681,7 @@ def _board_investigation(investigation: JsonObject | None) -> JsonObject | None:
             "gap_count": len(open_information_gaps),
             "specialist_count": len(workstreams),
             "hypotheses": hypotheses,
+            "rounds": _investigation_rounds(investigation),
             "specialist_workstreams": workstreams,
             "information_gaps": information_gaps,
             "patient_questions": brief.get("professional_questions") or [],

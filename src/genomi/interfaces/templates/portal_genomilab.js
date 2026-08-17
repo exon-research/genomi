@@ -59,6 +59,7 @@ export function createGenomiLabController({ api, getProjectId, getFrameId = () =
       boardCard('Question', text(investigation.question) || 'Investigation question recorded.'),
       roundBoardCard(investigation.cycles),
       hypothesisBoardCard(investigation.hypotheses),
+      roundHistoryCard(investigation.rounds),
       informationGapsCard(investigation.information_gaps),
       setupFaultsCard(investigation.information_gaps),
       evidenceBoardCard(investigation),
@@ -266,6 +267,72 @@ function roundBoardCard(values) {
   // progress rather than a verdict.
   const card = boardCardShell('Round ' + round.ordinal);
   if (round.purpose) card.append(boardParagraph(round.purpose));
+  return card;
+}
+
+export function roundChangeModels(values) {
+  const labels = {
+    strengthened: 'More supported',
+    weakened: 'Less supported',
+    rejected: 'Set aside',
+    retained: 'Still open',
+    open: 'Raised',
+    resolved: 'Resolved'
+  };
+  return array(values).filter((item) => item && typeof item === 'object').map((item) => {
+    const status = text(item.status).toLowerCase();
+    const from = text(item.from_status).toLowerCase();
+    return {
+      statement: text(item.statement),
+      status,
+      // A first appearance is "Raised"; a move says where it came from, so the
+      // reader can see the explanation change rather than just its latest word.
+      label: from && labels[from] ? `${labels[from]} → ${labels[status] || status}` : (labels[status] || status),
+      rationale: text(item.rationale)
+    };
+  }).filter((item) => item.statement);
+}
+
+export function investigationRoundModels(values) {
+  return array(values).filter((item) => item && typeof item === 'object').map((item) => ({
+    ordinal: Number(item.ordinal || 0) || 0,
+    purpose: text(item.purpose),
+    changes: roundChangeModels(item.changes)
+  })).filter((item) => item.changes.length);
+}
+
+function roundHistoryCard(values) {
+  const rounds = investigationRoundModels(values);
+  if (!rounds.length) return null;
+  const card = boardCardShell('How the explanations changed');
+  const list = document.createElement('ol');
+  list.className = 'genomilab-board-list genomilab-rounds';
+  rounds.forEach((round) => {
+    const item = document.createElement('li');
+    const heading = document.createElement('b');
+    heading.textContent = round.purpose
+      ? `Round ${round.ordinal} — ${round.purpose}`
+      : `Round ${round.ordinal}`;
+    item.append(heading);
+    round.changes.forEach((change) => {
+      const line = document.createElement('div');
+      line.className = 'genomilab-round-change';
+      const state = document.createElement('span');
+      state.className = `genomilab-hypothesis-state ${change.status}`;
+      state.textContent = change.label;
+      const statement = document.createElement('p');
+      statement.textContent = change.statement;
+      line.append(state, statement);
+      if (change.rationale) {
+        const why = boardParagraph(change.rationale);
+        why.className = 'genomilab-hypothesis-rationale';
+        line.append(why);
+      }
+      item.append(line);
+    });
+    list.append(item);
+  });
+  card.append(list);
   return card;
 }
 
