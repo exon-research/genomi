@@ -456,6 +456,12 @@ AGENT_DRIVERS: tuple[AgentDriver, ...] = (
             # unable to open the very records it was given.
             "Read",
             "Glob",
+            # The portal turns files written in the project workspace into the
+            # person's artifacts (materialize_workspace_files). Denying writes
+            # leaves that feature unreachable -- a live run published a brief
+            # and then could not save the printable copy it had just offered.
+            "Write",
+            "Edit",
         ),
         stream_adapter_factory=_claude_adapter,
     ),
