@@ -336,6 +336,86 @@ def _child_tool_use(operation: str, *, name: str = "mcp__genomi__genomi_invoke")
     )
 
 
+SILENT_RECEIPT_ID = "result-receipt-zyxwvutsrqponmlkjihgfedcba543210"
+
+
+def _child_provider_result(receipt_id: str = SILENT_RECEIPT_ID) -> str:
+    """A child's provider call returning a receipt it never quotes again."""
+
+    return json.dumps(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "tool_use_id": "toolu_child_search",
+                        "type": "tool_result",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "status": "completed",
+                                        "result_receipt_id": receipt_id,
+                                    }
+                                ),
+                            }
+                        ],
+                    }
+                ],
+            },
+            "parent_tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+            "subagent_type": "public_literature",
+        }
+    )
+
+
+def _child_prose_only_notification() -> str:
+    """A terminal report that discusses its sources without quoting receipt ids."""
+
+    return json.dumps(
+        {
+            "type": "system",
+            "subtype": "task_notification",
+            "task_id": "a5651591ae9299c63",
+            "tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+            "status": "completed",
+            "summary": (
+                "CTLA4 haploinsufficiency is reported with variable penetrance across "
+                "published cohorts, and the transendocytosis assay is the functional "
+                "discriminator described in that literature."
+            ),
+            "usage": {"total_tokens": 900, "tool_uses": 1, "duration_ms": 3100},
+        }
+    )
+
+
+def _child_prose_only_tool_use_result() -> str:
+    return json.dumps(
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "tool_use_id": "toolu_01Q9NEFLrToVJ5grGjGaab22",
+                        "type": "tool_result",
+                        "content": [{"type": "text", "text": "Reviewed."}],
+                    }
+                ],
+            },
+            "parent_tool_use_id": None,
+            "tool_use_result": {
+                "status": "completed",
+                "agentId": "a5651591ae9299c63",
+                "agentType": "public_literature",
+                "content": [{"type": "text", "text": "Reviewed."}],
+            },
+        }
+    )
+
+
 def _child_bash() -> str:
     return json.dumps(
         {
@@ -544,6 +624,47 @@ class ClaudeSpecialistLaneTests(unittest.TestCase):
         self.assertEqual(
             result["payload"]["agentsStates"]["a5651591ae9299c63"]["status"], "completed"
         )
+
+    def test_receipts_the_child_earned_bind_even_when_its_report_never_quotes_them(self) -> None:
+        # Binding used to depend on the child restating opaque ids in its prose,
+        # so a long report that discussed its sources without quoting them lost
+        # every receipt and its evidence could never be captured.
+        session = _bound_session()
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            _events(
+                session,
+                _child_provider_result(),
+                _child_prose_only_notification(),
+                _child_prose_only_tool_use_result(),
+            )
+
+        authorize.assert_called_once_with(
+            SILENT_RECEIPT_ID,
+            session_id="portal:project:frame",
+            specialist_assignment_id="assignment-1",
+            specialist_brief_id="brief-1",
+            native_agent_id="a5651591ae9299c63",
+            execution_policy="public_literature",
+        )
+
+    def test_a_violating_child_binds_nothing_it_earned(self) -> None:
+        session = _bound_session()
+
+        with mock.patch.object(
+            portal_claude_stream.EVIDENCE_RESULT_RECEIPTS, "authorize_specialist_result"
+        ) as authorize:
+            _events(
+                session,
+                _child_provider_result(),
+                _child_bash(),
+                _child_prose_only_notification(),
+                _child_prose_only_tool_use_result(),
+            )
+
+        authorize.assert_not_called()
 
     def test_terminal_child_message_authorizes_only_its_observed_provider_receipt(self) -> None:
         session = _bound_session()

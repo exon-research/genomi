@@ -292,6 +292,16 @@ class ClaudeStreamSession:
                     specialist["provider_errors"] = (
                         int(specialist.get("provider_errors") or 0) + 1
                     )
+                elif specialist is not None:
+                    # Remember every receipt this child earned. Nothing is
+                    # authorized here -- that decision waits for the terminal
+                    # boundary, where the child has completed, returned an
+                    # analysis and stayed inside its policy.
+                    earned = specialist.setdefault("earned_receipt_ids", [])
+                    text = portal_agents.content_preview(block.get("content"))
+                    for receipt_id in portal_specialist_lane.observed_result_receipt_ids(text):
+                        if receipt_id not in earned:
+                            earned.append(receipt_id)
                 continue
             if block_type != "tool_use":
                 continue
@@ -467,7 +477,15 @@ class ClaudeStreamSession:
         native_agent_id: str,
         native_policy: str,
     ) -> None:
-        """Bind only receipts observed in this child's terminal response."""
+        """Bind the receipts this child earned, once its turn is sound.
+
+        The terminal boundary is what makes a receipt bindable: by here the
+        child has completed, returned an analysis, and stayed inside its
+        policy. Requiring it to also restate opaque receipt ids in its prose
+        made binding depend on a writing habit -- a long report that discussed
+        its sources without quoting their ids lost every one of them, and the
+        evidence it had genuinely retrieved could never be captured.
+        """
 
         assignment_id = str(specialist.get("assignment_id") or "")
         assignment = self._assignments.get(assignment_id, {})
@@ -479,7 +497,9 @@ class ClaudeStreamSession:
             return
         if not all((self.session_id, assignment_id, brief_id, policy, native_agent_id)):
             return
-        for receipt_id in portal_specialist_lane.observed_result_receipt_ids(message):
+        restated = portal_specialist_lane.observed_result_receipt_ids(message)
+        earned = [str(value) for value in specialist.get("earned_receipt_ids") or []]
+        for receipt_id in sorted({*restated, *earned}):
             try:
                 EVIDENCE_RESULT_RECEIPTS.authorize_specialist_result(
                     receipt_id,
