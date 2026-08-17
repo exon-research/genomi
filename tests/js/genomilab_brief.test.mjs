@@ -69,7 +69,7 @@ test("current doctor brief renders grounded chronology, clinician questions, rec
       gap_ids: [],
       confirmation_needs: ["Independent clinical confirmation"],
       clinician_questions: [{
-        question: "Would a qualified CTLA4 transendocytosis assay help distinguish normal staining from impaired function in this case?",
+        question: "Would a qualified GENE1 pathway-function assay help distinguish normal staining from impaired function in this case?",
         evidence_record_ids: [evidenceId],
         profile_revision_ids: [revisionId],
         hypothesis_ids: ["hypothesis-1"],
@@ -95,14 +95,14 @@ test("current doctor brief renders grounded chronology, clinician questions, rec
       evidence: {
         records: [{
           source_id: "PMID:123",
-          title: "CTLA4 transendocytosis study",
+          title: "GENE1 pathway-function study",
           provenance: {
             original_source_uri: "https://pubmed.ncbi.nlm.nih.gov/123/",
             publication_date: "2026-07-01",
-            source_license: {status: "curated_short_paraphrase_demo_fixture"},
+            source_license: {status: "not_provided"},
           },
           excerpt: "Curated summary of the public source.",
-          supporting_spans: ["This does not establish Q76H causality."],
+          supporting_spans: ["This does not establish R42W causality."],
         }],
       },
     }],
@@ -132,12 +132,11 @@ test("current doctor brief renders grounded chronology, clinician questions, rec
 
     assert.match(copy, /Chronology that changed the investigation/);
     assert.match(copy, /Pneumonia before the first biologic/);
-    assert.match(copy, /Would a qualified CTLA4 transendocytosis assay/);
+    assert.match(copy, /Would a qualified GENE1 pathway-function assay/);
     assert.match(copy, /Pneumonia hospital record/);
     assert.match(copy, /abc123/);
     assert.match(copy, /Source date 2026-07-01/);
-    assert.match(copy, /Curated source summary/);
-    assert.match(copy, /Interpretation limit/);
+    assert.match(copy, /Supporting passage/);
     assert.equal(questionContext?.tagName, "details");
     assert.equal(questionContext?.open, false);
     assert.doesNotMatch(copy, /Conflicts, missing evidence, and unavailable sources/);

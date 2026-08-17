@@ -265,7 +265,7 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
             return
         # The shell and its same-origin assets contain no patient data and must
         # load before the fragment-delivered launch token can be exchanged.
-        if parsed.path in {"/", "/demo"}:
+        if parsed.path == "/":
             self._send_asset("index.html", "text/html; charset=utf-8")
             return
         if _JAVASCRIPT_MODULE_ROUTE.fullmatch(parsed.path):

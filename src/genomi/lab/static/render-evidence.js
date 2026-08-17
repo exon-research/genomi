@@ -57,20 +57,13 @@ export function renderEvidence(records, activeProfileSnapshotId = "") {
 
       const status = evidenceStatus(envelope, evidence);
       const coverage = evidenceCoverage(envelope, evidence);
-      const omitReplayFallbacks = shouldOmitReplayFallbacks(evidence, envelope);
-      const omitSuccessfulEmptyUnavailable = shouldOmitSuccessfulEmptyUnavailable(
-        envelope,
-        coverage,
-      );
       const facts = node("dl", "", "evidence-facts");
       appendDefinition(facts, "Finding state", state.detail);
       appendDefinition(facts, "Answer readiness", evidenceReadiness(envelope));
       appendDefinition(facts, "Retrieval status", status);
       appendDefinition(facts, "Consulted scope", coverage.consulted);
       appendDefinition(facts, "No-match terms", coverage.misses);
-      if (!omitReplayFallbacks && !omitSuccessfulEmptyUnavailable) {
-        appendDefinition(facts, "Unavailable sources", coverage.unavailable);
-      }
+      appendDefinition(facts, "Unavailable sources", coverage.unavailable);
       if (coverage.failures !== "None recorded") {
         appendDefinition(facts, "Source problems", coverage.failures);
       }
@@ -358,14 +351,13 @@ export function evidenceWarnings(record) {
   const envelope = isObject(record.evidence_envelope)
     ? record.evidence_envelope
     : isObject(evidence.evidence_envelope) ? evidence.evidence_envelope : {};
-  const omitReplayFallbacks = shouldOmitReplayFallbacks(evidence, envelope);
   const warnings = [];
   const state = text(envelope.finding_state);
   if (state && state !== "evidence_present" && state !== "true_negative_supported") {
     warnings.push(evidenceFindingState(envelope, evidence).detail);
   }
   const coverage = evidenceCoverage(envelope, evidence);
-  if (!omitReplayFallbacks && coverage.unavailable !== "None recorded") {
+  if (coverage.unavailable !== "None recorded") {
     warnings.push(`Unavailable sources: ${coverage.unavailable}.`);
   }
   if (coverage.failures !== "None recorded") warnings.push(`Source problems: ${coverage.failures}.`);
@@ -380,26 +372,6 @@ export function evidenceWarnings(record) {
     }
   });
   return uniqueText(warnings);
-}
-
-function shouldOmitReplayFallbacks(evidence, envelope) {
-  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
-  const queryScope = isObject(envelope.query_scope) ? envelope.query_scope : {};
-  return demoPresentation
-    && text(evidence.status) === "data_returned"
-    && text(envelope.finding_state) === "evidence_present"
-    && (
-    text(evidence.access_mode) === "fixture"
-    || text(evidence.provider) === "fixture"
-    || text(queryScope.access_mode) === "fixture"
-  );
-}
-
-function shouldOmitSuccessfulEmptyUnavailable(envelope, coverage) {
-  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
-  return demoPresentation
-    && text(envelope.finding_state) === "evidence_present"
-    && coverage.unavailable === "None recorded";
 }
 
 export function evidenceCurrencyNotes(record) {
@@ -476,8 +448,6 @@ export function sourceRecordList(evidence) {
 function sourceRecordItem(sourceRecord) {
   const item = node("li", "", "source-record-card");
   const provenance = isObject(sourceRecord.provenance) ? sourceRecord.provenance : {};
-  const sourceLicense = isObject(provenance.source_license) ? provenance.source_license : {};
-  const curatedReplay = text(sourceLicense.status) === "curated_short_paraphrase_demo_fixture";
   const titleValue = trustedEvidenceText(sourceRecord.title) || text(sourceRecord.source_id) || "Untitled source record";
   const safeUri = safeHttpUrl(provenance.original_source_uri);
   const title = safeUri ? safeSourceLink(titleValue, safeUri) : node("strong", titleValue);
@@ -493,26 +463,13 @@ function sourceRecordItem(sourceRecord) {
   item.append(header);
 
   const excerpt = trustedEvidenceText(sourceRecord.excerpt);
-  if (excerpt) {
-    if (curatedReplay) {
-      item.append(
-        node("strong", "Curated source summary", "supporting-span-label"),
-        node("p", excerpt, "source-excerpt")
-      );
-    } else {
-      item.append(node("blockquote", excerpt, "source-excerpt"));
-    }
-  }
+  if (excerpt) item.append(node("blockquote", excerpt, "source-excerpt"));
   const spans = uniqueText(array(sourceRecord.supporting_spans).map(trustedEvidenceText));
   if (spans.length) {
     const spanList = node("ul", "", "supporting-span-list");
     spanList.append(...spans.map((span) => node("li", span)));
     item.append(
-      node(
-        "strong",
-        curatedReplay ? "Interpretation limit" : "Supporting passage",
-        "supporting-span-label"
-      ),
+      node("strong", "Supporting passage", "supporting-span-label"),
       spanList
     );
   }

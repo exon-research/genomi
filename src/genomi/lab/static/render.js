@@ -352,8 +352,7 @@ export function hideContextCandidate() {
 }
 
 export function renderEvents(payload) {
-  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
-  const events = visibleInvestigationEvents(payload.events, demoPresentation);
+  const events = visibleInvestigationEvents(payload.events);
   elements.eventStatus.textContent = events.length
     ? `${events.length} committed ${events.length === 1 ? "update" : "updates"}`
     : "Monitoring · no committed updates";
@@ -369,7 +368,7 @@ export function renderEvents(payload) {
     marker.setAttribute("aria-hidden", "true");
     const copy = document.createElement("div");
     copy.append(
-      node("strong", investigationEventTitle(event.event_type, demoPresentation)),
+      node("strong", investigationEventTitle(event.event_type)),
       node("p", description),
       node("time", formatTime(text(event.created_at)))
     );
@@ -379,18 +378,12 @@ export function renderEvents(payload) {
   elements.eventList.replaceChildren(...rows);
 }
 
-export function investigationEventTitle(eventTypeValue, demoPresentation = false) {
-  const eventType = text(eventTypeValue);
-  if (demoPresentation && eventType === "plan_accepted") return "Plan committed";
-  return friendly(eventType) || "Investigation activity";
+export function investigationEventTitle(eventTypeValue) {
+  return friendly(text(eventTypeValue)) || "Investigation activity";
 }
 
-export function visibleInvestigationEvents(eventsValue, demoPresentation = false) {
-  return array(eventsValue).filter((event) => !demoPresentation || ![
-    "context_approval_required",
-    "context_authorized",
-    "private_context_revoked",
-  ].includes(text(event.event_type)));
+export function visibleInvestigationEvents(eventsValue) {
+  return array(eventsValue);
 }
 
 function investigationEventDescription(eventType, details) {

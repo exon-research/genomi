@@ -1166,7 +1166,7 @@ round-bound `nonclinical_research_artifact` with exact method, model, version,
 input/output, digest, and provenance fields appropriate to its contract. It
 SHALL be ineligible as a GenomiLab evidence record, hypothesis support, brief
 claim, answer-readiness input, AGI input, treatment content, or clinician
-export. A precomputed fixture or unverified host submission SHALL also state
+export. An unverified host submission SHALL also state
 that scientific/provider execution is unverified.
 
 Use the following fitness test:

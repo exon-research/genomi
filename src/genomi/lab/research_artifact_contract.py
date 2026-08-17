@@ -1,10 +1,10 @@
 """Strict, research-only contracts for mechanistic computation artifacts.
 
 Research artifacts are immutable records of a bounded scientific computation or
-of a host-supplied fixture.  They are deliberately a different record type from
-GenomiLab evidence: an artifact cannot support a hypothesis, enter a clinical
-brief, or change answer-readiness.  Stored inputs contain identifiers and
-digests, never a protein sequence or raw genome material.
+of an explicitly unverified host-supplied result. They are deliberately a
+different record type from GenomiLab evidence: an artifact cannot support a
+hypothesis, enter a clinical brief, or change answer-readiness. Stored inputs
+contain identifiers and digests, never a protein sequence or raw genome material.
 """
 
 from __future__ import annotations
@@ -31,19 +31,15 @@ RESEARCH_ARTIFACT_KINDS = frozenset(
     }
 )
 
-PRECOMPUTED_FIXTURE = "precomputed_fixture"
 HOST_SUPPLIED_UNVERIFIED = "host_supplied_unverified"
 VERIFIED_SCIENTIFIC_OPERATION = "verified_scientific_operation"
 RESEARCH_ARTIFACT_ORIGINS = frozenset(
     {
-        PRECOMPUTED_FIXTURE,
         HOST_SUPPLIED_UNVERIFIED,
         VERIFIED_SCIENTIFIC_OPERATION,
     }
 )
-HOST_SUBMISSION_ORIGINS = frozenset(
-    {PRECOMPUTED_FIXTURE, HOST_SUPPLIED_UNVERIFIED}
-)
+HOST_SUBMISSION_ORIGINS = frozenset({HOST_SUPPLIED_UNVERIFIED})
 
 _SUBSTITUTION_RE = re.compile(r"^([A-Z])([1-9][0-9]*)([A-Z])$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -434,7 +430,7 @@ def normalize_research_artifact(
         or provenance["network_access"] != "not_verified"
     ):
         raise ValueError(
-            "unverified or fixture provenance cannot claim an execution location"
+            "unverified provenance cannot claim an execution location"
         )
     return kind, origin_value, normalized
 
@@ -561,7 +557,6 @@ def research_artifact_envelope(
     """Return a non-evidence envelope that has no answer-readiness field."""
 
     scientific_execution = {
-        PRECOMPUTED_FIXTURE: "precomputed_fixture",
         HOST_SUPPLIED_UNVERIFIED: "not_verified",
         VERIFIED_SCIENTIFIC_OPERATION: "verified_local_execution",
     }[origin]
@@ -715,7 +710,7 @@ def _substitution(value: object) -> str:
     substitution = required_text(value, "protein_substitution", 80).upper()
     match = _SUBSTITUTION_RE.fullmatch(substitution)
     if match is None or match.group(1) not in _CANONICAL_AMINO_ACIDS or match.group(3) not in _CANONICAL_AMINO_ACIDS:
-        raise ValueError("protein_substitution must use one-letter protein notation such as Q76H")
+        raise ValueError("protein_substitution must use one-letter protein notation such as R42W")
     if match.group(1) == match.group(3):
         raise ValueError("protein_substitution must change the amino acid")
     return substitution
@@ -760,7 +755,6 @@ __all__ = [
     "GENOMI_SEQUENCE_SUBSTITUTION_VERIFICATION",
     "HOST_SUBMISSION_ORIGINS",
     "HOST_SUPPLIED_UNVERIFIED",
-    "PRECOMPUTED_FIXTURE",
     "PROTO_BLINDED_EXPERIMENTAL_DESIGN",
     "RESEARCH_ARTIFACT_KINDS",
     "RESEARCH_ARTIFACT_ORIGINS",

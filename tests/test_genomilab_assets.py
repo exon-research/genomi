@@ -134,23 +134,6 @@ class GenomiLabAssetTests(unittest.TestCase):
         self.assertIn("/api/v1/molecular-profile/observations", combined)
         self.assertIn("/api/v1/investigations", combined)
 
-    def test_demo_presentation_focuses_on_investigation_outputs(self) -> None:
-        app = self.modules["app.js"]
-        workspace = self.styles["workspace.css"]
-
-        self.assertIn('globalThis.location.pathname === "/demo"', app)
-        self.assertIn("if (!demoPresentation) await connectionsController.load();", app)
-        self.assertIn('document.getElementById("ask-guidance")', app)
-        for selector in (
-            '#research-tools',
-            '#collaborate',
-            '#privacy-activity',
-            '#capability-approval-list',
-            '.attention-grid article:nth-child(2)',
-        ):
-            with self.subTest(selector=selector):
-                self.assertIn(f'body[data-presentation="demo"] {selector}', workspace)
-
     def test_source_record_control_accepts_reports_not_genome_sources(self) -> None:
         source_form = self.html[
             self.html.index('id="source-artifact-form"') : self.html.index(

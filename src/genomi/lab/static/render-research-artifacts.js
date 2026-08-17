@@ -61,23 +61,14 @@ function executionBoundary(envelope) {
   if (status === "verified_local_execution") {
     return "This artifact records a verified local scientific operation with exact provenance. It remains nonclinical and cannot support hypotheses, brief claims, answer-readiness, treatment content, or clinician export.";
   }
-  if (status === "precomputed_fixture") {
-    return "Illustrative demo result · nonclinical · not used as evidence";
-  }
   return "This host-supplied artifact is not verified scientific or provider execution. It cannot support hypotheses, brief claims, answer-readiness, treatment content, or clinician export.";
 }
 
 function artifactOrigin(record) {
-  if (text(record?.origin) === "precomputed_fixture") {
-    return "Illustrative demo result";
-  }
   return friendly(text(record?.origin)) || "Origin not recorded";
 }
 
-function artifactState(envelope) {
-  if (text(envelope.scientific_execution_status) === "precomputed_fixture") {
-    return "Illustrative demo result";
-  }
+function artifactState(_envelope) {
   return "Nonclinical · non-evidence";
 }
 
@@ -100,14 +91,12 @@ function artifactFacts(record, artifact) {
   const input = isObject(artifact.input) ? artifact.input : {};
   const output = isObject(artifact.output) ? artifact.output : {};
   const provenance = isObject(artifact.provenance) ? artifact.provenance : {};
-  const isFixture = text(record?.origin) === "precomputed_fixture"
-    || text(provenance.execution_class) === "precomputed_fixture";
   const facts = node("dl", "", "evidence-facts");
   const definitions = [
     ["Method", versioned(method)],
     ["Model / rule set", versioned(model)],
     ...kindFacts(text(record?.artifact_kind), input, output),
-    ["Execution", isFixture ? "" : [friendly(text(provenance.execution_location)), friendly(text(provenance.network_access))].filter(Boolean).join(" · ")],
+    ["Execution", [friendly(text(provenance.execution_location)), friendly(text(provenance.network_access))].filter(Boolean).join(" · ")],
     ["Provenance", [text(provenance.source_label), text(provenance.source_version), text(provenance.source_record_id)].filter(Boolean).join(" · ")],
     ["Input digest", shortId(text(input.reference_sequence_sha256))],
     ["Output digest", shortId(text(input.alternate_sequence_sha256))],

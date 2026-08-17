@@ -66,7 +66,7 @@ class GenomiRuntimeOperationsTests(GenomiRuntimeTestCase):
             for name, tool in by_name.items()
             if tool["annotations"].get("agiNeed") == "variant"
         }
-        self.assertEqual(actual_variant, set())
+        self.assertEqual(actual_variant, {"variant.find_gene_variants"})
 
     def test_prs_reference_operations_get_reference_pending_stamp(self) -> None:
         with mock.patch(

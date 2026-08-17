@@ -819,8 +819,7 @@
           "origin": {
             "type": "string",
             "enum": [
-              "host_supplied_unverified",
-              "precomputed_fixture"
+              "host_supplied_unverified"
             ]
           },
           "artifact": {
@@ -962,7 +961,6 @@
                         "type": "string",
                         "enum": [
                           "host_supplied_unverified",
-                          "precomputed_fixture",
                           "verified_scientific_operation"
                         ]
                       },
@@ -1171,7 +1169,6 @@
                         "type": "string",
                         "enum": [
                           "host_supplied_unverified",
-                          "precomputed_fixture",
                           "verified_scientific_operation"
                         ]
                       },
@@ -1355,7 +1352,6 @@
                         "type": "string",
                         "enum": [
                           "host_supplied_unverified",
-                          "precomputed_fixture",
                           "verified_scientific_operation"
                         ]
                       },

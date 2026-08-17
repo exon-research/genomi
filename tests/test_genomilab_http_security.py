@@ -320,11 +320,6 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
         self.assertEqual(shell.status, 200)
         self.assertNotIn(self.launch_token, shell.body.decode("utf-8"))
         self.assertIsNone(shell.headers.get("Set-Cookie"))
-        demo_shell = self.request("GET", "/demo")
-        self.assertEqual(demo_shell.status, 200)
-        self.assertEqual(demo_shell.body, shell.body)
-        self.assertIsNone(demo_shell.headers.get("Set-Cookie"))
-
         exchange = self.request(
             "POST",
             "/api/v1/session",

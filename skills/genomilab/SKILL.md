@@ -218,7 +218,7 @@ Call `genomilab.list_research_tools` when provider availability matters.
 - Use `genomilab.run_proto_blinded_experiment_design` under the same rule for a
   bounded blinded experimental design. It is not a general sequence-design
   surface.
-- ESM, Proto, Genomi verification, fixtures, and unverified host submissions are
+- ESM, Proto, Genomi verification, and unverified host submissions are
   nonclinical research artifacts. They cannot support hypotheses, evidence,
   answer-readiness, brief claims, treatment content, or clinician export.
 
@@ -308,7 +308,7 @@ derives modality badges and preserves the clinical boundary.
 
 ### genomilab.submit_research_artifact
 
-Persist a round-bound precomputed fixture or unverified host artifact with its
+Persist a round-bound unverified host artifact with its
 exact method, model, versions, input/output digests, and provenance. This route
 never verifies scientific or provider execution.
 

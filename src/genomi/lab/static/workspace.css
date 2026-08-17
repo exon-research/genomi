@@ -1,15 +1,4 @@
 .desk { width: min(1500px, 100%); margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
-.demo-mode-disclosure { position: fixed; right: 1rem; bottom: 1rem; z-index: 30; padding: .38rem .58rem; border: 1px solid #c7d8d3; border-radius: 999px; background: rgba(255,255,255,.94); color: #536963; box-shadow: 0 4px 16px rgba(27,56,50,.08); font-size: .64rem; font-weight: 750; letter-spacing: .02em; }
-body[data-presentation="demo"] .context-card,
-body[data-presentation="demo"] #capability-approval-list,
-body[data-presentation="demo"] #research-tools,
-body[data-presentation="demo"] #collaborate,
-body[data-presentation="demo"] #privacy-activity,
-body[data-presentation="demo"] .desk-nav a[href="#research-tools"],
-body[data-presentation="demo"] .desk-nav a[href="#collaborate"],
-body[data-presentation="demo"] .desk-nav a[href="#privacy-activity"],
-body[data-presentation="demo"] .attention-grid article:nth-child(2) { display: none; }
-body[data-presentation="demo"] .attention-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .desk-nav { position: sticky; top: 0; align-self: start; min-height: calc(100vh - 112px); padding: 2rem 1.1rem 1rem; border-right: 1px solid var(--line); background: rgba(247,249,245,.72); }
 .user-card { padding: 1rem; background: white; border: 1px solid var(--line); border-radius: 14px; }
 .user-card h2 { margin: 0; font: 700 1.15rem Georgia, serif; }

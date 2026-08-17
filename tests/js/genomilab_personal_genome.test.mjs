@@ -30,47 +30,46 @@ const evidence = {
   status: "variants_found",
   query: {
     genome_build: "GRCh38",
-    consulted_genes: ["CTLA4", "LRBA", "PIK3CD", "NFKB1", "TNFRSF13B"],
+    consulted_genes: ["GENE1", "GENE2"],
   },
   coverage: {truncated: false},
   gene_results: [
-    {gene: "CTLA4", coverage_state: "data_returned", returned_variant_count: 1},
-    {gene: "LRBA", coverage_state: "in_scope_empty", returned_variant_count: 0},
+    {gene: "GENE1", coverage_state: "data_returned", returned_variant_count: 1},
+    {gene: "GENE2", coverage_state: "in_scope_empty", returned_variant_count: 0},
   ],
   variants: [{
-    chrom: "2",
-    pos: 203870704,
-    rsid: "rs2469719303",
-    ref: "G",
-    alt: "C",
+    chrom: "1",
+    pos: 12345,
+    rsid: "rs123",
+    ref: "A",
+    alt: "G",
     filter: "PASS",
     genotype: "0/1",
-    matched_candidate_genes: ["CTLA4"],
+    matched_candidate_genes: ["GENE1"],
   }],
 };
 
-test("personal-genome projection exposes the bounded CTLA4 locus and consulted scope", () => {
+test("personal-genome projection exposes the bounded locus and consulted scope", () => {
   const result = personalGenomeFindingPresentation(evidence);
   assert.equal(result.visible, true);
   assert.deepEqual(result.variants, [{
-    title: "CTLA4 · rs2469719303",
-    details: "GRCh38 · 2:203870704 · G>C · Genotype 0/1 · Filter PASS",
+    title: "GENE1 · rs123",
+    details: "GRCh38 · 1:12345 · A>G · Genotype 0/1 · Filter PASS",
   }]);
-  assert.deepEqual(result.noHitGenes, ["LRBA"]);
+  assert.deepEqual(result.noHitGenes, ["GENE2"]);
   assert.equal(result.truncated, false);
 });
 
-test("demo personal-genome card renders the variant without empty unavailable-source noise", () => {
+test("personal-genome card renders the variant and complete retrieval state", () => {
   const originalDocument = globalThis.document;
   globalThis.document = {
-    body: {dataset: {presentation: "demo"}},
     createElement: (tagName) => new TestElement(tagName),
   };
   elements.evidenceCount = new TestElement("span");
   elements.evidenceLedger = new TestElement("div");
   try {
     renderEvidence([{
-      evidence_record_id: "evidence-ctla4",
+      evidence_record_id: "evidence-gene1",
       patient_molecular_snapshot_id: "snapshot-current",
       source_family: "personal_genome",
       operation: "variant.find_gene_variants",
@@ -86,90 +85,10 @@ test("demo personal-genome card renders the variant without empty unavailable-so
       .map((item) => item.textContent)
       .filter(Boolean)
       .join("\n");
-    assert.match(copy, /CTLA4 · rs2469719303/);
-    assert.match(copy, /2:203870704 · G>C · Genotype 0\/1/);
-    assert.match(copy, /Consulted candidate genes: CTLA4, LRBA, PIK3CD, NFKB1, TNFRSF13B/);
-    assert.doesNotMatch(copy, /No source-level record was retained/);
-    assert.doesNotMatch(copy, /Unavailable sources/);
-  } finally {
-    if (originalDocument === undefined) delete globalThis.document;
-    else globalThis.document = originalDocument;
-  }
-});
-
-test("demo presentation omits blocked live-route noise from a successful fixture replay", () => {
-  const originalDocument = globalThis.document;
-  globalThis.document = {
-    body: {dataset: {presentation: "demo"}},
-    createElement: (tagName) => new TestElement(tagName),
-  };
-  elements.evidenceCount = new TestElement("span");
-  elements.evidenceLedger = new TestElement("div");
-  try {
-    renderEvidence([{
-      evidence_record_id: "evidence-paperclip-replay",
-      patient_molecular_snapshot_id: "snapshot-current",
-      source_family: "literature",
-      operation: "public_evidence.retrieve",
-      evidence: {
-        provider: "fixture",
-        access_mode: "fixture",
-        status: "data_returned",
-        coverage: {consulted: ["Curated Paperclip evidence replay"]},
-        records: [],
-      },
-      evidence_envelope: {
-        finding_state: "evidence_present",
-        answer_readiness: "needs_clinical_confirmation",
-        coverage: {unavailable_sources: ["paperclip"]},
-        negative_inference: {allowed: false},
-      },
-    }], "snapshot-current");
-    const copy = descendants(elements.evidenceLedger)
-      .map((item) => item.textContent)
-      .filter(Boolean)
-      .join("\n");
-    assert.match(copy, /Curated Paperclip evidence replay/);
-    assert.doesNotMatch(copy, /Unavailable sources/);
-  } finally {
-    if (originalDocument === undefined) delete globalThis.document;
-    else globalThis.document = originalDocument;
-  }
-});
-
-test("demo presentation retains unavailable-source state for an unsuccessful fixture result", () => {
-  const originalDocument = globalThis.document;
-  globalThis.document = {
-    body: {dataset: {presentation: "demo"}},
-    createElement: (tagName) => new TestElement(tagName),
-  };
-  elements.evidenceCount = new TestElement("span");
-  elements.evidenceLedger = new TestElement("div");
-  try {
-    renderEvidence([{
-      evidence_record_id: "evidence-fixture-failure",
-      patient_molecular_snapshot_id: "snapshot-current",
-      source_family: "literature",
-      operation: "public_evidence.retrieve",
-      evidence: {
-        provider: "fixture",
-        access_mode: "fixture",
-        status: "source_unavailable",
-        records: [],
-      },
-      evidence_envelope: {
-        finding_state: "not_assessed",
-        answer_readiness: "not_answer_ready",
-        coverage: {unavailable_sources: ["paperclip"]},
-        negative_inference: {allowed: false},
-      },
-    }], "snapshot-current");
-    const copy = descendants(elements.evidenceLedger)
-      .map((item) => item.textContent)
-      .filter(Boolean)
-      .join("\n");
+    assert.match(copy, /GENE1 · rs123/);
+    assert.match(copy, /1:12345 · A>G · Genotype 0\/1/);
+    assert.match(copy, /Consulted candidate genes: GENE1, GENE2/);
     assert.match(copy, /Unavailable sources/);
-    assert.match(copy, /paperclip/);
   } finally {
     if (originalDocument === undefined) delete globalThis.document;
     else globalThis.document = originalDocument;

@@ -47,7 +47,7 @@ class ResearchArtifactApplicationMixin:
         origin: object,
         artifact: object,
     ) -> JsonObject:
-        """Persist a fixture or unverified host result; never claim execution."""
+        """Persist an unverified host result; never claim execution."""
 
         self._require_specialist_board(investigation_id)
         try:

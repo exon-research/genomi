@@ -248,7 +248,6 @@ CREATE TABLE IF NOT EXISTS research_artifacts (
     system TEXT NOT NULL CHECK (system IN ('esm', 'proto', 'genomi')),
     origin TEXT NOT NULL CHECK (
         origin IN (
-            'precomputed_fixture',
             'host_supplied_unverified',
             'verified_scientific_operation'
         )

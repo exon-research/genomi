@@ -99,7 +99,7 @@ test("candidate-gene scope is patient-readable and keeps fixed privacy limits vi
   assert.match(description, /specialists cannot access the genome/);
 });
 
-test("demo presentation hides setup authorization events while standard portal retains them", () => {
+test("investigation timeline retains every committed event", () => {
   const events = [
     {event_type: "investigation_created"},
     {event_type: "context_approval_required"},
@@ -107,13 +107,8 @@ test("demo presentation hides setup authorization events while standard portal r
     {event_type: "specialist_board_formed"},
   ];
 
-  assert.deepEqual(visibleInvestigationEvents(events, false), events);
-  assert.deepEqual(
-    visibleInvestigationEvents(events, true).map((event) => event.event_type),
-    ["investigation_created", "specialist_board_formed"],
-  );
-  assert.equal(investigationEventTitle("plan_accepted", true), "Plan committed");
-  assert.equal(investigationEventTitle("plan_accepted", false), "Plan Accepted");
+  assert.deepEqual(visibleInvestigationEvents(events), events);
+  assert.equal(investigationEventTitle("plan_accepted"), "Plan Accepted");
 });
 
 test("opening another investigation invalidates all old request ownership", () => {

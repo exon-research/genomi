@@ -14,7 +14,7 @@ from genomi.interfaces.mcp import handle_request
 from genomi.lab.research_artifact_contract import (
     ESM_NONCLINICAL_COMPARISON,
     GENOMI_SEQUENCE_SUBSTITUTION_VERIFICATION,
-    PRECOMPUTED_FIXTURE,
+    HOST_SUPPLIED_UNVERIFIED,
     PROTO_BLINDED_EXPERIMENTAL_DESIGN,
     research_artifact_submission_input_schema,
 )
@@ -27,7 +27,7 @@ from tests.genomilab_support import (
 )
 
 
-REFERENCE_SEQUENCE = "A" * 75 + "Q" + "A" * 40
+REFERENCE_SEQUENCE = "A" * 41 + "R" + "A" * 40
 
 
 class _CurrentContext:
@@ -49,7 +49,7 @@ class _CurrentContext:
 
 def _esm_executor(request: dict[str, Any]) -> dict[str, Any]:
     assert request["reference_sequence"] == REFERENCE_SEQUENCE
-    assert request["alternate_sequence"][75] == "H"
+    assert request["alternate_sequence"][41] == "W"
     assert request["required_execution_location"] == "local"
     assert request["required_network_access"] == "disabled"
     return {
@@ -75,7 +75,7 @@ def _esm_executor(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _proto_executor(request: dict[str, Any]) -> dict[str, Any]:
-    assert request["protein_substitution"] == "Q76H"
+    assert request["protein_substitution"] == "R42W"
     assert request["required_execution_location"] == "local"
     assert request["required_network_access"] == "disabled"
     return {
@@ -83,7 +83,7 @@ def _proto_executor(request: dict[str, Any]) -> dict[str, Any]:
             "name": "blinded_control_design",
             "version": "1",
         },
-        "model": {"name": "Proto", "version": "fixture-2026-08"},
+        "model": {"name": "Proto", "version": "test-executor-2026-08"},
         "output": {
             "blinded_arm_labels": ["Arm A", "Arm B", "Arm C", "Arm D"],
             "quality_controls": ["Prespecify assay acceptance criteria."],
@@ -197,7 +197,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         )
         plan = self.service.submit_agent_plan(
             self.investigation_id,
-            focus_question="Can the Q76H mechanism be sharpened nonclinically?",
+            focus_question="Can the R42W mechanism be sharpened nonclinically?",
             specialist_assignments=[
                 {
                     "specialist_id": item["specialist_id"],
@@ -216,14 +216,14 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         self.round_id = str(plan["investigation_round"]["round_id"])
 
     @staticmethod
-    def _fixture_provenance() -> dict[str, str]:
+    def _host_provenance() -> dict[str, str]:
         return {
-            "execution_class": PRECOMPUTED_FIXTURE,
+            "execution_class": HOST_SUPPLIED_UNVERIFIED,
             "execution_location": "not_verified",
             "network_access": "not_verified",
-            "source_label": "curated demo fixture",
+            "source_label": "host-imported result",
             "source_version": "2026-08",
-            "source_record_id": "fixture-record-001",
+            "source_record_id": "import-record-001",
         }
 
     @classmethod
@@ -231,12 +231,12 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         return {
             "artifact_kind": ESM_NONCLINICAL_COMPARISON,
             "method": {"name": "masked_marginal_comparison", "version": "1"},
-            "model": {"name": "ESMC fixture", "version": "2024-12"},
+            "model": {"name": "External ESM output", "version": "2024-12"},
             "input": {
-                "gene": "CTLA4",
-                "transcript_accession": "NM_005214.5",
-                "protein_accession": "NP_005205.2",
-                "protein_substitution": "Q76H",
+                "gene": "GENE1",
+                "transcript_accession": "NM_TEST.1",
+                "protein_accession": "NP_TEST.1",
+                "protein_substitution": "R42W",
                 "reference_sequence_sha256": "a" * 64,
                 "alternate_sequence_sha256": "b" * 64,
             },
@@ -246,7 +246,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
                 "alternate_score": alternate_score,
                 "delta": alternate_score + 1.0,
             },
-            "provenance": cls._fixture_provenance(),
+            "provenance": cls._host_provenance(),
         }
 
     @classmethod
@@ -254,19 +254,19 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         return {
             "artifact_kind": PROTO_BLINDED_EXPERIMENTAL_DESIGN,
             "method": {"name": "blinded_control_design", "version": "1"},
-            "model": {"name": "Proto fixture", "version": "2026-08"},
+            "model": {"name": "External Proto output", "version": "2026-08"},
             "input": {
-                "gene": "CTLA4",
-                "protein_accession": "NP_005205.2",
-                "protein_substitution": "Q76H",
-                "objective": "Separate CTLA4 abundance from ligand removal.",
+                "gene": "GENE1",
+                "protein_accession": "NP_TEST.1",
+                "protein_substitution": "R42W",
+                "objective": "Separate GENE1 abundance from ligand removal.",
                 "required_arm_classes": [
                     "wild_type_reference",
                     "test_variant",
                     "assay_negative_control",
                     "functional_loss_control",
                 ],
-                "readouts": ["ctla4_abundance", "cd80_cd86_ligand_removal"],
+                "readouts": ["protein_abundance", "ligand_removal"],
             },
             "output": {
                 "blinded_arm_labels": ["Arm A", "Arm B", "Arm C", "Arm D"],
@@ -275,23 +275,23 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
                     "Compare abundance and ligand-removal readouts separately."
                 ],
             },
-            "provenance": cls._fixture_provenance(),
+            "provenance": cls._host_provenance(),
         }
 
     def _verify_sequence(self) -> dict[str, Any]:
         return self.service.verify_agent_sequence_substitution(
             self.investigation_id,
             round_id=self.round_id,
-            deduplication_key="genomi-q76h-verification",
-            gene="CTLA4",
-            transcript_accession="NM_005214.5",
-            protein_accession="NP_005205.2",
-            coding_change="c.228G>C",
-            protein_substitution="Q76H",
+            deduplication_key="genomi-r42w-verification",
+            gene="GENE1",
+            transcript_accession="NM_TEST.1",
+            protein_accession="NP_TEST.1",
+            coding_change="c.124C>T",
+            protein_substitution="R42W",
             public_reference_protein_sequence=REFERENCE_SEQUENCE,
             reference_source_label="NCBI RefSeq",
             reference_source_version="2026-08",
-            reference_source_record_id="NP_005205.2",
+            reference_source_record_id="NP_TEST.1",
         )
 
     def _mcp_call(self, operation: str, arguments: dict[str, object]) -> dict[str, Any]:
@@ -321,7 +321,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
                 "investigation_id": self.investigation_id,
                 "round_id": self.round_id,
                 "deduplication_key": "mcp-esm-artifact",
-                "origin": PRECOMPUTED_FIXTURE,
+                "origin": HOST_SUPPLIED_UNVERIFIED,
                 "artifact": self._esm_artifact(),
             },
         )
@@ -345,15 +345,15 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         esm = self.service.submit_agent_research_artifact(
             self.investigation_id,
             round_id=self.round_id,
-            deduplication_key="round-1-esm-q76h",
-            origin=PRECOMPUTED_FIXTURE,
+            deduplication_key="round-1-esm-r42w",
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._esm_artifact(),
         )
         proto = self.service.submit_agent_research_artifact(
             self.investigation_id,
             round_id=self.round_id,
             deduplication_key="round-1-proto-design",
-            origin=PRECOMPUTED_FIXTURE,
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._proto_artifact(),
         )
 
@@ -387,23 +387,23 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
         esm = self.service.run_agent_esm_substitution_analysis(
             self.investigation_id,
             round_id=self.round_id,
-            deduplication_key="esm-scientific-q76h",
+            deduplication_key="esm-scientific-r42w",
             sequence_verification_artifact_id=genomi["research_artifact_id"],
             public_reference_protein_sequence=REFERENCE_SEQUENCE,
         )
         proto = self.service.run_agent_proto_blinded_experiment_design(
             self.investigation_id,
             round_id=self.round_id,
-            deduplication_key="proto-scientific-q76h",
+            deduplication_key="proto-scientific-r42w",
             sequence_verification_artifact_id=genomi["research_artifact_id"],
-            objective="Separate CTLA4 abundance from ligand-removal function.",
+            objective="Separate GENE1 abundance from ligand-removal function.",
             required_arm_classes=[
                 "wild_type_reference",
                 "test_variant",
                 "assay_negative_control",
                 "functional_loss_control",
             ],
-            readouts=["ctla4_abundance", "cd80_cd86_ligand_removal"],
+            readouts=["protein_abundance", "ligand_removal"],
         )
         self.assertEqual(esm["status"], "completed")
         self.assertEqual(proto["status"], "completed")
@@ -469,14 +469,14 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
             self.investigation_id,
             round_id=self.round_id,
             deduplication_key="stable-esm-artifact",
-            origin=PRECOMPUTED_FIXTURE,
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._esm_artifact(),
         )
         retry = self.service.submit_agent_research_artifact(
             self.investigation_id,
             round_id=self.round_id,
             deduplication_key="stable-esm-artifact",
-            origin=PRECOMPUTED_FIXTURE,
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._esm_artifact(),
         )
         self.assertTrue(retry["retry_reused"])
@@ -490,7 +490,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
                 self.investigation_id,
                 round_id=self.round_id,
                 deduplication_key="stable-esm-artifact",
-                origin=PRECOMPUTED_FIXTURE,
+                origin=HOST_SUPPLIED_UNVERIFIED,
                 artifact=self._esm_artifact(alternate_score=-2.0),
             )
         self.assertEqual(collision.exception.code, "invalid_research_artifact")
@@ -500,7 +500,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
             self.investigation_id,
             round_id=self.round_id,
             deduplication_key="immutable-esm-artifact",
-            origin=PRECOMPUTED_FIXTURE,
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._esm_artifact(),
         )["research_artifact"]
         artifact_id = submitted["research_artifact_id"]
@@ -560,7 +560,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
             self.investigation_id,
             round_id=self.round_id,
             deduplication_key="excluded-esm-artifact",
-            origin=PRECOMPUTED_FIXTURE,
+            origin=HOST_SUPPLIED_UNVERIFIED,
             artifact=self._esm_artifact(),
         )["research_artifact"]
         artifact_id = str(artifact["research_artifact_id"])
@@ -628,7 +628,7 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
                 self.investigation_id,
                 round_id=self.round_id,
                 deduplication_key="unsafe-sequence",
-                origin=PRECOMPUTED_FIXTURE,
+                origin=HOST_SUPPLIED_UNVERIFIED,
                 artifact=unsafe,
             )
         self.assertEqual(raw_sequence.exception.code, "invalid_research_artifact")
@@ -688,12 +688,10 @@ class GenomiLabResearchArtifactTests(unittest.TestCase):
             renderer,
         )
         self.assertIn("Nonclinical · non-evidence", artifact_renderer)
-        self.assertIn("Illustrative demo result", artifact_renderer)
         self.assertIn(
-            "Illustrative demo result · nonclinical · not used as evidence",
+            "This host-supplied artifact is not verified scientific or provider execution",
             artifact_renderer,
         )
-        self.assertIn('isFixture ? ""', artifact_renderer)
         self.assertIn("answer-readiness", artifact_renderer)
         self.assertIn("Genomi sequence-substitution verification", artifact_renderer)
         self.assertNotIn("fetch(", artifact_renderer)

@@ -23,6 +23,15 @@ pgp_genetics_collection/
 /Data/
 /demo_artifacts/
 .DS_Store
+
+# Local GenomiLab demo production assets are not part of the product source.
+/GENOMILAB_CTLA4_*.md
+/scripts/genomilab_ctla4_demo/
+/scripts/record_genomilab_ctla4_demo.cjs
+/scripts/render_genomilab_ctla4_narration.py
+/scripts/run_genomilab_ctla4_demo.py
+/tests/test_genomilab_ctla4_demo_harness.py
+/tests/test_genomilab_recording_postprocessor.py
 # Large/sensitive local genome inputs and derived sidecars.
 /Sequencing.com_whole_genome_sequencing.vcf
 /Sequencing.com_whole_genome_sequencing.vcf.*

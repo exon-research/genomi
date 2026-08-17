@@ -19,8 +19,6 @@
   `unavailable` without creating an artifact. Their outputs are round-bound
   nonclinical research artifacts and are ineligible as evidence, hypothesis or
   brief support, answer-readiness, treatment content, or clinician export.
-- The illustrative CTLA4 demo uses exactly three consolidated specialists. The
-  general GenomiLab board contract remains an adaptive 2–5 specialists.
 - Added two disjoint synthetic patient fixtures and end-to-end isolation tests.
 - Default-user selection is metadata-only; previously imported Active Genome
   Index data now always requires explicit current-session read approval.

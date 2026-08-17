@@ -28,14 +28,6 @@ let connectionsController;
 document.addEventListener("DOMContentLoaded", () => void initialize());
 
 async function initialize() {
-  const demoPresentation = globalThis.location.pathname === "/demo";
-  document.body.dataset.presentation = demoPresentation ? "demo" : "standard";
-  const demoDisclosure = document.getElementById("demo-mode-disclosure");
-  if (demoDisclosure) demoDisclosure.hidden = !demoPresentation;
-  const askGuidance = document.getElementById("ask-guidance");
-  if (demoPresentation && askGuidance) {
-    askGuidance.textContent = "Tell the current agent what you want to investigate. It creates and runs the investigation in that same task; return here to follow the patient context, evidence, hypotheses, gaps, and living brief.";
-  }
   collectElements();
   elements.alertDismiss.addEventListener("click", hideAlert);
   profileController = createProfileController({state, refresh});
@@ -55,7 +47,7 @@ async function initialize() {
     return;
   }
   await refresh();
-  if (!demoPresentation) await connectionsController.load();
+  await connectionsController.load();
 }
 
 async function refresh() {

@@ -34,26 +34,26 @@ function visibleText(element) {
     .filter(Boolean);
 }
 
-test("precomputed research artifacts render as concise illustrative demo results", () => {
+test("unverified host research artifacts retain their execution boundary", () => {
   elements.researchArtifactCount = new TestElement();
   elements.researchArtifactLedger = new TestElement();
 
   renderResearchArtifacts([{
     system: "esm",
     round_number: 3,
-    origin: "precomputed_fixture",
+    origin: "host_supplied_unverified",
     artifact_kind: "esm_nonclinical_comparison",
-    research_envelope: {scientific_execution_status: "precomputed_fixture"},
+    research_envelope: {scientific_execution_status: "not_verified"},
     artifact: {
-      method: {name: "illustrative_masked_marginal_comparison", version: "1"},
-      model: {name: "ESM illustrative demo result", version: "1"},
-      input: {gene: "CTLA4", protein_substitution: "Q76H"},
-      output: {metric: "illustrative score", delta: -0.75},
+      method: {name: "imported_masked_marginal_comparison", version: "1"},
+      model: {name: "External ESM output", version: "1"},
+      input: {gene: "GENE1", protein_substitution: "R42W"},
+      output: {metric: "imported score", delta: -0.75},
       provenance: {
-        execution_class: "precomputed_fixture",
+        execution_class: "host_supplied_unverified",
         execution_location: "not_verified",
         network_access: "not_verified",
-        source_label: "GenomiLab ESM demonstration dataset",
+        source_label: "Host-imported ESM output",
       },
     },
   }]);
@@ -65,11 +65,11 @@ test("precomputed research artifacts render as concise illustrative demo results
     .map((child) => child.textContent);
 
   assert.equal(elements.researchArtifactCount.textContent, "1 artifact");
-  assert.ok(text.includes("Illustrative demo result"));
-  assert.ok(text.includes("Illustrative demo result · nonclinical · not used as evidence"));
-  assert.ok(text.includes("GenomiLab ESM demonstration dataset"));
-  assert.equal(definitionLabels.includes("Execution"), false);
-  assert.equal(text.includes("Not Verified · Not Verified"), false);
+  assert.ok(text.some((value) => value.includes("not verified scientific or provider execution")));
+  assert.ok(text.includes("Nonclinical · non-evidence"));
+  assert.ok(text.includes("Host-imported ESM output"));
+  assert.equal(definitionLabels.includes("Execution"), true);
+  assert.equal(text.includes("Not Verified · Not Verified"), true);
 });
 
 test("verified research artifacts keep the strong nonclinical boundary and execution facts", () => {
@@ -85,12 +85,12 @@ test("verified research artifacts keep the strong nonclinical boundary and execu
     artifact: {
       method: {name: "sequence substitution verification", version: "1"},
       model: {name: "deterministic rule set", version: "1"},
-      input: {gene: "CTLA4", protein_substitution: "Q76H"},
+      input: {gene: "GENE1", protein_substitution: "R42W"},
       output: {
         protein_substitution_verified: true,
-        reference_residue: "Q",
-        position: 76,
-        alternate_residue: "H",
+        reference_residue: "R",
+        position: 42,
+        alternate_residue: "W",
       },
       provenance: {
         execution_class: "verified_scientific_operation",
