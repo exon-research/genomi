@@ -565,7 +565,7 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
         technical: true
       };
     }
-    const name = sourceOperation(record) || 'tool';
+    const name = dispatchedOperation(record) || sourceOperation(record) || 'tool';
     const summary = record.result ? toolResultSummary(record.result) : toolInputSummary(record.call && record.call.input);
     const recoveredOperation = recoveredOperationFromSummary(summary);
     if (isSpecialistToolName(name)) {
@@ -592,9 +592,26 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     };
   }
 
+  // Dispatchers are not operations. Recovering `genomi.invoke` from a result
+  // headline promotes the wrapper itself, which then reads as a research step
+  // called "Genomi Invoke" and escapes the rule that hides wrappers.
+  const DISPATCHER_OPERATIONS = new Set(['genomi.invoke', 'genomi.genomi.invoke']);
+
   function recoveredOperationFromSummary(summary) {
     const match = String(summary || '').trim().match(/^([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+):\s+/);
-    return match ? match[1] : '';
+    const operation = match ? match[1] : '';
+    return DISPATCHER_OPERATIONS.has(operation) ? '' : operation;
+  }
+
+  // Every capability call arrives wrapped in genomi.invoke, so the wrapper's
+  // own name is never what happened -- the operation it carried is. Unwrap it
+  // and the step reads as "Scanned your genome for candidate variants".
+  function dispatchedOperation(record) {
+    const called = promptSafeText(String(sourceOperation(record) || '')).trim().toLowerCase();
+    if (!DISPATCHER_OPERATIONS.has(called)) return '';
+    const input = record && record.call && record.call.input;
+    const inner = input && typeof input === 'object' ? input.tool : '';
+    return promptSafeText(String(inner || '')).trim();
   }
 
   // Genomi's own record-keeping -- opening a cycle, re-reading state, moving an
@@ -607,6 +624,12 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     const cleanName = promptSafeText(String(name || '')).trim().toLowerCase();
     if (cleanName.startsWith('lab.') && !LAB_BOOKKEEPING_EXCEPTIONS.has(cleanName)) return true;
     if (cleanName.startsWith('mcp__')) return true;
+    // The dispatcher is not a step. When the operation it carried could not be
+    // recovered, a row titled "Genomi Invoke" tells the reader nothing about
+    // what happened -- and there were two dozen of them on one screen.
+    // A wrapper whose operation could not be recovered names nothing that
+    // happened, so it stays out of the trail; an unwrapped one is a real step.
+    if (DISPATCHER_OPERATIONS.has(cleanName)) return true;
     if (['bash', 'skill', 'toolsearch'].includes(cleanName)) return true;
     // Read the raw result, not the one-line summary: transport blobs are kept
     // out of summaries, so the wrapper has to be recognised from its content.
@@ -841,6 +864,11 @@ export function createMessageSurface({ list, onUseContext, onAskContext, onAskNe
     el.className = 'message compact-tools';
     el.appendChild(createToolStack());
     list.appendChild(el);
+    // Remember it, so the steps that follow join this group instead of each
+    // opening its own. Without this a turn's work rendered as a column of
+    // single-step groups. A new assistant message still clears it and starts
+    // a fresh group, which is the boundary a reader expects.
+    lastToolParent = el;
     return el;
   }
 

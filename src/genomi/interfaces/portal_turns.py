@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 from . import portal_agents, portal_privacy, portal_result_presentations, portal_selected_material
@@ -308,9 +310,30 @@ def _tool_result_summary(event: JsonObject) -> str:
             if summary:
                 return _bounded_public_text(summary)
     content = event.get("content") or event.get("message")
-    if content:
+    if content and not _looks_like_serialized_payload(content):
         return _bounded_public_text(content)
     return "Tool result captured during the live run; detailed payload was not persisted."
+
+
+def _looks_like_serialized_payload(value: Any) -> bool:
+    """Whether this is a payload rather than a description of what happened.
+
+    A persisted summary is what the reader sees on the step forever, so raw
+    file bytes and serialized results must not become one: a work trail was
+    showing `1590- 1 1591- ] 1592- ], 1593- "population_flags"` as the
+    description of a research step.
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return True
+    first_line = next((line for line in text.splitlines() if line.strip()), "")
+    stripped = first_line.strip()
+    if stripped[:1] in {"{", "[", '"'}:
+        return True
+    if re.search(r'"\s*:', stripped):
+        return True
+    return bool(re.match(r"^\d+[-\s]", stripped) and re.search(r"[{}\[\]]", stripped))
 
 
 def _tool_ledger_model(event: JsonObject) -> JsonObject:
