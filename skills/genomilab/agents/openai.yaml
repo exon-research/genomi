@@ -1,0 +1,4 @@
+interface:
+  display_name: "GenomiLab Research Desk"
+  short_description: "Run patient-authorized genome investigations"
+  default_prompt: "Use $genomilab to start or continue this patient-authorized genome investigation in the current agent task."

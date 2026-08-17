@@ -185,6 +185,7 @@ def _tool_role(operation: Operation) -> str:
 # "Using Genomi to resolve a variant target...".
 _DISPLAY_TITLE_OVERRIDES: dict[str, str] = {
     "variant.resolve": "Using Genomi to resolve a variant target",
+    "variant.find_gene_variants": "Using Genomi to find variants in candidate genes",
     "phenotype.plan_risk_investigation": "Using Genomi to plan a disease / cancer-risk investigation",
     "pharmacogenomics.review_medication": "Using Genomi to review medication evidence",
     "pharmacogenomics.run_pharmcat": "Using Genomi to run PharmCAT",

@@ -16,6 +16,7 @@ from .agi_authority import (
     revoke_investigation_agi_authorization,
     revoke_investigation_agi_authorizations_for_session,
 )
+from .agent_application import AgentApplicationMixin
 from .authorization_candidate_receipts import AuthorizationCandidateReceiptIssuer
 from .models import JsonObject
 from .context_candidate_receipts import ContextCandidateReceiptIssuer
@@ -25,16 +26,7 @@ from .encrypted_sqlite import (
 )
 from .esm_transport import BiohubESMTransport
 from .evidence_service import EvidenceApplicationMixin
-from .harness import (
-    HarnessAdapter,
-    InstalledCodexAppServerAdapter,
-)
-from .harness_service import HarnessApplicationMixin
-from .harness_tool_boundary import HarnessToolBoundary
-from .investigation_capabilities import (
-    InvestigationCapabilityMixin,
-    _HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
-)
+from .investigation_capabilities import InvestigationCapabilityMixin
 from .investigation_authorization import InvestigationAuthorizationApplication
 from .investigation_authorized_flow import InvestigationAuthorizedFlowMixin
 from .portal_context import PortalContextApplicationMixin
@@ -50,7 +42,13 @@ from .provider_credentials import (
     provider_credential_lock,
 )
 from .provider_policy import DeploymentAuthorization, PatientDataContract
+from .research_artifact_application import ResearchArtifactApplicationMixin
+from .research_scientific_operations import (
+    ESMScientificExecutor,
+    ProtoScientificExecutor,
+)
 from .service_errors import LabError, patient_safe_operation_message
+from .specialist_board import SpecialistBoardApplicationMixin
 from .store import GenomiLabStore
 from .user_authority import CurrentUserAuthorityMixin
 from .workspace_application import WorkspaceApplication, genome_metadata
@@ -61,8 +59,10 @@ class GenomiLabService(
     PortalContextApplicationMixin,
     InvestigationCapabilityMixin,
     EvidenceApplicationMixin,
+    SpecialistBoardApplicationMixin,
+    ResearchArtifactApplicationMixin,
+    AgentApplicationMixin,
     InvestigationAuthorizedFlowMixin,
-    HarnessApplicationMixin,
 ):
     """Current-user application service; the portal never talks to Genomi directly."""
 
@@ -72,13 +72,16 @@ class GenomiLabService(
         store: GenomiLabStore | None = None,
         session_id: str | None = None,
         operation_call: Callable[..., JsonObject] = call_operation,
-        harness_adapter: HarnessAdapter | None = None,
+        agent_host_id: str = "underlying-agent",
+        agent_processing_destination: str = "current underlying agent runtime",
         provider_credential_store: OSKeyringProviderCredentialStore | None = None,
         paperclip_deployment_authorization: DeploymentAuthorization | None = None,
         paperclip_patient_data_contract: PatientDataContract | None = None,
         paperclip_transport: GxlPaperclipTransport | None = None,
         biohub_esm_transport: BiohubESMTransport | None = None,
         proto_transport: ModalProtoTransport | None = None,
+        esm_scientific_executor: ESMScientificExecutor | None = None,
+        proto_scientific_executor: ProtoScientificExecutor | None = None,
     ) -> None:
         self._initialize_current_user_authority()
         self.store = store or GenomiLabStore()
@@ -95,12 +98,20 @@ class GenomiLabService(
         self._authorization_candidates = AuthorizationCandidateReceiptIssuer(
             self.session_id
         )
-        self.harness_adapter = (
-            harness_adapter or InstalledCodexAppServerAdapter.discover()
-        )
+        # The caller's Claude/Codex (or another MCP host) owns the task,
+        # conversation, streaming, subagents, follow-ups, and cancellation.
+        # GenomiLab deliberately has no second host-task transport.
+        self._agent_host_id = str(agent_host_id or "underlying-agent").strip()
+        self._agent_processing_destination = str(
+            agent_processing_destination or "current underlying agent runtime"
+        ).strip()
         self._paperclip_transport = paperclip_transport or GxlPaperclipTransport()
         self._biohub_esm_transport = biohub_esm_transport or BiohubESMTransport()
         self._proto_transport = proto_transport or ModalProtoTransport()
+        # Scientific execution is a distinct, explicitly injected boundary.
+        # Connection probes never become scientific executors implicitly.
+        self._esm_scientific_executor = esm_scientific_executor
+        self._proto_scientific_executor = proto_scientific_executor
         self._provider_credentials = (
             provider_credential_store or OSKeyringProviderCredentialStore()
         )
@@ -134,27 +145,9 @@ class GenomiLabService(
             unbind_user=self._unbind_current_user,
             genome_metadata=genome_metadata,
             active_context_receipt=self._active_context_receipt,
-            harness_manifest=self.harness_capability_manifest,
+            agent_manifest=self.agent_session_manifest,
             evidence_manifest=self.evidence_capability_manifest,
             integration_manifest=self._provider_connection_manifest,
-        )
-        self._harness_tools = HarnessToolBoundary(
-            store=self.store,
-            session_id=self.session_id,
-            harness_adapter=self.harness_adapter,
-            current_context=self._current_context,
-            accepted_plan=self._accepted_current_plan,
-            active_context_receipt=self._active_context_receipt,
-            require_authorized_disclosure=(
-                self._require_authorized_harness_disclosure
-            ),
-            execute_request=lambda investigation_id, request: (
-                self._execute_harness_capability_request(
-                    investigation_id,
-                    request,
-                    _authority=_HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
-                )
-            ),
         )
         self._profile_context = ProfileContextApplication(
             store=self.store,
@@ -175,24 +168,48 @@ class GenomiLabService(
             investigation=self.investigation,
             context_candidate=self.investigation_context_candidate,
             approve_context=self._profile_context.approve,
-            harness_manifest=self.harness_capability_manifest,
-            ensure_planning_started=self._ensure_authorized_planning_started,
+            agent_manifest=self.agent_session_manifest,
+            commit_host_authorization=self._commit_host_investigation_authorization,
             candidate_receipts=self._authorization_candidates,
         )
-        self.harness_adapter.bind_dynamic_tool_handler(
-            self._execute_guarded_harness_capability
-        )
 
-    def _execute_guarded_harness_capability(self, call: object) -> JsonObject:
-        """Apply the service-wide user epoch to adapter-thread tool callbacks."""
+    def _commit_host_investigation_authorization(
+        self,
+        investigation_id: str,
+        authorization: JsonObject,
+        retry_reused: bool,
+    ) -> JsonObject:
+        """Commit the native-host lifecycle and replay event in one DB write."""
 
-        return self._run_current_user_operation(
-            self._execute_bound_harness_capability, call
-        )
+        del authorization
+        result: JsonObject = {
+            "status": "awaiting_agent_plan",
+            "execution_owner": "underlying_agent",
+            "investigation_id": investigation_id,
+        }
+        if not retry_reused:
+            self.store.set_investigation_status(investigation_id, "awaiting_plan")
+            self.store.append_investigation_event(
+                investigation_id,
+                event_type="context_authorized",
+                payload={
+                    "status": result["status"],
+                    "retry_reused": False,
+                    "execution_owner": "underlying_agent",
+                },
+            )
+        return result
 
-    def _execute_bound_harness_capability(self, call: object) -> JsonObject:
-        """Route app-server tools through the canonical durable plan executor."""
-        return self._harness_tools.execute(call)
+    def agent_session_manifest(self) -> JsonObject:
+        """Describe the current MCP host without creating another agent task."""
+
+        return {
+            "agent_session_id": self._agent_host_id,
+            "processing_destination": self._agent_processing_destination,
+            "execution_owner": "underlying_agent",
+            "task_lifecycle": "owned_by_underlying_agent",
+            "portal_role": "onboarding_approval_and_monitoring",
+        }
 
     def _accepted_current_plan(self, investigation_id: str) -> JsonObject:
         return self._workspace.accepted_current_plan(investigation_id)
@@ -489,21 +506,21 @@ class GenomiLabService(
     def add_assay(self, payload: JsonObject) -> JsonObject:
         return self._workspace.add_assay(payload)
 
-    def create_investigation(self, payload: JsonObject) -> JsonObject:
-        return self._workspace.create_investigation(payload)
+    def create_investigation(
+        self,
+        payload: JsonObject,
+        *,
+        investigation_event_type: str | None = None,
+    ) -> JsonObject:
+        return self._workspace.create_investigation(
+            payload, investigation_event_type=investigation_event_type
+        )
 
     def investigation(self, investigation_id: str) -> JsonObject:
         return self._workspace.investigation(investigation_id)
 
     def list_investigations(self) -> list[JsonObject]:
         return self._workspace.list_investigations()
-
-    def _accept_plan_for_conformance(
-        self, investigation_id: str, payload: JsonObject
-    ) -> JsonObject:
-        """Exercise exact plan persistence in internal tests only."""
-
-        return self._workspace.accept_current_plan(investigation_id, payload)
 
     def investigation_profile(self, investigation_id: str) -> JsonObject:
         return self._workspace.investigation_profile(investigation_id)
@@ -538,6 +555,7 @@ class GenomiLabService(
         *,
         operation: str,
         params: JsonObject,
+        evidence_context: JsonObject | None = None,
         expected_plan_version_id: str | None = None,
         expected_consent_receipt_id: str | None = None,
     ) -> JsonObject:
@@ -545,6 +563,7 @@ class GenomiLabService(
             investigation_id,
             operation=operation,
             params=params,
+            evidence_context=evidence_context,
             expected_plan_version_id=expected_plan_version_id,
             expected_consent_receipt_id=expected_consent_receipt_id,
         )
@@ -573,23 +592,33 @@ class GenomiLabService(
 
     def revoke_private_context(self, investigation_id: str) -> JsonObject:
         investigation = self.investigation(investigation_id)
-        revoked_authorizations = self.store.revoke_investigation_authorizations(
-            investigation_id
-        )
-        self._authorization_candidates.discard_investigation(investigation_id)
         snapshot_id = investigation.get("patient_molecular_snapshot_id")
-        revoked_receipt = False
-        if snapshot_id:
-            receipt_id = str(investigation.get("active_consent_receipt_id") or "")
-            if receipt_id:
-                revoked_receipt = self.store.revoke_consent(receipt_id)
+        with self.store.atomic_write():
+            revoked_authorizations = self.store.revoke_investigation_authorizations(
+                investigation_id
+            )
+            revoked_receipt = False
+            if snapshot_id:
+                receipt_id = str(
+                    investigation.get("active_consent_receipt_id") or ""
+                )
+                if receipt_id:
+                    revoked_receipt = self.store.revoke_consent(receipt_id)
+            self.store.set_investigation_status(
+                investigation_id, "paused_private_context"
+            )
+            self.store.append_investigation_event(
+                investigation_id,
+                event_type="private_context_revoked",
+                payload={"status": "revoked"},
+            )
+        self._authorization_candidates.discard_investigation(investigation_id)
         handle = self._agi_authorizations.pop(investigation_id, None)
         revoked_handle = (
             revoke_investigation_agi_authorization(handle)
             if handle is not None
             else False
         )
-        self.store.set_investigation_status(investigation_id, "paused_private_context")
         return {
             "status": "revoked",
             "investigation_id": investigation_id,
@@ -610,7 +639,6 @@ class GenomiLabService(
             self._authorization_candidates.clear()
             self.provider_connections.close()
             self._closed = True
-            self.harness_adapter.close()
 
     def _current_context(self) -> tuple[JsonObject, str]:
         context = self._safe_call("genomi.describe_context", {})

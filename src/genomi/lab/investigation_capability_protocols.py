@@ -8,6 +8,8 @@ from .models import JsonObject
 
 
 class CapabilityStore(Protocol):
+    def claim_capability_execution(self, **kwargs: object) -> JsonObject: ...
+
     def get_capability_execution(
         self, investigation_id: str, plan_version_id: str, request_id: str
     ) -> JsonObject | None: ...
@@ -23,6 +25,8 @@ class CapabilityStore(Protocol):
         job_id: object = None,
         resume_operation: object = None,
         poll_after_seconds: object = None,
+        event_type: object = None,
+        event_payload: JsonObject | None = None,
     ) -> JsonObject: ...
 
     def commit_disease_relation(
@@ -46,6 +50,7 @@ class CapabilityStore(Protocol):
         supersedes_hypothesis_id: object,
         expected_plan_version_id: str | None,
         expected_consent_receipt_id: str | None,
+        emit_investigation_event: bool = False,
     ) -> JsonObject: ...
 
     def get_profile_snapshot(self, snapshot_id: str) -> JsonObject: ...
@@ -75,6 +80,7 @@ class CapabilityApplication(Protocol):
         *,
         operation: str,
         params: JsonObject,
+        evidence_context: JsonObject | None = None,
         expected_plan_version_id: str | None = None,
         expected_consent_receipt_id: str | None = None,
     ) -> JsonObject: ...

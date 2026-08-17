@@ -134,6 +134,23 @@ class GenomiLabAssetTests(unittest.TestCase):
         self.assertIn("/api/v1/molecular-profile/observations", combined)
         self.assertIn("/api/v1/investigations", combined)
 
+    def test_demo_presentation_focuses_on_investigation_outputs(self) -> None:
+        app = self.modules["app.js"]
+        workspace = self.styles["workspace.css"]
+
+        self.assertIn('globalThis.location.pathname === "/demo"', app)
+        self.assertIn("if (!demoPresentation) await connectionsController.load();", app)
+        self.assertIn('document.getElementById("ask-guidance")', app)
+        for selector in (
+            '#research-tools',
+            '#collaborate',
+            '#privacy-activity',
+            '#capability-approval-list',
+            '.attention-grid article:nth-child(2)',
+        ):
+            with self.subTest(selector=selector):
+                self.assertIn(f'body[data-presentation="demo"] {selector}', workspace)
+
     def test_source_record_control_accepts_reports_not_genome_sources(self) -> None:
         source_form = self.html[
             self.html.index('id="source-artifact-form"') : self.html.index(
@@ -159,9 +176,13 @@ class GenomiLabAssetTests(unittest.TestCase):
             "observation-history-list",
             "investigation-detail",
             "plan-list",
+            "specialist-board",
+            "specialist-board-status",
+            "specialist-board-chair",
+            "specialist-board-list",
             "context-observation-list",
             "context-preview-list",
-            "harness-message-form",
+            "agent-execution-state",
             "capability-approval-list",
             "event-list",
             "evidence-ledger",
@@ -171,6 +192,36 @@ class GenomiLabAssetTests(unittest.TestCase):
         ):
             with self.subTest(portal_id=portal_id):
                 self.assertIn(f'id="{portal_id}"', self.html)
+
+    def test_specialist_board_is_a_read_only_monitor(self) -> None:
+        board_start = self.html.index('id="specialist-board"')
+        board_end = self.html.index("</section>", board_start)
+        board_markup = self.html[board_start:board_end]
+        renderer = self.modules["render-specialist-board.js"]
+
+        self.assertIn("Domain specialists at work", board_markup)
+        self.assertIn("main agent remains board chair", board_markup)
+        self.assertIn("Active Genome Index context owner", board_markup)
+        self.assertIn("this view only monitors their work", board_markup)
+        self.assertIn("member.current_work", renderer)
+        self.assertIn("patient_interaction_and_active_genome_index_context_owner", renderer)
+        self.assertIn("Assignment:", renderer)
+        self.assertIn(
+            "renderSpecialistBoard(investigation.specialist_board, investigation.current_round)",
+            self.modules["render.js"],
+        )
+        self.assertIn('eventType === "specialist_board_formed"', self.modules["render.js"])
+        self.assertIn('eventType === "specialist_progress_reported"', self.modules["render.js"])
+        for interactive_tag in ("<button", "<form", "<input", "<textarea", "<select", "<a "):
+            with self.subTest(interactive_tag=interactive_tag):
+                self.assertNotIn(interactive_tag, board_markup)
+        for interactive_element in ("button", "form", "input", "textarea", "select", "a"):
+            with self.subTest(interactive_element=interactive_element):
+                self.assertNotIn(f'node("{interactive_element}"', renderer)
+                self.assertNotIn(f'createElement("{interactive_element}")', renderer)
+        for interaction_api in ("addEventListener", "fetch(", "apiRequest", "postJson"):
+            with self.subTest(interaction_api=interaction_api):
+                self.assertNotIn(interaction_api, renderer)
 
     def test_optional_research_tool_onboarding_is_local_and_setup_only(self) -> None:
         controller = self.modules["connections-controller.js"]
@@ -292,32 +343,40 @@ class GenomiLabAssetTests(unittest.TestCase):
     def test_safety_and_review_language_remains_visible(self) -> None:
         for copy in (
             "Research authorization",
-            "Authorize and start investigation",
-            "covers routine planning, local evidence work, replanning, and",
-            "pauses before using an external",
+            "Authorize research context",
+            "the exact profile and Active Genome Index revisions available",
+            "asks again before using an external",
             "Evidence, kept separate by source",
             "Hypotheses",
             "Open gaps",
             "Investigation Brief",
-            "keeps this working plan current",
+            "Ask for plan changes or follow-up work in the Claude or Codex conversation",
             "Choose the profile observations this disease question needs",
         ):
             with self.subTest(copy=copy):
                 self.assertIn(copy, self.html)
 
-    def test_investigation_uses_one_start_authorization_and_direct_routine_work(
+    def test_portal_authorizes_context_and_never_controls_the_agent_task(
         self,
     ) -> None:
         controller = self.modules["investigation-controller.js"]
         renderer = self.modules["render.js"]
 
         self.assertIn('session.path("/authorization-candidate")', controller)
-        self.assertIn('session.path("/authorize-start")', controller)
-        self.assertIn('session.path("/messages")', controller)
-        self.assertIn('session.path("/cancel")', controller)
+        self.assertIn('session.path("/authorize-context")', controller)
         self.assertIn("authorization_candidate_receipt", controller + renderer)
         self.assertIn("authorization_scope", controller + renderer)
-        self.assertIn("Authorize and start investigation", self.html + renderer)
+        self.assertIn("Authorize research context", self.html + renderer)
+        self.assertIn("This portal does not start, message, or cancel it.", self.html)
+        self.assertIn('id="return-to-agent-button"', self.html)
+        self.assertIn("globalThis.opener.focus", controller)
+        self.assertIn("globalThis.close()", controller)
+        self.assertIn("does not cancel the Claude or Codex task", self.html)
+        self.assertIn("underlying_agent", self.modules["portal-state.js"] + renderer)
+        self.assertIn("manifest.agent_session_id", renderer)
+        self.assertIn("manifest.processing_destination", renderer)
+        self.assertNotIn("manifest.adapter_id", renderer)
+        self.assertIn("investigation_events", renderer)
         self.assertIn("Working plan", renderer)
         self.assertIn("Approve exact evidence request", renderer)
         self.assertIn("Operation:", renderer)
@@ -327,6 +386,17 @@ class GenomiLabAssetTests(unittest.TestCase):
         self.assertIn("Retention:", renderer)
         self.assertIn("Training:", renderer)
         self.assertIn("approvalSha256", controller + renderer)
+        self.assertIn(
+            "Start investigations in your Claude or Codex conversation", self.html
+        )
+        self.assertNotIn('id="question-form"', self.html)
+        self.assertNotIn('postJson("/api/v1/investigations"', controller)
+        self.assertIn("state.authorizationHandoff()", self.modules["app.js"])
+        self.assertIn("displayAuthorizationHandoff", controller)
+        self.assertIn(
+            "authorizationCandidate: authorizationHandoff.authorization_candidate",
+            self.modules["app.js"],
+        )
 
     def test_responsive_and_evidence_styles_remain_packaged(self) -> None:
         self.assertIn(

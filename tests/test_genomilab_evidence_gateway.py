@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest import mock
-
 from genomi.lab.evidence_gateway import ProviderGateway
 from genomi.lab.evidence_normalization import normalize_direct_source_response
 from genomi.lab.evidence_service import (
@@ -20,8 +17,6 @@ from genomi.lab.evidence_types import (
     ProviderTransportError,
     SourceReviewState,
 )
-from genomi.lab.harness import SimulatedHarnessAdapter
-from genomi.lab.harness_codex_host import sanitized_host_environment
 from genomi.lab.paperclip_adapter import PaperclipAdapter, PaperclipOperation
 from genomi.lab.provider_policy import (
     AuthorizationBasis,
@@ -36,7 +31,10 @@ from genomi.lab.provider_policy import (
 )
 from genomi.lab.service import GenomiLabService, LabError
 from genomi.lab.store import GenomiLabStore
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
+from tests.genomilab_support import (
+    TEST_LAB_KEY_PROVIDER,
+    synthetic_ready_agi_context,
+)
 
 
 class _EvidenceEnabledService(GenomiLabService):
@@ -106,18 +104,9 @@ class _CurrentUserContext:
         **_kwargs: object,
     ) -> dict[str, object]:
         if operation == "genomi.describe_context":
-            return {
-                "status": "completed",
-                "active_user_id": "user-evidence",
-                "active_user": {
-                    "user_id": "user-evidence",
-                    "nickname": "Synthetic Evidence User",
-                    "active_agi_id": None,
-                    "agi_ids": [],
-                },
-                "active_agi_id": None,
-                "active_genome_index": None,
-            }
+            return synthetic_ready_agi_context(
+                "user-evidence", "Synthetic Evidence User"
+            )
         if operation == "active_genome_index.revoke_access":
             return {"status": "completed"}
         raise AssertionError(f"unexpected Genomi operation: {operation}")
@@ -472,7 +461,6 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             store=GenomiLabStore(self.store_path, key_provider=TEST_LAB_KEY_PROVIDER),
             session_id=session_id,
             operation_call=self.context,
-            harness_adapter=SimulatedHarnessAdapter(),
         )
         self.services.append(service)
         return service
@@ -1046,7 +1034,7 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
             )
         self.assertEqual(direct_calls, ["synthetic disease mechanism"])
 
-    def test_portal_payload_and_harness_environment_cannot_supply_provider_secrets(
+    def test_portal_payload_cannot_supply_provider_secrets(
         self,
     ) -> None:
         secret = "paperclip-secret-must-not-leak"
@@ -1074,20 +1062,6 @@ class EvidenceApplicationIntegrationTests(unittest.TestCase):
                     "filters": {"modal_token_id": "must-not-cross"},
                 },
             )
-        with mock.patch.dict(
-            os.environ,
-            {
-                "PAPERCLIP_API_KEY": secret,
-                "BIOHUB_API_TOKEN": secret,
-                "GXL_TOKEN": secret,
-                "MODAL_TOKEN_ID": secret,
-                "MODAL_TOKEN_SECRET": secret,
-                "OPENAI_API_KEY": secret,
-            },
-            clear=False,
-        ):
-            environment = sanitized_host_environment()
-        self.assertNotIn(secret, environment.values())
 
 
 if __name__ == "__main__":

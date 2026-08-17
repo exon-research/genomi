@@ -107,7 +107,6 @@ _RESEARCH_OPERATION_WORDS = _RESEARCH_OPERATION_VERBS | {
     "genomilab",
     "grounded",
     "guidance",
-    "harness",
     "help",
     "hypothesis",
     "hypotheses",
@@ -295,7 +294,7 @@ _IDENTIFIER_TOKEN = re.compile(
 # copied into an unconstrained prose slot. A terminal "unknown term" exception
 # cannot be made fail-closed because an unknown predicate can have exactly the
 # same lexical shape as an unknown entity (for example, after an unanticipated
-# connector). Harness prose therefore refers to the reported condition,
+# connector). Agent prose therefore refers to the reported condition,
 # phenotype, finding, or treatment and lets its anchors carry the exact name.
 
 _OBSERVATION_WORDS = {
@@ -360,6 +359,7 @@ def _tokens_are_closed(text: str, allowed: set[str]) -> bool:
     tokens = _WORD_TOKEN.findall(text)
     return bool(tokens) and all(
         token.casefold() in allowed
+        or token.casefold() == "genomiapprovedcaseanchor"
         or token.isdigit()
         or bool(_IDENTIFIER_TOKEN.fullmatch(token))
         for token in tokens

@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import secrets
-import sys
 import threading
-import webbrowser
+from copy import deepcopy
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-from ..operations import call_operation
-from ..runtime.context.normalize import GENOMI_SESSION_ENV
-from .harness import InstalledCodexAppServerAdapter
-from .paperclip_authorization_config import load_paperclip_authorization_config
 from .service import GenomiLabService, LabError
 
 JsonObject = dict[str, Any]
@@ -33,8 +27,7 @@ _INVESTIGATION_VIEW_ROUTE = re.compile(
 )
 _INVESTIGATION_ACTION_ROUTE = re.compile(
     r"^/api/v1/investigations/(investigation-[a-f0-9]+)/"
-    r"(authorization-candidate|authorize-start|messages|cancel|revoke-context|"
-    r"review-packet|"
+    r"(authorization-candidate|authorize-context|revoke-context|"
     r"capability-execute|capability-check)$"
 )
 _OBSERVATION_REVISION_ROUTE = re.compile(
@@ -70,6 +63,8 @@ class GenomiLabHTTPServer(ThreadingHTTPServer):
         self.launch_token = launch_token or secrets.token_urlsafe(32)
         self.launch_token_consumed = False
         self.launch_token_lock = threading.Lock()
+        self._pending_launch_handoff: JsonObject | None = None
+        self._active_authorization_handoff: JsonObject | None = None
         self.session_token = secrets.token_urlsafe(32)
         self.csrf_token = secrets.token_urlsafe(32)
         super().__init__(address, GenomiLabRequestHandler)
@@ -83,6 +78,110 @@ class GenomiLabHTTPServer(ThreadingHTTPServer):
             f"http://{LOOPBACK_HOST}:{port}",
             f"http://localhost:{port}",
         }
+
+    def issue_launch_url(
+        self, *, authorization_handoff: JsonObject | None = None
+    ) -> str:
+        """Issue a fresh one-time browser token with an optional private handoff.
+
+        The handoff stays server-side until this exact launch token is exchanged.
+        The URL therefore identifies neither the investigation nor its signed
+        authorization candidate.
+        """
+
+        with self.launch_token_lock:
+            self.launch_token = secrets.token_urlsafe(32)
+            self.launch_token_consumed = False
+            self._pending_launch_handoff = self._copy_authorization_handoff(
+                authorization_handoff
+            )
+            self.launch_url = (
+                f"{self.base_url}/#token={quote(self.launch_token, safe='')}"
+            )
+            return self.launch_url
+
+    def exchange_launch_token(self, launch_token: str) -> JsonObject | None:
+        """Consume one launch token and activate its isolated portal session."""
+
+        with self.launch_token_lock:
+            valid = (
+                not self.launch_token_consumed
+                and bool(launch_token)
+                and secrets.compare_digest(launch_token, self.launch_token)
+            )
+            if not valid:
+                return None
+            self.launch_token_consumed = True
+            self.session_token = secrets.token_urlsafe(32)
+            self.csrf_token = secrets.token_urlsafe(32)
+            self._active_authorization_handoff = self._pending_launch_handoff
+            self._pending_launch_handoff = None
+            return {
+                "session_token": self.session_token,
+                "csrf_token": self.csrf_token,
+            }
+
+    def authorization_handoff(self) -> JsonObject | None:
+        """Return the exact handoff bound to the authenticated portal session."""
+
+        with self.launch_token_lock:
+            return deepcopy(self._active_authorization_handoff)
+
+    def set_active_authorization_handoff(
+        self, investigation_id: str, candidate: JsonObject
+    ) -> None:
+        with self.launch_token_lock:
+            self._active_authorization_handoff = self._copy_authorization_handoff(
+                {
+                    "kind": "investigation_authorization",
+                    "investigation_id": investigation_id,
+                    "authorization_candidate": candidate,
+                }
+            )
+
+    def clear_authorization_handoff(
+        self,
+        investigation_id: str,
+        *,
+        candidate_receipt: object = None,
+    ) -> None:
+        with self.launch_token_lock:
+            handoff = self._active_authorization_handoff
+            if not isinstance(handoff, dict) or (
+                handoff.get("investigation_id") != investigation_id
+            ):
+                return
+            if candidate_receipt is not None:
+                candidate = handoff.get("authorization_candidate")
+                active_receipt = (
+                    candidate.get("authorization_candidate_receipt")
+                    if isinstance(candidate, dict)
+                    else None
+                )
+                if active_receipt != candidate_receipt:
+                    return
+            self._active_authorization_handoff = None
+
+    @staticmethod
+    def _copy_authorization_handoff(
+        handoff: JsonObject | None,
+    ) -> JsonObject | None:
+        if handoff is None:
+            return None
+        if not isinstance(handoff, dict):
+            raise TypeError("authorization_handoff must be an object")
+        investigation_id = handoff.get("investigation_id")
+        candidate = handoff.get("authorization_candidate")
+        if (
+            handoff.get("kind") != "investigation_authorization"
+            or not isinstance(investigation_id, str)
+            or not investigation_id
+            or not isinstance(candidate, dict)
+            or candidate.get("investigation_id") != investigation_id
+            or not candidate.get("authorization_candidate_receipt")
+        ):
+            raise ValueError("authorization_handoff is incomplete")
+        return deepcopy(handoff)
 
     def server_close(self) -> None:
         try:
@@ -166,7 +265,7 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
             return
         # The shell and its same-origin assets contain no patient data and must
         # load before the fragment-delivered launch token can be exchanged.
-        if parsed.path == "/":
+        if parsed.path in {"/", "/demo"}:
             self._send_asset("index.html", "text/html; charset=utf-8")
             return
         if _JAVASCRIPT_MODULE_ROUTE.fullmatch(parsed.path):
@@ -189,6 +288,12 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
         self._require_session()
         if parsed.path == "/api/v1/bootstrap":
             payload = self.server.service.bootstrap()
+            authorization_handoff = self.server.authorization_handoff()
+            if authorization_handoff is not None:
+                payload = {
+                    **payload,
+                    "authorization_handoff": authorization_handoff,
+                }
             self._send_json(HTTPStatus.OK, payload)
             return
         if parsed.path == "/api/v1/workspace":
@@ -247,27 +352,14 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
                 "invalid_request", "Unexpected session request.", http_status=400
             )
         launch_token = self.headers.get("X-GenomiLab-Launch-Token", "")
-        with self.server.launch_token_lock:
-            valid = (
-                not self.server.launch_token_consumed
-                and bool(launch_token)
-                and secrets.compare_digest(launch_token, self.server.launch_token)
-            )
-            if valid:
-                self.server.launch_token_consumed = True
-        if not valid:
+        credentials = self.server.exchange_launch_token(launch_token)
+        if credentials is None:
             raise LabError(
                 "invalid_launch_token",
                 "This launch link is not valid.",
                 http_status=401,
             )
-        self._send_json(
-            HTTPStatus.OK,
-            {
-                "session_token": self.server.session_token,
-                "csrf_token": self.server.csrf_token,
-            },
-        )
+        self._send_json(HTTPStatus.OK, credentials)
 
     def _handle_post(self) -> None:
         parsed = urlsplit(self.path)
@@ -327,11 +419,6 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             self._send_json(HTTPStatus.CREATED, self.server.service.add_assay(payload))
             return
-        if parsed.path == "/api/v1/investigations":
-            payload = self._read_json()
-            investigation = self.server.service.create_investigation(payload)
-            self._send_json(HTTPStatus.CREATED, investigation)
-            return
         match = _INVESTIGATION_ACTION_ROUTE.fullmatch(parsed.path)
         if match:
             investigation_id, action = match.groups()
@@ -340,48 +427,45 @@ class GenomiLabRequestHandler(BaseHTTPRequestHandler):
                 result = self.server.service.investigation_authorization_candidate(
                     investigation_id, payload
                 )
+                self.server.set_active_authorization_handoff(
+                    investigation_id, result
+                )
                 self._send_json(HTTPStatus.OK, result)
                 return
-            if action == "authorize-start":
-                result = self.server.service.authorize_and_start_investigation(
+            if action == "authorize-context":
+                result = self.server.service.authorize_investigation_context(
                     investigation_id, payload
+                )
+                self.server.clear_authorization_handoff(
+                    investigation_id,
+                    candidate_receipt=payload.get(
+                        "authorization_candidate_receipt"
+                    ),
                 )
                 self._send_json(HTTPStatus.CREATED, result)
                 return
             if action == "capability-execute":
-                result = self.server.service.approve_and_continue_harness_capability(
+                result = self.server.service.approve_and_continue_capability(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
             if action == "capability-check":
-                result = self.server.service.check_and_continue_harness_capability(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "messages":
-                result = self.server.service.send_authorized_investigation_message(
-                    investigation_id, payload
-                )
-                self._send_json(HTTPStatus.OK, result)
-                return
-            if action == "cancel":
-                result = self.server.service.cancel_authorized_background_work(
+                result = self.server.service.check_capability_request(
                     investigation_id, payload
                 )
                 self._send_json(HTTPStatus.OK, result)
                 return
             if action == "revoke-context":
-                result = self.server.service.revoke_private_context(investigation_id)
+                if payload:
+                    raise LabError(
+                        "invalid_context_revocation",
+                        "Context revocation accepts only an empty JSON object.",
+                    )
+                result = self.server.service.revoke_agent_context(investigation_id)
+                self.server.clear_authorization_handoff(investigation_id)
                 self._send_json(HTTPStatus.OK, result)
                 return
-            if action == "review-packet":
-                raise LabError(
-                    "capability_unavailable",
-                    "Review packets are planned for the patient MVP and are not enabled yet.",
-                    http_status=409,
-                )
         raise LabError("not_found", "Route not found.", http_status=404)
 
     def _read_json(self) -> JsonObject:
@@ -541,78 +625,3 @@ def create_lab_server(
         service or GenomiLabService(),
         launch_token=launch_token,
     )
-
-
-def run_lab(
-    *,
-    host: str = LOOPBACK_HOST,
-    port: int = DEFAULT_PORT,
-    open_browser: bool = True,
-    harness_processing_destination: str | None = None,
-    paperclip_authorization_config: str | Path | None = None,
-) -> None:
-    paperclip_policy = (
-        load_paperclip_authorization_config(paperclip_authorization_config)
-        if paperclip_authorization_config is not None
-        else None
-    )
-    previous_umask = os.umask(0o077)
-    previous_session = os.environ.get(GENOMI_SESSION_ENV)
-    server: GenomiLabHTTPServer | None = None
-    try:
-        # Resolve identity in the caller's current Genomi context before the
-        # portal creates its isolated session.  Only the opaque user id crosses
-        # this boundary; no AGI access grant, context payload, or patient data
-        # is copied into the new session.
-        prior_context = call_operation("genomi.describe_context", {})
-        prior_user_id = str(prior_context.get("active_user_id") or "").strip()
-        os.environ[GENOMI_SESSION_ENV] = f"genomilab-{secrets.token_urlsafe(18)}"
-        if prior_user_id:
-            selected = call_operation(
-                "active_genome_index.select_user", {"user_id": prior_user_id}
-            )
-            selected_user = selected.get("user")
-            selected_user_id = (
-                str(selected_user.get("user_id") or "").strip()
-                if isinstance(selected_user, dict)
-                else ""
-            )
-            if selected_user_id != prior_user_id:
-                raise RuntimeError(
-                    "GenomiLab could not bind the exact current Genomi user."
-                )
-        service = GenomiLabService(
-            harness_adapter=InstalledCodexAppServerAdapter.discover(
-                processing_destination=harness_processing_destination
-            ),
-            paperclip_deployment_authorization=(
-                paperclip_policy.deployment_authorization
-                if paperclip_policy is not None
-                else None
-            ),
-            paperclip_patient_data_contract=(
-                paperclip_policy.patient_data_contract
-                if paperclip_policy is not None
-                else None
-            ),
-        )
-        server = create_lab_server(host=host, port=port, service=service)
-        print("GenomiLab is running locally.", file=sys.stderr)
-        print(f"Open: {server.launch_url}", file=sys.stderr)
-        print(
-            "Press Ctrl-C to stop and revoke this session's genome access.",
-            file=sys.stderr,
-        )
-        if open_browser:
-            webbrowser.open(server.launch_url)
-        server.serve_forever(poll_interval=0.25)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if server is not None:
-            server.server_close()
-        if previous_session is None:
-            os.environ.pop(GENOMI_SESSION_ENV, None)
-        else:
-            os.environ[GENOMI_SESSION_ENV] = previous_session
-        os.umask(previous_umask)

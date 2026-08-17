@@ -42,13 +42,19 @@ CAPABILITY_SKILL_LINK_PREFIX = "genomi-"
 
 
 def default_existing_parents() -> list[Path]:
-    """Default host skill dirs that already exist on this machine.
+    """Skill dirs for host installations that already exist on this machine.
 
-    Updates link only into host directories that are present, so a machine that
-    has never installed (say) Codex does not get a ``~/.codex/skills`` tree
-    created for it.
+    The host root (for example ``~/.codex``) is enough to prove the host is
+    installed.  Its ``skills`` child is then created by reconciliation.  A
+    machine with no corresponding host root remains untouched.
     """
-    return [p.expanduser() for p in DEFAULT_HOST_SKILL_PARENTS if p.expanduser().exists()]
+
+    parents: list[Path] = []
+    for configured in DEFAULT_HOST_SKILL_PARENTS:
+        skills_dir = configured.expanduser()
+        if skills_dir.exists() or skills_dir.parent.exists():
+            parents.append(skills_dir)
+    return parents
 
 
 def capability_skill_sources(source_root: Path) -> list[tuple[str, Path]]:
@@ -160,33 +166,45 @@ def reconcile_host_skill_links(
     planned_names = {name for name, _target in links}
     host_dirs: list[dict[str, object]] = []
     totals = {"created": 0, "repaired": 0, "ok": 0, "skipped_conflict": 0, "removed_orphaned": 0}
+    unavailable = 0
 
     for parent in target_parents:
-        parent.mkdir(parents=True, exist_ok=True)
-        created: list[str] = []
-        repaired: list[dict[str, str]] = []
-        skipped_conflict: list[str] = []
-        ok = 0
-        for name, target in links:
-            link = parent / name
-            state = _link_state(link, target)
-            if state == "ok":
-                ok += 1
-            elif state in ("stale", "dangling"):
-                previous = os.readlink(link)
-                _replace_with_symlink(link, target)
-                repaired.append({"name": name, "previous_target": previous, "target": str(target)})
-            elif state == "conflict":
-                if force:
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            created: list[str] = []
+            repaired: list[dict[str, str]] = []
+            skipped_conflict: list[str] = []
+            ok = 0
+            for name, target in links:
+                link = parent / name
+                state = _link_state(link, target)
+                if state == "ok":
+                    ok += 1
+                elif state in ("stale", "dangling"):
+                    previous = os.readlink(link)
                     _replace_with_symlink(link, target)
+                    repaired.append({"name": name, "previous_target": previous, "target": str(target)})
+                elif state == "conflict":
+                    if force:
+                        _replace_with_symlink(link, target)
+                        created.append(name)
+                    else:
+                        skipped_conflict.append(name)
+                else:  # missing
+                    link.symlink_to(target, target_is_directory=True)
                     created.append(name)
-                else:
-                    skipped_conflict.append(name)
-            else:  # missing
-                link.symlink_to(target, target_is_directory=True)
-                created.append(name)
 
-        removed_orphaned = _remove_orphaned_capability_links(parent, planned_names)
+            removed_orphaned = _remove_orphaned_capability_links(parent, planned_names)
+        except OSError as exc:
+            unavailable += 1
+            host_dirs.append(
+                {
+                    "path": str(parent),
+                    "status": "unavailable",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
         totals["created"] += len(created)
         totals["repaired"] += len(repaired)
         totals["ok"] += ok
@@ -205,8 +223,12 @@ def reconcile_host_skill_links(
         host_dirs.append(entry)
 
     return {
-        "status": "completed",
+        "status": "partial" if unavailable else "completed",
         "source_root": str(source_root.resolve()),
         "host_dirs": host_dirs,
-        "summary": {"host_dir_count": len(target_parents), **totals},
+        "summary": {
+            "host_dir_count": len(target_parents),
+            "unavailable": unavailable,
+            **totals,
+        },
     }

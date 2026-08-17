@@ -5,7 +5,6 @@ import shutil
 from pathlib import Path
 
 from genomi.lab import agi_authority as investigation_access
-from genomi.lab.harness import HarnessArtifactKind, HarnessOperation, SimulatedHarnessAdapter
 from genomi.lab.provider_policy import SourceFamily
 from genomi.lab.service import GenomiLabService
 from genomi.lab.store import GenomiLabStore
@@ -69,9 +68,8 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
             store=GenomiLabStore(self.store_path, key_provider=TEST_LAB_KEY_PROVIDER),
             session_id=session_id,
             operation_call=call_operation,
-            harness_adapter=SimulatedHarnessAdapter(
-                adapter_id="simulated-genomilab-e2e"
-            ),
+            agent_host_id="synthetic-e2e-host",
+            agent_processing_destination="current synthetic E2E host",
         )
         service.configure_evidence_gateway(
             fixtures={SourceFamily.LITERATURE: self._public_evidence_fixture()}
@@ -111,96 +109,6 @@ class GenomiLabEndToEndCase(GenomiRuntimeTestCase):
             parsed["active_genome_index"]["agi_snapshot_id"],
         )
         return parsed, context
-
-    def _approve_harness_call(
-        self,
-        service: GenomiLabService,
-        investigation_id: str,
-        *,
-        command_id: str,
-        operation: str,
-        instruction: str | None = None,
-        artifact_kind: str,
-        reason: str | None = None,
-        accept_plan: bool = True,
-    ) -> dict[str, object]:
-        preview = service.harness_disclosure_candidate(
-            investigation_id,
-            operation=operation,
-            instruction=instruction,
-            artifact_kind=artifact_kind,
-            reason=reason,
-            command_id=command_id,
-        )
-        self.assertEqual(preview["status"], "approval_required")
-        command_context = preview["payload"]["command_context"]
-        request: dict[str, object] = {
-            "approved": True,
-            "payload_sha256": preview["payload_sha256"],
-            "command_id": command_context["command_id"],
-            "expected_revision": command_context["expected_revision"],
-        }
-        if instruction is not None:
-            request["message"] = instruction
-        if reason is not None:
-            request["reason"] = reason
-        _, user_id = service._current_context()
-        authorization = service.store.current_investigation_authorization(
-            workspace_session_id=service.session_id,
-            user_id=user_id,
-            investigation_id=investigation_id,
-        )
-        if isinstance(authorization, dict):
-            result = service._execute_harness_command(
-                investigation_id,
-                request,
-                operation=HarnessOperation(operation),
-                artifact_kind=HarnessArtifactKind(artifact_kind),
-                authorization_receipt_id=str(
-                    authorization["authorization_receipt_id"]
-                ),
-            )
-        elif operation == "start_task_run":
-            result = service._start_harness_for_conformance(investigation_id, request)
-        elif operation == "send_task_message":
-            request["artifact_kind"] = artifact_kind
-            result = service._send_harness_message_for_conformance(investigation_id, request)
-        elif operation == "replace_task_binding":
-            request["artifact_kind"] = artifact_kind
-            result = service._replace_harness_for_conformance(investigation_id, request)
-        else:  # pragma: no cover - the helper intentionally has a closed scope
-            raise AssertionError(f"unsupported harness operation: {operation}")
-        self.assertEqual(result["status"], "accepted")
-        self.assertIsNotNone(result["disclosure_receipt_id"])
-        committed = result.get("committed_artifact")
-        if accept_plan and artifact_kind == "plan" and isinstance(committed, dict):
-            saved = service.investigation(investigation_id)["current_plan_version"]
-            acceptance = service._accept_plan_for_conformance(
-                investigation_id,
-                {
-                    "approved": True,
-                    "plan_version_id": saved["plan_version_id"],
-                    "plan_sha256": saved["plan_sha256"],
-                },
-            )
-            result["plan_acceptance"] = acceptance["plan_acceptance"]
-            self.assertEqual(acceptance["capability_results"], [])
-            result["capability_results"] = []
-            next_action = acceptance.get("next_harness_action")
-            if isinstance(next_action, dict):
-                execution_result = self._approve_harness_call(
-                    service,
-                    investigation_id,
-                    command_id=f"{command_id}-execution",
-                    operation=str(next_action["operation"]),
-                    instruction=str(next_action["instruction"]),
-                    artifact_kind=str(next_action["artifact_kind"]),
-                    reason=str(next_action["reason"]),
-                    accept_plan=False,
-                )
-                result["execution_result"] = execution_result
-                result["capability_results"] = execution_result["capability_results"]
-        return result
 
     def _add_molecular_profile(
         self, service: GenomiLabService

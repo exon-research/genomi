@@ -278,6 +278,7 @@ class EvidenceDisclosureApplicationMixin:
                 payload=outbound_payload,
                 policy_versions=policy_versions,
                 approved=True,
+                emit_investigation_event=True,
             )
         except ValueError as exc:
             raise LabError("invalid_evidence_disclosure", str(exc)) from exc

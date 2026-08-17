@@ -179,6 +179,70 @@ class ReconcileHostSkillLinksTests(unittest.TestCase):
             self.assertTrue((existing / "genomi").is_symlink())
             self.assertFalse(missing.exists())
 
+    def test_existing_host_root_gets_a_new_skills_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = _make_source(tmp_path / "checkout", ["genomilab"])
+            claude_root = tmp_path / ".claude"
+            codex_root = tmp_path / ".codex"
+            agents_root = tmp_path / ".agents"
+            absent_root = tmp_path / ".hermes"
+            for root in (claude_root, codex_root, agents_root):
+                root.mkdir()
+
+            configured = tuple(
+                root / "skills"
+                for root in (claude_root, codex_root, agents_root, absent_root)
+            )
+            with mock.patch.object(
+                host_skills,
+                "DEFAULT_HOST_SKILL_PARENTS",
+                configured,
+            ):
+                parents = host_skills.default_existing_parents()
+                result = host_skills.reconcile_host_skill_links(
+                    source,
+                    parents=parents,
+                )
+
+            self.assertEqual(
+                parents,
+                [
+                    claude_root / "skills",
+                    codex_root / "skills",
+                    agents_root / "skills",
+                ],
+            )
+            self.assertEqual(result["summary"]["host_dir_count"], 3)
+            for root in (claude_root, codex_root, agents_root):
+                self.assertEqual(
+                    (root / "skills" / "genomi-genomilab").resolve(),
+                    (source / "skills" / "genomilab").resolve(),
+                )
+            self.assertFalse((absent_root / "skills").exists())
+
+    def test_unwritable_host_directory_is_reported_without_leaking_os_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            source = _make_source(tmp_path / "checkout", ["genomilab"])
+            host = tmp_path / "host" / "skills"
+            host.mkdir(parents=True)
+
+            with mock.patch.object(
+                host_skills.Path,
+                "symlink_to",
+                side_effect=PermissionError("host skill directory is read-only"),
+            ):
+                result = host_skills.reconcile_host_skill_links(
+                    source,
+                    parents=[host],
+                )
+
+            self.assertEqual(result["status"], "partial")
+            self.assertEqual(result["summary"]["unavailable"], 1)
+            self.assertEqual(result["host_dirs"][0]["status"], "unavailable")
+            self.assertIn("PermissionError", result["host_dirs"][0]["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

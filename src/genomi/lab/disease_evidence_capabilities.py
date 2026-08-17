@@ -2,8 +2,8 @@
 
 These contracts expose only Genomi operations that can run without network
 egress for the request itself.  Public provider work remains behind the
-GenomiLab evidence gateway; the installed harness still decides which source
-prior is relevant and how results should be combined.
+GenomiLab evidence gateway; the current underlying agent still decides which
+source prior is relevant and how results should be combined.
 """
 
 from __future__ import annotations
@@ -248,6 +248,7 @@ def execute_local_disease_evidence_request(
         deduplication_key=f"local-genomi:{identity}",
         expected_plan_version_id=expected_plan_version_id,
         expected_consent_receipt_id=expected_consent_receipt_id,
+        emit_investigation_event=True,
     )
     operational_status = _local_evidence_operational_status(result)
     return {

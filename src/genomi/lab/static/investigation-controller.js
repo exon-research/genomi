@@ -1,7 +1,6 @@
 "use strict";
 
 import { apiRequest, postJson, waitForEvents } from "./api.js";
-import { setFormBusy } from "./form-controls.js";
 import {
   closeInvestigation,
   elements,
@@ -15,44 +14,20 @@ import {
   showAlert,
 } from "./render.js";
 
-export function createInvestigationController({state, session, refresh, synchronizeProfile}) {
+export function createInvestigationController({state, session, synchronizeProfile}) {
   function bind() {
-    elements.questionForm.addEventListener("submit", handleQuestion);
     elements.investigationList.addEventListener("click", handleInvestigationSelection);
     elements.detailClose.addEventListener("click", close);
     elements.contextPreviewButton.addEventListener("click", () => void previewPrivateContext());
     elements.contextRefreshPreviewButton.addEventListener(
       "click", () => void previewPrivateContext({refresh: true})
     );
-    elements.contextApproveButton.addEventListener("click", () => void authorizeAndStart());
+    elements.contextApproveButton.addEventListener("click", () => void authorizeContext());
     elements.contextObservationList.addEventListener("change", invalidateContextCandidate);
     elements.contextRevokeButton.addEventListener("click", () => void revokePrivateContext());
-    elements.planChangeForm.addEventListener("submit", handlePlanChange);
-    elements.harnessMessageForm.addEventListener("submit", handleHarnessMessage);
-    elements.cancelHarnessButton.addEventListener("click", () => void cancelHarnessWork());
     elements.reconnectEventsButton.addEventListener("click", () => void reconnectEvents());
     elements.capabilityApprovalList.addEventListener("click", handleCapabilityApproval);
-  }
-
-  async function handleQuestion(event) {
-    event.preventDefault();
-    if (!elements.questionForm.reportValidity()) return;
-    setFormBusy(elements.questionForm, elements.questionSubmit, true, "Creating…");
-    setActivity("Creating a durable disease investigation…");
-    try {
-      const created = await postJson("/api/v1/investigations", {
-        question: elements.question.value.trim(),
-        disease_scope: elements.diseaseScope.value.trim() || undefined,
-      });
-      elements.questionForm.reset();
-      session.beginOpen(String(created.investigation_id || ""));
-      showAlert("Investigation created. Choose the profile context it may use, then authorize and start it once.", "success");
-      await refresh();
-    } catch (error) {
-      showAlert(error.message || "The investigation could not be created.");
-    } finally {
-      setFormBusy(elements.questionForm, elements.questionSubmit, false);
-    }
+    elements.returnToAgentButton.addEventListener("click", returnToUnderlyingAgent);
   }
 
   function handleInvestigationSelection(event) {
@@ -71,7 +46,10 @@ export function createInvestigationController({state, session, refresh, synchron
     setActivity("Investigation closed. Research Desk ready.");
   }
 
-  async function open(investigationId, {focus = true} = {}) {
+  async function open(
+    investigationId,
+    {focus = true, authorizationCandidate = null} = {}
+  ) {
     const openRequest = session.beginOpen(investigationId);
     const investigationLoad = session.beginInvestigationLoad(openRequest);
     hideContextCandidate();
@@ -80,6 +58,9 @@ export function createInvestigationController({state, session, refresh, synchron
       const investigation = await apiRequest(pathFor(investigationId));
       if (!session.acceptInvestigationLoad(investigationLoad, investigation)) return;
       renderCurrentInvestigation();
+      if (authorizationCandidate) {
+        displayAuthorizationHandoff(investigationId, authorizationCandidate);
+      }
       if (state.workspace()) renderWorkspace(state.workspace(), investigationId);
       await reconnectEvents({announce: false, openRequest});
       if (!session.isCurrent(openRequest)) return;
@@ -88,12 +69,62 @@ export function createInvestigationController({state, session, refresh, synchron
         elements.investigationDetail.scrollIntoView({block: "start"});
         elements.investigationDetail.focus({preventScroll: true});
       }
-      setActivity("Investigation open.");
+      setActivity(
+        authorizationCandidate
+          ? "Exact research access is ready for your review."
+          : "Investigation open."
+      );
     } catch (error) {
       if (!session.isCurrent(openRequest)) return;
       showAlert(error.message || "The investigation could not be opened.");
       setActivity("Investigation unavailable.");
     }
+  }
+
+  function displayAuthorizationHandoff(investigationId, candidate) {
+    if (
+      !candidate
+      || candidate.investigation_id !== investigationId
+      || !candidate.authorization_candidate_receipt
+      || !candidate.authorization_scope
+    ) {
+      throw new Error("The prepared research authorization handoff is incomplete.");
+    }
+    const previewRequest = session.beginContextPreview();
+    if (!session.acceptContextCandidate(previewRequest, candidate)) {
+      throw new Error("The prepared research authorization handoff expired.");
+    }
+    const selectedIds = new Set(
+      Array.isArray(candidate.observation_revision_ids)
+        ? candidate.observation_revision_ids.map(String)
+        : []
+    );
+    elements.contextObservationList.querySelectorAll(
+      "input[name='context_observation_revision_id']"
+    ).forEach((input) => {
+      input.checked = selectedIds.has(String(input.value || ""));
+    });
+    renderContextCandidate(session.contextCandidate, profileObservations());
+  }
+
+  function returnToUnderlyingAgent() {
+    const manifest = state.underlyingAgentManifest();
+    const destination = String(
+      manifest.processing_destination || "the underlying agent"
+    );
+    try {
+      if (globalThis.opener && !globalThis.opener.closed) {
+        globalThis.opener.focus();
+      }
+      globalThis.close();
+    } catch (_error) {
+      // Browsers may prevent a page they did not create from closing itself.
+    }
+    showAlert(
+      `Return to ${destination} to continue, redirect, pause, or cancel the task. You can close this portal tab if it remains open.`,
+      "success"
+    );
+    setActivity("Return to the underlying agent to continue the investigation.");
   }
 
   function invalidateContextCandidate() {
@@ -153,7 +184,7 @@ export function createInvestigationController({state, session, refresh, synchron
       setActivity(
         useCurrentAgi
           ? "Updated research access is ready for review. Nothing has changed yet."
-          : "Research access is ready for review. The investigation has not started yet."
+          : "Research access is ready for review. Nothing has been shared with the agent yet."
       );
     } catch (error) {
       if (!session.isCurrentContextPreview(previewRequest)) return;
@@ -163,16 +194,16 @@ export function createInvestigationController({state, session, refresh, synchron
     }
   }
 
-  async function authorizeAndStart() {
+  async function authorizeContext() {
     if (!session.contextCandidate) return;
     const authorizationCandidate = session.contextCandidate;
     if (!authorizationCandidate.authorization_candidate_receipt) {
-      showAlert("Review research access again before starting the investigation.");
+      showAlert("Review research access again before authorizing the context.");
       return;
     }
     const openRequest = session.openRequest();
-    setBusy(elements.contextApproveButton, true, "Starting…");
-    setActivity("Authorizing the exact research scope and starting the research team…");
+    setBusy(elements.contextApproveButton, true, "Authorizing…");
+    setActivity("Authorizing the exact profile and genome scope for the current agent session…");
     try {
       const authorization = {...authorizationCandidate};
       delete authorization.status;
@@ -180,26 +211,24 @@ export function createInvestigationController({state, session, refresh, synchron
       delete authorization.user_id;
       delete authorization.investigation_id;
       authorization.approved = true;
-      const result = await postJson(session.path("/authorize-start"), authorization);
+      await postJson(session.path("/authorize-context"), authorization);
       if (!session.isCurrent(openRequest)) return;
-      const selectionChangedWhileStarting = session.contextCandidate !== authorizationCandidate;
+      const selectionChangedWhileAuthorizing = session.contextCandidate !== authorizationCandidate;
       discardContextCandidate();
       showAlert(
-        selectionChangedWhileStarting
-          ? "The reviewed research scope was authorized and started. Newer selection changes were not included; review them separately if you want to expand access."
-          : result.status === "in_progress"
-          ? "Investigation authorized. Your research team is working in the background."
-          : "Investigation authorized and started. Routine work will continue within this scope.",
+        selectionChangedWhileAuthorizing
+          ? "The reviewed scope was authorized. Newer selection changes were not included; review them separately if you want to expand access."
+          : "Research context authorized. Continue the investigation in your Claude or Codex conversation; this portal will monitor committed updates.",
         "success"
       );
       await reloadCurrentInvestigation(openRequest);
       await reconnectEvents({announce: false, openRequest});
       if (session.isCurrent(openRequest)) {
-        setActivity("Research is underway. GenomiLab will pause only if authorization needs to expand.");
+        setActivity("Research context is available to the current agent session. Monitoring committed investigation activity.");
       }
     } catch (error) {
       if (session.isCurrent(openRequest) && session.contextCandidate === authorizationCandidate) {
-        showAlert(error.message || "The investigation could not be authorized and started.");
+        showAlert(error.message || "The research context could not be authorized.");
       }
     } finally {
       setBusy(elements.contextApproveButton, false, "");
@@ -208,70 +237,17 @@ export function createInvestigationController({state, session, refresh, synchron
 
   async function revokePrivateContext() {
     if (!session.investigation) return;
-    if (!window.confirm("Revoke this investigation's research access and stop future private-profile work?")) return;
+    if (!window.confirm("Revoke future GenomiLab access to this investigation's private profile and genome context? This does not stop or cancel the Claude or Codex task.")) return;
     setBusy(elements.contextRevokeButton, true, "Revoking…");
     try {
       await postJson(session.path("/revoke-context"), {});
       discardContextCandidate();
-      showAlert("Research access revoked. Stored evidence remains in the investigation ledger.", "success");
+      showAlert("Future GenomiLab private-context access revoked. Stored evidence remains in the ledger; manage or cancel the agent task in Claude or Codex.", "success");
       await reloadCurrentInvestigation();
     } catch (error) {
       showAlert(error.message || "Research access could not be revoked.");
     } finally {
       setBusy(elements.contextRevokeButton, false, "");
-    }
-  }
-
-  function handleHarnessMessage(event) {
-    event.preventDefault();
-    if (!elements.harnessMessageForm.reportValidity()) return;
-    void sendInstruction(elements.harnessMessage.value.trim());
-  }
-
-  function handlePlanChange(event) {
-    event.preventDefault();
-    if (!elements.planChangeForm.reportValidity()) return;
-    void sendInstruction(
-      elements.planChangeMessage.value.trim(),
-      "plan",
-      elements.planChangeButton
-    );
-  }
-
-  async function sendInstruction(
-    message,
-    artifactKind = "brief_draft",
-    sourceButton = elements.messagePreviewButton
-  ) {
-    if (!session.investigation) return;
-    const openRequest = session.openRequest();
-    setBusy(sourceButton, true, "Sending…");
-    setActivity("Sending this instruction within the authorized research scope…");
-    try {
-      const result = await postJson(session.path("/messages"), {
-        message,
-        artifact_kind: artifactKind,
-      });
-      if (!session.isCurrent(openRequest)) return;
-      if (!["accepted", "in_progress", "completed"].includes(String(result.status || ""))) {
-        throw new Error(result.artifact_error || result.message || "The instruction was not accepted.");
-      }
-      if (artifactKind === "plan") elements.planChangeForm.reset();
-      else elements.harnessMessageForm.reset();
-      showAlert(
-        result.status === "in_progress"
-          ? "Instruction sent. Your research team is working in the background."
-          : "Instruction sent within the existing research authorization.",
-        "success"
-      );
-      await reloadCurrentInvestigation(openRequest);
-      await reconnectEvents({announce: false, openRequest});
-    } catch (error) {
-      if (session.isCurrent(openRequest)) {
-        showAlert(error.message || "The instruction could not be sent.");
-      }
-    } finally {
-      if (session.isCurrent(openRequest)) setBusy(sourceButton, false, "");
     }
   }
 
@@ -318,7 +294,7 @@ export function createInvestigationController({state, session, refresh, synchron
     const payloadSha256 = String(button.dataset.payloadSha256 || "");
     const approvalSha256 = String(button.dataset.approvalSha256 || "");
     if (!requestId || !provider || !payloadSha256 || !approvalSha256) {
-      showAlert("This evidence approval preview is incomplete. Ask the harness to replan.");
+      showAlert("This evidence approval preview is incomplete. Ask the agent to prepare it again.");
       return;
     }
     setBusy(button, true, "Retrieving…");
@@ -353,30 +329,6 @@ export function createInvestigationController({state, session, refresh, synchron
     }
   }
 
-  async function cancelHarnessWork() {
-    if (!session.investigation) return;
-    if (!window.confirm("Stop this investigation's current research work?")) return;
-    const openRequest = session.openRequest();
-    setBusy(elements.cancelHarnessButton, true, "Stopping…");
-    setActivity("Stopping the current research work…");
-    try {
-      const result = await postJson(session.path("/cancel"), {});
-      if (!session.isCurrent(openRequest)) return;
-      if (!["accepted", "in_progress", "completed", "cancelled"].includes(String(result.status || ""))) {
-        throw new Error(result.message || "The research work could not be stopped.");
-      }
-      showAlert("Stop request sent to the research team.", "success");
-      await reloadCurrentInvestigation(openRequest);
-      await reconnectEvents({announce: false, openRequest});
-    } catch (error) {
-      if (session.isCurrent(openRequest)) {
-        showAlert(error.message || "The research work could not be stopped.");
-      }
-    } finally {
-      if (session.isCurrent(openRequest)) setBusy(elements.cancelHarnessButton, false, "");
-    }
-  }
-
   async function reconnectEvents({
     announce = true,
     restartStream = announce,
@@ -384,19 +336,19 @@ export function createInvestigationController({state, session, refresh, synchron
   } = {}) {
     if (!openRequest.investigationId || !session.isCurrent(openRequest)) return;
     const reconnectRequest = session.beginReconnect(openRequest);
-    setBusy(elements.reconnectEventsButton, true, "Reconnecting…");
-    if (announce) setActivity("Reconnecting the harness event stream…");
+    setBusy(elements.reconnectEventsButton, true, "Refreshing…");
+    if (announce) setActivity("Refreshing committed investigation activity…");
     try {
       const eventPayload = await apiRequest(session.path("/events"));
       if (!session.isCurrentReconnect(reconnectRequest)) return;
       renderEvents(eventPayload);
       session.eventSequence = latestEventSequence(eventPayload.events);
       if (restartStream) startEventStream();
-      if (announce) setActivity("Harness events reconnected.");
+      if (announce) setActivity("Committed investigation activity refreshed.");
     } catch (error) {
       if (!session.isCurrentReconnect(reconnectRequest)) return;
-      elements.eventStatus.textContent = "Reconnect needed";
-      if (announce) showAlert(error.message || "Harness events could not be reconnected.");
+      elements.eventStatus.textContent = "Refresh needed";
+      if (announce) showAlert(error.message || "Investigation activity could not be refreshed.");
     } finally {
       if (session.isCurrentReconnect(reconnectRequest)) {
         setBusy(elements.reconnectEventsButton, false, "");
@@ -424,10 +376,12 @@ export function createInvestigationController({state, session, refresh, synchron
           if (!session.ownsEventStream(stream)) return;
           renderEvents(replay);
           await reloadCurrentInvestigation();
+        } else {
+          await waitForNextActivityPoll(stream.controller.signal);
         }
       } catch (error) {
         if (stream.controller.signal.aborted) return;
-        elements.eventStatus.textContent = "Reconnect needed";
+        elements.eventStatus.textContent = "Refresh needed";
         return;
       }
     }
@@ -466,7 +420,7 @@ export function createInvestigationController({state, session, refresh, synchron
   }
 
   function renderCurrentInvestigation() {
-    renderInvestigation(session.investigation, state.harnessManifest(), profileObservations());
+    renderInvestigation(session.investigation, state.underlyingAgentManifest(), state.profile());
   }
 
   function profileObservations() {
@@ -496,4 +450,22 @@ export function createInvestigationController({state, session, refresh, synchron
 
 function pathFor(investigationId) {
   return `/api/v1/investigations/${encodeURIComponent(investigationId)}`;
+}
+
+function waitForNextActivityPoll(signal, delayMilliseconds = 1000) {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMilliseconds);
+    signal.addEventListener("abort", onAbort, {once: true});
+  });
 }

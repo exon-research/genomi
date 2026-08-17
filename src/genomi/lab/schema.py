@@ -194,50 +194,10 @@ CREATE TABLE IF NOT EXISTS investigation_authorization_derivations (
         (disclosure_receipt_id IS NULL AND plan_acceptance_id IS NOT NULL)
     )
 );
-CREATE TABLE IF NOT EXISTS harness_bindings (
-    binding_id TEXT PRIMARY KEY,
-    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
-    command_id TEXT NOT NULL UNIQUE,
-    host_id TEXT NOT NULL,
-    task_id TEXT,
-    run_id TEXT,
-    binding_state TEXT NOT NULL,
-    harness_status TEXT NOT NULL,
-    harness_revision INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS harness_commands (
-    command_id TEXT PRIMARY KEY,
-    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
-    workspace_session_id TEXT NOT NULL,
-    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
-    operation TEXT NOT NULL,
-    command_fingerprint TEXT NOT NULL,
-    command_state TEXT NOT NULL,
-    disclosure_receipt_id TEXT REFERENCES outbound_disclosure_receipts(disclosure_receipt_id),
-    response_json TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS harness_jobs (
-    job_id TEXT PRIMARY KEY,
-    command_id TEXT NOT NULL UNIQUE REFERENCES harness_commands(command_id) ON DELETE CASCADE,
-    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
-    user_id TEXT NOT NULL REFERENCES workspaces(user_id) ON DELETE CASCADE,
-    host_id TEXT NOT NULL,
-    task_id TEXT,
-    run_id TEXT,
-    job_state TEXT NOT NULL,
-    terminal_response_json TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS harness_events (
+CREATE TABLE IF NOT EXISTS investigation_events (
     event_id TEXT PRIMARY KEY,
     investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
-    binding_id TEXT NOT NULL REFERENCES harness_bindings(binding_id) ON DELETE CASCADE,
-    sequence INTEGER NOT NULL,
+    sequence INTEGER NOT NULL CHECK (sequence > 0),
     event_type TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -271,6 +231,38 @@ CREATE TABLE IF NOT EXISTS evidence_records (
     evidence_envelope_json TEXT,
     created_at TEXT NOT NULL,
     UNIQUE(investigation_id, patient_molecular_snapshot_id, deduplication_key)
+);
+CREATE TABLE IF NOT EXISTS research_artifacts (
+    research_artifact_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    patient_molecular_snapshot_id TEXT NOT NULL REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    round_id TEXT NOT NULL REFERENCES investigation_rounds(round_id),
+    deduplication_key TEXT NOT NULL,
+    artifact_kind TEXT NOT NULL CHECK (
+        artifact_kind IN (
+            'esm_nonclinical_comparison',
+            'proto_blinded_experimental_design',
+            'genomi_sequence_substitution_verification'
+        )
+    ),
+    system TEXT NOT NULL CHECK (system IN ('esm', 'proto', 'genomi')),
+    origin TEXT NOT NULL CHECK (
+        origin IN (
+            'precomputed_fixture',
+            'host_supplied_unverified',
+            'verified_scientific_operation'
+        )
+    ),
+    content_sha256 TEXT NOT NULL,
+    artifact_json TEXT NOT NULL,
+    research_envelope_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(
+        investigation_id,
+        patient_molecular_snapshot_id,
+        round_id,
+        deduplication_key
+    )
 );
 CREATE TABLE IF NOT EXISTS hypotheses (
     hypothesis_id TEXT PRIMARY KEY,
@@ -369,6 +361,36 @@ CREATE TABLE IF NOT EXISTS plan_acceptances (
     workspace_session_id TEXT NOT NULL,
     plan_sha256 TEXT NOT NULL,
     accepted_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS investigation_rounds (
+    round_id TEXT PRIMARY KEY,
+    investigation_id TEXT NOT NULL REFERENCES investigations(investigation_id) ON DELETE CASCADE,
+    plan_version_id TEXT NOT NULL UNIQUE REFERENCES plan_versions(plan_version_id) ON DELETE CASCADE,
+    patient_molecular_snapshot_id TEXT NOT NULL REFERENCES profile_snapshots(patient_molecular_snapshot_id),
+    round_number INTEGER NOT NULL CHECK (round_number > 0),
+    prior_round_id TEXT REFERENCES investigation_rounds(round_id),
+    focus_question TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(investigation_id, round_number),
+    UNIQUE(prior_round_id)
+);
+CREATE TABLE IF NOT EXISTS specialist_round_assignments (
+    assignment_id TEXT PRIMARY KEY,
+    round_id TEXT NOT NULL REFERENCES investigation_rounds(round_id) ON DELETE CASCADE,
+    specialist_id TEXT NOT NULL,
+    task TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(round_id, specialist_id)
+);
+CREATE TABLE IF NOT EXISTS specialist_round_reports (
+    report_id TEXT PRIMARY KEY,
+    round_id TEXT NOT NULL REFERENCES investigation_rounds(round_id) ON DELETE CASCADE,
+    specialist_id TEXT NOT NULL,
+    report_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(round_id, specialist_id),
+    FOREIGN KEY(round_id, specialist_id)
+        REFERENCES specialist_round_assignments(round_id, specialist_id)
 );
 CREATE TABLE IF NOT EXISTS brief_versions (
     brief_version_id TEXT PRIMARY KEY,
@@ -539,6 +561,63 @@ BEFORE UPDATE ON investigation_authorization_derivations
 BEGIN
     SELECT RAISE(ABORT, 'investigation authorization derivations are immutable');
 END;
+CREATE TRIGGER IF NOT EXISTS research_artifacts_immutable
+BEFORE UPDATE ON research_artifacts
+BEGIN
+    SELECT RAISE(ABORT, 'research artifacts are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS research_artifacts_delete_immutable
+BEFORE DELETE ON research_artifacts
+BEGIN
+    SELECT RAISE(ABORT, 'research artifacts are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS investigation_round_plan_identity_insert
+BEFORE INSERT ON investigation_rounds
+BEGIN
+    SELECT CASE WHEN NOT EXISTS (
+        SELECT 1 FROM plan_versions AS plan
+         WHERE plan.plan_version_id = NEW.plan_version_id
+           AND plan.investigation_id = NEW.investigation_id
+           AND plan.patient_molecular_snapshot_id = NEW.patient_molecular_snapshot_id
+           AND plan.version = NEW.round_number
+    ) THEN RAISE(ABORT, 'investigation round must match its plan version') END;
+    SELECT CASE WHEN NEW.prior_round_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM investigation_rounds AS prior
+         WHERE prior.round_id = NEW.prior_round_id
+           AND prior.investigation_id = NEW.investigation_id
+           AND prior.round_number < NEW.round_number
+    ) THEN RAISE(ABORT, 'prior round must belong to the same investigation') END;
+END;
+CREATE TRIGGER IF NOT EXISTS investigation_rounds_immutable
+BEFORE UPDATE ON investigation_rounds
+BEGIN
+    SELECT RAISE(ABORT, 'investigation rounds are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS investigation_rounds_delete_immutable
+BEFORE DELETE ON investigation_rounds
+BEGIN
+    SELECT RAISE(ABORT, 'investigation rounds are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS specialist_round_assignments_immutable
+BEFORE UPDATE ON specialist_round_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'specialist round assignments are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS specialist_round_assignments_delete_immutable
+BEFORE DELETE ON specialist_round_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'specialist round assignments are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS specialist_round_reports_immutable
+BEFORE UPDATE ON specialist_round_reports
+BEGIN
+    SELECT RAISE(ABORT, 'specialist round reports are immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS specialist_round_reports_delete_immutable
+BEFORE DELETE ON specialist_round_reports
+BEGIN
+    SELECT RAISE(ABORT, 'specialist round reports are immutable');
+END;
 CREATE INDEX IF NOT EXISTS idx_snapshots_user_created
     ON profile_snapshots(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_snapshots_investigation_version
@@ -570,6 +649,10 @@ CREATE INDEX IF NOT EXISTS idx_evidence_investigation_created
     ON evidence_records(investigation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_evidence_investigation_profile
     ON evidence_records(investigation_id, patient_molecular_snapshot_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_research_artifacts_investigation_profile
+    ON research_artifacts(
+        investigation_id, patient_molecular_snapshot_id, round_id, created_at
+    );
 CREATE INDEX IF NOT EXISTS idx_evidence_snapshots_investigation_version
     ON evidence_snapshots(investigation_id, version);
 CREATE INDEX IF NOT EXISTS idx_capability_executions_investigation
@@ -578,19 +661,19 @@ CREATE INDEX IF NOT EXISTS idx_capability_attempts_execution
     ON capability_execution_attempts(capability_execution_id, attempt_number);
 CREATE INDEX IF NOT EXISTS idx_plan_acceptances_investigation
     ON plan_acceptances(investigation_id, accepted_at);
+CREATE INDEX IF NOT EXISTS idx_investigation_rounds_investigation_number
+    ON investigation_rounds(investigation_id, round_number);
+CREATE INDEX IF NOT EXISTS idx_specialist_round_assignments_round
+    ON specialist_round_assignments(round_id, specialist_id);
+CREATE INDEX IF NOT EXISTS idx_specialist_round_reports_round
+    ON specialist_round_reports(round_id, specialist_id);
 CREATE INDEX IF NOT EXISTS idx_hypotheses_logical_version
     ON hypotheses(investigation_id, logical_hypothesis_id, version);
-CREATE INDEX IF NOT EXISTS idx_harness_events_investigation_sequence
-    ON harness_events(investigation_id, sequence);
-CREATE INDEX IF NOT EXISTS idx_harness_commands_investigation_created
-    ON harness_commands(investigation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_harness_jobs_investigation_created
-    ON harness_jobs(investigation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_investigation_events_investigation_sequence
+    ON investigation_events(investigation_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_provider_connection_commands_session_created
     ON provider_connection_commands(workspace_session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_provider_connection_events_session_created
     ON provider_connection_events(workspace_session_id, created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_harness_bindings_one_active
-    ON harness_bindings(investigation_id) WHERE binding_state = 'active';
 PRAGMA optimize;
 """

@@ -43,7 +43,7 @@ def _disease_relation_request_templates(
     context_source_evidence_record_ids: object,
     source_family_by_evidence_record_id: object,
 ) -> list[JsonObject]:
-    """Enumerate exact relation shapes while leaving direction to the harness."""
+    """Enumerate exact relation shapes while leaving direction to the agent."""
 
     relation_anchors = _molecular_relation_anchors(molecular_profile)
     relation_source_ids = _text_list(relation_source_evidence_record_ids)

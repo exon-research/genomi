@@ -6,7 +6,7 @@ from genomi.lab.server import _INVESTIGATION_ACTION_ROUTE
 
 
 class GenomiLabEvidenceHTTPContractTests(unittest.TestCase):
-    def test_portal_cannot_initiate_provider_evidence_outside_harness_request(
+    def test_portal_cannot_initiate_provider_evidence_outside_agent_request(
         self,
     ) -> None:
         investigation = "investigation-acde1234"

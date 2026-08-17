@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#123c36">
     <title>GenomiLab — Your personal research lab</title>
-    <meta name="description" content="Investigate disease against your molecular profile with the agent harness already installed with Genomi.">
+    <meta name="description" content="Review patient context and monitor genome-informed investigations run by your current underlying agent.">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/workspace.css">
     <link rel="stylesheet" href="/brief.css">
@@ -15,6 +15,10 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to the Research Desk</a>
+
+    <div id="demo-mode-disclosure" class="demo-mode-disclosure" role="note" hidden>
+      Simulated demonstration
+    </div>
 
     <header class="topbar">
       <a class="brand" href="/" aria-label="GenomiLab home">
@@ -44,7 +48,7 @@
         </p>
         <div class="setup-card">
           <span class="step-number">1</span>
-          <div><strong>Create or select your user in Genomi</strong><p id="genomi-setup-prompt">In your installed assistant, ask: “Set up my Genomi user and manage my genome.” Then reopen or refresh this page.</p></div>
+          <div><strong>Select or finish an Active Genome Index in core Genomi</strong><p id="genomi-setup-prompt">Return to the underlying agent. Point it to the local VCF or another supported genome-source path, or ask it to select and finish an existing Active Genome Index. Reopen GenomiLab when the selected index is query-ready.</p></div>
         </div>
       </section>
 
@@ -77,8 +81,8 @@
               <p class="eyebrow">Research Desk</p>
               <h1>Investigate disease in the context of your molecular profile.</h1>
               <p>
-                Ask the question in your own words. The installed agent harness plans the work;
-                GenomiLab keeps the profile, evidence, hypotheses, gaps, and living brief together.
+                Ask the question in your own words. Your current Claude or Codex agent plans and runs
+                the work; GenomiLab keeps the patient profile, evidence, hypotheses, gaps, and living brief together.
               </p>
             </div>
             <div class="genome-card">
@@ -100,20 +104,14 @@
 
           <section class="ask-card" aria-labelledby="ask-heading">
             <div>
-              <p class="eyebrow">Start or continue an investigation</p>
-              <h2 id="ask-heading">What disease question should we investigate?</h2>
+              <p class="eyebrow">Agent-owned research</p>
+              <h2 id="ask-heading">Start investigations in your Claude or Codex conversation</h2>
+              <p id="ask-guidance">
+                Tell the current agent what you want to investigate. It creates and runs the
+                investigation in that same task; return here to manage patient context, approve
+                exact disclosures, and monitor committed results.
+              </p>
             </div>
-            <form id="question-form">
-              <label for="question">Your question</label>
-              <textarea id="question" name="question" rows="3" maxlength="2000" required placeholder="Could the molecular findings and symptoms in my profile help explain this condition?"></textarea>
-              <div class="form-row">
-                <div>
-                  <label for="disease-scope">Disease or condition <span>Optional</span></label>
-                  <input id="disease-scope" name="disease_scope" maxlength="300" placeholder="Example: hereditary neuropathy">
-                </div>
-                <button class="primary-button" type="submit">Create investigation</button>
-              </div>
-            </form>
           </section>
 
           <section id="molecular-profile" class="panel">
@@ -338,7 +336,7 @@
                 <p class="eyebrow">Optional connections</p>
                 <h2>Research tools</h2>
                 <p>
-                  Connect tools you already have access to. The installed agent harness decides
+                  Connect tools you already have access to. Your current Claude or Codex agent decides
                   when one could help; connecting a tool does not start research or send your genome.
                 </p>
               </div>
@@ -388,14 +386,14 @@
 
             <div class="responsibility-banner" role="note">
               <div>
-                <strong id="harness-name">Installed agent harness</strong>
-                <p id="harness-location">Checking where agents and reasoning will run…</p>
+                <strong id="agent-name">Underlying agent</strong>
+                <p id="agent-location">Checking which agent session owns the investigation…</p>
               </div>
-              <span id="harness-capability" class="availability-chip">Checking</span>
+              <span id="agent-capability" class="availability-chip">Checking</span>
             </div>
-            <p id="harness-disclosure" class="boundary-copy">
-              GenomiLab shows the work and pauses when your authorization must expand;
-              the disclosed installed harness owns the agents, planning, and reasoning.
+            <p id="agent-disclosure" class="boundary-copy">
+              GenomiLab records patient context and committed investigation updates. The current
+              Claude or Codex task owns the conversation, agents, planning, streaming, and cancellation.
             </p>
 
             <div class="investigation-grid">
@@ -407,28 +405,20 @@
                     <span id="progress-summary" class="mini-status">Waiting for a plan</span>
                   </div>
                 </header>
-                <p id="plan-summary" class="section-summary">The installed harness has not proposed a plan yet.</p>
+                <p id="plan-summary" class="section-summary">The underlying agent has not committed a plan yet.</p>
                 <ol id="plan-list" class="plan-list"><li class="empty-row">No plan steps yet.</li></ol>
-                <div id="plan-review-actions" class="plan-review-actions" hidden>
-                  <p>The research team keeps this working plan current as evidence arrives. You can redirect it at any time.</p>
-                  <form id="plan-change-form" class="plan-change-form">
-                    <label for="plan-change-message">What should change?</label>
-                    <textarea id="plan-change-message" rows="2" maxlength="20000" required placeholder="Example: focus first on the reported finding and add functional evidence only if needed."></textarea>
-                    <button id="plan-change-button" class="secondary-button" type="submit">Send requested changes</button>
-                  </form>
-                </div>
+                <p class="section-summary">Ask for plan changes or follow-up work in the Claude or Codex conversation that opened GenomiLab.</p>
               </section>
 
               <section class="work-card context-card" aria-labelledby="context-heading">
                 <header class="work-card-heading">
-                  <div><p class="eyebrow">Research access</p><h3 id="context-heading">Start with only what this investigation needs</h3></div>
-                  <span id="context-state" class="mini-status">Not started</span>
+                  <div><p class="eyebrow">Research access</p><h3 id="context-heading">Share only what this investigation needs</h3></div>
+                  <span id="context-state" class="mini-status">Not authorized</span>
                 </header>
                 <p class="section-summary">
-                  Choose the profile observations this disease question needs. One authorization starts
-                  the research team and covers routine planning, local evidence work, replanning, and
-                  follow-up messages within this exact scope. GenomiLab pauses before using an external
-                  provider, wider private context, or additional cost.
+                  Choose the profile observations this disease question needs. One authorization makes
+                  the exact profile and Active Genome Index revisions available to the current agent session.
+                  GenomiLab asks again before using an external provider, wider private context, or additional cost.
                 </p>
                 <fieldset id="context-observation-selector" class="context-observation-selector">
                   <legend>Profile observations for this investigation</legend>
@@ -444,39 +434,48 @@
                   <h4>Research authorization</h4>
                   <p id="context-preview-purpose"></p>
                   <dl id="context-preview-list" class="preview-list"></dl>
-                  <p class="approval-warning">This authorization is limited to this investigation and the exact profile and genome revisions shown above. You can revoke it at any time.</p>
-                  <button id="context-approve-button" class="primary-button" type="button">Authorize and start investigation</button>
+                  <p class="approval-warning">This authorization is limited to this investigation and the exact profile and genome revisions shown above. Revoking it stops future GenomiLab private-context access; it does not cancel the Claude or Codex task.</p>
+                  <button id="context-approve-button" class="primary-button" type="button">Authorize research context</button>
                 </div>
               </section>
 
-              <section class="work-card harness-card" aria-labelledby="harness-heading">
+              <section id="specialist-board" class="work-card specialist-board-card full-width" aria-labelledby="specialist-board-heading" hidden>
                 <header class="work-card-heading">
-                  <div><p class="eyebrow">Agent execution</p><h3 id="harness-heading">Installed harness</h3></div>
-                  <span id="harness-binding-state" class="mini-status">Not started</span>
+                  <div><p class="eyebrow">Specialist board</p><h3 id="specialist-board-heading">Domain specialists at work</h3></div>
+                  <span id="specialist-board-status" class="mini-status">Not formed</span>
+                </header>
+                <p id="specialist-board-chair" class="section-summary specialist-board-boundary">
+                  The main agent remains board chair and the Active Genome Index context owner.
+                  Specialists receive scoped roles and assignments; this view only monitors their work.
+                </p>
+                <ul id="specialist-board-list" class="specialist-board-list" aria-live="polite">
+                  <li class="empty-row">The specialist board has not been formed.</li>
+                </ul>
+              </section>
+
+              <section class="work-card agent-card" aria-labelledby="agent-execution-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Agent execution</p><h3 id="agent-execution-heading">Continue in Claude or Codex</h3></div>
+                  <span id="agent-execution-state" class="mini-status">Waiting for authorization</span>
                 </header>
                 <p class="section-summary">
-                  The installed harness runs the authorized investigation. Routine plans, specialist
-                  handoffs, and follow-ups continue automatically within the research scope above.
+                  The underlying agent owns the task and conversation. Ask follow-up questions, redirect
+                  the plan, pause work, or cancel the task there. This portal does not start, message, or cancel it.
                 </p>
                 <div class="button-row">
-                  <button id="cancel-harness-button" class="danger-button" type="button" hidden>Stop research</button>
+                  <button id="return-to-agent-button" class="primary-button" type="button">Return to underlying agent</button>
                 </div>
-                <form id="harness-message-form" class="harness-message-form" hidden>
-                  <label for="harness-message">Instruction to the installed harness</label>
-                  <textarea id="harness-message" name="message" rows="2" maxlength="20000" required placeholder="Ask a follow-up or tell the harness what to investigate next."></textarea>
-                  <button id="message-preview-button" class="secondary-button" type="submit">Send instruction</button>
-                </form>
               </section>
 
               <section class="work-card events-card" aria-labelledby="events-heading">
                 <header class="work-card-heading">
-                  <div><p class="eyebrow">Activity</p><h3 id="events-heading">Agent progress</h3></div>
+                  <div><p class="eyebrow">Monitoring</p><h3 id="events-heading">Committed investigation activity</h3></div>
                   <span id="event-status" class="mini-status">Not connected</span>
                 </header>
                 <div class="button-row">
-                  <button id="reconnect-events-button" class="secondary-button" type="button">Reconnect events</button>
+                  <button id="reconnect-events-button" class="secondary-button" type="button">Refresh activity</button>
                 </div>
-                <ol id="event-list" class="event-list"><li class="empty-row">No harness events yet.</li></ol>
+                <ol id="event-list" class="event-list"><li class="empty-row">No committed activity yet.</li></ol>
               </section>
 
               <section class="work-card evidence-card full-width" aria-labelledby="evidence-heading">
@@ -487,6 +486,15 @@
                 <p class="section-summary">Source families remain separate so a weak signal from one source cannot masquerade as a stronger kind of evidence.</p>
                 <div id="capability-approval-list" class="capability-approval-list" aria-live="polite"></div>
                 <div id="evidence-ledger" class="evidence-ledger"><p class="empty-row">No evidence has been committed yet.</p></div>
+              </section>
+
+              <section class="work-card full-width" aria-labelledby="research-artifacts-heading">
+                <header class="work-card-heading">
+                  <div><p class="eyebrow">Research side panel</p><h3 id="research-artifacts-heading">Nonclinical model and design artifacts</h3></div>
+                  <span id="research-artifact-count" class="mini-status">0 artifacts</span>
+                </header>
+                <p class="section-summary">Round-bound Genomi verification, ESM comparisons, and Proto design drafts appear here with exact method, model, version, input/output digests, and provenance. They stay outside evidence, hypotheses, answer-readiness, briefs, and clinician export; connection checks never count as scientific execution.</p>
+                <div id="research-artifact-ledger" class="evidence-ledger"><p class="empty-row">No nonclinical research artifacts have been submitted.</p></div>
               </section>
 
               <section class="work-card" aria-labelledby="hypotheses-heading">
@@ -505,7 +513,7 @@
                   <span id="brief-version-count" class="mini-status">No versions</span>
                 </header>
                 <p class="section-summary">Every saved version remains available with its evidence and profile anchors.</p>
-                <div id="brief-list" class="brief-list"><p class="empty-row">The harness has not proposed a brief yet.</p></div>
+                <div id="brief-list" class="brief-list"><p class="empty-row">The underlying agent has not published a brief yet.</p></div>
               </section>
             </div>
           </section>

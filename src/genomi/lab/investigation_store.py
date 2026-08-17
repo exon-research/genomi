@@ -15,6 +15,9 @@ from .models import (
     row_dict,
     utc_now,
 )
+from .investigation_rounds import project_investigation_rounds
+from .research_artifact_contract import research_artifact_view
+from .specialist_board import project_specialist_board
 
 
 class _StoreContract(Protocol):
@@ -25,6 +28,10 @@ class _StoreContract(Protocol):
     def get_investigation(self, investigation_id: str) -> JsonObject: ...
 
     def get_profile_snapshot(self, snapshot_id: str) -> JsonObject: ...
+
+    def list_investigation_rounds(
+        self, investigation_id: str
+    ) -> list[JsonObject]: ...
 
 
 class InvestigationStoreMixin:
@@ -72,6 +79,15 @@ class InvestigationStoreMixin:
                 "SELECT * FROM evidence_records WHERE investigation_id = ? ORDER BY created_at",
                 (investigation_id,),
             ).fetchall()
+            research_artifacts = connection.execute(
+                "SELECT artifacts.*, rounds.round_number "
+                "FROM research_artifacts AS artifacts "
+                "JOIN investigation_rounds AS rounds "
+                "ON rounds.round_id = artifacts.round_id "
+                "WHERE artifacts.investigation_id = ? "
+                "ORDER BY rounds.round_number, artifacts.created_at",
+                (investigation_id,),
+            ).fetchall()
             hypotheses = connection.execute(
                 "SELECT * FROM hypotheses WHERE investigation_id = ? "
                 "ORDER BY logical_hypothesis_id, version",
@@ -112,20 +128,23 @@ class InvestigationStoreMixin:
                 "SELECT * FROM plan_acceptances WHERE investigation_id = ?",
                 (investigation_id,),
             ).fetchall()
-            bindings = connection.execute(
-                "SELECT * FROM harness_bindings WHERE investigation_id = ? "
-                "ORDER BY created_at",
-                (investigation_id,),
-            ).fetchall()
-            events = connection.execute(
-                "SELECT * FROM harness_events WHERE investigation_id = ? "
+            investigation_events = connection.execute(
+                "SELECT * FROM investigation_events WHERE investigation_id = ? "
                 "ORDER BY sequence",
                 (investigation_id,),
             ).fetchall()
         result = row_dict(row)
         result["evidence_records"] = [row_dict(item) for item in evidence]
+        result["research_artifacts"] = [
+            research_artifact_view(row_dict(item)) for item in research_artifacts
+        ]
         result["hypotheses"] = [row_dict(item) for item in hypotheses]
         active_profile_snapshot_id = result.get("patient_molecular_snapshot_id")
+        result["current_research_artifacts"] = [
+            item
+            for item in result["research_artifacts"]
+            if item["patient_molecular_snapshot_id"] == active_profile_snapshot_id
+        ]
         current_evidence = [
             row_dict(item)
             for item in evidence
@@ -220,6 +239,9 @@ class InvestigationStoreMixin:
             (str(item["created_at"]) for item in current_hypothesis_rows),
             default="",
         )
+        current_plan_created = (
+            str(current_plan.get("created_at") or "") if current_plan else ""
+        )
         current_brief = None
         for item in reversed(briefs):
             if item["patient_molecular_snapshot_id"] != active_profile_snapshot_id:
@@ -232,6 +254,10 @@ class InvestigationStoreMixin:
             if set(pinned.get("evidence_record_ids") or []) != current_evidence_ids:
                 continue
             if current_hypothesis_created and current_hypothesis_created > str(
+                item["created_at"]
+            ):
+                continue
+            if current_plan_created and current_plan_created > str(
                 item["created_at"]
             ):
                 continue
@@ -249,8 +275,41 @@ class InvestigationStoreMixin:
             current_brief=current_brief,
             current_plan=current_plan,
         )
-        result["harness_bindings"] = [row_dict(item) for item in bindings]
-        result["harness_events"] = [row_dict(item) for item in events]
+        result["investigation_events"] = [
+            row_dict(item) for item in investigation_events
+        ]
+        base_board = project_specialist_board(
+            result["investigation_events"]
+        )
+        rounds = project_investigation_rounds(
+            self.list_investigation_rounds(investigation_id),
+            board=base_board,
+            events=result["investigation_events"],
+        )
+        result["rounds"] = rounds
+        current_round = next(
+            (
+                item
+                for item in reversed(rounds)
+                if item.get("plan_version_id") == current_plan_version_id
+            ),
+            None,
+        )
+        result["current_round"] = current_round
+        if isinstance(base_board, dict) and isinstance(current_round, dict):
+            result["specialist_board"] = {
+                **base_board,
+                "status": (
+                    "formed"
+                    if current_round.get("status") == "planned"
+                    else current_round.get("status")
+                ),
+                "current_round_id": current_round.get("round_id"),
+                "current_round_number": current_round.get("round_number"),
+                "members": current_round.get("members") or [],
+            }
+        else:
+            result["specialist_board"] = base_board
         return result
 
     @staticmethod
@@ -347,7 +406,6 @@ class InvestigationStoreMixin:
             "awaiting_plan",
             "awaiting_plan_review",
             "awaiting_context_approval",
-            "awaiting_harness_execution",
             "approved",
             "running",
             "needs_user_input",

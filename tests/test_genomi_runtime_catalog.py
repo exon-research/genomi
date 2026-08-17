@@ -43,6 +43,9 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
                 self.assertTrue(operation["description"].strip(), operation_name)
 
         self.assertEqual(grouped_names, registered_names)
+        self.assertTrue(
+            TOOL_CATALOG["capabilities"]["genomilab"]["default_complete"]
+        )
         # The default tools/list contract exposes base capabilities plus the
         # dispatcher; focused capability tools are loaded at the point of need.
         listed = {tool["name"] for tool in list_operations()}
@@ -337,10 +340,12 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
             "classify",
             "clear",
             "compare",
+            "create",
             "describe",
             "discover",
             "fetch",
             "find",
+            "form",
             "gather",
             "import",
             "invoke",
@@ -356,6 +361,7 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
             "rank",
             "record",
             "refresh",
+            "report",
             "render",
             "rename",
             "remove",
@@ -377,8 +383,12 @@ class GenomiRuntimeCatalogTests(GenomiRuntimeTestCase):
             "assign",
             "export",
             "estimate",
+            "execute",
+            "inspect",
             "link",
+            "open",
             "project",
+            "submit",
             "calculate",
         }
         for tool in tools:

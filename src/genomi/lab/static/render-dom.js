@@ -3,7 +3,7 @@
 export const elements = {};
 
 const REQUIRED_ELEMENT_IDS = [
-  "global-alert", "global-alert-message", "alert-dismiss", "setup-state", "research-desk",
+  "global-alert", "global-alert-message", "alert-dismiss", "setup-state", "genomi-setup-prompt", "research-desk",
   "current-user-name", "current-user-id", "genome-status", "genome-detail", "profile-summary",
   "manage-genome-button", "attention-plan-reviews", "attention-provider-approvals",
   "attention-running-jobs", "attention-new-evidence", "attention-completed-briefs",
@@ -16,21 +16,21 @@ const REQUIRED_ELEMENT_IDS = [
   "source-artifact-form", "source-artifact-file", "specimen-form", "specimen-artifact",
   "assay-form", "assay-specimen", "assay-artifact", "assay-link-help",
   "source-artifact-list", "specimen-list", "assay-list", "coverage-list", "profile-version-count",
-  "observation-history-list", "question-form", "question",
+  "observation-history-list",
   "evidence-library-count", "evidence-library-list", "context-activity-list",
   "research-tools", "integrations-summary", "integration-list",
   "disclosure-activity-list", "plan-activity-list",
-  "disease-scope", "investigation-list", "investigation-count", "activity-status", "version-label",
+  "investigation-list", "investigation-count", "activity-status", "version-label",
   "investigation-detail", "detail-close", "detail-title", "detail-scope", "detail-status",
-  "harness-name", "harness-location", "harness-capability", "harness-disclosure",
+  "agent-name", "agent-location", "agent-capability", "agent-disclosure",
   "plan-summary", "plan-list", "progress-summary", "context-state", "context-preview",
-  "plan-review-status", "plan-review-actions", "plan-change-form",
-  "plan-change-message", "plan-change-button",
+  "plan-review-status",
+  "specialist-board", "specialist-board-status", "specialist-board-chair", "specialist-board-list",
   "context-observation-selector", "context-selection-help", "context-observation-list",
   "context-preview-purpose", "context-preview-list", "context-preview-button",
-  "context-refresh-preview-button", "context-approve-button", "context-revoke-button", "harness-binding-state",
-  "cancel-harness-button", "harness-message-form", "harness-message", "message-preview-button",
+  "context-refresh-preview-button", "context-approve-button", "context-revoke-button", "agent-execution-state", "return-to-agent-button",
   "reconnect-events-button", "event-status", "event-list", "evidence-count", "evidence-ledger",
+  "research-artifact-count", "research-artifact-ledger",
   "capability-approval-list", "hypothesis-list", "gap-list", "brief-version-count", "brief-list",
 ];
 
@@ -49,7 +49,6 @@ export function collectElements() {
   elements.sourceArtifactSubmit = elements.sourceArtifactForm.querySelector("button[type='submit']");
   elements.specimenSubmit = elements.specimenForm.querySelector("button[type='submit']");
   elements.assaySubmit = elements.assayForm.querySelector("button[type='submit']");
-  elements.questionSubmit = elements.questionForm.querySelector("button[type='submit']");
 }
 
 export function showAlert(message, kind = "error") {

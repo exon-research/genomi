@@ -44,6 +44,7 @@ class _StoreContract(Protocol):
         expected_plan_version_id: object = None,
         expected_consent_receipt_id: object = None,
         _reserved_operation_token: object = None,
+        emit_investigation_event: bool = False,
     ) -> JsonObject: ...
 
 
@@ -168,6 +169,7 @@ class DiseaseRelationStoreMixin:
             expected_plan_version_id=expected_plan_version_id,
             expected_consent_receipt_id=expected_consent_receipt_id,
             _reserved_operation_token=_DISEASE_RELATION_COMMIT_TOKEN,
+            emit_investigation_event=True,
         )
 
     def _disease_relation_source_records(

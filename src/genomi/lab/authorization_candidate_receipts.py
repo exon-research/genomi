@@ -85,7 +85,7 @@ class AuthorizationCandidateReceiptIssuer:
         if not isinstance(token, str) or not token:
             raise LabError(
                 "invalid_investigation_authorization",
-                "Review the investigation access summary again before starting.",
+                "Review the investigation access summary again before continuing.",
                 http_status=409,
             )
         receipt = self._receipts.get(token)

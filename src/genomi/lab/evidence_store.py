@@ -14,7 +14,7 @@ from .evidence_record_store import (
     EvidenceRecordStoreMixin,
 )
 from .evidence_snapshot_store import EvidenceSnapshotStoreMixin
-from .hypothesis_contract import GAP_KINDS
+from .hypothesis_contract import GAP_KINDS, build_case_narrative_contract
 from .hypothesis_store import HypothesisStoreMixin
 from .models import JsonObject, row_dict
 
@@ -62,15 +62,22 @@ class EvidenceStoreMixin(
     def validate_brief(
         self: _StoreContract, investigation_id: str, brief: JsonObject
     ) -> None:
-        validate_brief_artifact(brief)
+        validate_brief_artifact(brief, validate_narratives=False)
         cited_evidence_ids: set[str] = set()
         cited_revision_ids: set[str] = set()
-        for claim in brief["claims"]:
+        anchored_sections = (
+            list(brief["claims"]),
+            list(brief["timeline"]),
+            list(brief["clinician_questions"]),
+        )
+        for entry in (
+            item for section in anchored_sections for item in section
+        ):
             evidence_ids = [
-                str(value) for value in claim.get("evidence_record_ids") or []
+                str(value) for value in entry.get("evidence_record_ids") or []
             ]
             revision_ids = [
-                str(value) for value in claim.get("profile_revision_ids") or []
+                str(value) for value in entry.get("profile_revision_ids") or []
             ]
             self._validate_claim_anchors(
                 investigation_id,
@@ -89,6 +96,17 @@ class EvidenceStoreMixin(
         disease_scope = str(
             investigation.get("disease_scope") or investigation.get("question") or ""
         ).strip()
+        case_narrative_contract = build_case_narrative_contract(
+            disease_scope=investigation.get("disease_scope"),
+            molecular_profile={"observations": list(profile_records.values())},
+            evidence_records=list(evidence_records.values()),
+        )
+        # Reject unsafe prose before evidence-readiness checks so a malformed
+        # scientific claim cannot be obscured by a second, structural failure.
+        validate_brief_artifact(
+            brief,
+            case_narrative_contract=case_narrative_contract,
+        )
         self._validate_claim_evidence_readiness(
             brief,
             evidence_records,
@@ -103,7 +121,12 @@ class EvidenceStoreMixin(
                 profile_records=profile_records.values(),
             )
         )
-        validate_brief_artifact(brief, allowed_modality_badges=supported_badges)
+        validate_brief_artifact(
+            brief,
+            allowed_modality_badges=supported_badges,
+            case_narrative_contract=case_narrative_contract,
+            require_case_narrative=True,
+        )
         if set(brief["modality_badges"]) != supported_badges:
             raise ValueError(
                 "brief modality_badges must identify every modality cited by its claims"
@@ -341,6 +364,17 @@ class EvidenceStoreMixin(
             raise ValueError(
                 "a brief that references an evidence gap must include a limitation claim"
             )
+        for question in brief["clinician_questions"]:
+            question_hypotheses = set(question.get("hypothesis_ids") or [])
+            question_gaps = set(question.get("gap_ids") or [])
+            if not question_hypotheses.issubset(set(hypothesis_ids)):
+                raise ValueError(
+                    "clinician question hypothesis_ids must be included in the brief hypothesis_ids"
+                )
+            if not question_gaps.issubset(set(gap_ids)):
+                raise ValueError(
+                    "clinician question gap_ids must be included in the brief gap_ids"
+                )
         records_by_claim_role = {
             "candidate_hypothesis": candidate_records,
             "counterevidence": counterevidence_records,

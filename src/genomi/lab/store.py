@@ -17,8 +17,9 @@ from .authorization_store import InvestigationAuthorizationStoreMixin
 from .capability_store import CapabilityExecutionStoreMixin
 from .disease_relations import DiseaseRelationStoreMixin
 from .evidence_store import EvidenceStoreMixin
-from .harness_store import HarnessStoreMixin
 from .health_store import HealthRecordStoreMixin
+from .investigation_event_store import InvestigationEventStoreMixin
+from .investigation_round_store import InvestigationRoundStoreMixin
 from .investigation_store import InvestigationStoreMixin
 from .models import (
     DISPLAY_NAME_MAX,
@@ -30,6 +31,7 @@ from .models import (
 )
 from .profile_entities import ProfileEntityStoreMixin
 from .provider_connection_store import ProviderConnectionStoreMixin
+from .research_artifact_store import ResearchArtifactStoreMixin
 from .schema_migrations import upgrade_lab_schema
 from .snapshot_store import SnapshotStoreMixin
 
@@ -50,7 +52,9 @@ class GenomiLabStore(
     ProfileEntityStoreMixin,
     SnapshotStoreMixin,
     InvestigationStoreMixin,
-    HarnessStoreMixin,
+    InvestigationRoundStoreMixin,
+    ResearchArtifactStoreMixin,
+    InvestigationEventStoreMixin,
     CapabilityExecutionStoreMixin,
     DiseaseRelationStoreMixin,
     EvidenceStoreMixin,
@@ -228,6 +232,11 @@ class GenomiLabStore(
             "profile_snapshots",
             "consent_receipts",
             "investigations",
+            "investigation_events",
+            "investigation_rounds",
+            "specialist_round_assignments",
+            "specialist_round_reports",
+            "research_artifacts",
             "investigation_authorization_receipts",
             "investigation_authorization_derivations",
             "evidence_records",

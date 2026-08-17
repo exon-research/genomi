@@ -139,7 +139,10 @@ class GenomiLabDiseaseRelationContractTests(
         counterevidence = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="counterevidence",
-            statement="Counterevidence: The source evidence weighs against the candidate.",
+            statement=(
+                "Counterevidence: The source evidence weighs against the "
+                "rs900000001 candidate."
+            ),
             evidence_record_ids=[refuting["evidence_record_id"]],
             profile_revision_ids=[self.finding["observation_revision_id"]],
         )
@@ -192,6 +195,7 @@ class GenomiLabDiseaseRelationContractTests(
                     "summary": "Personal overlap alone must not become a candidate.",
                     "clinical_stage": "candidate_hypothesis",
                     "modality_badges": ["personal_genome", "reported_record"],
+                    "timeline": [],
                     "claims": [
                         {
                             "statement": "The overlap is a candidate mechanism.",
@@ -205,7 +209,7 @@ class GenomiLabDiseaseRelationContractTests(
                     "hypothesis_ids": ["hypothesis-legacy-bypass"],
                     "gap_ids": [],
                     "confirmation_needs": ["Clinical confirmation"],
-                    "professional_questions": [],
+                    "clinician_questions": [],
                     "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
                     "change_summary": "Initial research draft.",
                 },
@@ -276,6 +280,7 @@ class GenomiLabDiseaseRelationContractTests(
             "summary": "This draft must not be committed.",
             "clinical_stage": "research_observation",
             "modality_badges": ["public_source"],
+            "timeline": [],
             "claims": [
                 {
                     "statement": "The source supports a possible research observation.",
@@ -287,7 +292,7 @@ class GenomiLabDiseaseRelationContractTests(
             "hypothesis_ids": [],
             "gap_ids": [],
             "confirmation_needs": ["Obtain usable evidence"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
             "change_summary": "Initial research draft.",
         }
@@ -315,12 +320,19 @@ class GenomiLabDiseaseRelationContractTests(
     ) -> None:
         profile_only = {
             "title": "Unsafe counterevidence draft",
-            "summary": "This draft must not be committed.",
+            "summary": (
+                "Counterevidence: The public source weighs against the "
+                "rs900000001 candidate."
+            ),
             "clinical_stage": "research_observation",
             "modality_badges": ["reported_record"],
+            "timeline": [],
             "claims": [
                 {
-                    "statement": "The issued record weighs against the disease explanation.",
+                    "statement": (
+                        "Counterevidence: The public source weighs against the "
+                        "rs900000001 candidate."
+                    ),
                     "claim_role": "counterevidence",
                     "evidence_record_ids": [],
                     "profile_revision_ids": [self.finding["observation_revision_id"]],
@@ -329,9 +341,9 @@ class GenomiLabDiseaseRelationContractTests(
             "hypothesis_ids": [],
             "gap_ids": [],
             "confirmation_needs": ["Review independent counterevidence"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
-            "change_summary": "Initial research draft.",
+            "change_summary": "Prepared a traceable rs900000001 research brief.",
         }
         with self.assertRaisesRegex(ValueError, "counterevidence claim requires both"):
             self.store.commit_brief(
@@ -342,7 +354,10 @@ class GenomiLabDiseaseRelationContractTests(
         counterevidence = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="counterevidence",
-            statement="The public source weighs against this interpretation.",
+            statement=(
+                "Counterevidence: The public source weighs against the "
+                "rs900000001 candidate."
+            ),
             evidence_record_ids=[public_source["evidence_record_id"]],
             profile_revision_ids=[self.finding["observation_revision_id"]],
             status="candidate",
@@ -434,7 +449,10 @@ class GenomiLabDiseaseRelationContractTests(
         hypothesis = self.store.commit_hypothesis(
             other_investigation["investigation_id"],
             kind="uncertainty",
-            statement="The uncertain report is a question for further evidence review.",
+            statement=(
+                "Evidence limitation: The evidence for rs900000002 remains "
+                "uncertain."
+            ),
             evidence_record_ids=[],
             profile_revision_ids=[vus["observation_revision_id"]],
             status="open",
@@ -444,6 +462,7 @@ class GenomiLabDiseaseRelationContractTests(
             "summary": "The record contains an uncertain result.",
             "clinical_stage": "candidate_hypothesis",
             "modality_badges": ["reported_record"],
+            "timeline": [],
             "claims": [
                 {
                     "statement": "The uncertain variant establishes the cause and calls for care changes now.",
@@ -455,7 +474,7 @@ class GenomiLabDiseaseRelationContractTests(
             "hypothesis_ids": [hypothesis["hypothesis_id"]],
             "gap_ids": [],
             "confirmation_needs": ["Independent evidence and clinical confirmation"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
             "change_summary": "Initial research draft.",
         }
@@ -480,55 +499,3 @@ class GenomiLabDiseaseRelationContractTests(
             self.store.commit_brief(
                 other_investigation["investigation_id"], non_actionable
             )
-
-    def test_binding_and_events_are_idempotent_ordered_and_replayable(self) -> None:
-        binding = self.store.bind_harness_task(
-            self.investigation["investigation_id"],
-            command_id="command-create-a",
-            host_id="simulated-harness",
-            task_id="task-a",
-            run_id="run-a",
-        )
-        same = self.store.bind_harness_task(
-            self.investigation["investigation_id"],
-            command_id="command-create-a",
-            host_id="simulated-harness",
-            task_id="task-a",
-            run_id="run-a",
-        )
-        self.assertEqual(binding["binding_id"], same["binding_id"])
-        first = self.store.commit_harness_event(
-            self.investigation["investigation_id"],
-            binding["binding_id"],
-            event_id="event-a",
-            sequence=1,
-            event_type="plan_proposed",
-            payload={"summary": "Check profile and public evidence"},
-        )
-        replay = self.store.commit_harness_event(
-            self.investigation["investigation_id"],
-            binding["binding_id"],
-            event_id="event-a",
-            sequence=1,
-            event_type="plan_proposed",
-            payload={"summary": "Check profile and public evidence"},
-        )
-        self.assertEqual(first["event_id"], replay["event_id"])
-        with self.assertRaisesRegex(ValueError, "out of order"):
-            self.store.commit_harness_event(
-                self.investigation["investigation_id"],
-                binding["binding_id"],
-                event_id="event-c",
-                sequence=3,
-                event_type="failed",
-                payload={"code": "out_of_order"},
-            )
-        self.assertEqual(
-            [
-                row["event_id"]
-                for row in self.store.replay_harness_events(
-                    self.investigation["investigation_id"]
-                )
-            ],
-            ["event-a"],
-        )

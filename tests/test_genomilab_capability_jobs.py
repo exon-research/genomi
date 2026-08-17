@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import tempfile
 import threading
 import unittest
@@ -9,7 +8,6 @@ from typing import Any
 
 from genomi.lab.capability_store import CAPABILITY_RETRY_OPERATION
 from genomi.lab.evidence_service import DirectEvidenceSource
-from genomi.lab.harness import HarnessArtifactKind, HarnessOperation, SimulatedHarnessAdapter
 from genomi.lab.investigation_capabilities import (
     PROFILE_PROJECT,
     PUBLIC_EVIDENCE_RETRIEVE,
@@ -19,7 +17,10 @@ from genomi.lab.paperclip_adapter import PaperclipOperation
 from genomi.lab.provider_policy import EvidenceRequest, SourceFamily
 from genomi.lab.service import GenomiLabService, LabError
 from genomi.lab.store import GenomiLabStore
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
+from tests.genomilab_support import (
+    TEST_LAB_KEY_PROVIDER,
+    synthetic_ready_agi_context,
+)
 
 
 class _DurableCapabilityApplication(InvestigationCapabilityMixin):
@@ -193,18 +194,9 @@ class _MutableUserContext:
         **_kwargs: object,
     ) -> dict[str, object]:
         if operation == "genomi.describe_context":
-            return {
-                "status": "completed",
-                "active_user_id": self.user_id,
-                "active_user": {
-                    "user_id": self.user_id,
-                    "nickname": "Synthetic capability user",
-                    "active_agi_id": None,
-                    "agi_ids": [],
-                },
-                "active_agi_id": None,
-                "active_genome_index": None,
-            }
+            return synthetic_ready_agi_context(
+                self.user_id, "Synthetic capability user"
+            )
         if operation == "active_genome_index.revoke_access":
             return {"status": "completed"}
         raise AssertionError(f"unexpected Genomi operation: {operation}")
@@ -235,7 +227,7 @@ class _CapabilityJobTestSupport:
         candidate = self.store.profile_snapshot_candidate(
             "user-capability",
             investigation_id=self.investigation_id,
-            purpose="Exercise harness-selected capability durability",
+            purpose="Exercise agent-selected capability durability",
             observation_revision_ids=[observation["observation_revision_id"]],
         )
         self.store.create_profile_snapshot(
@@ -625,7 +617,8 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
             store=self._open_store(),
             session_id=session_id,
             operation_call=context,
-            harness_adapter=SimulatedHarnessAdapter(),
+            agent_host_id=f"capability-job-host-{session_id}",
+            agent_processing_destination="current capability-job test host",
         )
         self.addCleanup(service.close)
         state: dict[str, Any] = {
@@ -679,6 +672,21 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
             }
         )
         investigation_id = str(investigation["investigation_id"])
+        service.form_agent_specialist_board(
+            investigation_id,
+            specialists=[
+                {
+                    "specialist_id": "specialist-public-evidence",
+                    "role": "Public evidence specialist",
+                    "task": "Review public evidence sources",
+                },
+                {
+                    "specialist_id": "specialist-counterevidence",
+                    "role": "Counterevidence specialist",
+                    "task": "Review limitations and conflicting evidence",
+                },
+            ],
+        )
         observation = service.add_profile_observation(
             {
                 "modality": "condition",
@@ -687,102 +695,54 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
                 "verification_state": "user_confirmed",
             }
         )
-        context_candidate = service.investigation_context_candidate(
+        prepared = service.prepare_agent_authorization(
             investigation_id,
-            {
-                "purpose": "Retrieve public evidence for the approved disease question",
-                "observation_revision_ids": [observation["observation_revision_id"]],
-            },
+            purpose="Retrieve public evidence for the approved disease question",
+            observation_revision_ids=[observation["observation_revision_id"]],
         )
-        service._approve_context_for_conformance(
+        authorization_candidate = prepared["candidate"]
+        service.authorize_investigation_context(
             investigation_id,
             {
-                key: context_candidate[key]
-                for key in (
-                    "purpose",
-                    "observation_revision_ids",
-                    "artifact_ids",
-                    "specimen_ids",
-                    "assay_ids",
-                    "agi_id",
-                    "agi_snapshot_id",
-                    "genomic_scope",
-                    "candidate_sha256",
-                    "candidate_receipt",
-                )
+                key: value
+                for key, value in authorization_candidate.items()
+                if key
+                not in {
+                    "status",
+                    "requires_explicit_approval",
+                    "user_id",
+                    "investigation_id",
+                }
             }
             | {"approved": True},
         )
-        authorized_context = service.investigation(investigation_id)
-        authorization = service.store.create_investigation_authorization(
-            "user-capability",
-            workspace_session_id=session_id,
-            investigation_id=investigation_id,
-            patient_molecular_snapshot_id=authorized_context[
-                "patient_molecular_snapshot_id"
+        service.submit_agent_plan(
+            investigation_id,
+            focus_question="What public evidence bears on the approved disease question?",
+            specialist_assignments=[
+                {
+                    "specialist_id": "specialist-public-evidence",
+                    "task": "Review public evidence sources for this round",
+                },
+                {
+                    "specialist_id": "specialist-counterevidence",
+                    "task": "Review limitations and conflicting evidence for this round",
+                },
             ],
-            consent_receipt_id=authorized_context["active_consent_receipt_id"],
-            authorization_scope=(
-                service._investigation_authorizations._authorization_scope()
-            ),
-            candidate_receipt_sha256=hashlib.sha256(
-                f"{session_id}:{investigation_id}".encode("utf-8")
-            ).hexdigest(),
-            approved=True,
+            requests=[
+                {
+                    "id": "request-public",
+                    "capability": PUBLIC_EVIDENCE_RETRIEVE,
+                    "parameters": self._public_evidence_parameters(),
+                }
+            ],
         )
-        service.store.commit_plan(
-            investigation_id,
-            self._public_evidence_plan(summary="Review the synthetic evidence scope."),
+        execution = service.execute_agent_request(
+            investigation_id, "request-public"
         )
-        current_plan = service.investigation(investigation_id)["current_plan_version"]
-        service._accept_plan_for_conformance(
-            investigation_id,
-            {
-                "plan_version_id": current_plan["plan_version_id"],
-                "plan_sha256": current_plan["plan_sha256"],
-                "approved": True,
-            },
-        )
-        service.store.bind_harness_task(
-            investigation_id,
-            command_id=f"planning-binding-{session_id}",
-            host_id=service.harness_adapter.manifest.adapter_id,
-            task_id=f"planning-task-{session_id}",
-            run_id=f"planning-run-{session_id}",
-            harness_status="waiting",
-            harness_revision=1,
-        )
-        command_id = f"execution-command-{session_id}"
-        execution_preview = service.harness_disclosure_candidate(
-            investigation_id,
-            operation="replace_task_binding",
-            instruction="Execute the exact accepted public-evidence request.",
-            artifact_kind="execution_report",
-            reason="Run the separately approved evidence execution task.",
-            command_id=command_id,
-            expected_revision=1,
-        )
-        execution = service._execute_harness_command(
-            investigation_id,
-            {
-                "approved": True,
-                "payload_sha256": execution_preview["payload_sha256"],
-                "command_id": command_id,
-                "expected_revision": 1,
-                "instruction": "Execute the exact accepted public-evidence request.",
-                "artifact_kind": "execution_report",
-                "reason": "Run the separately approved evidence execution task.",
-            },
-            operation=HarnessOperation.REPLACE_TASK_BINDING,
-            artifact_kind=HarnessArtifactKind.EXECUTION_REPORT,
-            authorization_receipt_id=str(
-                authorization["authorization_receipt_id"]
-            ),
-        )
-        self.assertEqual(execution["status"], "accepted")
-        self.assertEqual(len(execution["capability_results"]), 1)
-        preview = execution["capability_results"][0]["result"]["candidate"]
-        launched = service._continue_harness_capability_after_approval(
+        self.assertEqual(execution["status"], "approval_required")
+        preview = execution["result"]["candidate"]
+        launched = service._continue_agent_capability_after_approval(
             investigation_id,
             {
                 "request_id": "request-public",
@@ -805,13 +765,17 @@ class _CapabilityJobResumeSupport(_CapabilityJobTestSupport):
             {
                 "direct_source": direct,
                 "investigation_id": investigation_id,
-                "plan_version_id": current_plan["plan_version_id"],
+                "plan_version_id": service.investigation(investigation_id)[
+                    "current_plan_version"
+                ]["plan_version_id"],
                 "job_id": job_id,
                 "resume_operation": resume_operation,
                 "receipt_id": receipts[0]["disclosure_receipt_id"],
                 "check_payload": {
                     "request_id": "request-public",
-                    "plan_version_id": current_plan["plan_version_id"],
+                    "plan_version_id": service.investigation(investigation_id)[
+                        "current_plan_version"
+                    ]["plan_version_id"],
                     "job_id": job_id,
                     "resume_operation": resume_operation,
                 },

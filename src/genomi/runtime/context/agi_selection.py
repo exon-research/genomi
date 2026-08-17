@@ -98,13 +98,23 @@ def set_active_agi_from_source(
             context["active_user_id"] = user["user_id"]
             if set_default_user:
                 _mark_default_user(registry, str(user["user_id"]))
-        elif set_default_user:
+        else:
             user = _active_user(context, registry)
-            if not isinstance(user, dict):
+            # A source path supplied in the current chat is enough to make a
+            # fresh, unambiguous Genomi home usable immediately. Preserve an
+            # explicit nickname when supplied; otherwise reuse the selected
+            # user, or create the sole placeholder user on a fresh home. An
+            # existing ambiguous multi-user registry still requires the host
+            # to ask which profile owns the genome.
+            if not isinstance(user, dict) and (
+                set_default_user or not registry.get("users")
+            ):
                 user = _ensure_user_record(registry, nickname="Default user")
-            _attach_agi_to_user(user, agi_id, make_active=True)
-            context["active_user_id"] = user["user_id"]
-            _mark_default_user(registry, str(user["user_id"]))
+            if isinstance(user, dict):
+                _attach_agi_to_user(user, agi_id, make_active=True)
+                context["active_user_id"] = user["user_id"]
+                if set_default_user:
+                    _mark_default_user(registry, str(user["user_id"]))
         if grant_access:
             _grant_agi_access(
                 context,

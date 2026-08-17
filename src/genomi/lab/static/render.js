@@ -3,6 +3,7 @@
 import {
   array,
   collectElements,
+  countDescription,
   elements,
   empty,
   exactValue,
@@ -19,6 +20,8 @@ import {
   text,
 } from "./render-dom.js";
 import { renderBriefs } from "./render-brief.js";
+import { renderResearchArtifacts } from "./render-research-artifacts.js";
+import { renderSpecialistBoard } from "./render-specialist-board.js";
 import {
   coverageDescription,
   evidenceHeadline,
@@ -52,7 +55,12 @@ export function renderBootstrap(payload, selectedInvestigationId = "") {
   elements.setupState.hidden = ready;
   elements.researchDesk.hidden = !ready;
   elements.versionLabel.textContent = payload.version ? `GenomiLab ${payload.version}` : "GenomiLab";
-  if (!ready) return;
+  if (!ready) {
+    const setup = isObject(payload.setup) ? payload.setup : {};
+    elements.genomiSetupPrompt.textContent = text(setup.action)
+      || "Return to the underlying agent. Point it to the local VCF or another supported genome-source path, or ask it to select and finish an existing Active Genome Index. Reopen GenomiLab when the selected index is query-ready.";
+    return;
+  }
   renderWorkspace(payload.workspace, selectedInvestigationId);
 }
 
@@ -61,7 +69,7 @@ export function renderWorkspace(workspace, selectedInvestigationId = "") {
   const genome = isObject(profile.genome) ? profile.genome : null;
   const observations = array(profile.observations);
   const investigations = array(workspace.investigations);
-  const genomeReady = Boolean(genome && ["query_ready", "ready", "complete", "completed"].includes(text(genome.readiness)));
+  const genomeReady = Boolean(genome && ["query_ready", "ready", "complete", "completed", "variants_ready"].includes(text(genome.readiness)));
   elements.currentUserName.textContent = text(workspace.display_name) || "Current Genomi user";
   elements.currentUserId.textContent = text(workspace.user_id);
   elements.genomeStatus.textContent = genomeReady
@@ -196,30 +204,32 @@ export function renderInvestigations(investigations, selectedInvestigationId = "
   elements.investigationList.replaceChildren(...rows);
 }
 
-export function renderInvestigation(investigation, harnessManifest = {}, observations = []) {
+export function renderInvestigation(investigation, agentManifest = {}, profile = {}) {
+  const observations = array(profile.observations);
   elements.investigationDetail.hidden = false;
   elements.detailTitle.textContent = text(investigation.question) || "Disease investigation";
   elements.detailScope.textContent = text(investigation.disease_scope) || "No narrower disease scope was supplied.";
   elements.detailStatus.textContent = friendly(text(investigation.status)) || "Created";
 
-  const bindings = array(investigation.harness_bindings);
-  const binding = [...bindings].reverse().find((item) => item.binding_state === "active") || null;
-  renderHarnessIdentity(harnessManifest, binding);
-  renderPlan(investigation.current_plan_version, array(investigation.harness_events));
+  const events = array(investigation.investigation_events);
+  renderAgentIdentity(agentManifest);
+  renderPlan(investigation.current_plan_version);
+  renderSpecialistBoard(investigation.specialist_board, investigation.current_round);
   renderContextState(investigation);
   renderContextObservationSelection(investigation, observations);
-  renderHarnessState(binding, harnessManifest);
-  renderEvents({events: array(investigation.harness_events)});
+  renderAgentState(investigation, agentManifest);
+  renderEvents({events});
   renderEvidence(
     array(investigation.evidence_records),
     text(investigation.patient_molecular_snapshot_id)
   );
+  renderResearchArtifacts(investigation.current_research_artifacts);
   renderCapabilityApprovals(array(investigation.current_capability_executions));
   renderHypotheses(
-    array(investigation.hypotheses),
+    array(investigation.current_hypotheses),
     text(investigation.patient_molecular_snapshot_id)
   );
-  renderBriefs(array(investigation.brief_versions), investigation);
+  renderBriefs(array(investigation.brief_versions), investigation, profile);
   hideContextCandidate();
 }
 
@@ -247,7 +257,7 @@ function renderContextObservationSelection(investigation, observations) {
   if (!observations.length) {
     elements.contextObservationList.dataset.investigationId = investigationId;
     elements.contextObservationList.replaceChildren(
-      empty("Add a profile observation before starting this investigation.")
+      empty("Add a profile observation before authorizing research context.")
     );
     return;
   }
@@ -311,14 +321,29 @@ export function renderContextCandidate(candidate, observations = []) {
       ? `Active Genome Index revision ${text(candidate.agi_snapshot_id)} (reference only; no copied genome rows)`
       : "Not included",
   ]);
-  definitions.push(["Allowed genome scope", candidate.genomic_scope ? exactValue(candidate.genomic_scope) : "Not included"]);
+  definitions.push(["Allowed genome scope", genomicScopeDescription(candidate.genomic_scope)]);
   definitions.push(["Profile coverage", coverageDescription(candidate.modality_coverage)]);
   definitions.push(["Routine work covered", authorizationScopeDescription(candidate.authorization_scope)]);
   replaceDefinitions(elements.contextPreviewList, definitions);
   elements.contextApproveButton.textContent = candidate.refresh === true
-    ? "Authorize updated scope and continue"
-    : "Authorize and start investigation";
+    ? "Authorize updated research context"
+    : "Authorize research context";
   elements.contextApproveButton.disabled = false;
+}
+
+export function genomicScopeDescription(value) {
+  const scope = isObject(value) ? value : null;
+  if (!scope) return "Not included";
+  if (text(scope.operation) === "variant.find_gene_variants") {
+    return [
+      text(scope.genome_build),
+      `Main Investigator may check 1–${Number(scope.gene_count_limit) || 10} named candidate genes`,
+      scope.passing_filters_only === true ? "passing calls only" : "filter policy not recorded",
+      `up to ${Number(scope.per_gene_limit) || 100} records per gene`,
+      "specialists cannot access the genome",
+    ].filter(Boolean).join(" · ");
+  }
+  return exactValue(scope);
 }
 
 export function hideContextCandidate() {
@@ -327,30 +352,26 @@ export function hideContextCandidate() {
 }
 
 export function renderEvents(payload) {
-  const events = array(payload.events);
+  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
+  const events = visibleInvestigationEvents(payload.events, demoPresentation);
   elements.eventStatus.textContent = events.length
-    ? `${events.length} ${events.length === 1 ? "event" : "events"} connected`
-    : "Connected · no events yet";
+    ? `${events.length} committed ${events.length === 1 ? "update" : "updates"}`
+    : "Monitoring · no committed updates";
   if (!events.length) {
-    elements.eventList.replaceChildren(empty("No harness events yet."));
+    elements.eventList.replaceChildren(empty("No committed investigation activity yet."));
     return;
   }
   const rows = events.map((event) => {
-    const transport = isObject(event.payload) ? event.payload : {};
-    const details = isObject(transport.payload) ? transport.payload : {};
-    const description = text(details.progress)
-      || text(details.message)
-      || text(details.role)
-      || friendly(text(transport.status))
-      || "Harness activity recorded";
+    const details = isObject(event.payload) ? event.payload : {};
+    const description = investigationEventDescription(text(event.event_type), details);
     const item = node("li", "", "event-row");
     const marker = node("span", "", "event-marker");
     marker.setAttribute("aria-hidden", "true");
     const copy = document.createElement("div");
     copy.append(
-      node("strong", friendly(text(event.event_type) || text(transport.kind)) || "Harness event"),
+      node("strong", investigationEventTitle(event.event_type, demoPresentation)),
       node("p", description),
-      node("time", formatTime(text(transport.timestamp) || text(event.created_at)))
+      node("time", formatTime(text(event.created_at)))
     );
     item.append(marker, copy);
     return item;
@@ -358,48 +379,106 @@ export function renderEvents(payload) {
   elements.eventList.replaceChildren(...rows);
 }
 
-function renderHarnessIdentity(manifest, binding) {
-  const hostKind = friendly(text(manifest.host_kind)) || "Installed agent harness";
-  elements.harnessName.textContent = hostKind;
-  elements.harnessLocation.textContent = manifest.execution_location
-    ? `Agents and reasoning run at: ${friendly(text(manifest.execution_location))}. GenomiLab remains the domain workspace.`
-    : "The harness has not disclosed its execution location.";
-  const available = manifest.available === true;
-  elements.harnessCapability.textContent = available ? "Available" : "Unavailable";
-  elements.harnessCapability.dataset.available = available ? "true" : "false";
-  elements.harnessDisclosure.textContent = binding
-    ? `This investigation is connected to task ${shortId(text(binding.task_id)) || "in the installed harness"}. GenomiLab shows its work and pauses only when authorization must expand; the harness owns agents and reasoning.`
-    : "GenomiLab shows the work and pauses when authorization must expand; the disclosed installed harness owns agents, planning, and reasoning.";
+export function investigationEventTitle(eventTypeValue, demoPresentation = false) {
+  const eventType = text(eventTypeValue);
+  if (demoPresentation && eventType === "plan_accepted") return "Plan committed";
+  return friendly(eventType) || "Investigation activity";
 }
 
-function renderPlan(planVersionValue, events) {
+export function visibleInvestigationEvents(eventsValue, demoPresentation = false) {
+  return array(eventsValue).filter((event) => !demoPresentation || ![
+    "context_approval_required",
+    "context_authorized",
+    "private_context_revoked",
+  ].includes(text(event.event_type)));
+}
+
+function investigationEventDescription(eventType, details) {
+  if (eventType === "context_approval_required") {
+    return details.refresh === true
+      ? "Updated patient context is ready for review and approval."
+      : "Patient context is ready for review and approval.";
+  }
+  if (eventType === "context_authorized") {
+    return "The exact patient context was authorized for the current agent session.";
+  }
+  if (eventType === "patient_information_recorded") {
+    return details.requires_context_refresh === true
+      ? "New patient information was recorded; review the updated context before genome-informed work continues."
+      : "New patient information was recorded.";
+  }
+  if (eventType === "plan_accepted") {
+    return `Working plan committed${details.plan_version_id ? ` · ${text(details.plan_version_id)}` : ""}`;
+  }
+  if (eventType === "specialist_board_formed") {
+    const memberCount = Number(details.member_count) || array(details.members).length;
+    return memberCount
+      ? `Specialist board formed with ${memberCount} ${memberCount === 1 ? "member" : "members"}.`
+      : "Specialist board formed.";
+  }
+  if (eventType === "specialist_progress_reported") {
+    const progress = [
+      text(details.specialist_id),
+      friendly(text(details.status)),
+      text(details.current_work),
+    ].filter(Boolean).join(" · ");
+    return progress || "Specialist progress updated.";
+  }
+  if (eventType === "request_started" || eventType === "request_state_changed") {
+    return [text(details.request_id), friendly(text(details.status)) || "Started"]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  if (eventType === "brief_published") {
+    return `Investigation brief published${details.version ? ` · version ${text(details.version)}` : ""}`;
+  }
+  if (eventType === "private_context_revoked") {
+    return "Future GenomiLab access to private patient context was revoked.";
+  }
+  return text(details.summary)
+    || text(details.question)
+    || friendly(text(details.status))
+    || "Investigation update committed";
+}
+
+function renderAgentIdentity(manifest) {
+  const hostId = text(manifest.agent_session_id);
+  elements.agentName.textContent = hostId && hostId !== "underlying-agent"
+    ? hostId
+    : "Current Claude or Codex agent";
+  elements.agentLocation.textContent = manifest.processing_destination
+    ? `Task, conversation, and reasoning remain in ${text(manifest.processing_destination)}. GenomiLab stores only its domain records.`
+    : "The current agent session owns the task, conversation, planning, and reasoning.";
+  const agentOwned = text(manifest.execution_owner) === "underlying_agent";
+  elements.agentCapability.textContent = agentOwned ? "Agent-owned" : "Unavailable";
+  elements.agentCapability.dataset.available = agentOwned ? "true" : "false";
+  elements.agentDisclosure.textContent = agentOwned
+    ? "GenomiLab records patient context and committed investigation updates. Continue, redirect, pause, or cancel the task in Claude or Codex."
+    : "No underlying agent session is attached. GenomiLab cannot start or control a task from this portal.";
+  elements.returnToAgentButton.hidden = !agentOwned;
+  elements.returnToAgentButton.title = text(manifest.processing_destination)
+    || "Return to the underlying agent";
+}
+
+function renderPlan(planVersionValue) {
   const planVersion = isObject(planVersionValue) ? planVersionValue : null;
   const plan = planVersion && isObject(planVersion.plan) ? planVersion.plan : null;
   const steps = plan ? array(plan.steps) : [];
   elements.planReviewStatus.textContent = plan ? "Working plan" : "Waiting for a working plan";
   elements.planReviewStatus.dataset.state = plan ? "active" : "none";
-  elements.planReviewActions.hidden = !plan;
   elements.planSummary.textContent = plan
     ? text(plan.summary) || "Current plan"
-    : "The installed harness has not proposed a plan yet.";
+    : "The underlying agent has not committed a plan yet.";
   if (!steps.length) {
     elements.planList.replaceChildren(empty("No plan steps yet."));
     elements.progressSummary.textContent = "Waiting for a plan";
     return;
   }
-  const progressByStep = new Map();
-  events.forEach((event) => {
-    const transport = isObject(event.payload) ? event.payload : {};
-    const progress = isObject(transport.payload) ? transport.payload : {};
-    const stepId = text(progress.assigned_step_id);
-    if (stepId) progressByStep.set(stepId, text(progress.progress) || friendly(text(transport.status)));
-  });
   const rows = steps.map((step, index) => {
     const item = node("li", "", "plan-step");
     const number = node("span", String(index + 1), "plan-number");
     const copy = document.createElement("div");
-    const stepId = text(step.id);
-    const progress = progressByStep.get(stepId) || friendly(text(step.status)) || "Planned";
+    const progress = friendly(text(step.status)) || "Planned";
     copy.append(
       node("strong", text(step.title) || `Step ${index + 1}`),
       node("p", array(step.capabilities).map((value) => friendly(text(value))).join(" · ") || "Research step"),
@@ -409,7 +488,7 @@ function renderPlan(planVersionValue, events) {
     return item;
   });
   elements.planList.replaceChildren(...rows);
-  elements.progressSummary.textContent = `${steps.length} working ${steps.length === 1 ? "step" : "steps"}`;
+  elements.progressSummary.textContent = `${steps.length} planned ${steps.length === 1 ? "step" : "steps"}`;
 }
 
 function renderContextState(investigation) {
@@ -421,7 +500,7 @@ function renderContextState(investigation) {
     : "";
   elements.contextState.textContent = approved
     ? ["Authorized", lifecycle].filter(Boolean).join(" · ")
-    : pinned ? "Review access to continue" : "Not started";
+    : pinned ? "Review access to continue" : "Not authorized";
   elements.contextPreviewButton.textContent = pinned ? "Review current research access" : "Review research access";
   elements.contextRefreshPreviewButton.hidden = !pinned;
   elements.contextRevokeButton.hidden = !approved;
@@ -541,14 +620,15 @@ function renderCapabilityApprovals(executions) {
   elements.capabilityApprovalList.replaceChildren(heading, intro, list);
 }
 
-function renderHarnessState(binding, manifest) {
-  const operations = new Set(array(manifest.supported_operations).map(text));
-  const started = Boolean(binding);
-  elements.harnessBindingState.textContent = started
-    ? friendly(text(binding.harness_status)) || "Connected"
-    : "Not started";
-  elements.cancelHarnessButton.hidden = !started || !operations.has("cancel_task_work");
-  elements.harnessMessageForm.hidden = !started || !operations.has("send_task_message");
+function renderAgentState(investigation, manifest) {
+  if (text(manifest.execution_owner) !== "underlying_agent") {
+    elements.agentExecutionState.textContent = "Agent unavailable";
+    return;
+  }
+  const status = text(investigation.status);
+  elements.agentExecutionState.textContent = status
+    ? `Monitoring · ${friendly(status)}`
+    : "Monitoring enabled";
 }
 
 function authorizationScopeDescription(value) {
@@ -557,15 +637,15 @@ function authorizationScopeDescription(value) {
     if (summary) return summary;
     const activities = array(value.routine_activities).map((item) => friendly(text(item)));
     if (activities.length) return activities.join(", ");
-    const harness = isObject(value.harness) ? value.harness : {};
-    const destination = friendly(text(harness.destination));
-    const intents = array(harness.allowed_intents).map((item) => friendly(text(item)));
+    const agentSession = isObject(value.agent_session) ? value.agent_session : {};
+    const destination = text(agentSession.destination);
+    const intents = array(agentSession.allowed_intents).map((item) => friendly(text(item)));
     if (destination || intents.length) {
       return [
-        destination ? `Installed harness at ${destination}` : "Installed harness",
+        destination ? `Current agent session at ${destination}` : "Current agent session",
         intents.length ? intents.join(", ") : "routine investigation work",
       ].join(" · ");
     }
   }
-  return "Planning, local Genomi evidence work, specialist handoffs, replanning, and follow-up instructions within this exact investigation scope.";
+  return "GenomiLab access for planning, local evidence work, replanning, and follow-up investigation updates within this exact context scope.";
 }

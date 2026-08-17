@@ -41,8 +41,8 @@ class GenomiLabInvestigationAuthorizationStoreTests(unittest.TestCase):
         self.snapshot_id = str(self.snapshot["patient_molecular_snapshot_id"])
         self.consent_id = str(self.snapshot["consent_receipt_id"])
         self.authorization_scope = {
-            "harness": {
-                "recipient_id": "installed-test-harness",
+            "agent_session": {
+                "recipient_id": "current-test-agent",
                 "destination": "local-test-runtime",
                 "allowed_intents": list(
                     reversed(sorted(INVESTIGATION_AUTHORIZATION_INTENTS))
@@ -122,13 +122,13 @@ class GenomiLabInvestigationAuthorizationStoreTests(unittest.TestCase):
             self.user_id,
             workspace_session_id=session_id or self.session_id,
             investigation_id=investigation_id or self.investigation_id,
-            recipient_kind="installed_harness",
-            recipient_id="installed-test-harness",
+            recipient_kind="underlying_agent",
+            recipient_id="current-test-agent",
             purpose="Execute approved synthetic investigation work",
             destination="local-test-runtime",
             data_categories=["approved_context", "command_context"],
             payload={"approved_context": {"label": label}},
-            policy_versions={"harness_protocol": "test-v1"},
+            policy_versions={"agent_application": "test-v1"},
             approved=True,
         )
 
@@ -141,7 +141,7 @@ class GenomiLabInvestigationAuthorizationStoreTests(unittest.TestCase):
             receipt["authorization_receipt_id"],
         )
         self.assertEqual(
-            receipt["authorization_scope"]["harness"]["allowed_intents"],
+            receipt["authorization_scope"]["agent_session"]["allowed_intents"],
             sorted(INVESTIGATION_AUTHORIZATION_INTENTS),
         )
         self.assertEqual(
@@ -149,8 +149,8 @@ class GenomiLabInvestigationAuthorizationStoreTests(unittest.TestCase):
             investigation_authorization_scope_sha256(
                 {
                     **self.authorization_scope,
-                    "harness": {
-                        **self.authorization_scope["harness"],
+                    "agent_session": {
+                        **self.authorization_scope["agent_session"],
                         "allowed_intents": sorted(
                             INVESTIGATION_AUTHORIZATION_INTENTS
                         ),
@@ -247,9 +247,9 @@ class GenomiLabInvestigationAuthorizationStoreTests(unittest.TestCase):
 
         reduced_scope = {
             **self.authorization_scope,
-            "harness": {
-                **self.authorization_scope["harness"],
-                "allowed_intents": ["cancel"],
+            "agent_session": {
+                **self.authorization_scope["agent_session"],
+                "allowed_intents": ["plan"],
             },
         }
         with self.assertRaisesRegex(ValueError, "exactly the routine"):

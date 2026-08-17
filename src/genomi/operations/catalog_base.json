@@ -350,6 +350,7 @@
   },
   "capability_order": [
     "genomi",
+    "genomilab",
     "active-genome-index",
     "clinvar",
     "variant-evidence",
@@ -368,6 +369,7 @@
   ],
   "namespace_order": [
     "genomi",
+    "genomilab",
     "active_genome_index",
     "clinvar",
     "variant",

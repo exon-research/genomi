@@ -1,4 +1,4 @@
-"""Canonical definitions for harness-visible GenomiLab capabilities.
+"""Canonical definitions for agent-visible GenomiLab capabilities.
 
 The registry is deliberately data-only.  Investigation code owns application
 services, while this module owns capability identity, execution family,
@@ -20,6 +20,7 @@ from .disease_relation_contract import REGISTER_DISEASE_RELATION
 
 PROFILE_PROJECT = "investigation.project_profile"
 GENOMI_VARIANT_RESOLVE = "genomi.variant.resolve"
+GENOMI_VARIANT_FIND_GENE_VARIANTS = "genomi.variant.find_gene_variants"
 PUBLIC_EVIDENCE_RETRIEVE = "public_evidence.retrieve"
 REGISTER_HYPOTHESIS = "investigation.register_hypothesis"
 REGISTER_GAP = "investigation.register_gap"
@@ -48,7 +49,7 @@ class BackgroundJobOwner(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CapabilityDefinition:
-    """One immutable harness capability contract."""
+    """One immutable agent capability contract."""
 
     name: str
     family: CapabilityFamily
@@ -92,6 +93,11 @@ _DEFINITIONS = [
         CapabilityFamily.GENOMI_VARIANT,
         "exact_genomi_authorization_required",
         background_job_owner=BackgroundJobOwner.GENOMI,
+    ),
+    _definition(
+        GENOMI_VARIANT_FIND_GENE_VARIANTS,
+        CapabilityFamily.GENOMI_VARIANT,
+        "bounded_candidate_gene_genomi_authorization_required",
     ),
     _definition(
         PUBLIC_EVIDENCE_RETRIEVE,
@@ -159,6 +165,7 @@ __all__ = [
     "CAPABILITY_DEFINITIONS",
     "CapabilityDefinition",
     "CapabilityFamily",
+    "GENOMI_VARIANT_FIND_GENE_VARIANTS",
     "GENOMI_VARIANT_RESOLVE",
     "PROFILE_PROJECT",
     "PUBLIC_EVIDENCE_RETRIEVE",

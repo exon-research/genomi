@@ -4,11 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from genomi.lab.encrypted_sqlite import StaticEncryptionKeyProvider
-from genomi.lab.harness import SimulatedHarnessAdapter
 from genomi.lab.service import GenomiLabService, LabError
 from genomi.lab.store import GenomiLabStore
+from tests.genomilab_support import synthetic_ready_agi_context
 
 
 class _CurrentGenomiContext:
@@ -24,16 +25,12 @@ class _CurrentGenomiContext:
     ) -> dict[str, Any]:
         del params
         if operation == "genomi.describe_context":
-            return {
-                "active_user_id": "portal-context-user",
-                "active_user": {"nickname": "Portal context user"},
-                "active_agi_id": self.agi_id,
-                "active_genome_index": {
-                    "agi_id": self.agi_id,
-                    "agi_snapshot_id": self.agi_snapshot_id,
-                    "genome_build": "GRCh38",
-                },
-            }
+            return synthetic_ready_agi_context(
+                "portal-context-user",
+                "Portal context user",
+                agi_id=self.agi_id,
+                agi_snapshot_id=self.agi_snapshot_id,
+            )
         if operation == "active_genome_index.revoke_access":
             return {"status": "revoked"}
         raise AssertionError(f"unexpected operation: {operation}")
@@ -51,7 +48,6 @@ class GenomiLabPortalContextTests(unittest.TestCase):
             ),
             session_id="portal-context-session",
             operation_call=self.genomi_context,
-            harness_adapter=SimulatedHarnessAdapter(),
         )
         self.addCleanup(self.service.close)
         self.service.bootstrap_workspace()
@@ -154,7 +150,9 @@ class GenomiLabPortalContextTests(unittest.TestCase):
                 )
             self.assertEqual(raised.exception.code, "invalid_context_selection")
 
-    def test_approved_projection_contains_only_the_explicit_selection(self) -> None:
+    def test_reviewed_phenotype_authorizes_only_bounded_candidate_gene_reads(
+        self,
+    ) -> None:
         candidate = self.service.investigation_context_candidate(
             self.investigation_id,
             {
@@ -163,7 +161,20 @@ class GenomiLabPortalContextTests(unittest.TestCase):
             },
         )
         approval = self._approval(candidate)
-        self.service._approve_context_for_conformance(self.investigation_id, approval)
+        with (
+            mock.patch(
+                "genomi.lab.profile_context_application."
+                "issue_investigation_agi_authorization",
+                return_value=object(),
+            ),
+            mock.patch(
+                "genomi.lab.profile_context_application."
+                "revoke_investigation_agi_authorizations_for_investigation"
+            ),
+        ):
+            self.service._approve_context_for_conformance(
+                self.investigation_id, approval
+            )
 
         projected = self.service.investigation_profile(self.investigation_id)
 
@@ -175,7 +186,20 @@ class GenomiLabPortalContextTests(unittest.TestCase):
             [self.phenotype["observation_revision_id"]],
         )
         self.assertFalse(projected["source_artifacts"])
-        self.assertIsNone(projected["agi_snapshot_id"])
+        self.assertEqual(
+            projected["agi_snapshot_id"], "agi-snapshot-portal-context"
+        )
+        self.assertEqual(
+            candidate["genomic_scope"],
+            {
+                "operation": "variant.find_gene_variants",
+                "genome_build": "GRCh38",
+                "gene_count_limit": 10,
+                "passing_filters_only": True,
+                "per_gene_limit": 100,
+                "match_basis": "gencode_gene_interval_overlap",
+            },
+        )
 
     def test_refresh_rejects_a_superseded_observation_revision(self) -> None:
         revised = self.service.review_or_supersede_observation(

@@ -1,6 +1,6 @@
-"""Typed disease-investigation capabilities selected by the installed harness.
+"""Typed disease-investigation capabilities selected by the current agent.
 
-The harness chooses requests in a proposed plan.  This application boundary
+The agent chooses requests in a proposed plan. This application boundary
 validates that choice against the current investigation, executes only the
 small allowlist below, and commits results through their canonical owners.
 """
@@ -15,6 +15,7 @@ from .service_errors import LabError
 from .capability_registry import (
     BackgroundJobOwner,
     CAPABILITY_ALLOWLIST,
+    GENOMI_VARIANT_FIND_GENE_VARIANTS,  # noqa: F401 - public capability identifier
     GENOMI_VARIANT_RESOLVE,  # noqa: F401 - public capability identifier
     PROFILE_PROJECT,  # noqa: F401 - public capability identifier
     PUBLIC_EVIDENCE_RETRIEVE,  # noqa: F401 - public capability identifier
@@ -33,18 +34,18 @@ from .investigation_capability_protocols import (
     CapabilityApplication as _CapabilityApplication,
 )
 
-_HARNESS_CAPABILITY_EXECUTION_AUTHORITY = object()
+_AGENT_CAPABILITY_EXECUTION_AUTHORITY = object()
 
 
 class InvestigationCapabilityMixin(CapabilityDispatchMixin):
-    """Execute harness-selected requests without giving the harness credentials."""
+    """Execute agent-selected requests without exposing provider credentials."""
 
     def investigation_capability_catalog(
         self: _CapabilityApplication, investigation_id: str
     ) -> JsonObject:
         return build_investigation_capability_catalog(self, investigation_id)
 
-    def validate_harness_capability_plan(
+    def validate_agent_capability_plan(
         self: _CapabilityApplication,
         investigation_id: str,
         plan: JsonObject,
@@ -71,7 +72,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
                 or catalog_entry.get("available") is not True
             ):
                 raise ValueError(
-                    "the harness requested a capability unavailable to this investigation"
+                    "the agent requested a capability unavailable to this investigation"
                 )
             step = steps.get(str(request.get("step_id") or ""))
             if step is None:
@@ -84,28 +85,28 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
                 capability, request.get("parameters"), catalog
             )
 
-    def _execute_harness_capability_request(
+    def _execute_agent_capability_request(
         self: _CapabilityApplication,
         investigation_id: str,
         payload: JsonObject,
         *,
         _authority: object,
     ) -> JsonObject:
-        if _authority is not _HARNESS_CAPABILITY_EXECUTION_AUTHORITY:
+        if _authority is not _AGENT_CAPABILITY_EXECUTION_AUTHORITY:
             raise LabError(
-                "harness_execution_authority_required",
-                "Only the approved harness execution task may invoke this request.",
+                "capability_execution_authority_required",
+                "Only the authorized investigation execution path may invoke this request.",
                 http_status=409,
             )
         investigation = self._accepted_current_plan(investigation_id)
         plan = investigation.get("plan")
         if not isinstance(plan, dict):
             raise LabError(
-                "harness_plan_required",
-                "The installed harness must propose a plan before capabilities run.",
+                "investigation_plan_required",
+                "The current agent must submit a plan before capabilities run.",
                 http_status=409,
             )
-        self.validate_harness_capability_plan(investigation_id, plan)
+        self.validate_agent_capability_plan(investigation_id, plan)
         request_id = required_text(payload.get("request_id"), "request_id", 200)
         matches = [
             item
@@ -115,7 +116,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         if len(matches) != 1:
             raise LabError(
                 "capability_request_not_found",
-                "That capability request is not in the current harness plan.",
+                "That capability request is not in the current accepted plan.",
                 http_status=404,
             )
         approval = payload if payload.get("approved") is True else None
@@ -140,7 +141,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             "result": result,
         }
 
-    def _continue_harness_capability_after_approval(
+    def _continue_agent_capability_after_approval(
         self: _CapabilityApplication,
         investigation_id: str,
         payload: JsonObject,
@@ -157,7 +158,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         if not isinstance(payload, dict) or set(payload) != allowed:
             raise LabError(
                 "invalid_evidence_disclosure",
-                "Approve the exact provider and query shown by the harness request.",
+                "Approve the exact provider and query shown by the investigation request.",
                 http_status=409,
             )
         investigation = self._accepted_current_plan(investigation_id)
@@ -177,16 +178,16 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         ):
             raise LabError(
                 "evidence_disclosure_preview_required",
-                "The installed harness must first run this exact request and pause for provider approval.",
+                "The agent must first run this exact request and pause for provider approval.",
                 http_status=409,
             )
-        return self._execute_harness_capability_request(
+        return self._execute_agent_capability_request(
             investigation_id,
             payload,
-            _authority=_HARNESS_CAPABILITY_EXECUTION_AUTHORITY,
+            _authority=_AGENT_CAPABILITY_EXECUTION_AUTHORITY,
         )
 
-    def _resume_harness_capability_job(
+    def _check_agent_capability_job(
         self: _CapabilityApplication,
         investigation_id: str,
         payload: JsonObject,
@@ -222,14 +223,14 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         )
         if not plan_version_id:
             raise LabError(
-                "harness_plan_required",
-                "The current harness plan is unavailable for this capability job.",
+                "investigation_plan_required",
+                "The current accepted plan is unavailable for this capability job.",
                 http_status=409,
             )
         if requested_plan_version_id != plan_version_id:
             raise LabError(
                 "capability_plan_superseded",
-                "This capability job belongs to a superseded harness plan.",
+                "This capability job belongs to a superseded investigation plan.",
                 http_status=409,
             )
         execution = self.store.get_capability_execution(
@@ -238,7 +239,7 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
         if not isinstance(execution, dict):
             raise LabError(
                 "capability_job_not_found",
-                "That capability job is not part of the current harness plan.",
+                "That capability job is not part of the current accepted plan.",
                 http_status=404,
             )
         expected_job_id = str(execution.get("job_id") or "")
@@ -316,6 +317,12 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             job_id=(background or {}).get("job_id"),
             resume_operation=(background or {}).get("resume_operation"),
             poll_after_seconds=(background or {}).get("poll_after_seconds"),
+            event_type="request_state_changed",
+            event_payload={
+                "request_id": request_id,
+                "capability": capability,
+                "status": execution_status,
+            },
         )
         return self._capability_job_response(finished)
 
@@ -384,6 +391,12 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             attempt_kind=attempt_kind,
             approval_provider=(approval_binding or {}).get("recipient_provider"),
             approval_payload_sha256=(approval_binding or {}).get("payload_sha256"),
+            event_type="request_started",
+            event_payload={
+                "request_id": request_id,
+                "capability": capability,
+                "status": "in_progress",
+            },
         )
         if claimed.get("claimed") is not True:
             return self._persisted_capability_result(claimed)
@@ -419,6 +432,12 @@ class InvestigationCapabilityMixin(CapabilityDispatchMixin):
             job_id=(background or {}).get("job_id"),
             resume_operation=(background or {}).get("resume_operation"),
             poll_after_seconds=(background or {}).get("poll_after_seconds"),
+            event_type="request_state_changed",
+            event_payload={
+                "request_id": request_id,
+                "capability": capability,
+                "status": execution_status,
+            },
         )
         return self._persisted_capability_result(finished)
 

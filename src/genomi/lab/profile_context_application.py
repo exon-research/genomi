@@ -338,6 +338,7 @@ class ProfileContextApplication:
         *,
         operation: str,
         params: JsonObject,
+        evidence_context: JsonObject | None = None,
         expected_plan_version_id: str | None = None,
         expected_consent_receipt_id: str | None = None,
     ) -> JsonObject:
@@ -360,6 +361,19 @@ class ProfileContextApplication:
                     "The accepted plan or molecular-context consent changed before Genomi ran.",
                     http_status=409,
                 )
+        if evidence_context is not None:
+            if not isinstance(evidence_context, dict):
+                raise LabError(
+                    "invalid_genome_evidence_context",
+                    "Genome evidence context must be an object.",
+                    http_status=409,
+                )
+            try:
+                validate_private_payload(evidence_context)
+            except ValueError as exc:
+                raise LabError(
+                    "invalid_genome_evidence_context", str(exc), http_status=409
+                ) from exc
         result = self.authorized_call(operation, params, handle)
         if result.get("status") == "in_progress":
             job_id, resume_operation, poll_after = self._background_job_binding(result)
@@ -373,11 +387,15 @@ class ProfileContextApplication:
                     else {}
                 ),
             }
+        committed_result = dict(result)
+        if evidence_context is not None:
+            committed_result["genomilab_context"] = dict(evidence_context)
         deduplication_key = hashlib.sha256(
             compact_json(
                 {
                     "operation": operation,
                     "params": params,
+                    "genomilab_context": evidence_context,
                     "agi_snapshot_id": snapshot.get("agi_snapshot_id"),
                 }
             ).encode("utf-8")
@@ -387,10 +405,11 @@ class ProfileContextApplication:
                 investigation_id,
                 source_family="personal_genome",
                 operation=operation,
-                evidence=result,
+                evidence=committed_result,
                 deduplication_key=f"genomi:{deduplication_key}",
                 expected_plan_version_id=expected_plan_version_id,
                 expected_consent_receipt_id=expected_consent_receipt_id,
+                emit_investigation_event=True,
             )
         except EvidenceCommitGuardError as exc:
             raise LabError(
@@ -510,6 +529,7 @@ class ProfileContextApplication:
                 deduplication_key=f"genomi-job:{deduplication_key}",
                 expected_plan_version_id=expected_plan_version_id,
                 expected_consent_receipt_id=current_receipt["consent_receipt_id"],
+                emit_investigation_event=True,
             )
         except EvidenceCommitGuardError as exc:
             raise LabError(

@@ -1,4 +1,4 @@
-"""Exact outbound-disclosure receipts for harness and provider boundaries."""
+"""Exact outbound-disclosure receipts for agent and provider boundaries."""
 
 from __future__ import annotations
 
@@ -21,6 +21,23 @@ class _StoreContract(Protocol):
     def _connect(self) -> ContextManager[Any]: ...
 
     def _require_workspace(self, user_id: str) -> None: ...
+
+    def append_investigation_event(
+        self,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+    def _append_investigation_event(
+        self,
+        connection: Any,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
 
 
 def disclosure_payload_sha256(payload: JsonObject) -> str:
@@ -45,6 +62,7 @@ class ApprovalStoreMixin:
         payload: JsonObject,
         policy_versions: object = None,
         approved: object = False,
+        emit_investigation_event: bool = False,
     ) -> JsonObject:
         self._require_workspace(user_id)
         if approved is not True:
@@ -98,6 +116,18 @@ class ApprovalStoreMixin:
                 "WHERE disclosure_receipt_id = ?",
                 (receipt_id,),
             ).fetchone()
+            if emit_investigation_event:
+                self._append_investigation_event(
+                    connection,
+                    str(investigation_id),
+                    event_type="external_disclosure_approved",
+                    payload={
+                        "disclosure_receipt_id": receipt_id,
+                        "recipient_id": str(row["recipient_id"]),
+                        "destination": str(row["destination"]),
+                        "payload_sha256": payload_hash,
+                    },
+                )
         return row_dict(row)
 
     def require_outbound_disclosure(

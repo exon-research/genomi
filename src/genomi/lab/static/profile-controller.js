@@ -444,7 +444,7 @@ export function createProfileController({state, refresh}) {
 
   function handleManageGenomeHandoff() {
     showAlert(
-      "Genomi owns genome setup and updates. In your installed assistant, ask: “Manage the current Genomi user’s genome.” Return here afterward and use Compare latest profile in any affected investigation.",
+      "Core Genomi owns genome setup and updates. Return to the underlying agent: point it to the local VCF or another supported genome-source path, or ask it to select and finish the current user’s Active Genome Index. Return here when the selected index is query-ready.",
       "success"
     );
     setActivity("Genome management stays in Genomi; GenomiLab will reuse its updated Active Genome Index.");

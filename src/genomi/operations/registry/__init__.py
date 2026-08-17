@@ -52,7 +52,7 @@ from ...capabilities.prs import scoring_files as prs_scoring_files
 from ...capabilities.prs import source_context as prs_source_context
 from ...capabilities.research import intent_research
 from ...capabilities.sequence import sequence
-from ...capabilities.variant import variant_lookup
+from ...capabilities.variant import gene_variants, variant_lookup
 from ...evidence import init_evidence_db, research_scope_choices
 from ...runtime import context as runtime_context
 from ...runtime import host_response, resources
@@ -160,6 +160,7 @@ from .handlers_vcf_variant import (
     _agi_summary,
     _variant_lookup,
 )
+from .handlers_variant_gene import _variant_find_gene_variants
 from .handlers_clinvar import (
     _clinvar_match,
     _clinvar_scan,

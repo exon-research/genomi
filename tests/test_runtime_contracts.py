@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import ast
+import fnmatch
 import importlib
 import re
 import unittest
 from pathlib import Path
 
+from genomi.operations.catalog import CATALOG_FRAGMENT_FILENAME, CATALOG_FRAGMENT_PACKAGES
 from genomi.runtime.handoff import SKILL_PATH, STAGE_CONTRACTS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _package_data_packages() -> list[str]:
-    packages: list[str] = []
+def _package_data() -> dict[str, list[str]]:
+    package_data: dict[str, list[str]] = {}
     in_package_data = False
     for line in (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -22,10 +25,21 @@ def _package_data_packages() -> list[str]:
             break
         if not in_package_data or not stripped or stripped.startswith("#"):
             continue
-        match = re.match(r'^"(?P<package>[^"]+)"\s*=\s*\[', stripped)
+        match = re.match(
+            r'^"(?P<package>[^"]+)"\s*=\s*(?P<patterns>\[.*\])$',
+            stripped,
+        )
         if match:
-            packages.append(match.group("package"))
-    return packages
+            patterns = ast.literal_eval(match.group("patterns"))
+            if isinstance(patterns, list) and all(
+                isinstance(item, str) for item in patterns
+            ):
+                package_data[match.group("package")] = patterns
+    return package_data
+
+
+def _package_data_packages() -> list[str]:
+    return list(_package_data())
 
 
 def _skill_heading_anchors() -> dict[str, str]:
@@ -46,6 +60,17 @@ class RuntimeContractTests(unittest.TestCase):
         for package in _package_data_packages():
             with self.subTest(package=package):
                 importlib.import_module(package)
+
+    def test_every_tool_catalog_fragment_is_in_package_data(self) -> None:
+        package_data = _package_data()
+
+        for package in CATALOG_FRAGMENT_PACKAGES:
+            with self.subTest(package=package):
+                patterns = package_data.get(package, [])
+                self.assertTrue(
+                    any(fnmatch.fnmatch(CATALOG_FRAGMENT_FILENAME, pattern) for pattern in patterns),
+                    f"{package}:{CATALOG_FRAGMENT_FILENAME} is loaded at runtime but omitted from package data",
+                )
 
     def test_handoff_stage_contracts_reference_current_root_skill_sections(self) -> None:
         anchors = _skill_heading_anchors()

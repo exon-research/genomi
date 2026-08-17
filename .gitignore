@@ -18,6 +18,11 @@ build/
 .wgs-data/
 .genomi-data/
 pgp_genetics_collection/
+
+# Local demo runs and patient/genome working data.
+/Data/
+/demo_artifacts/
+.DS_Store
 # Large/sensitive local genome inputs and derived sidecars.
 /Sequencing.com_whole_genome_sequencing.vcf
 /Sequencing.com_whole_genome_sequencing.vcf.*

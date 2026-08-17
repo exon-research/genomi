@@ -163,7 +163,7 @@ class GenomiLabDiseaseInvestigationTests(
         self.assertNotIn("sample_context", projection)
         self.assertNotIn("agi_rows", projection)
 
-    def test_brief_commits_confirmation_question_without_promoting_it_to_a_claim(
+    def test_brief_commits_grounded_timeline_and_clinician_question_without_promoting_them_to_claims(
         self,
     ) -> None:
         question = (
@@ -174,12 +174,21 @@ class GenomiLabDiseaseInvestigationTests(
             self.investigation["investigation_id"],
             {
                 "title": "Reported finding review",
-                "summary": "The issued report contains a finding for independent review.",
+                "summary": "Patient observation: The profile records rs900000001 as a research observation.",
                 "clinical_stage": "research_observation",
                 "modality_badges": ["reported_record"],
+                "timeline": [
+                    {
+                        "statement": "Patient observation: The profile records rs900000001 as a research observation.",
+                        "evidence_record_ids": [],
+                        "profile_revision_ids": [
+                            self.finding["observation_revision_id"]
+                        ],
+                    }
+                ],
                 "claims": [
                     {
-                        "statement": "The issued report records the molecular finding.",
+                        "statement": "Patient observation: The profile records rs900000001 as a research observation.",
                         "claim_role": "observation",
                         "evidence_record_ids": [],
                         "profile_revision_ids": [
@@ -190,27 +199,41 @@ class GenomiLabDiseaseInvestigationTests(
                 "hypothesis_ids": [],
                 "gap_ids": [],
                 "confirmation_needs": ["Independent review before interpretation"],
-                "professional_questions": [question],
+                "clinician_questions": [
+                    {
+                        "question": question,
+                        "evidence_record_ids": [],
+                        "profile_revision_ids": [
+                            self.finding["observation_revision_id"]
+                        ],
+                        "hypothesis_ids": [],
+                        "gap_ids": [],
+                    }
+                ],
                 "clinical_boundary": (
                     "Research support only; this is not a diagnosis or treatment decision."
                 ),
-                "change_summary": "Initial research-observation brief.",
+                "change_summary": "Prepared a traceable rs900000001 research brief.",
             },
         )
 
-        self.assertEqual(committed["brief"]["professional_questions"], [question])
+        self.assertEqual(
+            committed["brief"]["clinician_questions"][0]["question"], question
+        )
+        self.assertEqual(len(committed["brief"]["timeline"]), 1)
 
     def test_brief_commit_rolls_back_its_evidence_basis_after_late_failure(
         self,
     ) -> None:
         brief = {
             "title": "Reported finding review",
-            "summary": "The issued report contains a finding for independent review.",
+            "summary": "Patient observation: The profile records rs900000001 as a research observation.",
             "clinical_stage": "research_observation",
             "modality_badges": ["reported_record"],
+            "timeline": [],
             "claims": [
                 {
-                    "statement": "The issued report records the molecular finding.",
+                    "statement": "Patient observation: The profile records rs900000001 as a research observation.",
                     "claim_role": "observation",
                     "evidence_record_ids": [],
                     "profile_revision_ids": [
@@ -221,11 +244,11 @@ class GenomiLabDiseaseInvestigationTests(
             "hypothesis_ids": [],
             "gap_ids": [],
             "confirmation_needs": ["Independent review before interpretation"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": (
                 "Research support only; this is not a diagnosis or treatment decision."
             ),
-            "change_summary": "Initial research-observation brief.",
+            "change_summary": "Prepared a traceable rs900000001 research brief.",
         }
         before = self.store.get_investigation(
             self.investigation["investigation_id"]
@@ -335,7 +358,10 @@ class GenomiLabDiseaseInvestigationTests(
         hypothesis = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="candidate_mechanism",
-            statement="The reported finding is a candidate for further review.",
+            statement=(
+                "Model inference: The finding rs900000001 remains only a "
+                "candidate hypothesis."
+            ),
             evidence_record_ids=[
                 evidence["evidence_record_id"],
                 relation["evidence_record_id"],
@@ -345,26 +371,35 @@ class GenomiLabDiseaseInvestigationTests(
         gap = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="evidence_gap",
-            statement="Clinical confirmation and phenotype review remain required.",
+            statement=(
+                "Evidence gap: Independent confirmation for rs900000001 remains "
+                "an open requirement."
+            ),
             evidence_record_ids=[],
-            profile_revision_ids=[self.condition["observation_revision_id"]],
+            profile_revision_ids=[self.finding["observation_revision_id"]],
             status="open",
         )
         brief = self.store.commit_brief(
             self.investigation["investigation_id"],
             {
                 "title": "Synthetic investigation brief",
-                "summary": "The reported finding remains a research candidate.",
+                "summary": (
+                    "Model inference: The finding rs900000001 remains only a "
+                    "candidate hypothesis."
+                ),
                 "clinical_stage": "candidate_hypothesis",
                 "modality_badges": [
-                    "patient_report",
                     "personal_genome",
                     "public_source",
                     "reported_record",
                 ],
+                "timeline": [],
                 "claims": [
                     {
-                        "statement": "The finding is present in the consulted genome scope and remains a research candidate.",
+                        "statement": (
+                            "Model inference: The finding rs900000001 remains only "
+                            "a candidate hypothesis."
+                        ),
                         "claim_role": "candidate_hypothesis",
                         "evidence_record_ids": [
                             evidence["evidence_record_id"],
@@ -376,22 +411,32 @@ class GenomiLabDiseaseInvestigationTests(
                     },
                     {
                         "statement": (
-                            "Evidence gap: Independent clinical confirmation "
-                            "remains an open requirement."
+                            "Evidence gap: Independent confirmation for "
+                            "rs900000001 remains an open requirement."
                         ),
                         "claim_role": "limitation",
                         "evidence_record_ids": [],
                         "profile_revision_ids": [
-                            self.condition["observation_revision_id"]
+                            self.finding["observation_revision_id"]
                         ],
                     },
                 ],
                 "hypothesis_ids": [hypothesis["hypothesis_id"]],
                 "gap_ids": [gap["hypothesis_id"]],
                 "confirmation_needs": ["Clinical laboratory confirmation"],
-                "professional_questions": ["What confirmation is appropriate?"],
+                "clinician_questions": [
+                    {
+                        "question": "What additional clinical evidence is needed for rs900000001?",
+                        "evidence_record_ids": [relation["evidence_record_id"]],
+                        "profile_revision_ids": [
+                            self.finding["observation_revision_id"]
+                        ],
+                        "hypothesis_ids": [hypothesis["hypothesis_id"]],
+                        "gap_ids": [gap["hypothesis_id"]],
+                    }
+                ],
                 "clinical_boundary": "Research support only; this is not a diagnosis or treatment decision.",
-                "change_summary": "Initial brief.",
+                "change_summary": "Prepared a traceable rs900000001 research brief.",
             },
         )
         self.assertEqual(brief["version"], 1)
@@ -408,7 +453,10 @@ class GenomiLabDiseaseInvestigationTests(
         confirmation = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="confirmation_requirement",
-            statement="Independent clinical confirmation remains required.",
+            statement=(
+                "Evidence gap: Independent confirmation for rs900000001 remains "
+                "an open requirement."
+            ),
             evidence_record_ids=[],
             profile_revision_ids=[self.finding["observation_revision_id"]],
             status="open",
@@ -416,19 +464,20 @@ class GenomiLabDiseaseInvestigationTests(
 
         brief_payload = {
             "title": "Synthetic confirmation brief",
-            "summary": "The issued record remains a research observation.",
+            "summary": "Patient observation: The profile records rs900000001 as a research observation.",
             "clinical_stage": "research_observation",
             "modality_badges": ["reported_record"],
+            "timeline": [],
             "claims": [
                 {
-                    "statement": "The issued record reports the finding.",
+                    "statement": "Patient observation: The profile records rs900000001 as a research observation.",
                     "claim_role": "observation",
                     "evidence_record_ids": [],
                     "profile_revision_ids": [self.finding["observation_revision_id"]],
                 },
                 {
                     "statement": (
-                        "Evidence gap: Independent clinical confirmation "
+                        "Evidence gap: Independent confirmation for rs900000001 "
                         "remains an open requirement."
                     ),
                     "claim_role": "limitation",
@@ -439,13 +488,15 @@ class GenomiLabDiseaseInvestigationTests(
             "hypothesis_ids": [],
             "gap_ids": [confirmation["hypothesis_id"]],
             "confirmation_needs": ["Independent clinical confirmation"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": (
                 "Research support only; this is not a diagnosis or treatment decision."
             ),
-            "change_summary": "Initial brief.",
+            "change_summary": "Prepared a traceable rs900000001 research brief.",
         }
-        with self.assertRaisesRegex(ValueError, "exact saved anchors"):
+        with self.assertRaisesRegex(
+            ValueError, "approved case anchors|exact saved anchors"
+        ):
             self.store.commit_brief(
                 self.investigation["investigation_id"],
                 {
@@ -479,18 +530,28 @@ class GenomiLabDiseaseInvestigationTests(
         hypothesis = self.store.commit_hypothesis(
             self.investigation["investigation_id"],
             kind="candidate_mechanism",
-            statement="An agent-authored inference remains a candidate mechanism.",
+            statement=(
+                "Model inference: The finding rs900000001 remains only a "
+                "candidate hypothesis."
+            ),
             evidence_record_ids=[relation["evidence_record_id"]],
             profile_revision_ids=[self.finding["observation_revision_id"]],
         )
         brief = {
             "title": "Synthetic badge-integrity brief",
-            "summary": "The source-grounded relation remains a research candidate.",
+            "summary": (
+                "Model inference: The finding rs900000001 remains only a "
+                "candidate hypothesis."
+            ),
             "clinical_stage": "candidate_hypothesis",
             "modality_badges": ["public_source", "reported_record"],
+            "timeline": [],
             "claims": [
                 {
-                    "statement": "Model inference: the relation remains a candidate mechanism.",
+                    "statement": (
+                        "Model inference: The finding rs900000001 remains only a "
+                        "candidate hypothesis."
+                    ),
                     "claim_role": "candidate_hypothesis",
                     "evidence_record_ids": [relation["evidence_record_id"]],
                     "profile_revision_ids": [self.finding["observation_revision_id"]],
@@ -499,11 +560,11 @@ class GenomiLabDiseaseInvestigationTests(
             "hypothesis_ids": [hypothesis["hypothesis_id"]],
             "gap_ids": [],
             "confirmation_needs": ["Independent clinical confirmation"],
-            "professional_questions": [],
+            "clinician_questions": [],
             "clinical_boundary": (
                 "Research support only; this is not a diagnosis or treatment decision."
             ),
-            "change_summary": "Initial brief.",
+            "change_summary": "Prepared a traceable rs900000001 research brief.",
         }
 
         with self.assertRaisesRegex(ValueError, "supported by the pinned profile"):

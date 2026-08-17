@@ -10,7 +10,7 @@ Version: 0.1.0
 ## Core rules
 
 - For installation or setup, read INSTALL_FOR_AGENTS.md first and follow it. Use SKILL.md and focused skill docs for runtime operating rules.
-- Base tools (genomi.* and journal.*) appear in MCP tools/list directly. Every other capability tool is reached via the genomi.invoke dispatcher after reading the relevant skills/<capability>/SKILL.md.
+- Direct MCP namespaces are genomi.*, genomilab.*, journal.*, and research.*. Load skills/genomilab/SKILL.md before GenomiLab work. Every other capability tool is reached via genomi.invoke after reading the relevant skills/<capability>/SKILL.md.
 - Treat genome source files as optional private context. Public-only genomic questions are valid.
 - After genomi.parse_source, use the Active Genome Index for normal future inquiries.
 - Use host_response_profiles for optional response-depth preferences; otherwise use the default without asking a standalone style question.
@@ -35,6 +35,7 @@ Version: 0.1.0
 ### Skills
 
 - [skills/genomic-inquiry/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/master/skills/genomic-inquiry/SKILL.md): Default natural-language DNA entrypoint.
+- [skills/genomilab/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/master/skills/genomilab/SKILL.md): Host-chaired specialist-board workflow, patient authorization, provider gates, local scientific-executor boundaries, and Research Desk monitoring.
 - [skills/active-genome-index/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/master/skills/active-genome-index/SKILL.md): Genome source selection, parsing, and Active Genome Index creation.
 - [skills/variant-evidence/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/master/skills/variant-evidence/SKILL.md): Variant, rsID, allele, region, support, and callability questions.
 - [skills/clinvar/SKILL.md](https://raw.githubusercontent.com/exon-research/genomi/master/skills/clinvar/SKILL.md): ClinVar matching, candidate inventory, and clinical-significance triage.

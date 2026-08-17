@@ -57,13 +57,20 @@ export function renderEvidence(records, activeProfileSnapshotId = "") {
 
       const status = evidenceStatus(envelope, evidence);
       const coverage = evidenceCoverage(envelope, evidence);
+      const omitReplayFallbacks = shouldOmitReplayFallbacks(evidence, envelope);
+      const omitSuccessfulEmptyUnavailable = shouldOmitSuccessfulEmptyUnavailable(
+        envelope,
+        coverage,
+      );
       const facts = node("dl", "", "evidence-facts");
       appendDefinition(facts, "Finding state", state.detail);
       appendDefinition(facts, "Answer readiness", evidenceReadiness(envelope));
       appendDefinition(facts, "Retrieval status", status);
       appendDefinition(facts, "Consulted scope", coverage.consulted);
       appendDefinition(facts, "No-match terms", coverage.misses);
-      appendDefinition(facts, "Unavailable sources", coverage.unavailable);
+      if (!omitReplayFallbacks && !omitSuccessfulEmptyUnavailable) {
+        appendDefinition(facts, "Unavailable sources", coverage.unavailable);
+      }
       if (coverage.failures !== "None recorded") {
         appendDefinition(facts, "Source problems", coverage.failures);
       }
@@ -72,7 +79,14 @@ export function renderEvidence(records, activeProfileSnapshotId = "") {
       const negativeNote = node("p", negative.message, `negative-inference negative-inference-${negative.kind}`);
       negativeNote.prepend(node("strong", "Negative-inference limit: "));
       const trace = node("p", `Immutable evidence record: ${text(record.evidence_record_id) || "not recorded"} · committed ${formatTime(text(record.created_at))}`, "record-trace-line");
-      item.append(heading, facts, sourceRecordList(evidence), negativeNote, trace);
+      const personalGenome = renderPersonalGenomeFindings(evidence);
+      item.append(
+        heading,
+        facts,
+        personalGenome || sourceRecordList(evidence),
+        negativeNote,
+        trace,
+      );
       return item;
     });
     list.append(...items);
@@ -82,10 +96,103 @@ export function renderEvidence(records, activeProfileSnapshotId = "") {
   elements.evidenceLedger.replaceChildren(...sections);
 }
 
+export function personalGenomeFindingPresentation(evidenceValue) {
+  const evidence = isObject(evidenceValue) ? evidenceValue : {};
+  const query = isObject(evidence.query) ? evidence.query : {};
+  const coverage = isObject(evidence.coverage) ? evidence.coverage : {};
+  const geneResults = array(evidence.gene_results).filter(isObject);
+  const consultedGenes = uniqueText([
+    ...array(query.consulted_genes),
+    ...geneResults
+      .filter((row) => text(row.coverage_state) !== "out_of_scope_for_input")
+      .map((row) => row.gene),
+  ]);
+  const noHitGenes = uniqueText(
+    geneResults
+      .filter((row) => text(row.coverage_state) === "in_scope_empty")
+      .map((row) => row.gene),
+  );
+  const genomeBuild = text(query.genome_build);
+  const variants = array(evidence.variants).filter(isObject).map((variant) => {
+    const genes = uniqueText(array(variant.matched_candidate_genes));
+    const position = [text(variant.chrom), text(variant.pos)].filter(Boolean).join(":");
+    const allele = text(variant.ref) && text(variant.alt)
+      ? `${text(variant.ref)}>${text(variant.alt)}`
+      : "";
+    return {
+      title: [genes.join(" / "), text(variant.rsid) || "Unregistered variant"].filter(Boolean).join(" · "),
+      details: [
+        genomeBuild,
+        position,
+        allele,
+        text(variant.genotype) ? `Genotype ${text(variant.genotype)}` : "",
+        text(variant.filter) ? `Filter ${text(variant.filter)}` : "",
+      ].filter(Boolean).join(" · "),
+    };
+  });
+  return {
+    visible: Boolean(variants.length || geneResults.length),
+    variants,
+    consultedGenes,
+    noHitGenes,
+    truncated: coverage.truncated === true,
+  };
+}
+
+function renderPersonalGenomeFindings(evidence) {
+  const presentation = personalGenomeFindingPresentation(evidence);
+  if (!presentation.visible) return null;
+  const section = node("section", "", "personal-genome-findings");
+  section.append(node("h5", "Bounded personal-genome findings"));
+  if (presentation.variants.length) {
+    const list = node("ul", "", "personal-genome-variant-list");
+    list.append(...presentation.variants.map((variant) => {
+      const item = node("li", "", "personal-genome-variant");
+      item.append(node("strong", variant.title), node("span", variant.details));
+      return item;
+    }));
+    section.append(list);
+  } else {
+    section.append(node("p", "No passing variant was returned in the consulted gene intervals.", "source-record-empty"));
+  }
+  const scope = [
+    presentation.consultedGenes.length
+      ? `Consulted candidate genes: ${presentation.consultedGenes.join(", ")}.`
+      : "",
+    presentation.noHitGenes.length
+      ? `No passing variant in consulted scope for ${presentation.noHitGenes.join(", ")}.`
+      : "",
+    presentation.truncated ? "At least one gene result was truncated." : "",
+  ].filter(Boolean).join(" ");
+  if (scope) section.append(node("p", scope, "personal-genome-scope"));
+  section.append(node(
+    "p",
+    "The Main Investigator received this bounded Active Genome Index result; specialists did not receive genome rows.",
+    "personal-genome-boundary",
+  ));
+  return section;
+}
+
 export function renderHypotheses(records, activeProfileSnapshotId = "") {
   const gapKinds = new Set(["evidence_gap", "confirmation_requirement"]);
-  const gaps = records.filter((record) => gapKinds.has(text(record.kind).toLowerCase()));
-  const hypotheses = records.filter((record) => !gapKinds.has(text(record.kind).toLowerCase()));
+  const currentRecords = activeProfileSnapshotId
+    ? records.filter(
+      (record) => text(record.patient_molecular_snapshot_id) === activeProfileSnapshotId
+    )
+    : records;
+  const supersededIds = new Set(
+    currentRecords.map((record) => text(record.supersedes_hypothesis_id)).filter(Boolean)
+  );
+  const latestRecords = currentRecords.filter(
+    (record) => !supersededIds.has(text(record.hypothesis_id))
+  );
+  const gaps = latestRecords.filter(
+    (record) => gapKinds.has(text(record.kind).toLowerCase())
+      && text(record.status).toLowerCase() === "open"
+  );
+  const hypotheses = latestRecords.filter(
+    (record) => !gapKinds.has(text(record.kind).toLowerCase())
+  );
   renderClaimList(elements.hypothesisList, hypotheses, "No hypotheses yet.", activeProfileSnapshotId);
   renderClaimList(elements.gapList, gaps, "No open gaps recorded yet.", activeProfileSnapshotId);
 }
@@ -251,13 +358,16 @@ export function evidenceWarnings(record) {
   const envelope = isObject(record.evidence_envelope)
     ? record.evidence_envelope
     : isObject(evidence.evidence_envelope) ? evidence.evidence_envelope : {};
+  const omitReplayFallbacks = shouldOmitReplayFallbacks(evidence, envelope);
   const warnings = [];
   const state = text(envelope.finding_state);
   if (state && state !== "evidence_present" && state !== "true_negative_supported") {
     warnings.push(evidenceFindingState(envelope, evidence).detail);
   }
   const coverage = evidenceCoverage(envelope, evidence);
-  if (coverage.unavailable !== "None recorded") warnings.push(`Unavailable sources: ${coverage.unavailable}.`);
+  if (!omitReplayFallbacks && coverage.unavailable !== "None recorded") {
+    warnings.push(`Unavailable sources: ${coverage.unavailable}.`);
+  }
   if (coverage.failures !== "None recorded") warnings.push(`Source problems: ${coverage.failures}.`);
   array(evidence.records).forEach((sourceRecord) => {
     const provenance = isObject(sourceRecord.provenance) ? sourceRecord.provenance : {};
@@ -270,6 +380,26 @@ export function evidenceWarnings(record) {
     }
   });
   return uniqueText(warnings);
+}
+
+function shouldOmitReplayFallbacks(evidence, envelope) {
+  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
+  const queryScope = isObject(envelope.query_scope) ? envelope.query_scope : {};
+  return demoPresentation
+    && text(evidence.status) === "data_returned"
+    && text(envelope.finding_state) === "evidence_present"
+    && (
+    text(evidence.access_mode) === "fixture"
+    || text(evidence.provider) === "fixture"
+    || text(queryScope.access_mode) === "fixture"
+  );
+}
+
+function shouldOmitSuccessfulEmptyUnavailable(envelope, coverage) {
+  const demoPresentation = globalThis.document?.body?.dataset?.presentation === "demo";
+  return demoPresentation
+    && text(envelope.finding_state) === "evidence_present"
+    && coverage.unavailable === "None recorded";
 }
 
 export function evidenceCurrencyNotes(record) {
@@ -301,9 +431,13 @@ export function claimTraceDetails(claim) {
   const list = node("ul", "", "claim-trace-list");
   const evidenceIds = array(claim.evidence_record_ids).map(text).filter(Boolean);
   const profileIds = array(claim.profile_revision_ids).map(text).filter(Boolean);
+  const hypothesisIds = array(claim.hypothesis_ids).map(text).filter(Boolean);
+  const gapIds = array(claim.gap_ids).map(text).filter(Boolean);
   evidenceIds.forEach((id) => list.append(node("li", `Evidence record: ${id}`)));
   profileIds.forEach((id) => list.append(node("li", `Profile revision: ${id}`)));
-  if (!evidenceIds.length && !profileIds.length) {
+  hypothesisIds.forEach((id) => list.append(node("li", `Hypothesis: ${id}`)));
+  gapIds.forEach((id) => list.append(node("li", `Evidence gap: ${id}`)));
+  if (!evidenceIds.length && !profileIds.length && !hypothesisIds.length && !gapIds.length) {
     list.append(node("li", "No immutable evidence or profile anchor was recorded."));
   }
   details.append(list);
@@ -342,13 +476,15 @@ export function sourceRecordList(evidence) {
 function sourceRecordItem(sourceRecord) {
   const item = node("li", "", "source-record-card");
   const provenance = isObject(sourceRecord.provenance) ? sourceRecord.provenance : {};
+  const sourceLicense = isObject(provenance.source_license) ? provenance.source_license : {};
+  const curatedReplay = text(sourceLicense.status) === "curated_short_paraphrase_demo_fixture";
   const titleValue = trustedEvidenceText(sourceRecord.title) || text(sourceRecord.source_id) || "Untitled source record";
   const safeUri = safeHttpUrl(provenance.original_source_uri);
   const title = safeUri ? safeSourceLink(titleValue, safeUri) : node("strong", titleValue);
   const meta = uniqueText([
     sourceIdentifierDescription(sourceRecord.identifiers),
     friendly(text(sourceRecord.source_document_state)),
-    text(provenance.publication_date) ? `Published ${text(provenance.publication_date)}` : "",
+    text(provenance.publication_date) ? `Source date ${text(provenance.publication_date)}` : "",
     text(provenance.original_source_version) ? `Version ${text(provenance.original_source_version)}` : "",
   ]);
   const header = node("div", "", "source-record-heading");
@@ -357,12 +493,28 @@ function sourceRecordItem(sourceRecord) {
   item.append(header);
 
   const excerpt = trustedEvidenceText(sourceRecord.excerpt);
-  if (excerpt) item.append(node("blockquote", excerpt, "source-excerpt"));
+  if (excerpt) {
+    if (curatedReplay) {
+      item.append(
+        node("strong", "Curated source summary", "supporting-span-label"),
+        node("p", excerpt, "source-excerpt")
+      );
+    } else {
+      item.append(node("blockquote", excerpt, "source-excerpt"));
+    }
+  }
   const spans = uniqueText(array(sourceRecord.supporting_spans).map(trustedEvidenceText));
   if (spans.length) {
     const spanList = node("ul", "", "supporting-span-list");
     spanList.append(...spans.map((span) => node("li", span)));
-    item.append(node("strong", "Supporting passage", "supporting-span-label"), spanList);
+    item.append(
+      node(
+        "strong",
+        curatedReplay ? "Interpretation limit" : "Supporting passage",
+        "supporting-span-label"
+      ),
+      spanList
+    );
   }
   return item;
 }
@@ -441,7 +593,7 @@ export function contextDisclosureDescription(value) {
   if (!profile) return "No private molecular-profile context";
   const count = array(profile.observations).length;
   const genome = profile.agi_snapshot_id ? ` and genome revision ${text(profile.agi_snapshot_id)}` : "";
-  return `${count} approved profile ${count === 1 ? "observation" : "observations"}${genome}`;
+  return `${count} included profile ${count === 1 ? "observation" : "observations"}${genome}`;
 }
 
 export function evidenceHeadline(envelope, record) {

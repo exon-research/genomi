@@ -28,6 +28,14 @@ let connectionsController;
 document.addEventListener("DOMContentLoaded", () => void initialize());
 
 async function initialize() {
+  const demoPresentation = globalThis.location.pathname === "/demo";
+  document.body.dataset.presentation = demoPresentation ? "demo" : "standard";
+  const demoDisclosure = document.getElementById("demo-mode-disclosure");
+  if (demoDisclosure) demoDisclosure.hidden = !demoPresentation;
+  const askGuidance = document.getElementById("ask-guidance");
+  if (demoPresentation && askGuidance) {
+    askGuidance.textContent = "Tell the current agent what you want to investigate. It creates and runs the investigation in that same task; return here to follow the patient context, evidence, hypotheses, gaps, and living brief.";
+  }
   collectElements();
   elements.alertDismiss.addEventListener("click", hideAlert);
   profileController = createProfileController({state, refresh});
@@ -35,7 +43,6 @@ async function initialize() {
   investigationController = createInvestigationController({
     state,
     session,
-    refresh,
     synchronizeProfile: () => profileController.synchronizeFormState(),
   });
   profileController.bind();
@@ -48,7 +55,7 @@ async function initialize() {
     return;
   }
   await refresh();
-  await connectionsController.load();
+  if (!demoPresentation) await connectionsController.load();
 }
 
 async function refresh() {
@@ -69,7 +76,16 @@ async function refresh() {
     }
     renderBootstrap(bootstrap, session.investigationId);
     if (bootstrap.status === "ready") profileController.synchronizeFormState();
-    if (bootstrap.status === "ready" && session.investigationId) {
+    const authorizationHandoff = state.authorizationHandoff();
+    if (bootstrap.status === "ready" && authorizationHandoff) {
+      await investigationController.open(
+        authorizationHandoff.investigation_id,
+        {
+          focus: true,
+          authorizationCandidate: authorizationHandoff.authorization_candidate,
+        }
+      );
+    } else if (bootstrap.status === "ready" && session.investigationId) {
       await investigationController.open(session.investigationId, {focus: false});
     }
     setActivity(bootstrap.status === "ready" ? "Research Desk ready." : "Waiting for Genomi user setup.");

@@ -9,11 +9,10 @@ from unittest import mock
 from genomi.operations import call_operation
 from genomi.runtime import context as runtime_context
 
-# Default tools/list returns ops in the two base capabilities (`genomi` and
-# `journal`) plus the genomi.invoke dispatcher. The journal capability owns the
-# research.* ops. gnomad is its own capability and reaches the agent only after
-# a skill read + genomi.invoke. Other focused capabilities follow the same
-# point-of-need disclosure contract.
+# Default tools/list returns ops in the base capabilities (`genomi`,
+# `genomilab`, and `journal`) plus the genomi.invoke dispatcher. GenomiLab is a
+# direct host-agent application boundary; focused genetics capabilities still
+# follow the point-of-need skill-read + genomi.invoke contract.
 DEFAULT_TASK_ENTRY_TOOLS = {
     "genomi.check_background_job",
     "genomi.check_libraries",
@@ -24,6 +23,25 @@ DEFAULT_TASK_ENTRY_TOOLS = {
     "genomi.parse_source",
     "genomi.search_indexes",
     "genomi.set_response_profile",
+    "genomilab.check_request",
+    "genomilab.create_investigation",
+    "genomilab.execute_request",
+    "genomilab.form_specialist_board",
+    "genomilab.inspect_investigation",
+    "genomilab.list_research_artifacts",
+    "genomilab.list_research_tools",
+    "genomilab.open_workspace",
+    "genomilab.prepare_authorization",
+    "genomilab.record_patient_observations",
+    "genomilab.record_specialist_report",
+    "genomilab.report_specialist_progress",
+    "genomilab.run_esm_substitution_analysis",
+    "genomilab.run_proto_blinded_experiment_design",
+    "genomilab.revoke_context",
+    "genomilab.submit_brief",
+    "genomilab.submit_plan",
+    "genomilab.submit_research_artifact",
+    "genomilab.verify_sequence_substitution",
     "journal.append_entry",
     "journal.export_memory",
     "journal.search_entries",
@@ -65,6 +83,15 @@ class GenomiRuntimeTestCase(unittest.TestCase):
         )
         self._git_repo.start()
         self.addCleanup(self._git_repo.stop)
+        # Tests that model a non-git/package-managed runtime opt into a bundled
+        # skill root explicitly. Prevent ordinary install tests from linking
+        # into the developer machine's real host skill directories.
+        self._skill_root = mock.patch(
+            "genomi.operations.registry.handlers_admin._resolve_install_skill_root",
+            return_value=None,
+        )
+        self._skill_root.start()
+        self.addCleanup(self._skill_root.stop)
         # genomi.install always materializes reference libraries. Stub the
         # installer subprocess so tests never download anything; tests that
         # assert install behavior override this with their own patch.

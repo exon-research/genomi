@@ -48,6 +48,7 @@ WRITE_OPERATIONS = {
 EVIDENCE_PRODUCING_OPERATIONS: frozenset[str] = frozenset(
     {
         "variant.resolve",
+        "variant.find_gene_variants",
         "phenotype.plan_risk_investigation",
         "pharmacogenomics.review_medication",
         "clinvar.scan_candidates",
@@ -204,6 +205,7 @@ CAPABILITY_METADATA: dict[str, JsonObject] = {
         "title": str(payload.get("title") or capability),
         "start_when": str(payload.get("start_when") or ""),
         "skill_documents": [str(path) for path in payload.get("skill_documents") or []],
+        "default_complete": bool(payload.get("default_complete", False)),
         "optional_libraries": list(payload.get("optional_libraries") or []),
         "library_check_operation": str(payload.get("library_check_operation") or ""),
     }
@@ -313,4 +315,6 @@ def _operation_namespace(name: str) -> str:
 # this set are reached via genomi.invoke after the agent reads the relevant
 # skill markdown. Keep this list in sync with the base-set filter in
 # `_select_operations`.
-BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST = frozenset({"genomi", "journal"})
+BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST = frozenset(
+    {"genomi", "genomilab", "journal"}
+)

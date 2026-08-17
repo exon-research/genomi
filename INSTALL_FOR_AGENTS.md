@@ -592,28 +592,30 @@ as supported-without-PGP-example.
 
 #### If they give you a path
 
-Ask, in this order (one at a time):
+The path is the only required genome handoff. On a fresh Genomi home, omit the
+nickname if the user did not volunteer one; intake creates an immediately
+usable local `Default user` profile, which can be renamed later. If a user is
+already selected, intake assigns the new AGI to that user. Ask which profile
+owns the genome only when an existing multi-user home is ambiguous.
 
-1. **Profile nickname:**
-   ```text
-   Profile nickname for this genome (e.g., your first name or initials)?
-   ```
-2. **Default-profile flag:**
-   ```text
-   Should this profile be the default Genomi uses in future sessions? (yes/no)
-   ```
+The default-profile choice is optional. Ask only when the user wants this
+profile selected automatically in future sessions:
+
+```text
+Should this profile be the default Genomi uses in future sessions? (yes/no)
+```
 
 Map answers to installer flags:
 
 | Captured | Flag |
 | --- | --- |
 | The path | `--genome-source <path>` |
-| The nickname | `--user-nickname <name>` |
+| A supplied or disambiguated nickname | `--user-nickname <name>` |
 | "yes" to default | `--set-default-user` |
 
 Don't ask about file format (auto-detected). Don't ask for a file label.
-If `GENOMI_HOME` already contains user profiles, the nickname is required
-to disambiguate.
+If `GENOMI_HOME` contains multiple profiles and none is selected/defaulted, a
+nickname is required to disambiguate.
 
 ### Step 9: Verify
 
@@ -630,14 +632,53 @@ A few pointers so they can actually use Genomi:
    every capability into a single HTML report.
 2. **Ask anything in natural language.** The host agent routes through
    Genomi's skills and tools; no jargon required.
-3. **90+ per-capability skills** were dropped into your host's skill
-   directories — pharmacogenomics, ancestry, GWAS, rare disease, cancer
-   risk, nutrigenomics, ClinVar lookup, gnomAD frequencies, PRS,
-   functional genomics, sequence utilities, plus a journal for
+3. **Focused capability skills** were dropped into your host's skill
+   directories — including GenomiLab, pharmacogenomics, ancestry, GWAS, rare
+   disease, cancer risk, nutrigenomics, ClinVar lookup, gnomAD frequencies,
+   PRS, functional genomics, sequence utilities, and a journal for
    investigation memory.
 4. **Privacy stays local.** Every reference library is cached on disk;
    every genome stays on disk; the only network calls are tool-level and
    clearly marked.
+
+#### Optional: open GenomiLab
+
+GenomiLab uses this same MCP server and the host agent that is already running
+it. Do not install or launch a separate Codex app-server, and do not ask for a
+processing-destination CLI label. Claude Code, Codex, or another compatible MCP
+host owns the conversation, planning, subagents, streaming, follow-ups, and
+native task controls; the GenomiLab portal handles patient onboarding, scoped
+approvals, provider setup, and monitoring committed research events.
+
+Unlike public-only Genomi questions, opening the GenomiLab Research Desk
+requires a current user with a query-ready Active Genome Index selected. If the
+user skipped Step 8, ask for the local genome-source path now and use core
+Genomi intake to prepare and select it. A simple instruction such as “Use this
+VCF for my genome: `/path/to/sample.vcf.gz`” is sufficient on a fresh or
+otherwise unambiguous home; do not introduce a second GenomiLab upload or setup
+flow. Ask which profile owns it only if existing profiles are ambiguous. Once
+the AGI is ready, call
+`genomilab.open_workspace` in the existing task and present its private
+loopback portal link when patient interaction is needed.
+
+For an owner-authorized Paperclip deployment, set
+`GENOMILAB_PAPERCLIP_AUTHORIZATION_CONFIG` to the owner-controlled JSON policy
+file before the host starts `genomi serve`. Never put the Paperclip API key in
+that file or an agent argument; the patient saves it in the portal.
+
+Optional bounded scientific executors are installed Python entry points in the
+fixed `genomi.scientific_executors` group. Set
+`GENOMILAB_ESM_SCIENTIFIC_EXECUTOR` or
+`GENOMILAB_PROTO_SCIENTIFIC_EXECUTOR` to the exact installed entry-point name
+before starting a fresh MCP session. The selectors are non-secret names; they
+do not accept `module:function` imports or shell commands. Leave them unset to
+keep the corresponding scientific operation explicitly unavailable.
+
+The GenomiLab encrypted research store and optional provider credentials need
+a working native OS credential store. SQLite holds the encrypted domain
+records; the OS store holds only encryption/provider key material and prevents
+a copied database from being readable without the local OS account. This does
+not change or duplicate the core AGI/query-store boundary.
 
 ### Step 11: Ask for a Star ⭐
 

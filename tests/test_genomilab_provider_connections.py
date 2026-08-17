@@ -26,7 +26,6 @@ from genomi.lab.provider_policy import (
     SourceFamily,
 )
 from genomi.lab.paperclip_transport import GxlPaperclipTransport
-from genomi.lab.harness_simulated import SimulatedHarnessAdapter
 from genomi.lab.service import GenomiLabService
 from genomi.lab.service_errors import LabError
 from genomi.lab.store import GenomiLabStore
@@ -595,7 +594,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=self.store,
                 paperclip_transport=GxlPaperclipTransport(
                     client_factory=lambda _secret: _PaperclipClient()
@@ -663,7 +661,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=self.store,
                 paperclip_deployment_authorization=_authorization(),
                 paperclip_patient_data_contract=_patient_data_contract(),
@@ -697,7 +694,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=self.store,
             )
             try:
@@ -752,7 +748,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                     operation_call=lambda _operation, _params: {
                         "active_user_id": "synthetic-user"
                     },
-                    harness_adapter=SimulatedHarnessAdapter(),
                     provider_credential_store=credential_store,
                 )
                 try:
@@ -824,7 +819,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                     operation_call=lambda _operation, _params: {
                         "active_user_id": "synthetic-user"
                     },
-                    harness_adapter=SimulatedHarnessAdapter(),
                     provider_credential_store=credential_store,
                 )
                 try:
@@ -895,7 +889,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=credential_store,
             )
             try:
@@ -961,7 +954,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=credential_store,
                 paperclip_deployment_authorization=_authorization(),
                 paperclip_patient_data_contract=_patient_data_contract(),
@@ -1035,7 +1027,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=credential_store,
             )
             try:
@@ -1078,7 +1069,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=credential_store,
             )
             try:
@@ -1125,7 +1115,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=credential_store,
                 paperclip_deployment_authorization=_authorization(),
                 paperclip_patient_data_contract=_patient_data_contract(),
@@ -1219,7 +1208,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=OSKeyringProviderCredentialStore(keyring),
             )
             second_service = GenomiLabService(
@@ -1228,7 +1216,6 @@ class ProviderConnectionsTests(unittest.TestCase):
                 operation_call=lambda _operation, _params: {
                     "active_user_id": "synthetic-user"
                 },
-                harness_adapter=SimulatedHarnessAdapter(),
                 provider_credential_store=OSKeyringProviderCredentialStore(keyring),
             )
             failures: list[BaseException] = []

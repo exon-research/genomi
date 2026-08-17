@@ -32,7 +32,7 @@ AUTHORIZATION_SUBJECT_KINDS = frozenset(
     }
 )
 INVESTIGATION_AUTHORIZATION_INTENTS = frozenset(
-    {"plan", "execute_accepted_plan", "user_followup", "resume", "cancel"}
+    {"plan", "execute_accepted_plan", "user_followup", "resume"}
 )
 
 
@@ -45,28 +45,28 @@ class _StoreContract(Protocol):
 def canonical_investigation_authorization_scope(value: object) -> JsonObject:
     """Validate and canonicalize the initial local research boundary."""
 
-    if not isinstance(value, dict) or set(value) != {"harness", "providers"}:
+    if not isinstance(value, dict) or set(value) != {"agent_session", "providers"}:
         raise ValueError(
-            "authorization_scope must contain exactly harness and providers"
+            "authorization_scope must contain exactly agent_session and providers"
         )
-    harness = value.get("harness")
-    if not isinstance(harness, dict) or set(harness) != {
+    agent_session = value.get("agent_session")
+    if not isinstance(agent_session, dict) or set(agent_session) != {
         "recipient_id",
         "destination",
         "allowed_intents",
     }:
         raise ValueError(
-            "authorization_scope.harness must contain exactly recipient_id, "
+            "authorization_scope.agent_session must contain exactly recipient_id, "
             "destination, and allowed_intents"
         )
-    raw_intents = harness.get("allowed_intents")
+    raw_intents = agent_session.get("allowed_intents")
     if not isinstance(raw_intents, list) or not raw_intents:
-        raise ValueError("authorization_scope harness intents must be non-empty")
+        raise ValueError("authorization_scope agent-session intents must be non-empty")
     if any(not isinstance(intent, str) or not intent.strip() for intent in raw_intents):
-        raise ValueError("authorization_scope harness intents must be strings")
+        raise ValueError("authorization_scope agent-session intents must be strings")
     intents = sorted({intent.strip() for intent in raw_intents})
     if len(intents) != len(raw_intents):
-        raise ValueError("authorization_scope harness intents must be unique")
+        raise ValueError("authorization_scope agent-session intents must be unique")
     unknown = set(intents) - INVESTIGATION_AUTHORIZATION_INTENTS
     if unknown:
         raise ValueError(
@@ -84,12 +84,12 @@ def canonical_investigation_authorization_scope(value: object) -> JsonObject:
             "provider authorization is not part of the initial investigation scope"
         )
     scope = {
-        "harness": {
+        "agent_session": {
             "recipient_id": required_text(
-                harness.get("recipient_id"), "harness recipient_id", 200
+                agent_session.get("recipient_id"), "agent-session recipient_id", 200
             ),
             "destination": required_text(
-                harness.get("destination"), "harness destination", 300
+                agent_session.get("destination"), "agent-session destination", 300
             ),
             "allowed_intents": intents,
         },

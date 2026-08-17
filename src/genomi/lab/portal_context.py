@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from .genomic_scope import GENE_VARIANT_OPERATION
 from .models import EXACT_VARIANT_RE, RSID_RE, JsonObject
 from .service_errors import LabError
 
@@ -28,6 +29,7 @@ _REVIEWED_STATES = frozenset(
 _REPORTED_FINDING_MODALITIES = frozenset(
     {"reported_germline_finding", "reported_somatic_finding"}
 )
+_PHENOTYPE_CANDIDATE_MODALITIES = frozenset({"phenotype"})
 
 
 class _PortalContextApplication(Protocol):
@@ -173,7 +175,7 @@ class PortalContextApplicationMixin:
             self.store.get_profile_observation(user_id, str(revision_id))
             for revision_id in base.get("observation_revision_ids") or []
         ]
-        genomic_scope = _one_reviewed_reported_variant_scope(observations)
+        genomic_scope = _reviewed_profile_genomic_scope(observations)
         if genomic_scope is None:
             return self._issue_context_candidate_receipt(
                 base, action="refresh" if pinned else "initial"
@@ -220,7 +222,7 @@ class PortalContextApplicationMixin:
         return {**comparison, "candidate": candidate}
 
 
-def _one_reviewed_reported_variant_scope(
+def _reviewed_profile_genomic_scope(
     observations: list[JsonObject],
 ) -> JsonObject | None:
     scopes: dict[tuple[object, ...], JsonObject] = {}
@@ -240,9 +242,18 @@ def _one_reviewed_reported_variant_scope(
             for field in ("operation", "rsid", "chrom", "pos", "ref", "alt")
         )
         scopes[key] = scope
-    if len(scopes) != 1:
+    if len(scopes) == 1:
+        return next(iter(scopes.values()))
+    if scopes:
         return None
-    return next(iter(scopes.values()))
+    if any(
+        observation.get("modality") in _PHENOTYPE_CANDIDATE_MODALITIES
+        and observation.get("verification_state") in _REVIEWED_STATES
+        and observation.get("assertion_status") == "present"
+        for observation in observations
+    ):
+        return {"operation": GENE_VARIANT_OPERATION}
+    return None
 
 
 def _reported_variant_scope(reported: str) -> JsonObject | None:

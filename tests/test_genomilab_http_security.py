@@ -32,6 +32,8 @@ class _SyntheticService:
         self.authorization_requests: list[
             tuple[str, str, dict[str, object]]
         ] = []
+        self.revocation_requests: list[str] = []
+        self.event_requests: list[tuple[str, int | None]] = []
         self.integration_requests: list[tuple[str, str, object]] = []
         self.bootstrap_error: Exception | None = None
 
@@ -114,16 +116,54 @@ class _SyntheticService:
             "status": "authorization_required",
             "investigation_id": investigation_id,
             "authorization_candidate_receipt": "signed-candidate",
-            "authorization_scope": {"harness": {}, "providers": []},
+            "authorization_scope": {"agent_session": {}, "providers": []},
         }
 
-    def authorize_and_start_investigation(
+    def authorize_investigation_context(
         self, investigation_id: str, payload: dict[str, object]
     ) -> dict[str, object]:
         self.authorization_requests.append(
-            (investigation_id, "start", dict(payload))
+            (investigation_id, "authorize_context", dict(payload))
         )
-        return {"status": "in_progress", "investigation_id": investigation_id}
+        return {
+            "status": "awaiting_agent_plan",
+            "execution_owner": "underlying_agent",
+            "investigation_id": investigation_id,
+        }
+
+    def revoke_agent_context(self, investigation_id: str) -> dict[str, object]:
+        self.revocation_requests.append(investigation_id)
+        return {
+            "status": "revoked",
+            "investigation_id": investigation_id,
+            "native_agent_task_affected": False,
+        }
+
+    def replay_investigation_events(
+        self, investigation_id: str
+    ) -> dict[str, object]:
+        self.event_requests.append((investigation_id, None))
+        return {
+            "status": "events",
+            "execution_owner": "underlying_agent",
+            "events": [
+                {
+                    "sequence": 1,
+                    "event_type": "plan_accepted",
+                    "payload": {"status": "accepted"},
+                }
+            ],
+        }
+
+    def stream_investigation_events(
+        self, investigation_id: str, *, after_sequence: int
+    ) -> dict[str, object]:
+        self.event_requests.append((investigation_id, after_sequence))
+        return {
+            "status": "events",
+            "execution_owner": "underlying_agent",
+            "events": [],
+        }
 
     def add_source_artifact(self, payload: dict[str, object]) -> dict[str, object]:
         self.created_source_artifacts.append(payload)
@@ -280,6 +320,10 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
         self.assertEqual(shell.status, 200)
         self.assertNotIn(self.launch_token, shell.body.decode("utf-8"))
         self.assertIsNone(shell.headers.get("Set-Cookie"))
+        demo_shell = self.request("GET", "/demo")
+        self.assertEqual(demo_shell.status, 200)
+        self.assertEqual(demo_shell.body, shell.body)
+        self.assertIsNone(demo_shell.headers.get("Set-Cookie"))
 
         exchange = self.request(
             "POST",
@@ -310,6 +354,199 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             },
         )
         self.assert_error(replay, 401, "invalid_launch_token")
+
+    def test_signed_agent_candidate_is_revealed_only_after_its_authenticated_launch(
+        self,
+    ) -> None:
+        investigation_id = "investigation-acde1234"
+        candidate = {
+            "status": "authorization_required",
+            "investigation_id": investigation_id,
+            "purpose": "Private synthetic patient purpose",
+            "observation_revision_ids": ["observation-revision-acde1234"],
+            "authorization_scope": {"agent_session": {}, "providers": []},
+            "authorization_candidate_receipt": "private-signed-agent-candidate",
+        }
+        launch_url = self.server.issue_launch_url(
+            authorization_handoff={
+                "kind": "investigation_authorization",
+                "investigation_id": investigation_id,
+                "authorization_candidate": candidate,
+            }
+        )
+
+        self.assertNotIn(investigation_id, launch_url)
+        self.assertNotIn(candidate["purpose"], launch_url)
+        self.assertNotIn(candidate["authorization_candidate_receipt"], launch_url)
+        before_exchange = self.request(
+            "GET", "/api/v1/bootstrap", headers=self.authenticated_headers()
+        )
+        self.assertEqual(before_exchange.status, 200)
+        self.assertNotIn("authorization_handoff", before_exchange.json())
+
+        launch_token = self.server.launch_token
+        exchange = self.request(
+            "POST",
+            "/api/v1/session",
+            headers={
+                "Origin": self.origin,
+                "X-GenomiLab-Launch-Token": launch_token,
+            },
+        )
+        self.assertEqual(exchange.status, 200)
+        unauthenticated = self.request("GET", "/api/v1/bootstrap")
+        self.assert_error(unauthenticated, 401, "authentication_required")
+
+        authenticated = self.request(
+            "GET", "/api/v1/bootstrap", headers=self.authenticated_headers()
+        )
+        self.assertEqual(authenticated.status, 200)
+        self.assertEqual(
+            authenticated.json()["authorization_handoff"],
+            {
+                "kind": "investigation_authorization",
+                "investigation_id": investigation_id,
+                "authorization_candidate": candidate,
+            },
+        )
+        self.assertEqual(self.service.authorization_requests, [])
+
+        approved = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/authorize-context",
+            headers=self.mutation_headers(),
+            body=json.dumps(
+                {
+                    "approved": True,
+                    "authorization_candidate_receipt": (
+                        candidate["authorization_candidate_receipt"]
+                    ),
+                }
+            ).encode("utf-8"),
+        )
+        self.assertEqual(approved.status, 201)
+        after_approval = self.request(
+            "GET", "/api/v1/bootstrap", headers=self.authenticated_headers()
+        )
+        self.assertNotIn("authorization_handoff", after_approval.json())
+
+    def test_new_launch_revokes_old_portal_credentials_and_owns_its_handoff(
+        self,
+    ) -> None:
+        first_exchange = self.request(
+            "POST",
+            "/api/v1/session",
+            headers={
+                "Origin": self.origin,
+                "X-GenomiLab-Launch-Token": self.launch_token,
+            },
+        )
+        self.assertEqual(first_exchange.status, 200)
+        first_credentials = first_exchange.json()
+
+        investigation_id = "investigation-beef1234"
+        candidate_receipt = "candidate-for-new-launch-only"
+        self.server.issue_launch_url(
+            authorization_handoff={
+                "kind": "investigation_authorization",
+                "investigation_id": investigation_id,
+                "authorization_candidate": {
+                    "status": "authorization_required",
+                    "investigation_id": investigation_id,
+                    "authorization_candidate_receipt": candidate_receipt,
+                    "authorization_scope": {
+                        "agent_session": {},
+                        "providers": [],
+                    },
+                },
+            }
+        )
+        second_exchange = self.request(
+            "POST",
+            "/api/v1/session",
+            headers={
+                "Origin": self.origin,
+                "X-GenomiLab-Launch-Token": self.server.launch_token,
+            },
+        )
+        self.assertEqual(second_exchange.status, 200)
+        second_credentials = second_exchange.json()
+        self.assertNotEqual(
+            first_credentials["session_token"], second_credentials["session_token"]
+        )
+        self.assertNotEqual(
+            first_credentials["csrf_token"], second_credentials["csrf_token"]
+        )
+
+        stale_read = self.request(
+            "GET",
+            "/api/v1/bootstrap",
+            headers={
+                "X-GenomiLab-Session": str(first_credentials["session_token"])
+            },
+        )
+        self.assert_error(stale_read, 401, "authentication_required")
+
+        approval_payload = json.dumps(
+            {
+                "approved": True,
+                "authorization_candidate_receipt": candidate_receipt,
+            }
+        ).encode("utf-8")
+        stale_approval = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/authorize-context",
+            headers={
+                "X-GenomiLab-Session": str(first_credentials["session_token"]),
+                "Origin": self.origin,
+                "X-GenomiLab-CSRF": str(first_credentials["csrf_token"]),
+                "Content-Type": "application/json",
+            },
+            body=approval_payload,
+        )
+        self.assert_error(stale_approval, 401, "authentication_required")
+        self.assertEqual(self.service.authorization_requests, [])
+
+        current_read = self.request(
+            "GET",
+            "/api/v1/bootstrap",
+            headers={
+                "X-GenomiLab-Session": str(second_credentials["session_token"])
+            },
+        )
+        self.assertEqual(current_read.status, 200)
+        self.assertEqual(
+            current_read.json()["authorization_handoff"][
+                "authorization_candidate"
+            ]["authorization_candidate_receipt"],
+            candidate_receipt,
+        )
+
+        current_approval = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/authorize-context",
+            headers={
+                "X-GenomiLab-Session": str(second_credentials["session_token"]),
+                "Origin": self.origin,
+                "X-GenomiLab-CSRF": str(second_credentials["csrf_token"]),
+                "Content-Type": "application/json",
+            },
+            body=approval_payload,
+        )
+        self.assertEqual(current_approval.status, 201)
+        self.assertEqual(
+            self.service.authorization_requests,
+            [
+                (
+                    investigation_id,
+                    "authorize_context",
+                    {
+                        "approved": True,
+                        "authorization_candidate_receipt": candidate_receipt,
+                    },
+                )
+            ],
+        )
 
     def test_query_launch_token_and_ambient_cookies_never_authenticate(self) -> None:
         query_launch = self.request("GET", f"/?token={quote(self.launch_token)}")
@@ -463,14 +700,6 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
         )
         self.assert_error(non_object, 400, "invalid_json")
 
-        investigation_wrong_type = self.request(
-            "POST",
-            "/api/v1/investigations",
-            headers=self.mutation_headers(content_type="text/plain"),
-            body=b"{}",
-        )
-        self.assert_error(investigation_wrong_type, 415, "unsupported_media_type")
-
     def test_integration_setup_is_authenticated_csrf_protected_and_redacted(
         self,
     ) -> None:
@@ -548,10 +777,18 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             [("biohub-esm", "verify", None)],
         )
 
-    def test_one_start_authorization_routes_delegate_exact_json_payloads(
+    def test_context_authorization_route_delegates_exact_json_without_task_controls(
         self,
     ) -> None:
         investigation_id = "investigation-acde1234"
+        browser_create = self.request(
+            "POST",
+            "/api/v1/investigations",
+            headers=self.mutation_headers(),
+            body=b'{"question":"browser must not create investigations"}',
+        )
+        self.assert_error(browser_create, 404, "not_found")
+
         selection = {
             "purpose": "Investigate a synthetic condition",
             "observation_revision_ids": ["observation-revision-acde1234"],
@@ -568,19 +805,67 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             "authorization_candidate_receipt": "signed-candidate",
             "approved": True,
         }
-        started = self.request(
+        authorized = self.request(
             "POST",
-            f"/api/v1/investigations/{investigation_id}/authorize-start",
+            f"/api/v1/investigations/{investigation_id}/authorize-context",
             headers=self.mutation_headers(),
             body=json.dumps(approval).encode("utf-8"),
         )
-        self.assertEqual(started.status, 201)
+        self.assertEqual(authorized.status, 201)
+        self.assertEqual(authorized.json()["status"], "awaiting_agent_plan")
         self.assertEqual(
             self.service.authorization_requests,
             [
                 (investigation_id, "candidate", selection),
-                (investigation_id, "start", approval),
+                (investigation_id, "authorize_context", approval),
             ],
+        )
+
+        revoked = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/revoke-context",
+            headers=self.mutation_headers(),
+            body=b"{}",
+        )
+        self.assertEqual(revoked.status, 200)
+        self.assertFalse(revoked.json()["native_agent_task_affected"])
+        self.assertEqual(self.service.revocation_requests, [investigation_id])
+
+        misleading_revoke = self.request(
+            "POST",
+            f"/api/v1/investigations/{investigation_id}/revoke-context",
+            headers=self.mutation_headers(),
+            body=b'{"cancel":true}',
+        )
+        self.assert_error(
+            misleading_revoke, 400, "invalid_context_revocation"
+        )
+        self.assertEqual(self.service.revocation_requests, [investigation_id])
+
+    def test_investigation_activity_routes_return_committed_domain_events(
+        self,
+    ) -> None:
+        investigation_id = "investigation-acde1234"
+        replay = self.request(
+            "GET",
+            f"/api/v1/investigations/{investigation_id}/events",
+            headers=self.authenticated_headers(),
+        )
+        self.assertEqual(replay.status, 200)
+        self.assertEqual(replay.json()["execution_owner"], "underlying_agent")
+        self.assertEqual(replay.json()["events"][0]["event_type"], "plan_accepted")
+
+        stream_headers = self.authenticated_headers()
+        stream_headers["Last-Event-ID"] = "7"
+        stream = self.request(
+            "GET",
+            f"/api/v1/investigations/{investigation_id}/event-stream",
+            headers=stream_headers,
+        )
+        self.assertEqual(stream.status, 200)
+        self.assertEqual(
+            self.service.event_requests,
+            [(investigation_id, None), (investigation_id, 7)],
         )
 
     def test_profile_entity_and_revision_routes_delegate_exact_json_payloads(
@@ -702,10 +987,14 @@ class GenomiLabHTTPSecurityTests(unittest.TestCase):
             "context-approval",
             "context-compare",
             "harness-preview",
+            "authorize-start",
+            "messages",
+            "cancel",
             "start",
             "resume",
             "replace-harness",
             "plan-accept",
+            "review-packet",
         ):
             with self.subTest(legacy_action=legacy_action):
                 legacy = self.request(

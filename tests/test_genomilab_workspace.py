@@ -9,32 +9,16 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from genomi.lab.harness import SimulatedHarnessAdapter
 from genomi.lab.service import GenomiLabService, LabError
 from genomi.lab.store import GenomiLabStore
 from genomi.runtime import context as runtime_context
-from tests.genomilab_support import TEST_LAB_KEY_PROVIDER
+from tests.genomilab_support import (
+    TEST_LAB_KEY_PROVIDER,
+    synthetic_ready_agi_context,
+)
 
 
 JsonObject = dict[str, Any]
-
-
-class _BlockingEventWaitAdapter(SimulatedHarnessAdapter):
-    def __init__(self) -> None:
-        super().__init__(adapter_id="blocking-event-wait")
-        self.wait_entered = threading.Event()
-        self.release_wait = threading.Event()
-
-    def wait_for_events(
-        self,
-        investigation_id: str,
-        *,
-        after_cursor: int,
-        timeout_seconds: float,
-    ) -> bool:
-        del investigation_id, after_cursor, timeout_seconds
-        self.wait_entered.set()
-        return self.release_wait.wait(timeout=5)
 
 
 class _MutableGenomiContext:
@@ -43,13 +27,26 @@ class _MutableGenomiContext:
     def __init__(self) -> None:
         self.user_id: str | None = None
         self.nickname: str | None = None
+        self.ready_agi = True
 
-    def select(self, user_id: str | None, nickname: str | None = None) -> None:
+    def select(
+        self,
+        user_id: str | None,
+        nickname: str | None = None,
+        *,
+        ready_agi: bool = True,
+    ) -> None:
         self.user_id = user_id
         self.nickname = nickname
+        self.ready_agi = ready_agi
 
     def __call__(self, operation: str, params: JsonObject | None = None) -> JsonObject:
         if operation == "genomi.describe_context":
+            if self.user_id is not None and self.ready_agi:
+                return synthetic_ready_agi_context(
+                    self.user_id,
+                    self.nickname or self.user_id,
+                )
             active_user = (
                 {
                     "user_id": self.user_id,
@@ -159,8 +156,35 @@ class GenomiLabWorkspaceTests(unittest.TestCase):
         self.assertEqual(first["profile"]["user_id"], "user-synthetic-a")
         self.assertEqual(first["profile"]["observations"], [])
         self.assertIn("modality_coverage", first["profile"])
-        self.assertIsNone(first["profile"]["genome"])
+        self.assertEqual(
+            first["profile"]["genome"],
+            {
+                "agi_id": "agi-user-synthetic-a",
+                "agi_snapshot_id": "agi-snapshot-user-synthetic-a",
+                "genome_build": "GRCh38",
+                "readiness": "completed",
+                "access_approved": False,
+            },
+        )
         self.assertEqual(first["investigations"], [])
+
+    def test_current_user_without_ready_agi_returns_typed_setup_required(
+        self,
+    ) -> None:
+        self.genomi.select(
+            "user-without-agi",
+            "Synthetic no-AGI user",
+            ready_agi=False,
+        )
+
+        result = self.service.bootstrap_workspace()
+
+        self.assertEqual(result["status"], "setup_required")
+        self.assertEqual(result["code"], "active_genome_index_required")
+        self.assertIsNone(result["workspace"])
+        self.assertEqual(result["setup"]["current_readiness"], "unavailable")
+        self.assertIn("completed", result["setup"]["accepted_readiness"])
+        self.assertIn("variants_ready", result["setup"]["accepted_readiness"])
 
     def test_reopening_and_switching_current_user_preserves_isolation(self) -> None:
         workspace_a = self._select_user("user-synthetic-a", "Synthetic A")
@@ -707,104 +731,6 @@ class GenomiLabWorkspaceTests(unittest.TestCase):
         profile_b = self.service.molecular_profile()
         self.assertEqual(profile_b["user_id"], "user-synthetic-b")
         self.assertNotIn("Must not commit for patient A", repr(profile_b))
-
-    def test_event_long_poll_does_not_block_other_patient_operations(self) -> None:
-        self._select_user("user-synthetic-a", "Synthetic A")
-        investigation = self.service.create_investigation(
-            {
-                "question": "Could this synthetic condition be investigated?",
-                "disease_scope": "Synthetic condition",
-            }
-        )
-        adapter = _BlockingEventWaitAdapter()
-        self.service.harness_adapter = adapter
-        stream_outcomes: list[object] = []
-
-        def stream() -> None:
-            try:
-                stream_outcomes.append(
-                    self.service.stream_investigation_events(
-                        str(investigation["investigation_id"]),
-                        after_sequence=0,
-                        timeout_seconds=5,
-                    )
-                )
-            except Exception as exc:  # asserted below
-                stream_outcomes.append(exc)
-
-        stream_worker = threading.Thread(target=stream)
-        stream_worker.start()
-        self.assertTrue(adapter.wait_entered.wait(timeout=2))
-
-        read_outcomes: list[object] = []
-        read_finished = threading.Event()
-
-        def read_profile() -> None:
-            try:
-                read_outcomes.append(self.service.molecular_profile())
-            except Exception as exc:  # asserted below
-                read_outcomes.append(exc)
-            finally:
-                read_finished.set()
-
-        read_worker = threading.Thread(target=read_profile)
-        read_worker.start()
-        try:
-            self.assertTrue(
-                read_finished.wait(timeout=1),
-                "a long-poll wait held the patient-operation authority lock",
-            )
-        finally:
-            adapter.release_wait.set()
-        read_worker.join(timeout=2)
-        stream_worker.join(timeout=2)
-
-        self.assertFalse(read_worker.is_alive())
-        self.assertFalse(stream_worker.is_alive())
-        self.assertEqual(len(read_outcomes), 1)
-        self.assertIsInstance(read_outcomes[0], dict)
-        self.assertEqual(len(stream_outcomes), 1)
-        self.assertIsInstance(stream_outcomes[0], dict)
-
-    def test_user_switch_during_event_wait_returns_no_prior_user_events(self) -> None:
-        self._select_user("user-synthetic-a", "Synthetic A")
-        investigation = self.service.create_investigation(
-            {
-                "question": "Patient A private investigation question",
-                "disease_scope": "Synthetic condition",
-            }
-        )
-        adapter = _BlockingEventWaitAdapter()
-        self.service.harness_adapter = adapter
-        outcomes: list[object] = []
-
-        def stream() -> None:
-            try:
-                outcomes.append(
-                    self.service.stream_investigation_events(
-                        str(investigation["investigation_id"]),
-                        after_sequence=0,
-                        timeout_seconds=5,
-                    )
-                )
-            except Exception as exc:  # asserted below
-                outcomes.append(exc)
-
-        worker = threading.Thread(target=stream)
-        worker.start()
-        self.assertTrue(adapter.wait_entered.wait(timeout=2))
-        self.genomi.select("user-synthetic-b", "Synthetic B")
-        adapter.release_wait.set()
-        worker.join(timeout=2)
-
-        self.assertFalse(worker.is_alive())
-        self.assertEqual(len(outcomes), 1)
-        self.assertIsInstance(outcomes[0], LabError)
-        self.assertEqual(outcomes[0].code, "genomi_user_changed")
-        self.assertNotIn("Patient A private investigation question", repr(outcomes[0]))
-        profile_b = self.service.molecular_profile()
-        self.assertEqual(profile_b["user_id"], "user-synthetic-b")
-
 
 if __name__ == "__main__":
     unittest.main()

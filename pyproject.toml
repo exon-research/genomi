@@ -72,7 +72,36 @@ where = ["src"]
 "genomi.capabilities.research" = ["tool_catalog.json"]
 "genomi.capabilities.sequence" = ["tool_catalog.json"]
 "genomi.capabilities.variant" = ["tool_catalog.json"]
-"genomi.lab" = ["static/*.html", "static/*.css", "static/*.js"]
+"genomi.lab" = ["tool_catalog.json", "static/*.html", "static/*.css", "static/*.js"]
+
+# Keep the canonical agent guidance outside the Python package in the source
+# tree, while installing the same layout under <environment>/share/genomi for
+# package-managed runtimes. Runtime discovery and host-skill linking resolve
+# either layout through genomi.runtime.skill_assets.
+[tool.setuptools.data-files]
+"share/genomi" = ["SKILL.md"]
+"share/genomi/skills" = ["skills/_output-rules.md"]
+"share/genomi/skills/active-genome-index" = ["skills/active-genome-index/SKILL.md"]
+"share/genomi/skills/analytical-grounding" = ["skills/analytical-grounding/SKILL.md"]
+"share/genomi/skills/ancestry" = ["skills/ancestry/SKILL.md"]
+"share/genomi/skills/clinvar" = ["skills/clinvar/SKILL.md"]
+"share/genomi/skills/conventions" = ["skills/conventions/context-routing.md", "skills/conventions/evidence-quality.md"]
+"share/genomi/skills/decode" = ["skills/decode/SKILL.md"]
+"share/genomi/skills/drug-targets" = ["skills/drug-targets/SKILL.md"]
+"share/genomi/skills/functional-genomics" = ["skills/functional-genomics/SKILL.md"]
+"share/genomi/skills/genomic-inquiry" = ["skills/genomic-inquiry/SKILL.md"]
+"share/genomi/skills/genomilab" = ["skills/genomilab/SKILL.md"]
+"share/genomi/skills/genomilab/agents" = ["skills/genomilab/agents/openai.yaml"]
+"share/genomi/skills/gnomad" = ["skills/gnomad/SKILL.md"]
+"share/genomi/skills/gwas-catalog" = ["skills/gwas-catalog/SKILL.md"]
+"share/genomi/skills/journal" = ["skills/journal/SKILL.md"]
+"share/genomi/skills/nutrigenomics" = ["skills/nutrigenomics/SKILL.md"]
+"share/genomi/skills/pharmacogenomics" = ["skills/pharmacogenomics/SKILL.md"]
+"share/genomi/skills/prs" = ["skills/prs/SKILL.md"]
+"share/genomi/skills/rare-disease-cancer" = ["skills/rare-disease-cancer/SKILL.md"]
+"share/genomi/skills/sequence" = ["skills/sequence/SKILL.md"]
+"share/genomi/skills/source-research" = ["skills/source-research/SKILL.md"]
+"share/genomi/skills/variant-evidence" = ["skills/variant-evidence/SKILL.md"]
 
 [tool.ruff]
 required-version = "==0.16.2"

@@ -46,10 +46,30 @@ export class PortalState {
     return Array.isArray(records) ? records : [];
   }
 
-  harnessManifest() {
+  underlyingAgentManifest() {
     const capabilities = this.bootstrap && this.bootstrap.capabilities;
-    const manifest = capabilities && capabilities.installed_harness;
+    const manifest = capabilities && capabilities.underlying_agent;
     return manifest && typeof manifest === "object" ? manifest : {};
+  }
+
+  authorizationHandoff() {
+    const handoff = this.bootstrap && this.bootstrap.authorization_handoff;
+    if (!handoff || typeof handoff !== "object") return null;
+    const candidate = handoff.authorization_candidate;
+    if (
+      handoff.kind !== "investigation_authorization"
+      || typeof handoff.investigation_id !== "string"
+      || !handoff.investigation_id
+      || !candidate
+      || typeof candidate !== "object"
+      || Array.isArray(candidate)
+      || candidate.investigation_id !== handoff.investigation_id
+      || typeof candidate.authorization_candidate_receipt !== "string"
+      || !candidate.authorization_candidate_receipt
+    ) {
+      return null;
+    }
+    return handoff;
   }
 }
 
@@ -63,13 +83,11 @@ export class InvestigationSession {
     this.investigationId = "";
     this.investigation = null;
     this.contextCandidate = null;
-    this.outboundCandidate = null;
     this.eventSequence = 0;
     this._openToken = Symbol("closed-investigation");
     this._investigationLoadToken = Symbol("investigation-load");
     this._selectionToken = Symbol("context-selection");
     this._previewToken = Symbol("context-preview");
-    this._outboundPreviewToken = Symbol("outbound-preview");
     this._reconnectToken = Symbol("event-reconnect");
     this._eventStreamController = null;
   }
@@ -79,13 +97,11 @@ export class InvestigationSession {
     this.investigationId = String(investigationId || "");
     this.investigation = null;
     this.contextCandidate = null;
-    this.outboundCandidate = null;
     this.eventSequence = 0;
     this._openToken = Symbol("investigation-open");
     this._investigationLoadToken = Symbol("investigation-load");
     this._selectionToken = Symbol("context-selection");
     this._previewToken = Symbol("context-preview");
-    this._outboundPreviewToken = Symbol("outbound-preview");
     this._reconnectToken = Symbol("event-reconnect");
     return this.openRequest();
   }
@@ -160,35 +176,6 @@ export class InvestigationSession {
     return true;
   }
 
-  beginOutboundPreview(open = this.openRequest()) {
-    if (!this.isCurrent(open)) return null;
-    this.outboundCandidate = null;
-    this._outboundPreviewToken = Symbol("outbound-preview");
-    return Object.freeze({
-      open,
-      token: this._outboundPreviewToken,
-    });
-  }
-
-  isCurrentOutboundPreview(request) {
-    return Boolean(
-      request
-      && this.isCurrent(request.open)
-      && request.token === this._outboundPreviewToken
-    );
-  }
-
-  acceptOutboundCandidate(request, candidate) {
-    if (!this.isCurrentOutboundPreview(request)) return false;
-    this.outboundCandidate = candidate;
-    return true;
-  }
-
-  discardOutboundCandidate() {
-    this._outboundPreviewToken = Symbol("outbound-preview");
-    this.outboundCandidate = null;
-  }
-
   beginReconnect(open = this.openRequest()) {
     this._reconnectToken = Symbol("event-reconnect");
     return Object.freeze({open, token: this._reconnectToken});
@@ -230,13 +217,11 @@ export class InvestigationSession {
     this.investigationId = "";
     this.investigation = null;
     this.contextCandidate = null;
-    this.outboundCandidate = null;
     this.eventSequence = 0;
     this._openToken = Symbol("closed-investigation");
     this._investigationLoadToken = Symbol("investigation-load");
     this._selectionToken = Symbol("context-selection");
     this._previewToken = Symbol("context-preview");
-    this._outboundPreviewToken = Symbol("outbound-preview");
     this._reconnectToken = Symbol("event-reconnect");
   }
 

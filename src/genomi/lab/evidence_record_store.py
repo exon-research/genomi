@@ -31,6 +31,23 @@ class _EvidenceRecordStore(Protocol):
 
     def _stable_evidence_identity(self, value: object) -> object: ...
 
+    def append_investigation_event(
+        self,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+    def _append_investigation_event(
+        self,
+        connection: Any,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
 
 class EvidenceRecordStoreMixin:
     """Persist immutable normalized evidence against the current investigation."""
@@ -47,6 +64,7 @@ class EvidenceRecordStoreMixin:
         expected_disclosure_receipt_id: object = None,
         expected_consent_receipt_id: object = None,
         _reserved_operation_token: object = None,
+        emit_investigation_event: bool = False,
     ) -> JsonObject:
         envelope = evidence.get("evidence_envelope")
         if not isinstance(envelope, dict):
@@ -205,4 +223,15 @@ class EvidenceRecordStoreMixin:
                 "AND patient_molecular_snapshot_id IS ? AND deduplication_key = ?",
                 (investigation_id, profile_snapshot_id, dedup),
             ).fetchone()
+            if emit_investigation_event:
+                self._append_investigation_event(
+                    connection,
+                    investigation_id,
+                    event_type="evidence_committed",
+                    payload={
+                        "evidence_record_id": record_id,
+                        "source_family": source,
+                        "operation": operation_value,
+                    },
+                )
         return row_dict(row)

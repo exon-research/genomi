@@ -19,11 +19,7 @@ _UNGUARDED_PUBLIC_METHODS = frozenset(
         "close",
         "configure_evidence_gateway",
         "evidence_capability_manifest",
-        "harness_capability_manifest",
-        # This endpoint owns its authority boundary explicitly so the adapter's
-        # long wait never holds the global application/context/store locks.
-        # Guarded preflight and finalization still fail closed on a user switch.
-        "stream_investigation_events",
+        "agent_session_manifest",
     }
 )
 

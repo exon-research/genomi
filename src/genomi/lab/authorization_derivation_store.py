@@ -248,14 +248,14 @@ def _outbound_disclosure_subject(
     subject = row_dict(row)
     if subject.get("revoked_at") is not None:
         raise ValueError("outbound disclosure subject is revoked")
-    harness_scope = authorization["authorization_scope"]["harness"]
+    agent_scope = authorization["authorization_scope"]["agent_session"]
     expected = {
         "workspace_session_id": authorization["workspace_session_id"],
         "user_id": authorization["user_id"],
         "investigation_id": authorization["investigation_id"],
-        "recipient_kind": "installed_harness",
-        "recipient_id": harness_scope["recipient_id"],
-        "destination": harness_scope["destination"],
+        "recipient_kind": "underlying_agent",
+        "recipient_id": agent_scope["recipient_id"],
+        "destination": agent_scope["destination"],
     }
     if any(subject.get(key) != value for key, value in expected.items()):
         raise ValueError(

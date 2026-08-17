@@ -12,12 +12,12 @@ import {
   sourceRecordList,
 } from "./render-evidence.js";
 
-export function renderBriefs(versions, investigation = {}) {
+export function renderBriefs(versions, investigation = {}, profile = {}) {
   elements.briefVersionCount.textContent = versions.length
     ? `${versions.length} ${versions.length === 1 ? "version" : "versions"}`
     : "No versions";
   if (!versions.length) {
-    elements.briefList.replaceChildren(node("p", "The harness has not proposed a brief yet.", "empty-row"));
+    elements.briefList.replaceChildren(node("p", "The underlying agent has not published a brief yet.", "empty-row"));
     return;
   }
   const evidenceById = new Map(
@@ -25,6 +25,12 @@ export function renderBriefs(versions, investigation = {}) {
   );
   const hypothesesById = new Map(
     array(investigation.hypotheses).map((record) => [text(record.hypothesis_id), record])
+  );
+  const profileByRevisionId = new Map(
+    array(profile.observations).map((record) => [text(record.observation_revision_id), record])
+  );
+  const artifactsById = new Map(
+    array(profile.source_artifacts).map((record) => [text(record.artifact_id), record])
   );
   elements.briefList.replaceChildren(...versions.map((version, index) => {
     const brief = isObject(version.brief) ? version.brief : {};
@@ -50,6 +56,10 @@ export function renderBriefs(versions, investigation = {}) {
     summary.append(title, stageBadge);
     const body = node("div", "", "brief-body");
     const claims = array(brief.claims);
+    const anchoredEntries = briefAnchoredEntries(brief);
+    if (current) {
+      body.append(renderBriefActions(details, investigation, version));
+    }
     body.append(briefSection(
       "Question and scope",
       [
@@ -57,6 +67,12 @@ export function renderBriefs(versions, investigation = {}) {
         `Scope: ${text(investigation.disease_scope) || "No narrower disease scope was supplied."}`,
       ],
       "brief-question-scope"
+    ));
+    body.append(renderTimeline(
+      brief,
+      evidenceById,
+      profileByRevisionId,
+      artifactsById
     ));
     body.append(renderBriefAxes(brief));
     if (brief.summary) body.append(node("p", text(brief.summary), "brief-summary"));
@@ -72,8 +88,8 @@ export function renderBriefs(versions, investigation = {}) {
       evidenceById,
       "No candidate interpretation was included in this version."
     ));
-    body.append(renderEvidenceClaimSection(claims, evidenceById));
-    body.append(renderGapsAndConflicts(brief, evidenceById, hypothesesById));
+    body.append(renderEvidenceClaimSection(anchoredEntries, evidenceById));
+    body.append(renderGapsAndConflicts(brief, anchoredEntries, evidenceById, hypothesesById));
     body.append(renderLimitsSection(brief, claims, evidenceById));
     body.append(briefSection(
       "Clinical or laboratory confirmation needed",
@@ -81,13 +97,13 @@ export function renderBriefs(versions, investigation = {}) {
       "brief-confirmation",
       "No specific confirmation request was included in this version."
     ));
-    body.append(briefSection(
-      "Questions for the next professional conversation",
-      array(brief.professional_questions),
-      "brief-professional-questions",
-      "No professional questions were included in this version."
+    body.append(renderClinicianQuestions(brief, evidenceById, hypothesesById));
+    body.append(renderPatientRecordReferences(
+      anchoredEntries,
+      profileByRevisionId,
+      artifactsById
     ));
-    body.append(renderCurrencyAndChanges(brief, claims, evidenceById, version));
+    body.append(renderCurrencyAndChanges(brief, anchoredEntries, evidenceById, version));
     details.append(summary, body);
     return details;
   }));
@@ -106,6 +122,65 @@ function renderBriefAxes(brief) {
   }
   modalityAxis.append(badges);
   section.append(modalityAxis);
+  return section;
+}
+
+function renderBriefActions(details, investigation, version) {
+  const actions = node("div", "", "brief-actions");
+  actions.id = "brief-export-actions";
+  const printButton = node("button", "Print / Save PDF", "secondary-button brief-print-button");
+  printButton.type = "button";
+  printButton.addEventListener("click", () => printDoctorBrief(details));
+  const downloadButton = node("button", "Download doctor brief (.html)", "secondary-button brief-download-button");
+  downloadButton.type = "button";
+  downloadButton.addEventListener("click", () => {
+    downloadDoctorBrief(details, investigation, version);
+  });
+  actions.append(printButton, downloadButton);
+  return actions;
+}
+
+function renderTimeline(brief, evidenceById, profileByRevisionId, artifactsById) {
+  const section = node("section", "", "brief-section brief-timeline");
+  section.append(node("h4", "Chronology that changed the investigation"));
+  const list = node("ol", "", "brief-timeline-list");
+  const entries = array(brief.timeline);
+  if (!entries.length) {
+    list.append(empty("No grounded chronology was included in this version."));
+  } else {
+    list.append(...entries.map((entry) => {
+      const item = node("li", "", "brief-timeline-entry");
+      const citedObservations = array(entry.profile_revision_ids)
+        .map((id) => profileByRevisionId.get(text(id)))
+        .filter(Boolean);
+      const citedRecords = array(entry.evidence_record_ids)
+        .map((id) => evidenceById.get(text(id)))
+        .filter(Boolean);
+      const labels = citedObservations.map((observation) => {
+        const artifact = artifactsById.get(text(observation.artifact_id));
+        const date = artifact && text(artifact.issued_at);
+        return [date, text(observation.label)].filter(Boolean).join(" — ");
+      }).filter(Boolean);
+      const evidenceLabels = citedRecords.map((record) => {
+        const evidence = isObject(record.evidence) ? record.evidence : {};
+        const envelope = isObject(record.evidence_envelope)
+          ? record.evidence_envelope
+          : isObject(evidence.evidence_envelope) ? evidence.evidence_envelope : {};
+        return evidenceHeadline(envelope, record);
+      }).filter(Boolean);
+      item.append(
+        node(
+          "strong",
+          labels.join("; ") || evidenceLabels.join("; ") || text(entry.statement) || "Grounded chronology entry"
+        ),
+        node("p", text(entry.statement) || "Chronology statement not recorded."),
+        node("span", anchorDescription(entry)),
+        claimTraceDetails(entry)
+      );
+      return item;
+    }));
+  }
+  section.append(list);
   return section;
 }
 
@@ -170,23 +245,109 @@ function renderEvidenceClaimSection(claims, evidenceById) {
   return section;
 }
 
-function renderGapsAndConflicts(brief, evidenceById, hypothesesById) {
+function renderGapsAndConflicts(brief, anchoredEntries, evidenceById, hypothesesById) {
   const section = node("section", "", "brief-section brief-caution-section");
-  section.append(node("h4", "Conflicts, missing evidence, and unavailable sources"));
+  section.append(node("h4", "Conflicts and open evidence gaps"));
   const list = node("ul", "", "brief-notes");
   array(brief.gap_ids).forEach((id) => {
     const gap = hypothesesById.get(text(id));
     list.append(node("li", gap ? text(gap.statement) : `Open gap ${text(id)}`));
   });
-  const citedRecords = citedEvidenceRecords(brief.claims, evidenceById);
+  const citedRecords = citedEvidenceRecords(anchoredEntries, evidenceById);
   citedRecords.forEach((record) => {
     evidenceWarnings(record).forEach((warning) => list.append(node("li", warning)));
   });
   if (!list.children.length) {
-    list.append(node("li", "No conflicts, evidence gaps, or unavailable sources were recorded in this version."));
+    list.append(node("li", "No conflicts or open evidence gaps were recorded in this version."));
   }
   section.append(list);
   return section;
+}
+
+function renderClinicianQuestions(brief, evidenceById, hypothesesById) {
+  const section = node("section", "", "brief-section brief-clinician-questions");
+  section.id = "brief-clinician-questions";
+  section.append(node("h4", "Questions for the treating immunologist or clinical geneticist"));
+  const list = node("ul", "", "brief-question-list");
+  const questions = array(brief.clinician_questions);
+  if (!questions.length) {
+    list.append(empty("No case-specific clinician questions were included in this version."));
+  } else {
+    list.append(...questions.map((question) => {
+      const item = node("li", "", "brief-question-item");
+      const sources = claimSourceFamilies(question, evidenceById);
+      const linked = [
+        ...array(question.hypothesis_ids).map((id) => hypothesesById.get(text(id))),
+        ...array(question.gap_ids).map((id) => hypothesesById.get(text(id))),
+      ].filter(Boolean).map((record) => text(record.statement)).filter(Boolean);
+      item.append(
+        node("strong", text(question.question) || "Clinician question not recorded"),
+        node("span", [anchorDescription(question), sources].filter(Boolean).join(" · ")),
+        claimTraceDetails(question)
+      );
+      if (linked.length) {
+        const linkedDetails = document.createElement("details");
+        linkedDetails.className = "brief-question-context";
+        linkedDetails.append(node("summary", "Why this question is linked to the case"));
+        const linkedList = node("ul", "", "brief-question-links");
+        linkedList.append(...linked.map((value) => node("li", value)));
+        linkedDetails.append(linkedList);
+        item.append(linkedDetails);
+      }
+      return item;
+    }));
+  }
+  section.append(list);
+  return section;
+}
+
+function renderPatientRecordReferences(anchoredEntries, profileByRevisionId, artifactsById) {
+  const section = node("section", "", "brief-section brief-record-references");
+  section.append(node("h4", "Original patient record references"));
+  const revisionIds = new Set(
+    anchoredEntries.flatMap((entry) => array(entry.profile_revision_ids).map(text))
+  );
+  const observations = [...revisionIds]
+    .map((id) => profileByRevisionId.get(id))
+    .filter(Boolean);
+  const list = node("ul", "", "brief-record-list");
+  if (!observations.length) {
+    list.append(empty("No patient profile revision was cited by this version."));
+  } else {
+    list.append(...observations.map((observation) => {
+      const item = node("li", "", "brief-record-reference");
+      const artifact = artifactsById.get(text(observation.artifact_id));
+      item.append(node("strong", text(observation.label) || "Cited profile observation"));
+      if (artifact) {
+        item.append(node(
+          "span",
+          [
+            text(artifact.title) || "Registered source record",
+            friendly(text(artifact.source_type)),
+            text(artifact.issued_at) ? `Issued ${text(artifact.issued_at)}` : "",
+          ].filter(Boolean).join(" · ")
+        ));
+        const trace = node("dl", "", "brief-record-trace");
+        appendRecordTrace(trace, "Record ID", text(artifact.artifact_id));
+        appendRecordTrace(trace, "SHA-256", text(artifact.local_file_sha256));
+        appendRecordTrace(trace, "Profile revision", text(observation.observation_revision_id));
+        item.append(trace);
+      } else {
+        item.append(node(
+          "span",
+          `Profile revision ${text(observation.observation_revision_id) || "not recorded"}; no issued source record was linked.`
+        ));
+      }
+      return item;
+    }));
+  }
+  section.append(list);
+  return section;
+}
+
+function appendRecordTrace(target, label, value) {
+  if (!value) return;
+  target.append(node("dt", label), node("dd", value));
 }
 
 function renderLimitsSection(brief, claims, evidenceById) {
@@ -206,16 +367,16 @@ function renderLimitsSection(brief, claims, evidenceById) {
   return section;
 }
 
-function renderCurrencyAndChanges(brief, claims, evidenceById, version) {
+function renderCurrencyAndChanges(brief, anchoredEntries, evidenceById, version) {
   const section = node("section", "", "brief-section");
   section.append(node("h4", "Evidence currency and change history"));
   const list = node("ul", "", "brief-notes");
   list.append(node(
     "li",
-    `Harness summary: ${text(brief.change_summary) || "No change summary was recorded."}`
+    `Agent summary: ${text(brief.change_summary) || "No change summary was recorded."}`
   ));
   persistedBriefDiffNotes(version).forEach((value) => list.append(node("li", value)));
-  const currency = citedEvidenceRecords(claims, evidenceById).flatMap(evidenceCurrencyNotes);
+  const currency = citedEvidenceRecords(anchoredEntries, evidenceById).flatMap(evidenceCurrencyNotes);
   if (currency.length) {
     currency.forEach((value) => list.append(node("li", value)));
   } else {
@@ -285,3 +446,139 @@ function briefSection(title, values, className, emptyMessage = "Nothing was reco
   section.append(list);
   return section;
 }
+
+function briefAnchoredEntries(brief) {
+  return [
+    ...array(brief.claims),
+    ...array(brief.timeline),
+    ...array(brief.clinician_questions),
+  ];
+}
+
+function anchorDescription(entry) {
+  const evidenceCount = array(entry.evidence_record_ids).length;
+  const profileCount = array(entry.profile_revision_ids).length;
+  const hypothesisCount = array(entry.hypothesis_ids).length;
+  const gapCount = array(entry.gap_ids).length;
+  return [
+    `${evidenceCount} evidence ${evidenceCount === 1 ? "anchor" : "anchors"}`,
+    `${profileCount} profile ${profileCount === 1 ? "anchor" : "anchors"}`,
+    hypothesisCount ? `${hypothesisCount} ${hypothesisCount === 1 ? "hypothesis" : "hypotheses"}` : "",
+    gapCount ? `${gapCount} ${gapCount === 1 ? "gap" : "gaps"}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function printDoctorBrief(details) {
+  const wasOpen = details.open;
+  const cleanup = () => {
+    details.classList.remove("brief-print-target");
+    document.body.classList.remove("doctor-brief-printing");
+    details.open = wasOpen;
+  };
+  details.open = true;
+  details.classList.add("brief-print-target");
+  document.body.classList.add("doctor-brief-printing");
+  globalThis.addEventListener("afterprint", cleanup, {once: true});
+  try {
+    globalThis.print();
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+  globalThis.setTimeout(cleanup, 0);
+}
+
+function downloadDoctorBrief(details, investigation, version) {
+  const html = buildDoctorBriefHtml(details, investigation, version);
+  const blob = new Blob([html], {type: "text/html;charset=utf-8"});
+  const objectUrl = globalThis.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = doctorBriefFilename(investigation, version);
+  link.rel = "noopener";
+  try {
+    link.click();
+  } finally {
+    globalThis.setTimeout(() => globalThis.URL.revokeObjectURL(objectUrl), 0);
+  }
+}
+
+export function buildDoctorBriefHtml(details, investigation = {}, version = {}) {
+  const exportDocument = document.implementation.createHTMLDocument("GenomiLab doctor brief");
+  exportDocument.documentElement.lang = "en";
+  const viewport = exportDocument.createElement("meta");
+  viewport.name = "viewport";
+  viewport.content = "width=device-width, initial-scale=1";
+  const style = exportDocument.createElement("style");
+  style.textContent = DOCTOR_BRIEF_EXPORT_CSS;
+  exportDocument.head.append(viewport, style);
+
+  const main = exportDocument.createElement("main");
+  main.className = "doctor-brief-export";
+  const header = exportDocument.createElement("header");
+  const brand = exportDocument.createElement("p");
+  brand.className = "doctor-brief-brand";
+  brand.textContent = "GenomiLab · Doctor brief";
+  const heading = exportDocument.createElement("h1");
+  heading.textContent = text(investigation.question) || "Investigation brief";
+  const metadata = exportDocument.createElement("p");
+  metadata.className = "doctor-brief-metadata";
+  metadata.textContent = [
+    `Version ${text(version.version) || "not recorded"}`,
+    `Saved ${formatTime(text(version.created_at))}`,
+  ].join(" · ");
+  header.append(brand, heading, metadata);
+
+  const clonedBrief = details.cloneNode(true);
+  clonedBrief.open = true;
+  clonedBrief.classList.add("brief-export-copy");
+  clonedBrief.querySelectorAll("details").forEach((item) => {
+    item.open = true;
+  });
+  clonedBrief.querySelectorAll(".brief-actions").forEach((item) => item.remove());
+  main.append(header, clonedBrief);
+  exportDocument.body.append(main);
+  return `<!doctype html>\n${new XMLSerializer().serializeToString(exportDocument.documentElement)}`;
+}
+
+function doctorBriefFilename(investigation, version) {
+  const question = text(investigation.question)
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .toLowerCase() || "investigation";
+  const versionLabel = text(version.version).replace(/[^0-9]/g, "") || "current";
+  return `genomilab-${question}-v${versionLabel}-doctor-brief.html`;
+}
+
+const DOCTOR_BRIEF_EXPORT_CSS = `
+:root { color-scheme: light; font-family: Georgia, serif; color: #18312d; background: white; }
+body { margin: 0; background: white; }
+.doctor-brief-export { max-width: 860px; margin: 0 auto; padding: 40px; }
+.doctor-brief-export > header { padding-bottom: 20px; border-bottom: 2px solid #194f47; }
+.doctor-brief-brand { margin: 0; color: #24665b; font: 700 12px/1.4 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+h1 { margin: 8px 0; font-size: 28px; }
+.doctor-brief-metadata { margin: 0; color: #60716d; font: 12px/1.5 system-ui, sans-serif; }
+.brief-export-copy { display: block; margin-top: 22px; border: 0; }
+.brief-export-copy > summary { display: none; }
+.brief-body { padding: 0; }
+.brief-section, .brief-axes { padding: 14px 0; border-top: 1px solid #d7e0dd; }
+.brief-question-scope { border-top: 0; }
+h4 { margin: 0 0 8px; font-size: 16px; }
+h5 { margin: 10px 0 6px; font: 700 12px/1.4 system-ui, sans-serif; }
+p, li, dd, dt, span, strong, blockquote { overflow-wrap: anywhere; }
+p, li, blockquote { font: 13px/1.55 system-ui, sans-serif; }
+ol, ul { padding-left: 22px; }
+.brief-stage, .modality-badge { display: inline-block; margin: 2px 4px 2px 0; padding: 4px 7px; border: 1px solid #b7d7ce; border-radius: 999px; font: 700 10px/1.3 system-ui, sans-serif; }
+.clinical-boundary, .brief-boundary { color: #6f392f; background: #fff6f3; }
+.brief-boundary, .brief-caution-section { padding: 12px; border-radius: 8px; }
+.brief-caution-section { background: #fdf9f0; }
+.claim-trace, .source-records { margin-top: 6px; }
+.claim-trace summary { font: 700 11px/1.4 system-ui, sans-serif; }
+.source-record-card, .brief-record-reference { margin: 7px 0; padding: 9px; border: 1px solid #d7e0dd; border-radius: 7px; }
+.source-link { color: #175b51; }
+.brief-record-trace { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; font: 10px/1.4 ui-monospace, monospace; }
+.brief-record-trace dt, .brief-record-trace dd { margin: 0; }
+@media print { .doctor-brief-export { max-width: none; padding: 0; } a { color: inherit; } }
+`;

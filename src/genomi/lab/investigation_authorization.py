@@ -48,7 +48,7 @@ _AUTHORIZATION_ONLY_FIELDS = frozenset(
 
 @dataclass(slots=True)
 class InvestigationAuthorizationApplication:
-    """Compile, commit, and revalidate the Research Desk start authorization."""
+    """Compile, commit, and revalidate the Research Desk context authorization."""
 
     store: GenomiLabStore
     session_id: str
@@ -56,8 +56,8 @@ class InvestigationAuthorizationApplication:
     investigation: Callable[[str], JsonObject]
     context_candidate: Callable[[str, JsonObject], JsonObject]
     approve_context: Callable[..., JsonObject]
-    harness_manifest: Callable[[], JsonObject]
-    ensure_planning_started: Callable[[str, JsonObject], JsonObject]
+    agent_manifest: Callable[[], JsonObject]
+    commit_host_authorization: Callable[[str, JsonObject, bool], JsonObject]
     candidate_receipts: AuthorizationCandidateReceiptIssuer
 
     def candidate(
@@ -87,14 +87,14 @@ class InvestigationAuthorizationApplication:
             investigation_id=investigation_id,
         )
 
-    def authorize_and_start(
+    def authorize_context(
         self, investigation_id: str, payload: JsonObject
     ) -> JsonObject:
         self._validate_approval_payload(payload)
         if payload.get("approved") is not True:
             raise LabError(
                 "investigation_authorization_required",
-                "Authorize the reviewed investigation access before starting.",
+                "Authorize the reviewed investigation context before continuing.",
                 http_status=409,
             )
         _, user_id = self.current_context()
@@ -117,16 +117,17 @@ class InvestigationAuthorizationApplication:
             authorization = self.require_current(
                 investigation_id, intent="plan", receipt=existing
             )
-            harness = self.ensure_planning_started(
-                investigation_id, authorization
-            )
+            with self.store.atomic_write():
+                continuation = self.commit_host_authorization(
+                    investigation_id, authorization, True
+                )
             return {
-                "status": harness.get("status", "accepted"),
+                "status": continuation.get("status", "accepted"),
                 "authorization": authorization,
                 "context": self.store.get_profile_snapshot(
                     str(authorization["patient_molecular_snapshot_id"])
                 ),
-                "harness": harness,
+                "agent_continuation": continuation,
                 "retry_reused": True,
             }
 
@@ -143,7 +144,7 @@ class InvestigationAuthorizationApplication:
         if scope != self._authorization_scope():
             raise LabError(
                 "investigation_authorization_changed",
-                "The installed harness changed. Review investigation access again.",
+                "The underlying agent session changed. Review investigation access again.",
                 http_status=409,
             )
         prior = self.store.current_investigation_authorization(
@@ -152,8 +153,11 @@ class InvestigationAuthorizationApplication:
             investigation_id=investigation_id,
         )
 
+        staged_continuation: JsonObject | None = None
+
         def create_authorization(claims: JsonObject) -> JsonObject:
-            return self.store.create_investigation_authorization(
+            nonlocal staged_continuation
+            authorization = self.store.create_investigation_authorization(
                 user_id,
                 workspace_session_id=self.session_id,
                 investigation_id=investigation_id,
@@ -170,6 +174,10 @@ class InvestigationAuthorizationApplication:
                 ),
                 approved=True,
             )
+            staged_continuation = self.commit_host_authorization(
+                investigation_id, authorization, False
+            )
+            return authorization
 
         context_payload = {
             key: value
@@ -189,12 +197,16 @@ class InvestigationAuthorizationApplication:
         authorization = self.require_current(
             investigation_id, intent="plan", receipt=authorization
         )
-        harness = self.ensure_planning_started(investigation_id, authorization)
+        if not isinstance(staged_continuation, dict):
+            raise RuntimeError(
+                "host authorization committed without its domain transition"
+            )
+        continuation = staged_continuation
         return {
-            "status": harness.get("status", "accepted"),
+            "status": continuation.get("status", "accepted"),
             "authorization": authorization,
             "context": context_result,
-            "harness": harness,
+            "agent_continuation": continuation,
             "retry_reused": False,
         }
 
@@ -245,7 +257,7 @@ class InvestigationAuthorizationApplication:
             ) from exc
         allowed = (
             (required.get("authorization_scope") or {})
-            .get("harness", {})
+            .get("agent_session", {})
             .get("allowed_intents", [])
         )
         if intent not in allowed:
@@ -257,17 +269,17 @@ class InvestigationAuthorizationApplication:
         return required
 
     def _authorization_scope(self) -> JsonObject:
-        manifest = self.harness_manifest()
-        recipient_id = str(manifest.get("adapter_id") or "").strip()
-        destination = str(manifest.get("execution_location") or "").strip()
+        manifest = self.agent_manifest()
+        recipient_id = str(manifest.get("agent_session_id") or "").strip()
+        destination = str(manifest.get("processing_destination") or "").strip()
         if not recipient_id or not destination:
             raise LabError(
-                "harness_unavailable",
-                "The installed agent harness is not available.",
+                "agent_session_unavailable",
+                "The underlying agent session is not available.",
                 http_status=409,
             )
         return {
-            "harness": {
+            "agent_session": {
                 "recipient_id": recipient_id,
                 "destination": destination,
                 "allowed_intents": sorted(INVESTIGATION_AUTHORIZATION_INTENTS),

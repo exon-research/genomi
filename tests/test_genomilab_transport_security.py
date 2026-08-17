@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from genomi.lab.harness_transport import safe_json_value
+from genomi.lab.artifact_payload import safe_json_value
 
 
-class GenomiLabHarnessTransportSecurityTests(unittest.TestCase):
-    def test_harness_transport_rejects_genomi_owned_source_material_aliases(self) -> None:
+class GenomiLabArtifactBoundarySecurityTests(unittest.TestCase):
+    def test_artifact_boundary_rejects_genomi_owned_source_material_aliases(self) -> None:
         unsafe_payloads = (
             {"genomePath": "/private/patient.genome"},
             {"genome_bundle": "/private/patient.genome"},
@@ -21,7 +21,7 @@ class GenomiLabHarnessTransportSecurityTests(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 safe_json_value({"approved_context": {"nested": payload}})
 
-    def test_harness_transport_allows_immutable_genome_reference_identity(self) -> None:
+    def test_artifact_boundary_allows_immutable_genome_reference_identity(self) -> None:
         value = safe_json_value(
             {
                 "agi_id": "agi-synthetic",

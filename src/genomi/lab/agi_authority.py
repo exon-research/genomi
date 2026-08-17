@@ -3,8 +3,9 @@
 This is an internal Python authority, not an MCP operation.  A trusted
 GenomiLab application service may mint an opaque handle after it has recorded
 the user's consent receipt.  The handle is useful only in this Python process,
-for one exact ``variant.resolve`` target, and while the bound Genomi user and
-AGI revision still match the live registry and on-disk index.
+for one exact variant target or one bounded candidate-gene policy, and while
+the bound Genomi user and AGI revision still match the live registry and
+on-disk index.
 
 Ordinary chat-session AGI grants deliberately live in ``agi_access.py``.  They
 do not mint, replace, or satisfy this stronger investigation authorization.
@@ -38,7 +39,7 @@ from ..runtime.context.storage import load_context, load_registry
 from .genomic_scope import (
     InvestigationAgiAuthorizationError,
     normalize_investigation_genomic_scope,
-    validate_investigation_variant_request,
+    validate_investigation_genome_request,
 )
 
 
@@ -377,7 +378,7 @@ def _validate_handle(
             "The investigation authorization belongs to a different process epoch.",
         )
     if operation is not None:
-        validate_investigation_variant_request(
+        validate_investigation_genome_request(
             approved_scope=record.genomic_scope,
             approved_agi_id=record.agi_id,
             operation=operation,

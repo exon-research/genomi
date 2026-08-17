@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-from .capability_registry import CapabilityFamily, capability_definition
+from .candidate_gene_capability import validate_candidate_gene_scan_request
+from .capability_registry import (
+    GENOMI_VARIANT_FIND_GENE_VARIANTS,
+    CapabilityFamily,
+    capability_definition,
+)
 from .disease_evidence_capabilities import (
     execute_local_disease_evidence_request,
     validate_local_disease_evidence_request,
 )
 from .disease_evidence_external import validate_external_evidence_request
 from .disease_relation_contract import validate_disease_relation_parameters
-from .hypothesis_contract import GAP_KINDS
+from .hypothesis_contract import GAP_KINDS, case_anchor_terms
 from .investigation_capability_protocols import (
     CapabilityApplication as _CapabilityApplication,
 )
-from .investigation_capability_support import _is_exact_hypothesis_template_case
 from .models import JsonObject, compact_json
 from .provider_policy import PAPERCLIP_PROVIDER
+from .research_narrative import validate_research_narrative
 from .service_errors import LabError
 
 
@@ -50,6 +55,19 @@ class CapabilityDispatchMixin:
                 "molecular_profile": profile,
             }
         if definition.family is CapabilityFamily.GENOMI_VARIANT:
+            if capability == GENOMI_VARIANT_FIND_GENE_VARIANTS:
+                catalog = self.investigation_capability_catalog(investigation_id)
+                call = validate_candidate_gene_scan_request(
+                    params, catalog.get(capability)
+                )
+                return self.invoke_investigation_genome(
+                    investigation_id,
+                    operation="variant.find_gene_variants",
+                    params=call.core_params,
+                    evidence_context=call.evidence_context,
+                    expected_plan_version_id=expected_plan_version_id,
+                    expected_consent_receipt_id=expected_consent_receipt_id,
+                )
             return self.invoke_investigation_genome(
                 investigation_id,
                 operation="variant.resolve",
@@ -168,6 +186,7 @@ class CapabilityDispatchMixin:
                 supersedes_hypothesis_id=params.get("supersedes_hypothesis_id"),
                 expected_plan_version_id=expected_plan_version_id,
                 expected_consent_receipt_id=expected_consent_receipt_id,
+                emit_investigation_event=True,
             )
             return {"status": "registered", "hypothesis": hypothesis}
         raise ValueError("unsupported investigation capability")
@@ -198,6 +217,11 @@ class CapabilityDispatchMixin:
             )
             return
         if family is CapabilityFamily.GENOMI_VARIANT:
+            if capability == GENOMI_VARIANT_FIND_GENE_VARIANTS:
+                validate_candidate_gene_scan_request(
+                    parameters, catalog.get(capability)
+                )
+                return
             expected = catalog[capability].get("parameters") or {}
             if compact_json(parameters) != compact_json(expected):
                 raise ValueError(
@@ -285,18 +309,74 @@ class CapabilityDispatchMixin:
             contract.get("allowed_status_values") or []
         ):
             raise ValueError("hypothesis status is not allowed for this capability")
-        templates = entry.get("exact_request_templates")
-        matching_template_cases = [
-            template
-            for template in templates or []
-            if isinstance(template, dict)
-            and _is_exact_hypothesis_template_case(parameters, template)
-        ]
-        if matching_template_cases and not any(
-            compact_json(parameters) == compact_json(template)
-            for template in matching_template_cases
+        evidence_ids = parameters.get("evidence_record_ids")
+        profile_ids = parameters.get("profile_revision_ids")
+        if not _is_unique_string_array(evidence_ids) or not _is_unique_string_array(
+            profile_ids
         ):
-            raise ValueError("hypothesis request must match one exact catalog template")
+            raise ValueError("hypothesis anchors must be unique string arrays")
+        if not evidence_ids and not profile_ids:
+            raise ValueError("a hypothesis must cite evidence or a profile observation")
+        fields = contract.get("fields")
+        fields = fields if isinstance(fields, dict) else {}
+        for field, values in (
+            ("evidence_record_ids", evidence_ids),
+            ("profile_revision_ids", profile_ids),
+        ):
+            field_contract = fields.get(field)
+            allowed_values = (
+                field_contract.get("allowed_values")
+                if isinstance(field_contract, dict)
+                else None
+            )
+            if not isinstance(allowed_values, list) or not set(values).issubset(
+                set(allowed_values)
+            ):
+                raise ValueError(
+                    f"hypothesis {field} exceeds the current approved context"
+                )
+        if parameters.get("kind") in {"candidate_mechanism", "counterevidence"} and (
+            not evidence_ids or not profile_ids
+        ):
+            raise ValueError(
+                "candidate mechanisms and counterevidence require both evidence and profile anchors"
+            )
+        if parameters.get("kind") == "working_hypothesis" and (
+            evidence_ids or not profile_ids
+        ):
+            raise ValueError(
+                "an initial working hypothesis must cite profile observations only"
+            )
+        narrative_kinds = contract.get("narrative_kind_by_kind")
+        narrative_kind = (
+            narrative_kinds.get(parameters.get("kind"))
+            if isinstance(narrative_kinds, dict)
+            else None
+        )
+        statement_contract = fields.get("statement")
+        if not isinstance(narrative_kind, str) or not isinstance(
+            statement_contract, dict
+        ):
+            raise ValueError("hypothesis narrative contract is unavailable")
+        validate_research_narrative(
+            parameters.get("statement"),
+            "hypothesis statement",
+            kind=narrative_kind,  # type: ignore[arg-type]
+            case_anchor_terms=case_anchor_terms(
+                statement_contract,
+                profile_revision_ids=profile_ids,
+                evidence_record_ids=evidence_ids,
+            ),
+            require_case_anchor=True,
+        )
+
+
+def _is_unique_string_array(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, str) and bool(item.strip()) for item in value)
+        and len(value) == len(set(value))
+    )
 
 
 __all__ = ["CapabilityDispatchMixin"]

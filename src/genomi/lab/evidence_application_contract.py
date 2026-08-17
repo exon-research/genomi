@@ -43,6 +43,7 @@ class EvidenceStore(Protocol):
         expected_plan_version_id: object = None,
         expected_disclosure_receipt_id: object = None,
         expected_consent_receipt_id: object = None,
+        emit_investigation_event: bool = False,
     ) -> JsonObject: ...
 
 

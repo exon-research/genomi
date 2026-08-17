@@ -89,48 +89,104 @@ only for hosts that do not have Genomi yet.
 ## GenomiLab Local Research Workspace (Developer Preview)
 
 GenomiLab is the patient-facing disease-investigation application built on
-Genomi. Its web portal opens the current local Genomi user and brings that
-patient's molecular profile, investigation evidence, hypotheses, open gaps,
-and research brief into one workspace:
+Genomi. Ask the Claude Code, Codex, or other MCP host that already runs
+`genomi serve` to open the Research Desk. The same long-lived Genomi MCP process
+owns the session-scoped Active Genome Index handle, GenomiLab domain service,
+encrypted research store, and loopback portal. GenomiLab does not discover or
+launch a second embedded agent server.
 
-```bash
-genomi lab --harness-processing-destination "remote: OpenAI Codex service"
-```
+A current Genomi user with a query-ready Active Genome Index (AGI) selected is
+required before the Research Desk opens. Genome intake remains a core Genomi
+setup step: the user can simply give the host agent the local VCF, gVCF, or
+other supported genome-source path, and the agent prepares and selects the AGI.
+On a fresh Genomi home, that path alone creates an immediately usable local
+placeholder profile; the patient can rename it later. Only an existing
+ambiguous multi-user home needs a follow-up choice about which profile owns the
+genome. After that, every GenomiLab investigation reuses the active AGI; it
+never asks for another genome upload or copies AGI rows into its own database.
 
-The destination label is deliberately explicit: it is shown in the exact
-disclosure preview before approved molecular context is sent. Omitting it still
-opens the local workspace, but remote harness work remains unavailable rather
-than silently assuming where reasoning will run.
+The underlying host owns the conversation, native task lifecycle, planning,
+subagents, tool calls, streaming, follow-ups, resume, and cancellation.
+GenomiLab supplies its focused skill, typed patient-research capabilities,
+scoped authorization, durable evidence/hypothesis/brief records, and validation
+at those boundaries. The web portal is for patient onboarding, molecular-profile
+updates, exact approvals, provider setup, and monitoring committed domain
+events. It does not start, message, or cancel a host task.
 
-The web portal is the UI; GenomiLab itself owns the application workflow and
-durable patient-research records. The installed agent harness owns dynamic
-planning, agent execution, reasoning, and draft synthesis. A planning task is
-tool-free: accepting its exact plan records the decision but runs nothing. The
-patient then reviews a separate disclosure for a fresh execution task, where
-the harness alone can invoke the exact accepted GenomiLab disease-investigation
-capabilities. Genomi remains the source of truth for the current user, genome
-intake, and the reusable Active Genome Index. GenomiLab never creates a second
-patient selector, copies AGI rows, or asks for a new VCF for each case.
+For each new investigation, the main host agent chairs a required board of 2–5
+adaptive, non-overlapping native specialist subagents. The chair keeps the
+patient conversation, authorization, private AGI reads, and canonical research
+commits; specialists receive bounded public questions or only the minimum
+approved evidence they need. GenomiLab records the logical board and meaningful
+milestone states for the portal, never raw agent messages, chain of thought, or
+native task identifiers. A resumed investigation reuses its recorded board.
+
+Follow-up information stays in that same host task and investigation. The host
+records the new patient observation, the patient approves the exact context
+change in the portal, and the host reruns only affected evidence before
+committing a superseding hypothesis and revised brief.
 
 Those GenomiLab capabilities go beyond both base Genomi and a general harness:
 they project an approved Patient Molecular Profile, preserve source-separated
 disease evidence, relate public findings to exact patient observations, and
 maintain hypotheses, counterevidence, gaps, confirmation needs, and versioned
-patient/clinician briefs. A Paperclip API key can be saved securely and checked
-explicitly with a fixed public `TP53`/PMC/one-result probe. That check does not
-enable evidence retrieval. Every Paperclip evidence operation in this release
-is investigation-scoped and remains closed until separate deployment
-authorization, an independent patient-data contract, and approval of the exact
-disclosure are all present. An API key does not establish those permissions.
-Proto and ESM remain disabled unless a narrow, independently validated
-scientific task makes them appropriate.
+patient/clinician briefs. Paperclip supports a narrow, approved set of
+literature, regulatory, and trial-registry discovery operations. It does not
+provide full-text extraction or claim verification. A Paperclip API key can be
+saved securely and checked with a fixed public `TP53`/PMC/one-result probe, but
+that check alone enables no evidence operation. Investigation use still
+requires the applicable owner-provided deployment policy, patient-data
+contract, and exact just-in-time disclosure approval; without that
+configuration, GenomiLab advertises no live Paperclip route.
+
+Biohub ESM and Proto connection checks remain setup checks and never count as
+scientific execution. GenomiLab separately exposes one bounded ESM
+reference-versus-substitution operation and one bounded Proto blinded
+experiment-design operation only when their respective configured executors
+are local and network-disabled. If an executor is absent, the operation is
+explicitly `unavailable` and creates no artifact. Completed outputs are
+immutable, round-bound nonclinical research artifacts, not evidence: they
+cannot support hypotheses, brief claims, answer-readiness, treatment content,
+or clinician export.
+
+Deployment owners select installed scientific executors by setting
+`GENOMILAB_ESM_SCIENTIFIC_EXECUTOR` and/or
+`GENOMILAB_PROTO_SCIENTIFIC_EXECUTOR` to an exact entry-point name registered
+under the fixed `genomi.scientific_executors` Python entry-point group before a
+fresh MCP session starts. These values are non-secret names, not import paths
+or commands. Unset selectors keep the operation unavailable; an invalid,
+missing, ambiguous, broken, or non-callable selection fails the new
+GenomiLab runtime closed.
+
+Deployment owners who have those Paperclip policy records set
+`GENOMILAB_PAPERCLIP_AUTHORIZATION_CONFIG` to the strict JSON policy file before
+the MCP host starts `genomi serve`. The file contains policy and contract
+records, never the API key; the patient saves that credential in the portal.
+
+The host can inspect those truthful states with
+`genomilab.list_research_tools`; credentials and connect/disconnect actions
+remain in the patient portal.
+
+Provider secrets and the GenomiLab database encryption key use the native OS
+credential store. The research records themselves stay in encrypted SQLite;
+the credential store holds only key material, so a database copied without the
+local OS account's key is not readable. This is a different requirement from
+the core AGI/query stores, which hold local genomic query artifacts under their
+own access boundary and are never duplicated into GenomiLab.
 
 The portal binds to a random loopback-only address and opens with a one-time
 private launch link. Each investigation uses an immutable, consented molecular
 profile snapshot, an exact AGI revision, and a bounded genomic scope. Access is
-revoked when the portal stops or the current Genomi user changes. Optional
-external providers and biological models are behind explicit eligibility and
-patient-data disclosure gates; connection verification never opens a
+revoked when the Genomi MCP workspace session ends or the current Genomi user
+changes. Each local stdio MCP `initialize` handshake starts a new GenomiLab
+workspace session and closes any prior one in that process, even when the
+client name and version are unchanged; hosts should not reinitialize the stdio
+connection in the middle of an investigation turn. HTTP MCP initialization is
+public-tools-only and cannot create or replace the private GenomiLab runtime.
+Durable investigation records remain, but a new private session must renew
+private-context authorization before reading them.
+Optional external providers and biological models are behind explicit
+eligibility and patient-data disclosure gates; connection verification never opens a
 patient-informed route, and unavailable capabilities fail closed.
 
 This remains a research-support developer preview, not a diagnosis or treatment
@@ -312,7 +368,8 @@ include a Living DNA example, even though Genomi supports that export shape.
 Pick a matching participant export, point Genomi at it, and ask questions.
 It is the cleanest way to kick the tires without sequencing yourself.
 
-Genome data is optional; Genomi also handles public-only genetics questions.
+Genome data is optional for core Genomi public-only genetics questions. A
+query-ready selected Active Genome Index is required to open GenomiLab.
 
 ## Why We Built This
 

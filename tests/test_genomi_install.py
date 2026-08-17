@@ -389,15 +389,43 @@ class GenomiInstallHostSkillLinkTests(GenomiRuntimeTestCase):
 
         scope = handlers_admin._genomi_install_scope()
         self.assertIn("host_skill_links", scope["updates"])
-        self.assertIn("host_skill_links_when_not_a_git_checkout", scope["does_not_update"])
+        self.assertIn(
+            "host_skill_links_when_packaged_skill_assets_are_unavailable",
+            scope["does_not_update"],
+        )
 
-    def test_packaged_install_reports_host_skill_links_skipped(self) -> None:
-        # Harness default: the runtime is reported as "not a git checkout", so
-        # there is no source tree to link from and no host dir is touched.
-        result = call_operation("genomi.install", {})
+    def test_packaged_install_reconciles_bundled_skill_assets(self) -> None:
+        from genomi.operations.registry import handlers_admin
+
+        packaged_root = self.genomi_home / "packaged-skills"
+        focused = packaged_root / "skills" / "genomilab"
+        focused.mkdir(parents=True)
+        (packaged_root / "SKILL.md").write_text("# Genomi\n", encoding="utf-8")
+        (focused / "SKILL.md").write_text("# GenomiLab\n", encoding="utf-8")
+        codex_root = self.genomi_home / ".codex"
+        codex_root.mkdir()
+
+        with mock.patch.object(
+            handlers_admin,
+            "_resolve_install_skill_root",
+            return_value=packaged_root,
+        ), mock.patch.object(
+            handlers_admin.host_skills,
+            "DEFAULT_HOST_SKILL_PARENTS",
+            (codex_root / "skills",),
+        ):
+            result = call_operation("genomi.install", {})
+
         links = result["host_skill_links"]
-        self.assertEqual(links["status"], "skipped")
-        self.assertEqual(links["reason"], "runtime_not_a_git_checkout")
+        self.assertEqual(links["status"], "completed")
+        self.assertEqual(
+            (codex_root / "skills" / "genomi").resolve(),
+            packaged_root.resolve(),
+        )
+        self.assertEqual(
+            (codex_root / "skills" / "genomi-genomilab").resolve(),
+            focused.resolve(),
+        )
 
     def test_install_reconciles_skill_links_against_runtime_checkout(self) -> None:
         from genomi.operations.registry import handlers_admin
@@ -424,6 +452,7 @@ class GenomiInstallHostSkillLinkTests(GenomiRuntimeTestCase):
         repo = handlers_admin.Path("/tmp/genomi-checkout")
         with mock.patch.object(handlers_admin, "_runtime_update_step", return_value={"status": "skipped"}), \
              mock.patch.object(handlers_admin, "_runtime_git_repo", return_value=repo), \
+             mock.patch.object(handlers_admin, "_resolve_install_skill_root", return_value=repo), \
              mock.patch.object(handlers_admin.host_skills, "reconcile_host_skill_links", side_effect=_fake_reconcile):
             result = call_operation("genomi.install", {"force": True})
 

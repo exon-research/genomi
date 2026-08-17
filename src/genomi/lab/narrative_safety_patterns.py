@@ -431,7 +431,7 @@ _DECLARATIVE_CLAUSE_START = re.compile(
 
 # Positive, typed narrative forms.  The deny rules above remain useful as
 # defence in depth, but acceptance is decided by these forms.  This matters at
-# the harness boundary: a novel way of making a clinical claim must fail closed
+# the agent-artifact boundary: a novel clinical claim must fail closed
 # instead of being accepted merely because it missed a blacklist expression.
 _NARRATIVE_UNIT_BOUNDARY = re.compile(
     r"(?<=[.!?;])(?:[\"'\u201d\u2019])?\s+(?=[A-Z0-9\"'\u201c\u2018])|[\r\n]+"
@@ -643,7 +643,7 @@ _RESEARCH_GUARDRAIL = re.compile(
     re.IGNORECASE,
 )
 _EXECUTION_FORM = re.compile(
-    r"^(?:The\s+installed\s+harness\s+)?(?:invoked|executed|completed|"
+    r"^(?:The\s+current\s+underlying\s+agent\s+)?(?:invoked|executed|completed|"
     r"returned|paused|failed)\s+(?:all\s+|the\s+)?(?:exact\s+)?"
     r"(?:accepted[- ]plan\s+|accepted\s+)?(?:request|requests|capability\s+"
     r"requests|calls)(?:\s+(?:successfully|with\s+(?:completed|failed|paused|"

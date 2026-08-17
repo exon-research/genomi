@@ -106,7 +106,7 @@ _CONFLICT_FIELDS = frozenset(
 
 
 def disease_relation_parameter_contract() -> JsonObject:
-    """Return the fixed vocabulary exposed to the installed harness."""
+    """Return the fixed vocabulary exposed to the current agent."""
 
     return {
         "relation_kind": sorted(RELATION_KINDS),

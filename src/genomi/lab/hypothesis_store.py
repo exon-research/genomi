@@ -12,7 +12,11 @@ from .disease_relation_contract import (
     is_qualifying_supporting_relation,
 )
 from .evidence_record_store import EvidenceCommitGuardError
-from .hypothesis_contract import GAP_KINDS
+from .hypothesis_contract import (
+    GAP_KINDS,
+    build_case_narrative_contract,
+    case_anchor_terms,
+)
 from .models import JsonObject, compact_json, required_text, row_dict, utc_now
 
 
@@ -41,6 +45,23 @@ class _HypothesisStore(Protocol):
 
     def _is_model_only_evidence(self, record: JsonObject) -> bool: ...
 
+    def append_investigation_event(
+        self,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+    def _append_investigation_event(
+        self,
+        connection: Any,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
 
 class HypothesisStoreMixin:
     """Persist versioned hypotheses only after validating their exact anchors."""
@@ -57,6 +78,7 @@ class HypothesisStoreMixin:
         supersedes_hypothesis_id: object = None,
         expected_plan_version_id: object = None,
         expected_consent_receipt_id: object = None,
+        emit_investigation_event: bool = False,
     ) -> JsonObject:
         if not isinstance(evidence_record_ids, list) or not isinstance(
             profile_revision_ids, list
@@ -75,6 +97,7 @@ class HypothesisStoreMixin:
         kind_value = required_text(kind, "kind", 80)
         status_value = required_text(status, "status", 80)
         allowed_kinds = {
+            "working_hypothesis",
             "candidate_mechanism",
             "counterevidence",
             "uncertainty",
@@ -96,19 +119,6 @@ class HypothesisStoreMixin:
             raise ValueError(
                 "hypothesis status must use the declared investigation vocabulary"
             )
-        statement_value = validate_research_narrative(
-            statement,
-            "hypothesis statement",
-            kind=(
-                "hypothesis_candidate_mechanism"
-                if kind_value == "candidate_mechanism"
-                else "hypothesis_counterevidence"
-                if kind_value == "counterevidence"
-                else "hypothesis_uncertainty"
-                if kind_value == "uncertainty"
-                else "hypothesis_gap"
-            ),
-        )
         expected_plan = (
             required_text(expected_plan_version_id, "expected_plan_version_id", 200)
             if expected_plan_version_id not in (None, "")
@@ -129,17 +139,44 @@ class HypothesisStoreMixin:
             raise ValueError(
                 "candidate mechanisms and counterevidence require both evidence and pinned profile anchors"
             )
+        if kind_value == "working_hypothesis" and (
+            evidence_ids or not revision_ids
+        ):
+            raise ValueError(
+                "an initial working hypothesis must cite profile observations only"
+            )
         self._validate_claim_anchors(
             investigation_id,
             evidence_record_ids=evidence_ids,
             profile_revision_ids=revision_ids,
         )
+        evidence_records, profile_records = self._brief_anchor_records(
+            investigation_id,
+            evidence_record_ids=set(evidence_ids),
+            profile_revision_ids=set(revision_ids),
+        )
+        investigation_record = self.get_investigation(investigation_id)
+        disease_scope = str(
+            investigation_record.get("disease_scope")
+            or investigation_record.get("question")
+            or ""
+        ).strip()
+        narrative_contract = build_case_narrative_contract(
+            disease_scope=investigation_record.get("disease_scope"),
+            molecular_profile={"observations": list(profile_records.values())},
+            evidence_records=list(evidence_records.values()),
+        )
+        statement_value = validate_research_narrative(
+            statement,
+            "hypothesis statement",
+            kind=_hypothesis_narrative_kind(kind_value),
+            case_anchor_terms=case_anchor_terms(
+                narrative_contract,
+                profile_revision_ids=revision_ids,
+                evidence_record_ids=evidence_ids,
+            ),
+        )
         if kind_value in {"candidate_mechanism", "counterevidence"}:
-            evidence_records, _ = self._brief_anchor_records(
-                investigation_id,
-                evidence_record_ids=set(evidence_ids),
-                profile_revision_ids=set(revision_ids),
-            )
             if not all(
                 self._evidence_record_is_usable(record)
                 for record in evidence_records.values()
@@ -156,12 +193,6 @@ class HypothesisStoreMixin:
                     "model output alone cannot support a candidate mechanism or counterevidence"
                 )
         if kind_value == "candidate_mechanism":
-            investigation = self.get_investigation(investigation_id)
-            disease_scope = str(
-                investigation.get("disease_scope")
-                or investigation.get("question")
-                or ""
-            ).strip()
             if not any(
                 is_qualifying_supporting_relation(
                     record,
@@ -189,6 +220,17 @@ class HypothesisStoreMixin:
                     "counterevidence cannot cite a disease relation unless its "
                     "direction is refutes or mixed"
                 )
+        statement_value = validate_research_narrative(
+            statement_value,
+            "hypothesis statement",
+            kind=_hypothesis_narrative_kind(kind_value),
+            case_anchor_terms=case_anchor_terms(
+                narrative_contract,
+                profile_revision_ids=revision_ids,
+                evidence_record_ids=evidence_ids,
+            ),
+            require_case_anchor=True,
+        )
         hypothesis_id = f"hypothesis-{uuid.uuid4().hex}"
         with self._connect() as connection:
             investigation = connection.execute(
@@ -273,13 +315,12 @@ class HypothesisStoreMixin:
                 )
                 prior = connection.execute(
                     "SELECT * FROM hypotheses WHERE hypothesis_id = ? "
-                    "AND investigation_id = ? "
-                    "AND patient_molecular_snapshot_id = ?",
-                    (supersedes, investigation_id, profile_snapshot_id),
+                    "AND investigation_id = ?",
+                    (supersedes, investigation_id),
                 ).fetchone()
                 if prior is None:
                     raise ValueError(
-                        "supersedes_hypothesis_id must belong to this investigation's current profile context"
+                        "supersedes_hypothesis_id must belong to this investigation"
                     )
                 logical_hypothesis_id = str(prior["logical_hypothesis_id"])
                 version = int(prior["version"]) + 1
@@ -318,4 +359,29 @@ class HypothesisStoreMixin:
             row = connection.execute(
                 "SELECT * FROM hypotheses WHERE hypothesis_id = ?", (hypothesis_id,)
             ).fetchone()
+            if emit_investigation_event:
+                self._append_investigation_event(
+                    connection,
+                    investigation_id,
+                    event_type="hypothesis_recorded",
+                    payload={
+                        "hypothesis_id": hypothesis_id,
+                        "logical_hypothesis_id": logical_hypothesis_id,
+                        "version": version,
+                        "kind": kind_value,
+                        "status": status_value,
+                    },
+                )
         return row_dict(row)
+
+
+def _hypothesis_narrative_kind(kind: str) -> str:
+    if kind == "working_hypothesis":
+        return "hypothesis_working"
+    if kind == "candidate_mechanism":
+        return "hypothesis_candidate_mechanism"
+    if kind == "counterevidence":
+        return "hypothesis_counterevidence"
+    if kind == "uncertainty":
+        return "hypothesis_uncertainty"
+    return "hypothesis_gap"

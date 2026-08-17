@@ -32,7 +32,11 @@ def list_resources() -> dict[str, Any]:
         },
         "toolset_disclosure": {
             "model": "skill_gated_dispatcher",
-            "default": "Default tools/list returns the base set (genomi + journal capabilities) plus the genomi.invoke dispatcher.",
+            "default": (
+                "Default tools/list returns genomi.*, research.*, journal.*, the "
+                "complete direct genomilab.* application boundary, and the "
+                "genomi.invoke dispatcher."
+            ),
             "expanded": "Capability tools are reached by dispatch: read the capability's skill (skills/<capability>/SKILL.md), then call genomi.invoke({tool: '<cap>.<op>', params: {...}}).",
             "candidate_gene_tools": "Use source-specific candidate-gene tools: phenotype.compare_gene_hpo_evidence for HPO/single-subject candidate genes, gwas.compare_gene_associations for GWAS Catalog gene-field evidence, phenotype.retrieve_trait_gene_records for Open Targets trait-gene records, phenotype.compare_drug_target_evidence for drug-target evidence, and functional_genomics.compare_gene_perturbation for perturbation evidence.",
         },

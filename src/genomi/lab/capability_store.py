@@ -1,4 +1,4 @@
-"""Durable, exactly-once claims for harness-selected capability work."""
+"""Durable, exactly-once claims for agent-selected capability work."""
 
 from __future__ import annotations
 
@@ -16,6 +16,23 @@ CAPABILITY_RETRY_OPERATION = "genomilab.capability.execute"
 
 class _StoreContract(Protocol):
     def _connect(self) -> ContextManager[Any]: ...
+
+    def append_investigation_event(
+        self,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+    def _append_investigation_event(
+        self,
+        connection: Any,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
 
 
 class CapabilityExecutionStoreMixin:
@@ -55,6 +72,8 @@ class CapabilityExecutionStoreMixin:
         attempt_kind: str,
         approval_provider: object = None,
         approval_payload_sha256: object = None,
+        event_type: object = None,
+        event_payload: JsonObject | None = None,
     ) -> JsonObject:
         """Atomically create an in-progress attempt before its side effect runs."""
 
@@ -91,6 +110,8 @@ class CapabilityExecutionStoreMixin:
             raise ValueError(
                 "approval continuation requires an exact provider and payload hash"
             )
+        if (event_type is None) != (event_payload is None):
+            raise ValueError("capability claim event type and payload must be supplied together")
 
         now = utc_now()
         with self._connect() as connection:
@@ -207,6 +228,13 @@ class CapabilityExecutionStoreMixin:
                     now,
                 ),
             )
+            if event_type is not None and event_payload is not None:
+                self._append_investigation_event(
+                    connection,
+                    investigation,
+                    event_type=event_type,
+                    payload=event_payload,
+                )
             row, attempts = self._execution_rows(connection, execution_id)
         result = self._execution_view(row, attempts)
         result["claimed"] = True
@@ -223,6 +251,8 @@ class CapabilityExecutionStoreMixin:
         job_id: object = None,
         resume_operation: object = None,
         poll_after_seconds: object = None,
+        event_type: object = None,
+        event_payload: JsonObject | None = None,
     ) -> JsonObject:
         """Finish the currently claimed attempt or attach its resumable job."""
 
@@ -254,6 +284,8 @@ class CapabilityExecutionStoreMixin:
             raise ValueError(
                 "background-job fields require in-progress capability execution"
             )
+        if (event_type is None) != (event_payload is None):
+            raise ValueError("capability finish event type and payload must be supplied together")
         finished_at = None if status == "in_progress" else utc_now()
         now = utc_now()
         with self._connect() as connection:
@@ -331,6 +363,13 @@ class CapabilityExecutionStoreMixin:
                     int(attempt_number),
                 ),
             )
+            if event_type is not None and event_payload is not None:
+                self._append_investigation_event(
+                    connection,
+                    str(current["investigation_id"]),
+                    event_type=event_type,
+                    payload=event_payload,
+                )
             row, attempts = self._execution_rows(connection, execution_id)
         return self._execution_view(row, attempts)
 

@@ -288,6 +288,7 @@ class EvidenceApplicationMixin(
                 expected_plan_version_id=expected_plan_version_id,
                 expected_disclosure_receipt_id=expected_disclosure_receipt_id,
                 expected_consent_receipt_id=expected_consent_receipt_id,
+                emit_investigation_event=True,
             )
         except EvidenceCommitGuardError as exc:
             if exc.code == "disclosure_revoked":

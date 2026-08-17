@@ -38,6 +38,8 @@ _PATIENT_ASSAY_FIELDS = frozenset(
     }
 )
 
+_QUERY_READY_AGI_STATES = frozenset({"complete", "completed", "variants_ready"})
+
 
 def genome_metadata(context: JsonObject) -> JsonObject | None:
     active = context.get("active_genome_index")
@@ -73,7 +75,7 @@ class WorkspaceApplication:
     unbind_user: Callable[[], None]
     genome_metadata: Callable[[JsonObject], JsonObject | None]
     active_context_receipt: Callable[[JsonObject, JsonObject], JsonObject]
-    harness_manifest: Callable[[], JsonObject]
+    agent_manifest: Callable[[], JsonObject]
     evidence_manifest: Callable[[], JsonObject]
     integration_manifest: Callable[[], JsonObject]
 
@@ -92,14 +94,39 @@ class WorkspaceApplication:
                 "setup": {
                     "owner": "Genomi",
                     "action": (
-                        "Create or select the local user in Genomi, then reopen "
-                        "GenomiLab."
+                        "Return to the underlying agent. Point it to the local "
+                        "VCF or another supported genome-source path so core "
+                        "Genomi can create or select the user and finish a "
+                        "query-ready Active Genome Index, then reopen GenomiLab."
                     ),
+                },
+            }
+        genome = self.genome_metadata(context)
+        readiness = str((genome or {}).get("readiness") or "")
+        if not isinstance(genome, dict) or readiness not in _QUERY_READY_AGI_STATES:
+            self.unbind_user()
+            return {
+                "status": "setup_required",
+                "code": "active_genome_index_required",
+                "workspace": None,
+                "product": "GenomiLab",
+                "version": __version__,
+                "setup": {
+                    "owner": "Genomi",
+                    "action": (
+                        "Return to the underlying agent. Ask it to select or "
+                        "finish the current user's Active Genome Index; if no "
+                        "index exists, point it to the local VCF or another "
+                        "supported genome-source path. Reopen GenomiLab when "
+                        "the selected index is query-ready."
+                    ),
+                    "accepted_readiness": sorted(_QUERY_READY_AGI_STATES),
+                    "current_readiness": readiness or "unavailable",
                 },
             }
         self.bind_user(user_id)
         workspace = self.store.open_workspace(user_id, user.get("nickname"))
-        workspace["profile"]["genome"] = self.genome_metadata(context)
+        workspace["profile"]["genome"] = genome
         investigation_views = self.store.list_investigations(user_id)
         workspace["investigations"] = investigation_views
         workspace["evidence_library"] = [
@@ -132,7 +159,7 @@ class WorkspaceApplication:
             "capabilities": {
                 "molecular_profile": "available",
                 "disease_investigation": "available",
-                "installed_harness": self.harness_manifest(),
+                "underlying_agent": self.agent_manifest(),
                 "collaboration": "capability_unavailable",
                 "public_evidence": self.evidence_manifest(),
                 "research_tools": integrations,
@@ -141,7 +168,7 @@ class WorkspaceApplication:
             },
             "privacy": {
                 "processing": (
-                    "local_unless_a_disclosed_harness_or_provider_is_selected"
+                    "local_genomilab_store_with_disclosed_agent_and_provider_destinations"
                 ),
                 "session_consent_required": True,
                 "raw_genome_owner": "Genomi",
@@ -229,6 +256,76 @@ class WorkspaceApplication:
             raise LabError(
                 "observation_not_found",
                 "Profile observation not found.",
+                http_status=404,
+            ) from exc
+        except ValueError as exc:
+            raise LabError("invalid_profile_observation", str(exc)) from exc
+
+    def record_investigation_observations(
+        self,
+        investigation_id: str,
+        observations: list[JsonObject],
+        *,
+        requires_context_refresh: bool,
+    ) -> list[JsonObject]:
+        """Validate patient writes before atomically recording them and their event."""
+
+        _, user_id = self.current_context()
+        try:
+            investigation = self.store.get_investigation(investigation_id)
+            if str(investigation.get("user_id")) != user_id:
+                raise KeyError(investigation_id)
+            prepared: list[tuple[str | None, JsonObject]] = []
+            for item in observations:
+                if not isinstance(item, dict):
+                    raise ValueError("every patient observation must be an object")
+                payload = dict(item)
+                supersedes = payload.pop(
+                    "supersedes_observation_revision_id", None
+                )
+                prior = (
+                    self.store.get_profile_observation(user_id, str(supersedes))
+                    if supersedes
+                    else None
+                )
+                validate_private_payload(payload)
+                prepared.append(
+                    (
+                        str(supersedes) if supersedes else None,
+                        self._patient_observation_payload(
+                            payload, user_id=user_id, prior=prior
+                        ),
+                    )
+                )
+            written: list[JsonObject] = []
+            with self.store.atomic_write():
+                for supersedes, payload in prepared:
+                    if supersedes is None:
+                        written.append(
+                            self.store.add_profile_observation(user_id, payload)
+                        )
+                    else:
+                        written.append(
+                            self.store.review_or_supersede_observation(
+                                user_id, supersedes, payload
+                            )
+                        )
+                self.store.append_investigation_event(
+                    investigation_id,
+                    event_type="patient_information_recorded",
+                    payload={
+                        "observation_revision_ids": [
+                            str(item["observation_revision_id"])
+                            for item in written
+                        ],
+                        "requires_context_refresh": requires_context_refresh,
+                    },
+                )
+            return written
+        except KeyError as exc:
+            raise LabError(
+                "observation_not_found",
+                "Profile observation or investigation not found.",
                 http_status=404,
             ) from exc
         except ValueError as exc:
@@ -383,7 +480,12 @@ class WorkspaceApplication:
                 f"unsupported {entity} fields: " + ", ".join(sorted(unexpected))
             )
 
-    def create_investigation(self, payload: JsonObject) -> JsonObject:
+    def create_investigation(
+        self,
+        payload: JsonObject,
+        *,
+        investigation_event_type: str | None = None,
+    ) -> JsonObject:
         _, user_id = self.current_context()
         try:
             validate_private_payload(payload)
@@ -392,11 +494,22 @@ class WorkspaceApplication:
                 raise ValueError(
                     "unsupported investigation fields: " + ", ".join(sorted(unexpected))
                 )
-            return self.store.create_investigation(
-                user_id,
-                question=payload.get("question"),
-                disease_scope=payload.get("disease_scope"),
-            )
+            with self.store.atomic_write():
+                investigation = self.store.create_investigation(
+                    user_id,
+                    question=payload.get("question"),
+                    disease_scope=payload.get("disease_scope"),
+                )
+                if investigation_event_type is not None:
+                    self.store.append_investigation_event(
+                        str(investigation["investigation_id"]),
+                        event_type=investigation_event_type,
+                        payload={
+                            "status": investigation.get("status"),
+                            "question": investigation.get("question"),
+                        },
+                    )
+            return investigation
         except (KeyError, ValueError) as exc:
             raise LabError("invalid_investigation", str(exc)) from exc
 
@@ -446,75 +559,10 @@ class WorkspaceApplication:
         if not isinstance(current, dict) or current.get("review_status") != "accepted":
             raise LabError(
                 "plan_acceptance_required",
-                "Review and accept the current harness plan before its capabilities run.",
+                "Accept the current investigation plan before its capabilities run.",
                 http_status=409,
             )
         return investigation
-
-    def accept_current_plan(
-        self, investigation_id: str, payload: JsonObject
-    ) -> JsonObject:
-        unexpected = set(payload) - {"plan_version_id", "plan_sha256", "approved"}
-        if unexpected:
-            raise LabError(
-                "invalid_plan_acceptance",
-                "Plan acceptance contains unsupported fields.",
-            )
-        investigation = self.investigation(investigation_id)
-        current = investigation.get("current_plan_version")
-        if not isinstance(current, dict):
-            raise LabError(
-                "harness_plan_required",
-                "The installed harness must propose a plan before it can be accepted.",
-                http_status=409,
-            )
-        try:
-            with self.store.atomic_write():
-                acceptance = self.store.accept_plan(
-                    investigation_id,
-                    plan_version_id=payload.get("plan_version_id"),
-                    user_id=investigation["user_id"],
-                    workspace_session_id=self.session_id,
-                    plan_sha256=payload.get("plan_sha256"),
-                    approved=payload.get("approved"),
-                )
-                if current.get("review_status") == "accepted":
-                    updated = investigation
-                else:
-                    next_status = (
-                        "awaiting_harness_execution"
-                        if investigation.get("patient_molecular_snapshot_id")
-                        else "awaiting_context_approval"
-                    )
-                    updated = self.store.set_investigation_status(
-                        investigation_id, next_status
-                    )
-        except (KeyError, ValueError) as exc:
-            raise LabError(
-                "invalid_plan_acceptance", str(exc), http_status=409
-            ) from exc
-        return {
-            "status": "accepted",
-            "plan_acceptance": acceptance,
-            "plan_version": updated.get("current_plan_version"),
-            "capability_results": [],
-            "investigation_status": updated.get("status"),
-            "next_harness_action": (
-                {
-                    "operation": "replace_task_binding",
-                    "artifact_kind": "execution_report",
-                    "instruction": "Execute the exact accepted investigation plan.",
-                    "reason": (
-                        "Create a request-scoped harness task after explicit plan "
-                        "acceptance."
-                    ),
-                    "requires_outbound_disclosure_approval": True,
-                }
-                if investigation.get("patient_molecular_snapshot_id")
-                and (current.get("plan") or {}).get("capability_requests")
-                else None
-            ),
-        }
 
     def investigation_profile(self, investigation_id: str) -> JsonObject:
         try:

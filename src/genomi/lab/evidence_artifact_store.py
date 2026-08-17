@@ -75,7 +75,7 @@ class EvidenceArtifactStoreMixin:
         plan_sha256: object,
         approved: object,
     ) -> JsonObject:
-        """Record explicit acceptance of the exact current harness plan."""
+        """Record acceptance of the exact current investigation plan."""
 
         if approved is not True:
             raise ValueError("plan acceptance requires explicit approval")

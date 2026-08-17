@@ -1,6 +1,6 @@
 """Typed, reusable patient-visible narrative statements.
 
-Harness schemas, runtime validation, and deterministic capability templates
+Agent-facing schemas, runtime validation, and deterministic capability templates
 all consume this registry.  The identifier is the domain value; text is its
 presentation.  This prevents independent allowlists from drifting while the
 wire format remains plain JSON text.

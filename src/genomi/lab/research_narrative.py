@@ -1,6 +1,6 @@
 """Fail-closed grammar checks for patient-visible GenomiLab research prose.
 
-The installed harness chooses wording, while GenomiLab owns the boundary
+The current underlying agent chooses wording, while GenomiLab owns the boundary
 between research artifacts and unsupported diagnosis or care decisions.  The
 checks below use grammatical claim classes rather than disease or drug lists,
 so unfamiliar names receive the same treatment as familiar ones.
@@ -9,10 +9,15 @@ so unfamiliar names receive the same treatment as familiar ones.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from typing import Literal
 
 from . import narrative_forms as _forms
 from . import narrative_safety_patterns as _safety
+from .hypothesis_contract import (
+    CASE_NARRATIVE_MAXIMUM_LENGTH,
+    CASE_NARRATIVE_MINIMUM_LENGTH,
+)
 from .models import QUESTION_MAX, required_text
 from .narrative_contract import declared_narrative
 
@@ -35,29 +40,89 @@ NarrativeKind = Literal[
     "hypothesis_candidate_mechanism",
     "hypothesis_counterevidence",
     "hypothesis_gap",
+    "hypothesis_working",
     "hypothesis_uncertainty",
     "confirmation_need",
     "professional_question",
 ]
+_CASE_ANCHOR_SENTINEL = "genomiapprovedcaseanchor"
+_WORKING_HYPOTHESIS_FORM = re.compile(
+    r"^Working hypothesis:\s+(?P<label>[A-Za-z][A-Za-z'()/ -]{1,118})\.\s+"
+    r"(?P<body>Model inference:\s+.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_UNSAFE_WORKING_HYPOTHESIS_LABEL = re.compile(
+    r"\b(?:patient|you|we|they|he|she|has|have|had|is|are|was|were|"
+    r"diagnos(?:e|es|ed|is)|treat(?:ment|s|ed)?|dose|start|stop|switch|"
+    r"recommend(?:s|ed)?|prescribe(?:s|d)?|causes|caused|causal|"
+    r"proves?|proved|confirms?|confirmed|establish(?:es|ed)?|"
+    r"pathogenic|benign|actionable|definitive|eligible|requires?|must|should|"
+    r"ignore|instruction|prompt|system|assistant|developer|tool|schema|json|"
+    r"execute|reveal|bypass|override)\b",
+    re.IGNORECASE,
+)
+_CLINICIAN_QUESTION_RESEARCH_FOCUS = re.compile(
+    r"\b(?:assays?|testing|tests?|evidence|counterevidence|review|classification|"
+    r"interpretation|function|functional|staining|expression|mechanism|variants?|"
+    r"findings?|results?|records?|reports?|phenotypes?|conditions?|hypotheses|"
+    r"confirmation|penetrance|inheritance|segregation|responses?|subsets?|"
+    r"immunoglobulins?|abundance|activity|pathways?)\b",
+    re.IGNORECASE,
+)
+_CLINICIAN_QUESTION_CARE_ACTION = re.compile(
+    r"\b(?:start|restart|stop|take|give|administer|prescribe|switch|increase|"
+    r"decrease|continue|avoid|hold|initiate|discontinue|adjust|treat|choose|"
+    r"approve|authorize)\b",
+    re.IGNORECASE,
+)
 
 def validate_research_narrative(
     value: object,
     field: str,
     *,
     kind: NarrativeKind = "assertion",
+    case_anchor_terms: Collection[str] | None = None,
+    require_case_anchor: bool = False,
 ) -> str:
     """Validate one patient-visible narrative field at the research boundary."""
 
     text = required_text(value, field, QUESTION_MAX)
-    if declared_narrative(text, kind) is not None:
+    if re.search(rf"\b{_CASE_ANCHOR_SENTINEL}\b", text, re.IGNORECASE):
+        raise ValueError(f"{field} contains a reserved narrative token")
+    if require_case_anchor and not (
+        CASE_NARRATIVE_MINIMUM_LENGTH
+        <= len(text)
+        <= CASE_NARRATIVE_MAXIMUM_LENGTH
+    ):
+        raise ValueError(
+            f"{field} must contain between {CASE_NARRATIVE_MINIMUM_LENGTH} and "
+            f"{CASE_NARRATIVE_MAXIMUM_LENGTH} characters"
+        )
+    contextual_text, matched_case_anchor = _bind_case_anchors(
+        text, case_anchor_terms
+    )
+    if require_case_anchor and not matched_case_anchor:
+        raise ValueError(
+            f"{field} must name at least one exact approved case anchor"
+        )
+    if (
+        case_anchor_terms is not None
+        and _contains_unapproved_identifier(contextual_text)
+    ):
+        raise ValueError(
+            f"{field} contains an identifier outside its approved case anchors"
+        )
+    if declared_narrative(text, kind) is not None and not require_case_anchor:
         return text
     if kind == "professional_question":
-        _validate_professional_question(text, field)
+        _validate_professional_question(contextual_text, field)
         return text
     if _unsafe_narrative(text, kind=kind):
         raise ValueError(f"{field} {_safety._ERROR}")
-    if not _uses_declared_research_form(text, kind=kind):
-        if kind == "confirmation_need" and not _safety._CONFIRMATION_FORM.search(text):
+    if not _uses_declared_research_form(contextual_text, kind=kind):
+        if kind == "confirmation_need" and not _safety._CONFIRMATION_FORM.search(
+            contextual_text
+        ):
             raise ValueError(
                 f"{field} must describe a confirmation or evidence need"
             )
@@ -65,9 +130,112 @@ def validate_research_narrative(
     return text
 
 
+def validate_clinician_question(
+    value: object,
+    field: str,
+    *,
+    case_anchor_terms: Collection[str],
+) -> str:
+    """Validate one case-specific, evidence-anchored clinician question.
+
+    Brief questions are deliberately separate from the historical canned
+    professional-question vocabulary. They may use specialist terminology, but
+    only when the question names an exact term carried by one of its cited
+    records and remains a single open research question rather than a disguised
+    diagnosis or care instruction.
+    """
+
+    text = required_text(value, field, QUESTION_MAX)
+    if not (
+        CASE_NARRATIVE_MINIMUM_LENGTH
+        <= len(text)
+        <= CASE_NARRATIVE_MAXIMUM_LENGTH
+    ):
+        raise ValueError(
+            f"{field} must contain between {CASE_NARRATIVE_MINIMUM_LENGTH} and "
+            f"{CASE_NARRATIVE_MAXIMUM_LENGTH} characters"
+        )
+    if re.search(rf"\b{_CASE_ANCHOR_SENTINEL}\b", text, re.IGNORECASE):
+        raise ValueError(f"{field} contains a reserved narrative token")
+    contextual_text, matched_case_anchor = _bind_case_anchors(
+        text, case_anchor_terms
+    )
+    if not matched_case_anchor:
+        raise ValueError(f"{field} must name at least one exact cited case anchor")
+    if _contains_unapproved_identifier(contextual_text):
+        raise ValueError(
+            f"{field} contains an identifier outside its cited case anchors"
+        )
+
+    stripped = contextual_text.strip().lstrip('"\'\u201c\u2018')
+    body = contextual_text.rstrip()[:-1] if contextual_text.rstrip().endswith("?") else ""
+    if (
+        not body
+        or not _safety._INTERROGATIVE.match(stripped)
+        or _safety._INTERNAL_QUESTION_UNIT.search(body)
+    ):
+        raise ValueError(f"{field} must contain exactly one genuine clinician question")
+    if any(
+        pattern.search(contextual_text)
+        for pattern in (
+            _safety._QUESTION_FORBIDDEN_DELIMITER,
+            _safety._QUESTION_EMBEDDED_CONCLUSION,
+            _safety._QUESTION_CLINICAL_PREMISE,
+            _safety._QUESTION_APPENDED_ASSERTION,
+            _safety._QUESTION_APPENDED_CARE_ACTION,
+        )
+    ):
+        raise ValueError(f"{field} cannot contain an appended conclusion or care action")
+    if _CLINICIAN_QUESTION_CARE_ACTION.search(contextual_text):
+        raise ValueError(f"{field} cannot ask GenomiLab to direct care")
+    if not _CLINICIAN_QUESTION_RESEARCH_FOCUS.search(contextual_text):
+        raise ValueError(f"{field} must ask a focused evidence or mechanism question")
+    return text
+
+
+def _bind_case_anchors(
+    text: str, case_anchor_terms: Collection[str] | None
+) -> tuple[str, bool]:
+    """Replace exact approved data labels before closed-vocabulary parsing."""
+
+    if case_anchor_terms is None:
+        return text, False
+    normalized = text
+    matched = False
+    terms = sorted(
+        {
+            " ".join(term.strip().split())
+            for term in case_anchor_terms
+            if isinstance(term, str) and term.strip()
+        },
+        key=len,
+        reverse=True,
+    )
+    for term in terms:
+        pattern = re.compile(
+            rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])"
+        )
+        normalized, count = pattern.subn(_CASE_ANCHOR_SENTINEL, normalized)
+        matched = matched or bool(count)
+    return normalized, matched
+
+
+def _contains_unapproved_identifier(text: str) -> bool:
+    return any(
+        token.casefold() != _CASE_ANCHOR_SENTINEL
+        and (
+            token.isdigit()
+            or bool(_forms._IDENTIFIER_TOKEN.fullmatch(token))
+        )
+        for token in _forms._WORD_TOKEN.findall(text)
+    )
+
+
 def _uses_declared_research_form(text: str, *, kind: NarrativeKind) -> bool:
     if _safety._DOUBLE_NEGATED_CLINICAL.search(text):
         return False
+    if kind == "hypothesis_working":
+        return _working_hypothesis_form(text)
     if kind == "brief_title":
         return bool(
             _safety._SAFE_TITLE.fullmatch(text.strip())
@@ -129,6 +297,28 @@ def _uses_declared_research_form(text: str, *, kind: NarrativeKind) -> bool:
     if kind == "meta":
         return all(_meta_form(unit) for unit in units)
     return all(_assertion_form(unit) for unit in units)
+
+
+def _working_hypothesis_form(text: str) -> bool:
+    """Accept one named, explicitly provisional differential hypothesis.
+
+    The label is a short noun phrase for display, never a patient-level claim.
+    The second sentence must independently satisfy the existing closed
+    candidate grammar and carry an exact approved profile anchor.
+    """
+
+    match = _WORKING_HYPOTHESIS_FORM.fullmatch(text.strip())
+    if match is None:
+        return False
+    label = " ".join(match.group("label").split())
+    if (
+        len(label) < 2
+        or len(label) > 120
+        or _UNSAFE_WORKING_HYPOTHESIS_LABEL.search(label)
+        or not any(character.isalpha() for character in label)
+    ):
+        return False
+    return _candidate_form(match.group("body"))
 
 
 def _narrative_units(text: str) -> tuple[str, ...]:
@@ -419,7 +609,7 @@ def _change_form(text: str) -> bool:
             "synthesized",
             "updated",
         }
-        and all(word in _forms._CHANGE_WORDS for word in words)
+        and _forms._tokens_are_closed(plain, _forms._CHANGE_WORDS)
     )
 
 
