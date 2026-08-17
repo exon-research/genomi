@@ -122,6 +122,41 @@ class PortalFrontendResultPresentationTest(unittest.TestCase):
         self.assertEqual(result["summary"], "Target-centric evidence report for focused Genomi research.")
         self.assertNotIn("research.build_target_packet", result["summary"])
 
+    def test_serialized_payloads_never_become_a_work_step_summary(self) -> None:
+        # These are verbatim summaries the work trail showed a reader: a
+        # numbered file listing, a leading line number before JSON, and an MCP
+        # content envelope. A step's one line says what happened; the payload
+        # belongs in the expanded technical detail.
+        presentation_url = (
+            Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates/portal_tool_result_presentation.js"
+        ).as_uri()
+        script = textwrap.dedent(
+            f"""
+            const presentation = await import({presentation_url!r});
+            const blobs = [
+              '1590- 1 1591- ] 1592- ], 1593- "population_flags": [ 1594- "needs_public_population_evidence"',
+              '1 {{ 2 "headline": "clinvar.scan_candidates: evidence_present", 3 "evidence_envelope"',
+              '[{{"text":"{{\\n \\"dispatched_tool\\": \\"lab.create_investigation\\"}}"}}]'
+            ];
+            const readable = [
+              'No matches found',
+              'CTLA4 literature reviewed across four cohorts.'
+            ];
+            process.stdout.write(JSON.stringify({{
+              blobs: blobs.map((content) => presentation.toolResultSummary({{ content }})),
+              readable: readable.map((content) => presentation.toolResultSummary({{ content }}))
+            }}));
+            """
+        )
+
+        result = _run_node_json(self, script)
+
+        self.assertEqual(result["blobs"], ["completed", "completed", "completed"])
+        self.assertEqual(
+            result["readable"],
+            ["No matches found", "CTLA4 literature reviewed across four cohorts."],
+        )
+
     def test_source_operation_contract_is_shared_by_result_renderers_and_tool_presentation(self) -> None:
         helper_url = (
             Path(__file__).resolve().parents[1] / "src/genomi/interfaces/templates/portal_result_presentation_model.js"

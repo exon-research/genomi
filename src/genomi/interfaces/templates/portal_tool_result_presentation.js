@@ -60,7 +60,14 @@ export function toolResultSummary(result) {
 function looksLikeTransportBlob(line) {
   const trimmed = String(line || '').trim();
   if (!trimmed) return true;
-  return trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"');
+  if (trimmed.startsWith('{') || trimmed.startsWith('[') || trimmed.startsWith('"')) return true;
+  // Serialized payloads reach the summary in shapes that do not start with a
+  // brace: a numbered file listing ("1590- 1 1591- ]"), or a leading line
+  // number before the JSON ("1 { 2 \"headline\": ..."). A quoted key is the
+  // reliable tell that this is a payload rather than a sentence.
+  if (/"\s*:/.test(trimmed)) return true;
+  if (/^\d+[-\s]/.test(trimmed) && /[{}\[\]]/.test(trimmed)) return true;
+  return false;
 }
 
 export function toolResultPresentation(record, options = {}) {
