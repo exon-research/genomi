@@ -88,6 +88,12 @@
           "association_limit": {
             "$ref": "#/schema_fragments/properties/limit_200"
           },
+          "evidence_record_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
           "api_url": {
             "type": "string",
             "default": "https://www.ebi.ac.uk/gwas/rest/api/v2"

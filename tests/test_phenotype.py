@@ -474,9 +474,67 @@ class PhenotypePrioritizationTests(unittest.TestCase):
         self.assertEqual(result["source_prior"], "expert_phenotype_annotation")
         self.assertEqual(result["ranking"][0]["candidate"], "PNKP")
         self.assertEqual(result["evidence_records"][0]["candidate"], "PNKP")
+        self.assertEqual(result["evidence_record_window"]["total_evidence_records"], 1)
+        self.assertEqual(result["evidence_record_window"]["returned_evidence_records"], 1)
+        self.assertFalse(result["evidence_record_window"]["has_more"])
         self.assertEqual(result["evidence_envelope"]["finding_state"], "evidence_present")
         self.assertEqual(result["evidence_envelope"]["operation"], "phenotype.compare_gene_hpo_evidence")
         self.assertEqual(result["evidence_envelope"]["observations"]["top_observed_candidate"], "PNKP")
+
+    def test_phenotype_gene_operation_bounds_the_returned_evidence_record_inventory(self) -> None:
+        genes = ["PNKP", "SPG7", "ATM", "APTX", "SETX", "TDP1"]
+        source_records = [
+            {
+                "record_id": f"orphanet-{gene.lower()}-{index}",
+                "source_id": "orphanet",
+                "source_type": "rare disease gene phenotype source",
+                "source_title": f"Orphanet {gene} report {index}",
+                "source_url": f"https://example.test/{gene.lower()}/{index}",
+                "finding": f"{gene} is associated with ataxia and microcephaly.",
+                "verified_fields": {"genes": [gene], "phenotypes": ["ataxia", "microcephaly"]},
+                "support_spans": [
+                    {
+                        "field": "gene",
+                        "value": gene,
+                        "source_text": f"{gene} is associated with ataxia and microcephaly.",
+                    }
+                ],
+            }
+            for gene in genes
+            for index in range(20)
+        ]
+        params = {
+            "phenotypes": ["ataxia", "microcephaly"],
+            "genes": genes,
+            "search_stored_research": False,
+            "use_hpo_annotations": False,
+            "source_records": source_records,
+        }
+
+        result = call_operation("phenotype.compare_gene_hpo_evidence", params)
+
+        window = result["evidence_record_window"]
+        self.assertEqual(window["evidence_record_limit"], 50)
+        self.assertEqual(window["returned_evidence_records"], 50)
+        self.assertEqual(window["total_evidence_records"], len(source_records))
+        self.assertTrue(window["has_more"])
+        self.assertEqual(len(result["evidence_records"]), 50)
+        # Every candidate keeps evidence in the window; a long first gene must
+        # not consume it.
+        self.assertEqual(
+            {record["candidate"] for record in result["evidence_records"]},
+            set(genes),
+        )
+        # Ranking coverage is unaffected by the returned-record window.
+        self.assertEqual(len(result["ranking"]), len(genes))
+        self.assertEqual(result["coverage"]["records_examined"], len(source_records))
+
+        wider = call_operation(
+            "phenotype.compare_gene_hpo_evidence",
+            {**params, "evidence_record_limit": 120},
+        )
+        self.assertEqual(wider["evidence_record_window"]["returned_evidence_records"], 120)
+        self.assertFalse(wider["evidence_record_window"]["has_more"])
 
     def test_phenotype_gene_operation_reports_missing_hpo_install_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict("os.environ", {"GENOMI_HOME": tmp}):

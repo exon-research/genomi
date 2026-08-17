@@ -194,9 +194,11 @@ def _bind_observed_investigation(
             "Open the inquiry conversation before linking its investigation.",
             http_status=409,
         )
-    investigation = (
-        service or _application_service(project_id, root=root)
-    ).investigation(clean_investigation_id)
+    view = (service or _application_service(project_id, root=root)).investigation(
+        clean_investigation_id
+    )
+    investigation = view.get("investigation")
+    investigation = investigation if isinstance(investigation, dict) else view
     user_id = str(investigation.get("user_id") or "")
 
     def mutate(state: JsonObject) -> JsonObject:
@@ -437,15 +439,15 @@ def _project_context(
     project_id: str, *, root: str | Path | None
 ) -> JsonObject:
     binding = portal_store.project_genome_binding(project_id, root=root)
-    if not isinstance(binding, dict):
-        return {
-            "active_user_id": f"portal-{str(project_id or '').strip()}",
-            "active_agi_id": None,
-            "agis": {},
-        }
     return {
-        "active_user_id": str(binding.get("user_id") or "").strip() or None,
-        "active_agi_id": str(binding.get("agi_id") or "").strip() or None,
+        "active_user_id": portal_project_genomes.project_workspace_user_id(
+            project_id, binding
+        ),
+        "active_agi_id": (
+            str(binding.get("agi_id") or "").strip() or None
+            if isinstance(binding, dict)
+            else None
+        ),
         "agis": {},
     }
 

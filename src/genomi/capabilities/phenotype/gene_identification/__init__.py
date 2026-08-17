@@ -114,6 +114,7 @@ from .comparison import (
     compare_drug_target_gene_evidence,
     compare_gwas_catalog_gene_evidence,
     compare_phenotype_annotation_gene_evidence,
+    DEFAULT_EVIDENCE_RECORD_LIMIT,
     source_prior_evidence_response,
 )
 
@@ -124,5 +125,6 @@ __all__ = [
     "compare_gwas_catalog_gene_evidence",
     "compare_phenotype_annotation_gene_evidence",
     "retrieve_trait_gene_records",
+    "DEFAULT_EVIDENCE_RECORD_LIMIT",
     "source_prior_evidence_response",
 ]

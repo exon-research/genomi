@@ -15,6 +15,10 @@ OperationRunner = Callable[[str, JsonObject], JsonObject]
 
 DEFAULT_PANELS: tuple[str, ...] = PANEL_KEYS
 DEFAULT_PGX_REVIEW_TARGET_LIMIT = 12
+# The dashboard renders a whole-genome variant panel, not a chat answer, so it
+# asks for the full materialized ClinVar candidate window instead of the
+# host-agent default window.
+DASHBOARD_CLINVAR_CANDIDATE_LIMIT = 100
 DEFAULT_RISK_REVIEW_TYPES: tuple[str, ...] = ("carrier_review", "observed_condition_review")
 _BLOCKED_STATUSES = {
     "requires_library_install",
@@ -70,7 +74,7 @@ def build_dashboard_evidence(
 
     clinvar_result: JsonObject | None = None
     if {"variants", "variants_all"} & set(panels):
-        clinvar_result = run("clinvar.scan_candidates", {})
+        clinvar_result = run("clinvar.scan_candidates", {"limit": DASHBOARD_CLINVAR_CANDIDATE_LIMIT})
         if "variants" in panels:
             _store_panel(evidence, panel_states, "variants", "clinvar.scan_candidates", clinvar_result)
         if "variants_all" in panels:
@@ -111,7 +115,7 @@ def build_dashboard_evidence(
         evidence["risk"] = []
         risk_review_types = _risk_review_types(safe_params)
         if clinvar_result is None and risk_review_types:
-            clinvar_result = run("clinvar.scan_candidates", {})
+            clinvar_result = run("clinvar.scan_candidates", {"limit": DASHBOARD_CLINVAR_CANDIDATE_LIMIT})
         if risk_review_types and clinvar_result is not None:
             _record_panel_result_state(panel_states, "risk", "clinvar.scan_candidates", clinvar_result)
         _append_risk_score_results(

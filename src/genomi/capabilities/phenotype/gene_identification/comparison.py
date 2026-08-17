@@ -42,6 +42,13 @@ from .locus import (
 )
 
 
+# `evidence_records` flattens every supporting source record of every
+# candidate, so its length is the caller's gene count multiplied by the
+# per-gene source limit. The returned inventory is bounded to this window and
+# the panel reports the full count beside it.
+DEFAULT_EVIDENCE_RECORD_LIMIT = 50
+
+
 def compare_candidate_evidence(
     evidence_db: str | Path | None = None,
     *,
@@ -214,6 +221,7 @@ def compare_gwas_catalog_gene_evidence(
     *,
     api_url: str = gwas.GWAS_CATALOG_V2_API_URL,
     association_limit: int = 200,
+    evidence_record_limit: int = DEFAULT_EVIDENCE_RECORD_LIMIT,
     source_records: Iterable[dict[str, Any]] | None = None,
     task_text: str | None = None,
     evidence_intent: str | None = None,
@@ -229,7 +237,9 @@ def compare_gwas_catalog_gene_evidence(
         evidence_intent=evidence_intent,
         semantic_context=semantic_context,
     )
-    return source_prior_evidence_response(GWAS_PRIOR, result)
+    return source_prior_evidence_response(
+        GWAS_PRIOR, result, evidence_record_limit=evidence_record_limit
+    )
 
 
 def compare_drug_target_gene_evidence(
@@ -243,6 +253,7 @@ def compare_drug_target_gene_evidence(
     source_records: Iterable[dict[str, Any]] | None = None,
     search_stored_research: bool = True,
     limit: int = 25,
+    evidence_record_limit: int = DEFAULT_EVIDENCE_RECORD_LIMIT,
     semantic_context: object = None,
 ) -> dict[str, Any]:
     result = targets.compare_target_gene_evidence(
@@ -257,7 +268,9 @@ def compare_drug_target_gene_evidence(
         limit=limit,
         semantic_context=semantic_context,
     )
-    return source_prior_evidence_response(DRUG_TARGET_PRIOR, result)
+    return source_prior_evidence_response(
+        DRUG_TARGET_PRIOR, result, evidence_record_limit=evidence_record_limit
+    )
 
 
 def compare_phenotype_annotation_gene_evidence(
@@ -273,6 +286,7 @@ def compare_phenotype_annotation_gene_evidence(
     use_hpo_annotations: bool = True,
     hpo_gene_file: str | Path | None = None,
     limit: int = 25,
+    evidence_record_limit: int = DEFAULT_EVIDENCE_RECORD_LIMIT,
     semantic_context: object = None,
 ) -> dict[str, Any]:
     result = phenotype.compare_gene_hpo_evidence(
@@ -289,11 +303,23 @@ def compare_phenotype_annotation_gene_evidence(
         limit=limit,
         semantic_context=semantic_context,
     )
-    return source_prior_evidence_response(PHENOTYPE_PRIOR, result)
+    return source_prior_evidence_response(
+        PHENOTYPE_PRIOR, result, evidence_record_limit=evidence_record_limit
+    )
 
 
-def source_prior_evidence_response(source_prior: str, result: dict[str, Any]) -> dict[str, Any]:
-    panel = _evidence_prior_panel(source_prior, _result_genes(result), result)
+def source_prior_evidence_response(
+    source_prior: str,
+    result: dict[str, Any],
+    *,
+    evidence_record_limit: int = DEFAULT_EVIDENCE_RECORD_LIMIT,
+) -> dict[str, Any]:
+    panel = _evidence_prior_panel(
+        source_prior,
+        _result_genes(result),
+        result,
+        evidence_record_limit=evidence_record_limit,
+    )
     top_ranked = next((row for row in panel.get("ranking") or [] if row.get("rank") == 1), None)
     envelope = result.get("evidence_envelope") if isinstance(result.get("evidence_envelope"), dict) else None
     response = {
@@ -307,6 +333,7 @@ def source_prior_evidence_response(source_prior: str, result: dict[str, Any]) ->
         "ranking": panel["ranking"],
         "decision_evidence": panel["decision_evidence"],
         "evidence_records": panel["evidence_records"],
+        "evidence_record_window": panel["evidence_record_window"],
         "unmatched_candidates": panel["unmatched_candidates"],
         "coverage": panel["coverage"],
         "limitations": panel["limitations"],
@@ -397,7 +424,13 @@ def _component_results(
     return results
 
 
-def _evidence_prior_panel(source_prior: str, genes: list[str], result: dict[str, Any] | None) -> dict[str, Any]:
+def _evidence_prior_panel(
+    source_prior: str,
+    genes: list[str],
+    result: dict[str, Any] | None,
+    *,
+    evidence_record_limit: int = DEFAULT_EVIDENCE_RECORD_LIMIT,
+) -> dict[str, Any]:
     if not result:
         ordering = evidence_source_local_ordering(
             [],
@@ -415,6 +448,12 @@ def _evidence_prior_panel(source_prior: str, genes: list[str], result: dict[str,
                 "ranked_candidate_evidence": [],
             },
             "evidence_records": [],
+            "evidence_record_window": {
+                "returned_evidence_records": 0,
+                "total_evidence_records": 0,
+                "evidence_record_limit": evidence_record_limit,
+                "has_more": False,
+            },
             "unmatched_candidates": genes,
             "coverage": {"records_examined": 0, "candidate_records_found": 0},
             "limitations": [EVIDENCE_PRIORS[source_prior]["title"] + " was not requested for this query."],
@@ -423,7 +462,10 @@ def _evidence_prior_panel(source_prior: str, genes: list[str], result: dict[str,
     matrix = result.get("candidate_matrix") if isinstance(result.get("candidate_matrix"), list) else []
     ranking = [_ranking_row(source_prior, row) for row in matrix if isinstance(row, dict) and row.get("rank") is not None]
     ranking.sort(key=lambda row: (row["rank"], str(row["candidate"]).casefold()))
-    evidence_records = _panel_evidence_records(source_prior, matrix)
+    evidence_records, evidence_record_window = _bounded_evidence_records(
+        _panel_evidence_records(source_prior, matrix),
+        evidence_record_limit=evidence_record_limit,
+    )
     answer_supported = _panel_answer_supported(source_prior, ranking, result)
     decision_records = _panel_decision_evidence(source_prior, ranking, matrix, answer_supported=answer_supported)
     ordering = _panel_source_local_ordering(source_prior, ranking, result)
@@ -434,6 +476,7 @@ def _evidence_prior_panel(source_prior: str, genes: list[str], result: dict[str,
         "source_local_ordering": ordering,
         "decision_evidence": decision_records,
         "evidence_records": evidence_records,
+        "evidence_record_window": evidence_record_window,
         "unmatched_candidates": [
             str(row.get("candidate_id"))
             for row in matrix
@@ -486,6 +529,47 @@ def _panel_evidence_records(source_prior: str, matrix: list[dict[str, Any]]) -> 
                 }
             )
     return records
+
+
+def _bounded_evidence_records(
+    records: list[dict[str, Any]],
+    *,
+    evidence_record_limit: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return a bounded evidence-record window plus its factual window state.
+
+    `evidence_records` flattens every supporting source record of every
+    candidate, so its length is the number of genes multiplied by the
+    per-gene source limit. Returning that whole list put a source-record
+    inventory that grows with the caller's gene list into a single result.
+    """
+
+    per_candidate: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        per_candidate.setdefault(str(record.get("candidate")), []).append(record)
+    window: list[dict[str, Any]] = []
+    # Take records candidate by candidate so a long first gene cannot consume
+    # the whole window and hide every other candidate's evidence.
+    depth = 0
+    while len(window) < evidence_record_limit and any(
+        len(candidate_records) > depth for candidate_records in per_candidate.values()
+    ):
+        for candidate_records in per_candidate.values():
+            if depth >= len(candidate_records):
+                continue
+            window.append(candidate_records[depth])
+            if len(window) >= evidence_record_limit:
+                break
+        depth += 1
+    window.sort(key=lambda record: (str(record.get("candidate")), int(record.get("record_index") or 0)))
+    return window, {
+        "returned_evidence_records": len(window),
+        "total_evidence_records": len(records),
+        "evidence_record_limit": evidence_record_limit,
+        "has_more": len(records) > len(window),
+        "records_per_candidate_returned": min(depth, max((len(v) for v in per_candidate.values()), default=0)),
+        "narrow_with_parameters": ["genes", "evidence_record_limit"],
+    }
 
 
 def _panel_decision_evidence(

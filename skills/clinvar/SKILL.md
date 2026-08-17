@@ -40,6 +40,12 @@ Build a candidate landscape from exact ClinVar matches. Use
   prose.
 - By default, `clinvar.scan_candidates` includes P/LP, conflicting, VUS,
   risk/association/protective, drug-response, and benign ClinVar groups.
+- `clinvar.scan_candidates` returns a bounded candidate window. `summary`,
+  `available_evidence_groups`, and `candidate_review_groups` cover the whole
+  selected inventory; `candidate_inventory` carries the window described by
+  `returned_window`. Reach the rest with `offset`, a larger `limit`, or by
+  narrowing with `gene` or `evidence_groups` — the tool result is the evidence,
+  not the output file.
 - If ClinVar matches are missing, `clinvar.scan_candidates` materializes them
   from the Active Genome Index before building the candidate inventory.
 - VUS, conflicts, and low-review assertions are downgraded unless reviewed

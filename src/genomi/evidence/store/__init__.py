@@ -237,13 +237,15 @@ from .candidate_groups import (
     CANDIDATE_REVIEW_GROUP_POLICY_ID,
     build_candidate_review_groups,
 )
-from .candidates import (
+from .candidate_inventory_payload import (
     _candidate_inventory_options,
     _clinvar_candidate_evidence_view,
     _clinvar_candidate_matched_text,
     _clinvar_candidate_matrix_row,
     _clinvar_counter_evidence,
     _variant_candidate_id,
+)
+from .candidates import (
     extract_clinvar_candidates,
 )
 from .gather import (

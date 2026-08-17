@@ -4,11 +4,15 @@ from pathlib import Path
 
 from ...active_genome_index.active_genome_index import ActiveGenomeIndexNeed, ActiveGenomeIndexReader
 from ...capabilities.clinvar import static_annotation
+from ...evidence.store.candidate_inventory_payload import DEFAULT_RETURNED_CANDIDATE_LIMIT
 from ...runtime.paths import CLINVAR_MATCHES_NAME
 from .agi_access import open_agi
 from .coerce import (
     _bool,
+    _int,
+    _list_str,
     _optional_path,
+    _optional_str,
     _path,
     _str,
     _with_context,
@@ -67,6 +71,10 @@ def _clinvar_scan(params: JsonObject) -> JsonObject:
         evidence_db=_optional_path(resolved, "db"),
         output=_optional_path(params, "output"),
         genome_build=_str(resolved, "genome_build", "GRCh38"),
+        limit=_int(params, "limit", DEFAULT_RETURNED_CANDIDATE_LIMIT),
+        offset=_int(params, "offset", 0),
+        gene=_optional_str(params, "gene"),
+        evidence_groups=_list_str(params, "evidence_groups") or None,
         force=_bool(resolved, "force"),
     )
 

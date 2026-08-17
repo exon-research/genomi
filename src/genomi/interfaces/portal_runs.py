@@ -208,6 +208,10 @@ class HostAgentRunPresentation:
             event.get("payload", event.get("content"))
         )
         if not investigation_id:
+            self.emit_diagnostic(
+                "genomilab_investigation_binding_failed",
+                message="lab.create_investigation returned no investigation id",
+            )
             return
         current_binding = portal_genomilab.project_binding(project_id)
         if (
@@ -225,10 +229,17 @@ class HostAgentRunPresentation:
                 investigation_id=investigation_id,
                 frame_id=frame_id,
             )
-        except (portal_genomilab.PortalGenomiLabError, OSError, ValueError):
+        except (portal_genomilab.PortalGenomiLabError, OSError, ValueError) as exc:
             # A result that cannot be verified against this project's canonical
-            # user/session boundary is never persisted as a portal binding.
-            return
+            # user/session boundary is never persisted as a portal binding. That
+            # leaves the workspace board empty for the rest of the conversation,
+            # so the refusal has to reach the operator's work trail instead of
+            # disappearing.
+            reason = str(getattr(exc, "code", "") or type(exc).__name__)
+            self.emit_diagnostic(
+                "genomilab_investigation_binding_failed",
+                message=f"{reason}: {investigation_id}",
+            )
 
     def _completed_workspace_write(self, event: JsonObject) -> bool:
         if event.get("type") != "tool_result" or event.get("isError"):

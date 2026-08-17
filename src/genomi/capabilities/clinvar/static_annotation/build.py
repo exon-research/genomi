@@ -27,6 +27,7 @@ from ....evidence import (
     match_clinvar_variants_from_active_genome_index,
     summarize_clinvar_matches,
 )
+from ....evidence.store.candidate_inventory_payload import DEFAULT_RETURNED_CANDIDATE_LIMIT
 from ....evidence.store.constants import DEFAULT_CANDIDATE_EVIDENCE_GROUPS
 from ....runtime.handoff import attach_evidence_context, evidence_context, workflow_step
 from ....runtime.libraries import manager as library_manager
@@ -610,6 +611,10 @@ def scan_static_candidates(
     evidence_db: str | Path | None = None,
     output: str | Path | None = None,
     genome_build: str = "GRCh38",
+    limit: int = DEFAULT_RETURNED_CANDIDATE_LIMIT,
+    offset: int = 0,
+    gene: str | None = None,
+    evidence_groups: list[str] | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
     from ._helpers import _evidence_from_matches
@@ -622,7 +627,10 @@ def scan_static_candidates(
             db_path,
             output_path,
             genome_build=genome_build,
-            evidence_groups=list(DEFAULT_CANDIDATE_EVIDENCE_GROUPS),
+            limit=limit,
+            offset=offset,
+            gene=gene,
+            evidence_groups=list(evidence_groups) if evidence_groups else list(DEFAULT_CANDIDATE_EVIDENCE_GROUPS),
             force=force,
         ),
         "research",

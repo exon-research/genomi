@@ -404,6 +404,12 @@
           "limit": {
             "$ref": "#/schema_fragments/properties/limit_25"
           },
+          "evidence_record_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
           "semantic_context": {
             "$ref": "#/schema_fragments/properties/semantic_context"
           }
@@ -509,6 +515,12 @@
           },
           "limit": {
             "$ref": "#/schema_fragments/properties/limit_25"
+          },
+          "evidence_record_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
           },
           "semantic_context": {
             "$ref": "#/schema_fragments/properties/semantic_context"

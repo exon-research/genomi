@@ -318,6 +318,9 @@ def _gwas_compare_trait_gene_evidence(params: JsonObject) -> JsonObject:
         _list_str(params, "genes"),
         api_url=_str(params, "api_url", gwas.GWAS_CATALOG_V2_API_URL),
         association_limit=_int(params, "association_limit", 200),
+        evidence_record_limit=_int(
+            params, "evidence_record_limit", gene_identification.DEFAULT_EVIDENCE_RECORD_LIMIT
+        ),
         task_text=params.get("task_text") or params.get("question") or params.get("text"),
         evidence_intent=evidence_intent,
         semantic_context=params.get("semantic_context"),
@@ -336,6 +339,9 @@ def _drug_compare_target_evidence(params: JsonObject) -> JsonObject:
         source_records=_list_dict(resolved, "source_records"),
         search_stored_research=_bool(resolved, "search_stored_research", True),
         limit=_int(resolved, "limit", 25),
+        evidence_record_limit=_int(
+            resolved, "evidence_record_limit", gene_identification.DEFAULT_EVIDENCE_RECORD_LIMIT
+        ),
         semantic_context=resolved.get("semantic_context"),
     )
 
@@ -368,6 +374,9 @@ def _phenotype_compare_gene_hpo_evidence(params: JsonObject) -> JsonObject:
         use_hpo_annotations=_bool(resolved, "use_hpo_annotations", True),
         hpo_gene_file=_optional_path(resolved, "hpo_gene_file"),
         limit=_int(resolved, "limit", 25),
+        evidence_record_limit=_int(
+            resolved, "evidence_record_limit", gene_identification.DEFAULT_EVIDENCE_RECORD_LIMIT
+        ),
         semantic_context=resolved.get("semantic_context"),
     )
 

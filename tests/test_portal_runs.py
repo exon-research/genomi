@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 import time
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from genomi.interfaces import (
     portal_active_context,
     portal_artifact_renderers,
+    portal_claude_stream,
+    portal_codex_app_server,
     portal_genomilab,
     portal_project_genomes,
     portal_project_permissions,
@@ -22,8 +26,11 @@ from genomi.interfaces import (
     portal_workspaces,
 )
 from genomi.operations import OperationError, call_operation
+from genomi.runtime import context as runtime_context
 
 from tests.support.runtime.genomi import GenomiRuntimeTestCase
+
+JsonObject = dict[str, Any]
 
 _PRIVATE_PROMPT_RE = re.compile(
     r"(?:context_file|registry_file|agi_path|/Users|/home|/tmp|/private/tmp|/var/folders|/opt/homebrew|/usr/local|/Applications|/Volumes|~)"
@@ -268,15 +275,14 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
             "public_only": True,
             "command_id": "portal-restart-first",
         }
-        current_lab_context = {"active_user_id": f"portal-{project_id}"}
-        with mock.patch.dict("os.environ", environment, clear=False), mock.patch(
-            "genomi.lab.operations.describe_context",
-            return_value=current_lab_context,
-        ):
+        # No context stub: Lab must resolve the same workspace identity from the
+        # project's own context file that the portal projection reads back.
+        with mock.patch.dict("os.environ", environment, clear=False):
             first = call_operation(
                 "genomi.invoke",
                 {"tool": "lab.create_investigation", "params": first_params},
             )
+        self.assertEqual(first["investigation"]["user_id"], f"portal-{project_id}")
         first_id = str(first["investigation"]["investigation_id"])
         expected_session = str(
             portal_project_genomes.project_context_path(project_id)
@@ -352,10 +358,7 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         )
         self.assertIsNone(portal_genomilab.project_binding(other_project_id))
 
-        with mock.patch.dict("os.environ", environment, clear=False), mock.patch(
-            "genomi.lab.operations.describe_context",
-            return_value=current_lab_context,
-        ):
+        with mock.patch.dict("os.environ", environment, clear=False):
             later = call_operation(
                 "genomi.invoke",
                 {
@@ -1677,6 +1680,218 @@ class PortalRunPromptTests(GenomiRuntimeTestCase):
         self.assertEqual(payload["error"]["code"], "invalid_origin")
         self.assertIn("missing-frame", payload["error"]["message"])
         self.assertNotIn("runId", payload)
+
+
+class PortalLabInvestigationBindingTests(GenomiRuntimeTestCase):
+    """The board a person reads is the binding a host agent's result produced.
+
+    These run the real `lab.create_investigation` operation under the project's
+    own agent environment, so the workspace identity the Lab capability resolves
+    from the context file is the identity the portal projection reads back.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # A machine that already owns a genome has a registry default user. A
+        # portal project that has selected no Active Genome Index must still run
+        # Lab in its own workspace rather than that person's.
+        runtime_context.save_registry(
+            {
+                "agis": {},
+                "users": {
+                    "user-registry-owner": {
+                        "user_id": "user-registry-owner",
+                        "nickname": "Registry owner",
+                        "default": True,
+                        "agi_ids": [],
+                    }
+                },
+                "default_user_id": "user-registry-owner",
+            }
+        )
+
+    def _project_frame(self, name: str) -> tuple[str, str]:
+        project = portal_store.create_project(name=name)
+        project_id = str(project["project_id"])
+        frame = portal_store.create_frame(
+            project_id=project_id,
+            request="Investigate a changing synthetic health picture.",
+            agent_id="claude",
+        )
+        assert frame is not None
+        return project_id, str(frame["id"])
+
+    def _presentation(
+        self, project_id: str, frame_id: str
+    ) -> portal_runs.HostAgentRunPresentation:
+        run = portal_run_events.create_run(
+            kind="host_agent",
+            agent_id="claude",
+            message="Investigate a changing synthetic health picture.",
+            project_id=project_id,
+            frame_id=frame_id,
+        )
+        self.addCleanup(portal_run_events.discard_run, run.id)
+        return portal_runs.HostAgentRunPresentation(run)
+
+    def _create_investigation(self, project_id: str, command_id: str) -> JsonObject:
+        environment = portal_project_genomes.agent_environment(project_id)
+        with mock.patch.dict("os.environ", environment, clear=False):
+            return call_operation(
+                "genomi.invoke",
+                {
+                    "tool": "lab.create_investigation",
+                    "params": {
+                        "question": "Do these findings share one explanation?",
+                        "public_only": True,
+                        "command_id": command_id,
+                    },
+                },
+            )
+
+    def test_claude_content_shape_binds_created_investigation_to_the_board(self) -> None:
+        project_id, frame_id = self._project_frame("Claude Lab binding")
+        created = self._create_investigation(project_id, "claude-create-1")
+        investigation_id = str(created["investigation"]["investigation_id"])
+        # Claude Code delivers an MCP result as a content block list whose text
+        # is the serialized operation payload.
+        session = portal_claude_stream.ClaudeStreamSession(session_id="claude-session")
+        presentation = self._presentation(project_id, frame_id)
+        for line in (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "toolu_create_lab",
+                                "name": "mcp__genomi__genomi_invoke",
+                                "input": {
+                                    "tool": "lab.create_investigation",
+                                    "params": {"public_only": True},
+                                },
+                            }
+                        ]
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_create_lab",
+                                "content": [
+                                    {"type": "text", "text": json.dumps(created)}
+                                ],
+                            }
+                        ]
+                    },
+                }
+            ),
+        ):
+            for event in session.parse_line(line).events:
+                presentation.handle_agent_event(event)
+
+        binding = portal_genomilab.project_binding(project_id)
+        portal_genomilab._SERVICES.clear()
+        board = portal_genomilab.project_board(project_id)
+
+        self.assertEqual(binding["investigation_id"], investigation_id)
+        self.assertEqual(binding["frame_id"], frame_id)
+        self.assertEqual(binding["user_id"], f"portal-{project_id}")
+        self.assertEqual(board["investigation"]["investigation_id"], investigation_id)
+
+    def test_codex_content_shape_binds_created_investigation_to_the_board(self) -> None:
+        project_id, frame_id = self._project_frame("Codex Lab binding")
+        created = self._create_investigation(project_id, "codex-create-1")
+        investigation_id = str(created["investigation"]["investigation_id"])
+        # The Codex app server names the MCP server and tool on the item itself
+        # and carries the same serialized payload in the tool result content.
+        item = {
+            "id": "mcp-create-lab",
+            "type": "mcpToolCall",
+            "server": "genomi",
+            "tool": "genomi.invoke",
+            "arguments": {
+                "tool": "lab.create_investigation",
+                "params": {"public_only": True},
+            },
+        }
+        events: list[JsonObject] = []
+        session = portal_codex_app_server.CodexAppServerSession(
+            io.StringIO(), io.StringIO(), events.append
+        )
+        session._handle_notification(
+            "item/started", {"item": {**item, "status": "inProgress"}}
+        )
+        session._handle_notification(
+            "item/completed",
+            {
+                "item": {
+                    **item,
+                    "status": "completed",
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(created)}]
+                    },
+                }
+            },
+        )
+        presentation = self._presentation(project_id, frame_id)
+        for event in events:
+            presentation.handle_agent_event(event)
+
+        binding = portal_genomilab.project_binding(project_id)
+        portal_genomilab._SERVICES.clear()
+        board = portal_genomilab.project_board(project_id)
+
+        self.assertEqual(
+            [event["type"] for event in events], ["tool_call", "tool_result"]
+        )
+        self.assertEqual(binding["investigation_id"], investigation_id)
+        self.assertEqual(binding["frame_id"], frame_id)
+        self.assertEqual(binding["user_id"], f"portal-{project_id}")
+        self.assertEqual(board["investigation"]["investigation_id"], investigation_id)
+
+    def test_refused_binding_reports_a_work_trail_diagnostic(self) -> None:
+        project_id, frame_id = self._project_frame("Refused Lab binding")
+        presentation = self._presentation(project_id, frame_id)
+        presentation.handle_agent_event(
+            {
+                "type": "tool_call",
+                "id": "create-lab-foreign",
+                "name": "genomi.genomi.invoke",
+                "input": {"tool": "lab.create_investigation", "params": {}},
+            }
+        )
+        presentation.handle_agent_event(
+            {
+                "type": "tool_result",
+                "id": "create-lab-foreign",
+                "name": "genomi.genomi.invoke",
+                "isError": False,
+                "payload": {
+                    "investigation": {"investigation_id": "investigation-foreign"}
+                },
+            }
+        )
+
+        diagnostics = [
+            event.data
+            for event in presentation.run.events
+            if event.data.get("type") == "diagnostic"
+        ]
+
+        self.assertIsNone(portal_genomilab.project_binding(project_id))
+        self.assertEqual(
+            [diagnostic["name"] for diagnostic in diagnostics],
+            ["genomilab_investigation_binding_failed"],
+        )
+        self.assertIn("investigation-foreign", diagnostics[0]["message"])
+        self.assertEqual(presentation.run.output, "")
 
 
 def _assert_prompt_has_no_private_paths(prompt: str) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -13,6 +14,11 @@ from genomi.evidence import (
     match_clinvar_variants,
     record_research_findings,
 )
+from genomi.evidence.store.candidate_inventory_payload import (
+    DEFAULT_RETURNED_CANDIDATE_LIMIT,
+    MAX_RETURNED_CANDIDATE_LIMIT,
+)
+from genomi.operations.registry import defaults_applied_for_call
 from tests.support.capabilities.external_layers import (
     TINY_CLINVAR,
     TINY_POPULATION,
@@ -39,9 +45,8 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             view = result["evidence_view"]
             self.assertEqual(view["task_profile"]["profile_id"], "clinvar_candidate_scan")
             self.assertEqual(view["coverage_state"], "data_returned")
-            self.assertEqual(view["coverage"]["candidate_count"], len(result["candidate_matrix"]))
-            self.assertEqual(view["candidate_matrix"], result["candidate_matrix"])
-            self.assertEqual(result["top_observed_candidate"], result["candidate_matrix"][0]["candidate_id"])
+            self.assertEqual(view["coverage"]["candidate_count"], len(view["candidate_matrix"]))
+            self.assertEqual(result["top_observed_candidate"], view["candidate_matrix"][0]["candidate_id"])
             self.assertEqual(result["evidence_envelope"]["personal_context"]["source"], "clinvar_matches")
             self.assertTrue(view["agent_decision_required"])
             self.assertEqual(result["candidate_inventory"][0]["variant"]["pos"], 10257)
@@ -298,3 +303,172 @@ class CandidateInventoryTests(EvidenceImportTestBase):
             self.assertGreater(result["candidate_review_groups"]["group_count"], len(result["candidate_inventory"]))
             self.assertIn(["risk_association", 1], result["candidate_review_groups"]["group_counts_by_type"])
             self.assertIn(["drug_response", 1], result["candidate_review_groups"]["group_counts_by_type"])
+
+
+def _vus_match_line(pos: int, gene: str) -> str:
+    return (
+        '{"match_provenance":{"match_basis":"exact_allele"},'
+        f'"sample_variant":{{"chrom":"1","pos":{pos},"ref":"A","alt":"C","filter":"PASS",'
+        '"genotype":"0/1","depth":"20","genotype_quality":"60"},'
+        '"clinvar":{"clinical_significance":"Uncertain_significance",'
+        '"review_status":"criteria_provided,_single_submitter",'
+        f'"gene_info":"{gene}:1","conditions":"condition_{gene}","clinvar_id":"{pos}"}}}}'
+    )
+
+
+def _write_many_matches(matches: Path, count: int) -> None:
+    matches.write_text(
+        "\n".join(_vus_match_line(10000 + index, f"GENE{index}") for index in range(count)) + "\n",
+        encoding="utf-8",
+    )
+
+
+class CandidateInventoryReturnedWindowTests(EvidenceImportTestBase):
+    """The returned inventory is a bounded window the host can page and narrow."""
+
+    def test_default_returned_window_is_bounded_and_declares_how_to_reach_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            _write_many_matches(matches, 12)
+
+            result = extract_clinvar_candidates(matches)
+
+            window = result["returned_window"]
+            self.assertEqual(window["limit"], DEFAULT_RETURNED_CANDIDATE_LIMIT)
+            self.assertEqual(window["offset"], 0)
+            self.assertEqual(window["returned_candidate_variants"], DEFAULT_RETURNED_CANDIDATE_LIMIT)
+            self.assertEqual(window["total_selected_candidate_variants"], 12)
+            self.assertTrue(window["has_more"])
+            self.assertEqual(window["next_offset"], DEFAULT_RETURNED_CANDIDATE_LIMIT)
+            self.assertEqual(
+                window["select_remaining_with"]["operation"], "clinvar.scan_candidates"
+            )
+            self.assertEqual(len(result["candidate_inventory"]), DEFAULT_RETURNED_CANDIDATE_LIMIT)
+            self.assertEqual(result["summary"]["total_match_records"], 12)
+            self.assertEqual(result["summary"]["selected_candidate_variants"], 12)
+
+            envelope = result["evidence_envelope"]
+            self.assertIn(
+                "bounded_candidate_window_returned:request_next_offset_or_narrow_by_gene_or_evidence_group",
+                envelope["guidance"],
+            )
+            paging_action = next(
+                action
+                for action in envelope["next_actions"]
+                if action["action"] == "request_next_candidate_window"
+            )
+            self.assertEqual(paging_action["offset"], DEFAULT_RETURNED_CANDIDATE_LIMIT)
+            self.assertEqual(paging_action["total_selected_candidate_variants"], 12)
+            self.assertEqual(paging_action["narrow_with_parameters"], ["gene", "evidence_groups"])
+
+    def test_offset_pages_through_the_remaining_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            _write_many_matches(matches, 12)
+
+            first = extract_clinvar_candidates(matches, limit=4)
+            second = extract_clinvar_candidates(matches, limit=4, offset=4)
+            last = extract_clinvar_candidates(matches, limit=4, offset=8)
+
+            first_ids = [candidate["variant"]["pos"] for candidate in first["candidate_inventory"]]
+            second_ids = [candidate["variant"]["pos"] for candidate in second["candidate_inventory"]]
+            last_ids = [candidate["variant"]["pos"] for candidate in last["candidate_inventory"]]
+            self.assertEqual(len(first_ids + second_ids + last_ids), 12)
+            self.assertEqual(len(set(first_ids + second_ids + last_ids)), 12)
+            self.assertEqual(second["returned_window"]["offset"], 4)
+            self.assertTrue(second["returned_window"]["has_more"])
+            self.assertFalse(last["returned_window"]["has_more"])
+            self.assertIsNone(last["returned_window"]["next_offset"])
+            for page in (first, second, last):
+                self.assertEqual(page["returned_window"]["total_selected_candidate_variants"], 12)
+
+    def test_gene_selection_narrows_candidates_and_review_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            _write_many_matches(matches, 12)
+
+            result = extract_clinvar_candidates(matches, gene="gene7")
+
+            self.assertEqual(result["selection"]["gene"], "GENE7")
+            self.assertEqual(result["returned_window"]["total_selected_candidate_variants"], 1)
+            self.assertFalse(result["returned_window"]["has_more"])
+            self.assertEqual([c["genes"] for c in result["candidate_inventory"]], [["GENE7"]])
+            self.assertEqual(
+                {group["gene"] for group in result["candidate_review_groups"]["groups"]},
+                {"GENE7"},
+            )
+
+    def test_output_file_keeps_the_full_inventory_while_the_return_stays_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            output = Path(tmp) / "candidates.json"
+            _write_many_matches(matches, 12)
+
+            result = extract_clinvar_candidates(matches, output_path=output, limit=3)
+
+            self.assertEqual(len(result["candidate_inventory"]), 3)
+            materialized = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(len(materialized["candidate_inventory"]), 12)
+            self.assertEqual(materialized["summary"]["selected_candidate_variants"], 12)
+            self.assertLess(
+                len(json.dumps(result)),
+                len(json.dumps(materialized)),
+            )
+
+    def test_cached_rebuild_serves_a_different_window_from_the_same_materialized_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            output = Path(tmp) / "candidates.json"
+            _write_many_matches(matches, 12)
+
+            extract_clinvar_candidates(matches, output_path=output, limit=3)
+            cached = extract_clinvar_candidates(matches, output_path=output, limit=2, offset=6)
+
+            self.assertEqual(cached["status"], "cached")
+            self.assertEqual(len(cached["candidate_inventory"]), 2)
+            self.assertEqual(cached["returned_window"]["offset"], 6)
+            self.assertEqual(cached["returned_window"]["total_selected_candidate_variants"], 12)
+            self.assertTrue(cached["returned_window"]["has_more"])
+
+    def test_narrow_selection_leaves_the_shared_materialized_inventory_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            output = Path(tmp) / "candidates.json"
+            _write_many_matches(matches, 12)
+
+            extract_clinvar_candidates(matches, output_path=output)
+            narrowed = extract_clinvar_candidates(matches, output_path=output, gene="GENE3")
+
+            self.assertEqual(narrowed["returned_window"]["total_selected_candidate_variants"], 1)
+            materialized = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(len(materialized["candidate_inventory"]), 12)
+            self.assertIsNone(materialized["selection"]["gene"])
+            # A later unnarrowed call still sees the whole inventory.
+            reopened = extract_clinvar_candidates(matches, output_path=output, limit=12)
+            self.assertEqual(len(reopened["candidate_inventory"]), 12)
+
+    def test_limit_above_the_declared_maximum_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            matches = Path(tmp) / "matches.jsonl"
+            _write_many_matches(matches, 2)
+
+            with self.assertRaises(ValueError):
+                extract_clinvar_candidates(matches, limit=MAX_RETURNED_CANDIDATE_LIMIT + 1)
+            with self.assertRaises(ValueError):
+                extract_clinvar_candidates(matches, offset=-1)
+
+    def test_scan_candidates_declares_its_window_defaults_to_the_host(self) -> None:
+        applied = {
+            record["parameter"]: record
+            for record in defaults_applied_for_call("clinvar.scan_candidates", {})
+        }
+        self.assertEqual(applied["limit"]["value"], DEFAULT_RETURNED_CANDIDATE_LIMIT)
+        self.assertEqual(applied["offset"]["value"], 0)
+        self.assertIn("evidence_groups", applied)
+
+        overridden = {
+            record["parameter"]
+            for record in defaults_applied_for_call("clinvar.scan_candidates", {"limit": 20})
+        }
+        self.assertNotIn("limit", overridden)
+        self.assertIn("offset", overridden)

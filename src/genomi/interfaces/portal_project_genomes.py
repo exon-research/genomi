@@ -38,14 +38,28 @@ def agent_environment(project_id: str, root: str | Path | None = None) -> dict[s
     }
 
 
+def project_workspace_user_id(
+    project_id: str, binding: JsonObject | None
+) -> str:
+    """Return the single Lab workspace identity for a portal project.
+
+    Every portal project is already a private session/workspace boundary. Lab
+    uses that boundary when no AGI owner is selected, so users never face a
+    second identity picker. Selecting an AGI replaces this opaque fallback with
+    the AGI owner's user identity. The agent's context file and the portal's own
+    Lab projection must resolve this the same way, or the board cannot see the
+    investigation the agent just created.
+    """
+
+    selected_user_id = (
+        str(binding.get("user_id") or "").strip() if isinstance(binding, dict) else ""
+    )
+    return selected_user_id or f"portal-{_clean_project_id(project_id)}"
+
+
 def _project_context_payload(project_id: str, binding: JsonObject | None) -> JsonObject:
     agi_id = str(binding.get("agi_id") or "").strip() if isinstance(binding, dict) else ""
-    selected_user_id = str(binding.get("user_id") or "").strip() if isinstance(binding, dict) else ""
-    # Every portal project is already a private session/workspace boundary. Lab
-    # uses that boundary when no AGI owner is selected, so users never face a
-    # second identity picker. Selecting an AGI replaces this opaque fallback
-    # with the AGI owner's user identity.
-    user_id = selected_user_id or f"portal-{_clean_project_id(project_id)}"
+    user_id = project_workspace_user_id(project_id, binding)
     access: JsonObject = {}
     if agi_id:
         access[agi_id] = {

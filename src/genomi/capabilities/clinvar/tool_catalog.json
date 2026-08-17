@@ -78,7 +78,7 @@
     "clinvar.scan_candidates": {
       "capability": "clinvar",
       "namespace": "clinvar",
-      "description": "Build deterministic ClinVar variant evidence inventory and review groups from materialized matches.",
+      "description": "Build deterministic ClinVar variant evidence inventory and review groups from materialized matches, returning a bounded candidate window with full counts.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -93,6 +93,45 @@
           },
           "genome_build": {
             "$ref": "#/schema_fragments/properties/genome_build_grch38_contextual"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 5
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "gene": {
+            "type": "string"
+          },
+          "evidence_groups": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "clinvar_p_lp",
+                "clinvar_conflicting",
+                "clinvar_vus",
+                "clinvar_risk_association_protective",
+                "clinvar_drug_response",
+                "clinvar_benign"
+              ]
+            },
+            "x_genomi_default": {
+              "value": [
+                "clinvar_p_lp",
+                "clinvar_conflicting",
+                "clinvar_vus",
+                "clinvar_risk_association_protective",
+                "clinvar_drug_response",
+                "clinvar_benign"
+              ],
+              "rule": "All ClinVar evidence groups are selected when the host omits this parameter."
+            }
           },
           "force": {
             "$ref": "#/schema_fragments/properties/force"
@@ -109,6 +148,7 @@
       ],
       "produces": [
         "candidate_inventory",
+        "returned_window",
         "candidate_review_groups",
         "evidence_view",
         "decision_evidence",

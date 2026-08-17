@@ -534,7 +534,15 @@ class DecodeDashboardEvidenceBuilderTests(unittest.TestCase):
             run_operation=run,
         )
 
-        self.assertEqual(calls, [("clinvar.scan_candidates", {})])
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "clinvar.scan_candidates",
+                    {"limit": evidence_builder.DASHBOARD_CLINVAR_CANDIDATE_LIMIT},
+                )
+            ],
+        )
 
     def test_catalog_exposes_builder(self) -> None:
         names = {op.name for op in OPERATIONS}

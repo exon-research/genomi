@@ -161,9 +161,17 @@ def clear_active_genome_index(*, forget_active_genome_indexes: bool = False, roo
 
 
 def _active_user(context: JsonObject, registry: JsonObject) -> JsonObject | None:
-    user = _find_user(registry, context.get("active_user_id"))
+    declared_user_id = str(context.get("active_user_id") or "").strip()
+    user = _find_user(registry, declared_user_id)
     if isinstance(user, dict):
         return user
+    if declared_user_id:
+        # A context that names its own workspace user owns that identity even
+        # when the registry holds no genome-owner record for it, as a portal
+        # project does before an Active Genome Index is selected. Substituting
+        # the registry default user here would silently write and read that
+        # session's private work in another person's workspace.
+        return {"user_id": declared_user_id}
     active_agi_id = str(context.get("active_agi_id") or "")
     if active_agi_id:
         user_id = _find_user_id_for_agi(registry, active_agi_id)
