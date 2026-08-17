@@ -35,6 +35,8 @@ registration. Ask the user to start a new session.
   evidence, or searching for an existing "my Active Genome Index"/"my genome" context requires
   explicit user approval for this session. Record approval with
   `active_genome_index.approve_access` before calling those tools.
+- A configured default user may select an Active Genome Index as metadata, but
+  default selection never replaces current-session read approval.
 - Do not use unrelated genome sources from other chats, workspaces, or external
   evaluation tasks.
 - Call narrow tools first and inspect evidence before making a claim.
@@ -92,10 +94,17 @@ registration. Ask the user to start a new session.
 
 ## Routing
 
-MCP `tools/list` returns only the base set:
+MCP `tools/list` returns only the default set:
 
-- `genomi.*` and `journal.*` ops (always direct-callable).
+- Core `genomi.*`, `research.*`, and `journal.*` operations.
+- The complete direct `genomilab.*` host-application boundary.
 - `genomi.invoke` — the dispatcher for every other capability tool.
+
+Before using a `genomilab.*` operation, load `skills/genomilab/SKILL.md`.
+Those tools keep the current Claude/Codex task in control; they require a
+query-ready selected Active Genome Index, bind patient authorization to the
+current MCP session, and use the portal only for onboarding, exact approvals,
+provider setup, and committed-event monitoring.
 
 To use a non-base capability tool, load the matching focused capability skill,
 then call:
@@ -215,85 +224,57 @@ Genomi context and users:
 - `genomi.invoke`
 - `genomi.list_resources`
 - `genomi.search_indexes`
+- `genomi.set_response_profile`
 
 Active Genome Index:
 
 - `genomi.parse_source`
 
-All other `active_genome_index.*` tools are invoke-only: reach them via
-`genomi.invoke` after loading the Active Genome Index skill.
+All other `active_genome_index.*` and focused genetics tools are invoke-only:
+reach them via `genomi.invoke` after loading the matching capability skill.
 
-ClinVar:
+GenomiLab Research Desk (default-complete):
 
-- `clinvar.match_variants`
-- `clinvar.scan_candidates`
+- `genomilab.open_workspace`
+- `genomilab.create_investigation`
+- `genomilab.form_specialist_board`
+- `genomilab.report_specialist_progress`
+- `genomilab.record_specialist_report`
+- `genomilab.inspect_investigation`
+- `genomilab.prepare_authorization`
+- `genomilab.record_patient_observations`
+- `genomilab.submit_plan`
+- `genomilab.execute_request`
+- `genomilab.check_request`
+- `genomilab.submit_brief`
+- `genomilab.submit_research_artifact`
+- `genomilab.verify_sequence_substitution`
+- `genomilab.run_esm_substitution_analysis`
+- `genomilab.run_proto_blinded_experiment_design`
+- `genomilab.list_research_artifacts`
+- `genomilab.list_research_tools`
+- `genomilab.revoke_context`
 
-ClinVar exact matching uses the build-specific optional library
-`clinvar-grch38` or `clinvar-grch37`. If the tool reports
-`requires_library_install`, use `genomi.check_libraries` and ask before
-installing.
+The agent creates investigations and owns all task lifecycle. The portal must
+not create, message, or cancel an agent task. A repeated local stdio MCP
+initialize is a new agent session and requires renewed patient authorization
+before private investigation state becomes visible. HTTP MCP initialization is
+public-tools-only and cannot create or replace the private GenomiLab runtime.
 
-Variant evidence:
-
-- `variant.resolve`
-
-Journal and research memory:
+Public research:
 
 - `research.build_target_packet`
 - `research.list_sources`
-
-Phenotype, disease, and candidate gene:
-
-- `phenotype.compare_disease_evidence`
-- `phenotype.compare_drug_target_evidence`
-- `phenotype.compare_gene_hpo_evidence`
-- `phenotype.plan_risk_investigation`
-- `phenotype.retrieve_disease_drug_targets`
-- `phenotype.retrieve_gene_disease_associations`
-- `phenotype.retrieve_trait_gene_records`
-
-Pharmacogenomics:
-
-- `pharmacogenomics.review_medication`
-
-GWAS Catalog:
-
-- `gwas.compare_gene_associations`
-- `gwas.compare_variant_associations`
-
-Functional genomics:
-
-- `functional_genomics.compare_gene_perturbation`
-
-Ancestry reference-panel context:
-
-- `ancestry.list_reference_panels`
-- `ancestry.estimate_population_context`
-
-Polygenic scores:
-
-- `prs.search_scores`
-- `prs.calculate_score`
-
-Sequence:
-
-- `sequence.analyze`
-
-Analytical grounding:
-
-- `cell_type.retrieve_markers`
-- `pathway.retrieve_members`
-- `region.retrieve_features`
+- `research.query`
+- `research.record`
+- `research.search`
 
 Journal:
 
 - `journal.append_entry`
+- `journal.export_memory`
 - `journal.search_entries`
-
-Default-complete categories:
-
-- `gwas-catalog`
-- `analytical-grounding`
+- `journal.summarize`
 
 ## Candidate Evidence
 

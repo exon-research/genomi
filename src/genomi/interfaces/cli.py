@@ -22,8 +22,9 @@ from ..runtime.libraries import manager as library_manager
 from . import mcp
 from .presentation import present_result
 
-# `genomi serve` (the MCP launcher), `genomi install` (setup install/update), and
-# `genomi --help` are available without GENOMI_CLI=1. The variable is
+# `genomi serve` (the MCP launcher), `genomi install` (setup install/update),
+# and `genomi --help` are available
+# without GENOMI_CLI=1. The variable is
 # intentionally undocumented in agent-facing material.
 _AGENT_ONLY_SUBCOMMANDS = ("tools", "call", "workflow", "static")
 _CLI_GATE_ENV = "GENOMI_CLI"
@@ -406,7 +407,7 @@ def _cmd_workflow(args: argparse.Namespace) -> dict[str, Any]:
         },
         "agent_usage": [
             "Read the relevant skill in skills/<capability>/SKILL.md (auto-loaded by Anthropic Claude Code Skills as genomi-<capability>) before calling capability tools.",
-            "Call base tools (genomi.* and journal.*) directly via MCP. Reach every other capability tool through genomi.invoke({tool, params}).",
+            "Call genomi.*, genomilab.*, journal.*, and research.* directly via MCP; load skills/genomilab/SKILL.md before GenomiLab work. Reach every other capability tool through genomi.invoke({tool, params}).",
             "Use genotype support, callability, source review, or coverage tools only when those evidence facts matter.",
         ],
         "workflow": [

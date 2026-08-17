@@ -25,11 +25,13 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         assert response is not None
         tools = response["result"]["tools"]
         names = {tool["name"] for tool in tools}
-        # Default tools/list returns only the base set (genomi.* + journal.*
-        # + research.*) plus the genomi.invoke dispatcher.
+        # GenomiLab's host-agent application operations are direct entry tools;
+        # focused genetics tools remain behind genomi.invoke.
         self.assertEqual(names, DEFAULT_TASK_ENTRY_TOOLS)
         self.assertIn("genomi.parse_source", names)
         self.assertIn("genomi.invoke", names)
+        self.assertIn("genomilab.open_workspace", names)
+        self.assertIn("genomilab.submit_plan", names)
         self.assertTrue(all(tool["annotations"]["discoveryRole"] in {"entry_tool", "capability_index", "focused_tool"} for tool in tools))
 
         # Explicit capability filter still works for CLI debug / direct browsing.
@@ -41,6 +43,36 @@ class GenomiRuntimeMcpTests(GenomiRuntimeTestCase):
         expanded_names = {tool["name"] for tool in expanded["result"]["tools"]}
         self.assertIn("pharmacogenomics.run_pharmcat", expanded_names)
         self.assertTrue(all(tool["annotations"]["toolCapability"] == "pharmacogenomics" for tool in expanded_tools))
+        self.assertEqual(
+            {
+                tool["name"]
+                for tool in expanded["result"]["default_tools"]
+            },
+            DEFAULT_TASK_ENTRY_TOOLS,
+        )
+        self.assertEqual(
+            expanded["result"]["skill_context"]["capabilities"],
+            ["pharmacogenomics"],
+        )
+        self.assertTrue(
+            expanded["result"]["skill_context"]["documents"][0]["content"]
+        )
+
+        genomilab = handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {"capability": "genomilab"},
+            }
+        )
+        assert genomilab is not None
+        genomilab_guidance = genomilab["result"]["skill_context"]["documents"]
+        self.assertEqual([item["path"] for item in genomilab_guidance], ["skills/genomilab/SKILL.md"])
+        self.assertIn(
+            "Keep the current host agent in control",
+            genomilab_guidance[0]["content"],
+        )
 
         ns_response = handle_request(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"namespace": "active_genome_index"}}

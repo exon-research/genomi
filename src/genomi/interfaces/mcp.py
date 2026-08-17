@@ -41,7 +41,7 @@ def serve_stdio(stdin: TextIO | None = None, stdout: TextIO | None = None, stder
         except json.JSONDecodeError as exc:
             _write(output_stream, _error(None, -32700, f"Parse error: {exc}"))
             continue
-        response = handle_request(request)
+        response = handle_request(request, transport="stdio")
         if response is not None:
             _write(output_stream, response)
     return 0
@@ -69,7 +69,9 @@ def make_http_server(host: str = DEFAULT_HTTP_HOST, port: int = DEFAULT_HTTP_POR
     return _GenomiMCPHTTPServer((host, port), _GenomiMCPHTTPRequestHandler)
 
 
-def handle_request(request: JsonObject) -> JsonObject | None:
+def handle_request(
+    request: JsonObject, *, transport: str = "in_process"
+) -> JsonObject | None:
     request_id = request.get("id")
     method = request.get("method")
     params = request.get("params") or {}
@@ -77,6 +79,15 @@ def handle_request(request: JsonObject) -> JsonObject | None:
     if method == "notifications/initialized":
         return None
     if method == "initialize":
+        try:
+            from ..lab.agent_runtime import configure_mcp_host
+
+            configure_mcp_host(
+                params.get("clientInfo") if isinstance(params, dict) else None,
+                transport=transport,
+            )
+        except RuntimeError as exc:
+            return _error(request_id, -32000, str(exc))
         return _result(
             request_id,
             {
@@ -106,7 +117,12 @@ def handle_request(request: JsonObject) -> JsonObject | None:
         try:
             arguments = dict(arguments)
             get_operation(name)
-            if _background_enabled() and name not in BACKGROUND_DIRECT_OPERATIONS:
+            run_in_process = name.startswith("genomilab.")
+            if (
+                _background_enabled()
+                and name not in BACKGROUND_DIRECT_OPERATIONS
+                and not run_in_process
+            ):
                 timeout_seconds = background_jobs.background_timeout_seconds()
                 job = background_jobs.start_operation_job(name, arguments)
                 job = background_jobs.wait_for_job(str(job["job_id"]), timeout_seconds=timeout_seconds)
@@ -134,7 +150,10 @@ def handle_request(request: JsonObject) -> JsonObject | None:
                     if defaults:
                         presented["defaults_applied"] = defaults
             else:
-                result = call_operation(name, arguments)
+                from ..lab.agent_runtime import agent_transport_scope
+
+                with agent_transport_scope(transport):
+                    result = call_operation(name, arguments)
                 presented = present_result(name, result)
             return _result(
                 request_id,
@@ -171,12 +190,12 @@ def handle_http_payload(payload: Any) -> tuple[int, JsonObject | list[JsonObject
     if isinstance(payload, list):
         responses: list[JsonObject] = []
         for item in payload:
-            response = handle_request(item) if isinstance(item, dict) else _error(None, -32600, "Invalid Request")
+            response = handle_request(item, transport="http") if isinstance(item, dict) else _error(None, -32600, "Invalid Request")
             if response is not None:
                 responses.append(response)
         return (HTTPStatus.OK, responses) if responses else (HTTPStatus.ACCEPTED, None)
     if isinstance(payload, dict):
-        response = handle_request(payload)
+        response = handle_request(payload, transport="http")
         return (HTTPStatus.OK, response) if response is not None else (HTTPStatus.ACCEPTED, None)
     return HTTPStatus.BAD_REQUEST, _error(None, -32600, "Invalid Request")
 

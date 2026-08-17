@@ -6,6 +6,7 @@ description: |
 tools:
   - genomi.describe_context
   - variant.resolve
+  - variant.find_gene_variants
   - active_genome_index.classify_genotype_support
   - active_genome_index.classify_region_callability
   - variant.gather_allele_context
@@ -101,6 +102,30 @@ Gather existing sample, ClinVar, and reviewed research evidence for one gene.
 
 **Result semantics**: Combines stored gene-scoped sample, static, and reviewed research evidence; absence of a section is not negative evidence by itself.
 
+### variant.find_gene_variants
+
+Find passing variant records in an approved Active Genome Index that overlap
+managed GENCODE gene intervals for 1–10 candidate genes.
+
+**Use when**: A public-evidence or phenotype investigation has produced a
+small, explicit candidate-gene set and the user has authorized access to the
+selected Active Genome Index.
+
+**Why necessary**: A source VCF may not carry gene annotations. This operation
+resolves exact symbols through the matching-build GENCODE library, then reads
+only those bounded intervals through the Active Genome Index reader.
+
+**Not for**: discovering or ranking candidate genes, interpreting pathogenicity,
+consumer genotype-array indexes that lack ref/alt variant records, or claiming
+that an empty interval scan rules out disease.
+
+**Result semantics**: `match_basis=gencode_gene_interval_overlap` means only
+coordinate overlap. Review `unresolved_genes`, truncation fields, genotype
+support, public variant evidence, and clinical confirmation before synthesis.
+If the matching GENCODE library is missing, the operation returns
+`requires_library_install`; this is a blocked evidence scope, not a negative
+genome result.
+
 ### variant.resolve
 
 Resolve one variant target and return deterministic public, local sample, and stored evidence facts.
@@ -155,6 +180,8 @@ uncertainty.
 - Use callability for negative or reference claims.
 - Use `variant.resolve` before narrower VCF or evidence tools when the input can
   be interpreted multiple ways or may exist in the Active Genome Index.
+- Use `variant.find_gene_variants` only after another evidence stream has
+  produced a bounded candidate-gene set; it does not generate candidates.
 - Check ref/alt when rsID interpretation depends on the exact allele.
 - Keep gene background separate from sample-specific interpretation.
 - Use target-specific evidence packets for final interpretation.

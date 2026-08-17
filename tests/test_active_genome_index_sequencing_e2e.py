@@ -12,6 +12,9 @@ from unittest import mock
 
 import pysam
 
+from genomi.capabilities.analytical_grounding.analytical_grounding.library import (
+    analytical_library_path,
+)
 from genomi.capabilities.ancestry import reference_panels
 from genomi.capabilities.ancestry import source_context as ancestry_source_context
 from genomi.capabilities.prs import scorer as prs_scorer
@@ -269,6 +272,15 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
         clinvar_vcf = self._write_native_clinvar_fixture(root / "native.clinvar.vcf", pos=pos, ref=ref, alt=alt)
         import_clinvar_vcf(clinvar_vcf, clinvar_db, source_version="native-fixture", genome_build="GRCh37")
         build_clinvar_rsid_index(clinvar_db, force=True)
+        gencode_gtf = analytical_library_path("gencode-grch37")
+        gencode_gtf.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(gencode_gtf, "wt", encoding="utf-8") as handle:
+            handle.write("##description: native sequencing downstream GENCODE fixture\n")
+            handle.write(
+                "chr1\tHAVANA\tgene\t"
+                f"{pos - 10}\t{pos + 10}\t.\t+\t.\t"
+                'gene_id "ENSG_NATIVE1"; gene_type "protein_coding"; gene_name "NATIVE1";\n'
+            )
         return {"imported_score": imported_score, "clinvar_db": clinvar_db}
 
     def _assert_native_downstream_contract(
@@ -300,6 +312,14 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
         variant = run("variant.resolve", {"query": f"chr1:{pos}:{ref}:{alt}", "genome_build": "GRCh37"})
         self.assertEqual(variant["sample_context"]["count"], 1, variant)
         self.assertEqual(variant["sample_context"]["matches"][0]["agi_source_format"], source_format)
+
+        gene_variants = run(
+            "variant.find_gene_variants",
+            {"genes": ["NATIVE1"], "genome_build": "GRCh37"},
+        )
+        self.assertEqual(gene_variants["status"], "variants_found", gene_variants)
+        self.assertEqual(gene_variants["coverage"]["returned_variant_count"], 1, gene_variants)
+        self.assertEqual(gene_variants["agi_context"]["source_format"], source_format)
 
         callability = run(
             "active_genome_index.classify_region_callability",

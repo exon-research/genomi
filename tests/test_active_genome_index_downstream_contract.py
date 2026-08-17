@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+import gzip
 import json
 import os
 import tempfile
@@ -8,6 +9,9 @@ from pathlib import Path
 from unittest import mock
 
 from genomi.active_genome_index.active_genome_index import active_genome_index_readiness
+from genomi.capabilities.analytical_grounding.analytical_grounding.library import (
+    analytical_library_path,
+)
 from genomi.evidence import build_clinvar_rsid_index, import_clinvar_vcf
 from genomi.operations import call_operation
 from genomi.operations.registry import handlers_screen_journal
@@ -87,6 +91,7 @@ class ActiveGenomeIndexDownstreamContractTests(
                 )
                 self.assertEqual(imported_score["status"], "completed")
                 self._install_contract_ancestry_panel()
+                self._install_contract_gencode()
 
                 clinvar_db = Path("contract-clinvar.sqlite")
                 clinvar_vcf = self._write_clinvar_fixture(Path("contract.clinvar.vcf"))
@@ -290,6 +295,7 @@ class ActiveGenomeIndexDownstreamContractTests(
         self._assert_parse_ready(parsed, contract)
         self._assert_record_contract(contract)
         self._assert_variant_locus_contracts(contract)
+        self._assert_gene_variant_contract(contract)
         self._assert_callability_contract(contract)
         self._assert_prs_contract(imported_score)
         self._assert_ancestry_contract()
@@ -486,6 +492,42 @@ class ActiveGenomeIndexDownstreamContractTests(
             },
         )
         self.assertEqual(missing_allele["sample_context"]["count"], 0, missing_allele)
+
+    def _assert_gene_variant_contract(self, contract: SourceContractCase) -> None:
+        result = call_operation(
+            "variant.find_gene_variants",
+            {"genes": ["MATRIXGENE"], "genome_build": "GRCh37"},
+        )
+        if contract.is_consumer_array:
+            self.assertEqual(result["status"], "out_of_scope_for_input", result)
+            self.assertEqual(result["coverage"]["returned_variant_count"], 0, result)
+            self.assertEqual(
+                result["coverage"]["blocked_by_source_kind"],
+                "consumer_genotype_array",
+            )
+            self.assertEqual(
+                result["evidence_envelope"]["finding_state"],
+                "not_assessed",
+            )
+        else:
+            self.assertEqual(result["status"], "variants_found", result)
+            self.assertEqual(result["coverage"]["returned_variant_count"], 2, result)
+            self.assertEqual(
+                result["gene_resolution"]["resolved_genes"],
+                ["MATRIXGENE"],
+            )
+        self.assertEqual(result["query"]["match_basis"], "gencode_gene_interval_overlap")
+        self.assertFalse(result["evidence_envelope"]["negative_inference"]["allowed"])
+
+    def _install_contract_gencode(self) -> None:
+        path = analytical_library_path("gencode-grch37")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            handle.write("##description: source-format contract GENCODE subset\n")
+            handle.write(
+                'chr1\tGENCODE\tgene\t50\t250\t.\t+\t.\tgene_id "ENSG_MATRIX"; '
+                'gene_type "protein_coding"; gene_name "MATRIXGENE";\n'
+            )
 
     def _assert_callability_contract(self, contract: SourceContractCase) -> None:
         called_site = call_operation(

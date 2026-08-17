@@ -132,6 +132,28 @@ class InstallForAgentsTests(unittest.TestCase):
         self.assertIn("On Linux, install the `tabix`", guide)
         self.assertIn("`/genomi decode`", guide)
         self.assertIn("Codex is the\n   exception: use **`$genomi-decode`**", guide)
+        self.assertIn("GenomiLab uses this same MCP server", guide)
+        self.assertIn("query-ready Active Genome Index", guide)
+        self.assertIn("`genomilab.open_workspace`", guide)
+
+    def test_llms_map_exposes_the_focused_genomilab_agent_guide(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        llms_map = (repo_root / "llms.txt").read_text(encoding="utf-8")
+        self.assertIn("skills/genomilab/SKILL.md", llms_map)
+        self.assertIn("Host-chaired specialist-board workflow", llms_map)
+        self.assertIn(
+            "Direct MCP namespaces are genomi.*, genomilab.*, journal.*, and research.*",
+            llms_map,
+        )
+
+        llms_full = (repo_root / "llms-full.txt").read_text(encoding="utf-8")
+        self.assertIn("## Inlined: `INSTALL_FOR_AGENTS.md`", llms_full)
+        self.assertIn("## Inlined: `SKILL.md`", llms_full)
+        self.assertIn("## Inlined: `skills/genomilab/SKILL.md`", llms_full)
+        self.assertIn(
+            "Never start a second agent task\nfrom the portal.",
+            llms_full,
+        )
 
     def test_installer_creates_stable_genomi_command_shim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,6 +9,7 @@ from typing import Any
 import json
 import sqlite3
 from ._agi_schema import ACTIVE_GENOME_INDEX_BUILD_STATUS_COMPLETED, ACTIVE_GENOME_INDEX_BUILD_STATUS_VARIANTS_READY, REQUIRED_QUERY_OBJECTS, SCHEMA_VERSION, _rows_as_dicts, _sort_bins, connect, connect_existing, default_agi_path
+from .identity import AGI_SNAPSHOT_METADATA_FIELDS, agi_snapshot_identity_from_metadata
 
 
 class ActiveGenomeIndexSchemaTooNew(RuntimeError):
@@ -327,6 +328,13 @@ def _active_genome_index_readiness_from_connection(connection: sqlite3.Connectio
             for row in connection.execute("select key, value from stats")
         }
     missing_objects = sorted(f"{kind}:{name}" for kind, name in REQUIRED_QUERY_OBJECTS - objects)
+    missing_metadata = sorted(
+        field
+        for field in AGI_SNAPSHOT_METADATA_FIELDS
+        if metadata.get(field) in (None, "")
+    )
+    snapshot_identity = agi_snapshot_identity_from_metadata(metadata) if not missing_metadata else {}
+    snapshot_identity_valid = bool(snapshot_identity)
     marker_complete = metadata.get("active_genome_index_complete") is True
     status = str(metadata.get("active_genome_index_build_status") or ("completed" if marker_complete else "unknown"))
     schema_compat = check_agi_schema_compatibility(connection)
@@ -342,6 +350,7 @@ def _active_genome_index_readiness_from_connection(connection: sqlite3.Connectio
         and marker_complete
         and status == ACTIVE_GENOME_INDEX_BUILD_STATUS_COMPLETED
         and not missing_objects
+        and snapshot_identity_valid
         and bool(stats)
     )
     # A two-phase gVCF build reaches variants_ready when every variant is
@@ -353,6 +362,7 @@ def _active_genome_index_readiness_from_connection(connection: sqlite3.Connectio
         and not complete
         and status == ACTIVE_GENOME_INDEX_BUILD_STATUS_VARIANTS_READY
         and not missing_objects
+        and snapshot_identity_valid
         and bool(stats)
     )
     reason = schema_reason
@@ -365,6 +375,10 @@ def _active_genome_index_readiness_from_connection(connection: sqlite3.Connectio
             reason = "build_status_not_completed"
         elif missing_objects:
             reason = "query_objects_missing"
+        elif missing_metadata:
+            reason = "snapshot_identity_metadata_missing"
+        elif not snapshot_identity_valid:
+            reason = "snapshot_identity_invalid"
         elif not stats:
             reason = "stats_missing"
         else:
@@ -380,6 +394,7 @@ def _active_genome_index_readiness_from_connection(connection: sqlite3.Connectio
         "stats": stats,
         "objects": objects,
         "missing_objects": missing_objects,
+        "missing_metadata": missing_metadata,
     }
 
 def _public_active_genome_index_readiness(readiness: dict[str, Any], *, agi_path: Path | None = None) -> dict[str, Any]:
@@ -389,8 +404,12 @@ def _public_active_genome_index_readiness(readiness: dict[str, Any], *, agi_path
         "variants_ready": bool(readiness.get("variants_ready")),
         "reason": readiness.get("reason"),
         "missing_objects": list(readiness.get("missing_objects") or []),
+        "missing_metadata": list(readiness.get("missing_metadata") or []),
         "retry_operation": "genomi.parse_source",
     }
+    metadata = readiness.get("metadata") or {}
+    if isinstance(metadata, dict) and metadata.get("agi_snapshot_id"):
+        result["agi_snapshot_id"] = metadata["agi_snapshot_id"]
     if result["variants_ready"] and not result["complete"]:
         result["reference_pending"] = True
         # Reconcile the SQLite state against the Phase B job: variants_ready only

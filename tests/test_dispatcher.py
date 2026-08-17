@@ -40,9 +40,13 @@ class GenomiInvokeDispatcherTests(unittest.TestCase):
         self.assertIn("Anthropic Skills", raised.exception.message)
 
     def test_invoke_rejects_base_capability_tool(self) -> None:
-        # Base tools (genomi.* / journal.*) are in tools/list directly and
-        # must not be reached through the dispatcher.
-        for name in ("genomi.list_resources", "journal.append_entry"):
+        # Base tools (genomi.* / genomilab.* / journal.*) are in tools/list
+        # directly and must not be reached through the dispatcher.
+        for name in (
+            "genomi.list_resources",
+            "genomilab.open_workspace",
+            "journal.append_entry",
+        ):
             with self.subTest(tool=name):
                 with self.assertRaises(OperationError) as raised:
                     call_operation("genomi.invoke", {"tool": name, "params": {}})

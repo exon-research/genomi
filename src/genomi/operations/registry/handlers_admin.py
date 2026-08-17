@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ...active_genome_index import source_intake
 from ...runtime import context as runtime_context
-from ...runtime import host_response, host_skills, resources
+from ...runtime import host_response, host_skills, resources, skill_assets
 from ...runtime.libraries import manager as library_manager
 from ...runtime.libraries.manager import inventory as library_inventory
 from ...runtime.libraries.manager import status as library_status
@@ -225,7 +225,7 @@ def _genomi_install_scope() -> JsonObject:
         "does_not_update": [
             "runtime_code_when_GENOMI_SKIP_RUNTIME_GIT_PULL_is_set",
             "runtime_code_when_not_a_git_checkout",
-            "host_skill_links_when_not_a_git_checkout",
+            "host_skill_links_when_packaged_skill_assets_are_unavailable",
         ],
         "force_behavior": "Library install is idempotent — already-present libraries are skipped; force=true re-downloads them and replaces non-symlink host-skill link conflicts. Runtime code updates via git pull unless GENOMI_SKIP_RUNTIME_GIT_PULL is set or the runtime is not a git checkout. A manifest-changing pull also reconciles dependencies.",
     }
@@ -289,20 +289,26 @@ def _runtime_git_repo() -> Path | None:
 
 
 def _reconcile_host_skill_links_step(*, force: bool = False) -> JsonObject:
-    """Repair/create host-agent skill symlinks against the runtime checkout.
+    """Repair/create host-agent links from checkout or packaged skill assets.
 
-    Skills live in the source tree (``<checkout>/SKILL.md`` and
-    ``<checkout>/skills/<name>``), so linking only applies to a git-checkout
-    install. A packaged install has no such tree and is reported as skipped.
+    A source install links the checkout's canonical documents.  A wheel install
+    links the identical tree installed under ``share/genomi``.
     """
     repo = _runtime_git_repo()
-    if repo is None:
+    skill_root = _resolve_install_skill_root(repo)
+    if skill_root is None:
         return {
             "status": "skipped",
-            "reason": "runtime_not_a_git_checkout",
-            "message": "Runtime is not a git checkout; host skills are linked only from a source checkout.",
+            "reason": "skill_assets_unavailable",
+            "message": "Genomi agent-skill assets are unavailable in this runtime distribution.",
         }
-    return host_skills.reconcile_host_skill_links(repo, force=force)
+    return host_skills.reconcile_host_skill_links(skill_root, force=force)
+
+
+def _resolve_install_skill_root(repo: Path | None) -> Path | None:
+    """Resolve install assets separately from general discovery for test safety."""
+
+    return skill_assets.resolve_skill_root(repo)
 
 
 def _git_pull_runtime_step() -> JsonObject:
@@ -843,9 +849,11 @@ def _genomi_parse_source(params: JsonObject) -> JsonObject:
                 "it and assigning it to a user profile use invoke-only active_genome_index.* tools."
             ),
         )
-    # The user did not pre-supply a profile name, so prompt for one (and whether
-    # to make it the default) exactly like INSTALL_FOR_AGENTS.md Step 8.
-    if parse_completed and not params.get("user_nickname"):
+    # Fresh homes and an already-selected user are unambiguous and are assigned
+    # during intake. Ask only when an existing multi-user registry cannot tell
+    # which profile owns this newly parsed genome.
+    parsed_context = runtime_context.describe_context() if parse_completed else {}
+    if parse_completed and not parsed_context.get("active_user_id"):
         parsed = with_next_action(parsed, assign_profile_next_action())
     if reference_pending:
         parsed = with_next_action(parsed, reference_pass_next_action(reference_job_id, outputs.get("reference_pass_job_path")))

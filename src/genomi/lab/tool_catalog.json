@@ -1,0 +1,1694 @@
+{
+  "capabilities": {
+    "genomilab": {
+      "title": "GenomiLab Research Desk",
+      "start_when": "Start or continue a patient-authorized, genome-informed investigation in the current Claude, Codex, or other MCP agent conversation.",
+      "skill_documents": [
+        "skills/genomilab/SKILL.md"
+      ],
+      "entry_operations": [
+        "genomilab.open_workspace",
+        "genomilab.create_investigation",
+        "genomilab.inspect_investigation"
+      ],
+      "default_complete": true,
+      "operations": [
+        "genomilab.open_workspace",
+        "genomilab.create_investigation",
+        "genomilab.inspect_investigation",
+        "genomilab.form_specialist_board",
+        "genomilab.report_specialist_progress",
+        "genomilab.record_specialist_report",
+        "genomilab.prepare_authorization",
+        "genomilab.record_patient_observations",
+        "genomilab.submit_plan",
+        "genomilab.execute_request",
+        "genomilab.check_request",
+        "genomilab.submit_brief",
+        "genomilab.submit_research_artifact",
+        "genomilab.verify_sequence_substitution",
+        "genomilab.run_esm_substitution_analysis",
+        "genomilab.run_proto_blinded_experiment_design",
+        "genomilab.list_research_artifacts",
+        "genomilab.list_research_tools",
+        "genomilab.revoke_context"
+      ],
+      "optional_libraries": [],
+      "library_check_operation": ""
+    }
+  },
+  "operations": {
+    "genomilab.open_workspace": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Open the current user's GenomiLab workspace in this underlying agent session. Requires a selected, query-ready Active Genome Index and can start the local patient onboarding, approval, and monitoring portal.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "open_portal": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "workspace",
+      "requires": [
+        "active_user",
+        "query_ready_active_genome_index"
+      ],
+      "produces": [
+        "workspace_state",
+        "patient_portal_launch",
+        "underlying_agent_binding"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "local_artifact_metadata",
+        "active_genome_index_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomilab.create_investigation": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Create a durable GenomiLab investigation for a patient question. The underlying agent continues the conversation and planning; this operation does not start another agent task.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "disease_scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "ready_genomilab_workspace"
+      ],
+      "produces": [
+        "investigation",
+        "specialist_board_next_action"
+      ],
+      "context_optional": [
+        "disease_scope"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "patient_question",
+        "active_genome_index_metadata"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomilab.inspect_investigation": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Read the durable current investigation, including the specialist-board milestone projection, approved context, plans, evidence, hypotheses, briefs, refresh state, capability catalog, context-bound brief authoring schema, and next actions. Before renewed private-context authorization, only a structural marker confirms that the board exists; current-session authorization is required for member details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "investigation_id"
+      ],
+      "produces": [
+        "investigation_state",
+        "specialist_board_projection",
+        "capability_catalog",
+        "brief_authoring_contract",
+        "next_actions"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state"
+      ],
+      "discovery_role": "entry_tool"
+    },
+    "genomilab.form_specialist_board": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Record the 2-5 persistent specialist identities that the underlying agent has formed for this investigation. GenomiLab stores monitoring metadata only and never creates, starts, messages, or controls native subagents.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "specialists": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "specialist_id": {
+                  "type": "string",
+                  "maxLength": 80,
+                  "pattern": "^specialist-[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$"
+                },
+                "role": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "task": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "specialist_id",
+                "role",
+                "task"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "investigation_id",
+          "specialists"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "investigation_id",
+        "native_specialists_formed_by_underlying_agent"
+      ],
+      "produces": [
+        "specialist_board_projection",
+        "investigation_next_action"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "specialist_monitoring_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.report_specialist_progress": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Record one meaningful status or current-work milestone reported by a native specialist subagent. GenomiLab monitors the assignment and does not poll, message, resume, cancel, or otherwise control the native subagent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "round_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "specialist_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^specialist-[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "working",
+              "blocked",
+              "completed"
+            ]
+          },
+          "current_work": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "investigation_id",
+          "round_id",
+          "specialist_id",
+          "status",
+          "current_work"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization"
+      ],
+      "produces": [
+        "specialist_board_projection"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "specialist_monitoring_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.record_specialist_report": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Commit one immutable findings-and-gaps report from an assigned native specialist for the current investigation round. The report is traceable synthesis and is not itself an evidence record or clinical conclusion.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "round_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "specialist_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^specialist-[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$"
+          },
+          "report": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "stance": {
+                      "type": "string",
+                      "enum": [
+                        "context_only",
+                        "mixed",
+                        "supports",
+                        "weighs_against"
+                      ]
+                    },
+                    "evidence_record_ids": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "profile_revision_ids": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "stance",
+                    "evidence_record_ids",
+                    "profile_revision_ids"
+                  ],
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "evidence_record_ids": {
+                          "minItems": 1
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "profile_revision_ids": {
+                          "minItems": 1
+                        }
+                      }
+                    }
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "gaps": {
+                "type": "array",
+                "maxItems": 50,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "evidence_record_ids": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "profile_revision_ids": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  },
+                  "required": [
+                    "question",
+                    "evidence_record_ids",
+                    "profile_revision_ids"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "findings",
+              "gaps"
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "findings": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "gaps": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "investigation_id",
+          "round_id",
+          "specialist_id",
+          "report"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "current_investigation_round",
+        "assigned_specialist",
+        "active_investigation_authorization"
+      ],
+      "produces": [
+        "immutable_specialist_round_report",
+        "investigation_round_projection"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "specialist_monitoring_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.prepare_authorization": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+    "description": "Prepare one exact patient review for the investigation's selected or pinned profile and Active Genome Index scope, plus the current underlying agent destination. The patient approves it in the local portal.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "observation_revision_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "authorization",
+      "requires": [
+        "investigation_id",
+        "patient_profile_observation"
+      ],
+      "produces": [
+        "authorization_candidate",
+        "patient_portal_launch"
+      ],
+      "context_optional": [
+        "observation_revision_ids",
+        "purpose"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "selected_profile_observations",
+        "active_genome_index_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.record_patient_observations": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Record additional patient-provided information during the same investigation and prepare one delta authorization when it expands the approved context. Use supersedes_observation_revision_id inside an observation only for a correction.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "observations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "investigation_id",
+          "observations"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "profile",
+      "requires": [
+        "investigation_id",
+        "patient_provided_information"
+      ],
+      "produces": [
+        "profile_observation_revisions",
+        "context_refresh_candidate",
+        "patient_portal_launch"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "patient_provided_information",
+        "approved_profile_snapshot",
+        "active_genome_index_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.submit_plan": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Validate and persist the underlying agent's exact GenomiLab capability requests, then accept the plan under the active patient authorization without another plan-review click.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "focus_question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "specialist_assignments": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "specialist_id": {
+                  "type": "string",
+                  "maxLength": 80,
+                  "pattern": "^specialist-[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$"
+                },
+                "task": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "specialist_id",
+                "task"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "requests": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "id",
+                "capability",
+                "parameters"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "investigation_id",
+          "focus_question",
+          "specialist_assignments",
+          "requests"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization",
+        "capability_catalog"
+      ],
+      "produces": [
+        "accepted_plan_version",
+        "investigation_round_projection"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "exact_capability_parameters"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.execute_request": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Execute one immutable request from the accepted investigation plan by request ID. Local work runs without repeated approval; an exact external-provider disclosure can pause for patient approval.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "execution",
+      "requires": [
+        "formed_specialist_board",
+        "accepted_plan_request"
+      ],
+      "produces": [
+        "capability_execution",
+        "evidence_or_domain_artifact"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [
+        "direct_public_evidence_provider_when_exact_request_is_approved",
+        "paperclip_when_exact_request_is_approved"
+      ],
+      "data_access": [
+        "exact_accepted_request",
+        "approved_profile_slice",
+        "active_genome_index_exact_scope"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.check_request": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Read the persisted status of one request from the current accepted plan. Only when that request is still in progress, resume its recorded Genomi or approved public-evidence/Paperclip job without resending job identifiers or parameters; terminal-status checks remain local.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "execution",
+      "requires": [
+        "formed_specialist_board",
+        "persisted_capability_execution"
+      ],
+      "produces": [
+        "capability_execution_status"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [
+        "direct_public_evidence_provider_when_resuming_in_progress_request",
+        "paperclip_when_resuming_approved_in_progress_request"
+      ],
+      "data_access": [
+        "persisted_capability_execution"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.submit_brief": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Validate and publish the exact wire brief advertised by the current authorized investigation. GenomiLab derives modality badges from cited records; a later brief becomes a new immutable version with a structured diff.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          },
+          "brief": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "investigation_id",
+          "brief"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "investigation",
+      "requires": [
+        "formed_specialist_board",
+        "accepted_plan",
+        "traceable_current_evidence"
+      ],
+      "produces": [
+        "brief_version",
+        "investigation_response"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_profile_slice",
+        "current_evidence",
+        "current_hypotheses"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.submit_research_artifact": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Persist one round-bound host-supplied nonclinical ESM, Proto, or Genomi artifact with explicit method, model, version, input/output digests, and provenance. This write never verifies execution, and the artifact is structurally excluded from evidence, hypotheses, briefs, answer-readiness, the Active Genome Index, and clinician export.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "investigation_id",
+          "round_id",
+          "deduplication_key",
+          "origin",
+          "artifact"
+        ],
+        "properties": {
+          "investigation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "round_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deduplication_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "host_supplied_unverified"
+            ]
+          },
+          "artifact": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "artifact_kind",
+                  "method",
+                  "model",
+                  "input",
+                  "output",
+                  "provenance"
+                ],
+                "properties": {
+                  "artifact_kind": {
+                    "type": "string",
+                    "const": "esm_nonclinical_comparison"
+                  },
+                  "method": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "input": {
+                    "type": "object",
+                    "required": [
+                      "gene",
+                      "transcript_accession",
+                      "protein_accession",
+                      "protein_substitution",
+                      "reference_sequence_sha256",
+                      "alternate_sequence_sha256"
+                    ],
+                    "properties": {
+                      "gene": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "transcript_accession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "protein_accession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "protein_substitution": {
+                        "type": "string",
+                        "pattern": "^[A-Z][1-9][0-9]*[A-Z]$"
+                      },
+                      "reference_sequence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "alternate_sequence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "output": {
+                    "type": "object",
+                    "required": [
+                      "metric",
+                      "reference_score",
+                      "alternate_score",
+                      "delta"
+                    ],
+                    "properties": {
+                      "metric": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "reference_score": {
+                        "type": "number"
+                      },
+                      "alternate_score": {
+                        "type": "number"
+                      },
+                      "delta": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "required": [
+                      "execution_class",
+                      "execution_location",
+                      "network_access",
+                      "source_label",
+                      "source_version",
+                      "source_record_id"
+                    ],
+                    "properties": {
+                      "execution_class": {
+                        "type": "string",
+                        "enum": [
+                          "host_supplied_unverified",
+                          "verified_scientific_operation"
+                        ]
+                      },
+                      "execution_location": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "not_verified"
+                        ]
+                      },
+                      "network_access": {
+                        "type": "string",
+                        "enum": [
+                          "disabled",
+                          "not_verified"
+                        ]
+                      },
+                      "source_label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "source_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "source_record_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "artifact_kind",
+                  "method",
+                  "model",
+                  "input",
+                  "output",
+                  "provenance"
+                ],
+                "properties": {
+                  "artifact_kind": {
+                    "type": "string",
+                    "const": "proto_blinded_experimental_design"
+                  },
+                  "method": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "input": {
+                    "type": "object",
+                    "required": [
+                      "gene",
+                      "protein_accession",
+                      "protein_substitution",
+                      "objective",
+                      "required_arm_classes",
+                      "readouts"
+                    ],
+                    "properties": {
+                      "gene": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "protein_accession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "protein_substitution": {
+                        "type": "string",
+                        "pattern": "^[A-Z][1-9][0-9]*[A-Z]$"
+                      },
+                      "objective": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "required_arm_classes": {
+                        "type": "array",
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "assay_negative_control",
+                            "functional_loss_control",
+                            "test_variant",
+                            "wild_type_reference"
+                          ]
+                        }
+                      },
+                      "readouts": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 10,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,99}$"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "output": {
+                    "type": "object",
+                    "required": [
+                      "blinded_arm_labels",
+                      "quality_controls",
+                      "analysis_plan"
+                    ],
+                    "properties": {
+                      "blinded_arm_labels": {
+                        "type": "array",
+                        "minItems": 4,
+                        "maxItems": 12,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        }
+                      },
+                      "quality_controls": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "analysis_plan": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "required": [
+                      "execution_class",
+                      "execution_location",
+                      "network_access",
+                      "source_label",
+                      "source_version",
+                      "source_record_id"
+                    ],
+                    "properties": {
+                      "execution_class": {
+                        "type": "string",
+                        "enum": [
+                          "host_supplied_unverified",
+                          "verified_scientific_operation"
+                        ]
+                      },
+                      "execution_location": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "not_verified"
+                        ]
+                      },
+                      "network_access": {
+                        "type": "string",
+                        "enum": [
+                          "disabled",
+                          "not_verified"
+                        ]
+                      },
+                      "source_label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "source_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "source_record_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "artifact_kind",
+                  "method",
+                  "model",
+                  "input",
+                  "output",
+                  "provenance"
+                ],
+                "properties": {
+                  "artifact_kind": {
+                    "type": "string",
+                    "const": "genomi_sequence_substitution_verification"
+                  },
+                  "method": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "model": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "version"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "input": {
+                    "type": "object",
+                    "required": [
+                      "gene",
+                      "transcript_accession",
+                      "protein_accession",
+                      "coding_change",
+                      "protein_substitution",
+                      "reference_sequence_sha256",
+                      "alternate_sequence_sha256"
+                    ],
+                    "properties": {
+                      "gene": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "transcript_accession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "protein_accession": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "protein_substitution": {
+                        "type": "string",
+                        "pattern": "^[A-Z][1-9][0-9]*[A-Z]$"
+                      },
+                      "reference_sequence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "alternate_sequence_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "coding_change": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "output": {
+                    "type": "object",
+                    "required": [
+                      "position",
+                      "reference_residue",
+                      "alternate_residue",
+                      "protein_substitution_verified"
+                    ],
+                    "properties": {
+                      "position": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "reference_residue": {
+                        "type": "string",
+                        "pattern": "^[A-Z]$"
+                      },
+                      "alternate_residue": {
+                        "type": "string",
+                        "pattern": "^[A-Z]$"
+                      },
+                      "protein_substitution_verified": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "provenance": {
+                    "type": "object",
+                    "required": [
+                      "execution_class",
+                      "execution_location",
+                      "network_access",
+                      "source_label",
+                      "source_version",
+                      "source_record_id"
+                    ],
+                    "properties": {
+                      "execution_class": {
+                        "type": "string",
+                        "enum": [
+                          "host_supplied_unverified",
+                          "verified_scientific_operation"
+                        ]
+                      },
+                      "execution_location": {
+                        "type": "string",
+                        "enum": [
+                          "local",
+                          "not_verified"
+                        ]
+                      },
+                      "network_access": {
+                        "type": "string",
+                        "enum": [
+                          "disabled",
+                          "not_verified"
+                        ]
+                      },
+                      "source_label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "source_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "source_record_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "research_artifacts",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization",
+        "host_supplied_nonclinical_artifact"
+      ],
+      "produces": [
+        "immutable_research_artifact",
+        "nonclinical_use_boundary"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "host_supplied_nonclinical_artifact"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.verify_sequence_substitution": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Verify one intended protein substitution against a supplied public reference protein sequence using deterministic local Genomi rules. Persist only sequence digests and normalized descriptors as a round-bound nonclinical research artifact; never store the sequence or treat the result as clinical evidence.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string", "minLength": 1},
+          "round_id": {"type": "string", "minLength": 1},
+          "deduplication_key": {"type": "string", "minLength": 1, "maxLength": 300},
+          "gene": {"type": "string", "minLength": 1, "maxLength": 80},
+          "transcript_accession": {"type": "string", "minLength": 1, "maxLength": 200},
+          "protein_accession": {"type": "string", "minLength": 1, "maxLength": 200},
+          "coding_change": {"type": "string", "minLength": 1, "maxLength": 200},
+          "protein_substitution": {"type": "string", "pattern": "^[A-Z][1-9][0-9]*[A-Z]$"},
+          "public_reference_protein_sequence": {"type": "string", "minLength": 1, "maxLength": 10000, "pattern": "^[ACDEFGHIKLMNPQRSTVWY]+$"},
+          "reference_source_label": {"type": "string", "minLength": 1, "maxLength": 300},
+          "reference_source_version": {"type": "string", "minLength": 1, "maxLength": 200},
+          "reference_source_record_id": {"type": "string", "minLength": 1, "maxLength": 300}
+        },
+        "required": [
+          "investigation_id",
+          "round_id",
+          "deduplication_key",
+          "gene",
+          "transcript_accession",
+          "protein_accession",
+          "coding_change",
+          "protein_substitution",
+          "public_reference_protein_sequence",
+          "reference_source_label",
+          "reference_source_version",
+          "reference_source_record_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "research_artifacts",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization",
+        "current_investigation_round",
+        "public_reference_protein_sequence"
+      ],
+      "produces": [
+        "immutable_round_bound_research_artifact",
+        "nonclinical_use_boundary"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "transient_public_reference_protein_sequence"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.run_esm_substitution_analysis": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Run one bounded local, network-disabled ESM reference-versus-substitution comparison through a configured scientific executor and persist its exact method, model, version, digested inputs, output metrics, provenance, and round link. A connection check is never scientific execution; when no executor is configured this returns unavailable without creating an artifact.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string", "minLength": 1},
+          "round_id": {"type": "string", "minLength": 1},
+          "deduplication_key": {"type": "string", "minLength": 1, "maxLength": 300},
+          "sequence_verification_artifact_id": {"type": "string", "minLength": 1},
+          "public_reference_protein_sequence": {"type": "string", "minLength": 1, "maxLength": 10000, "pattern": "^[ACDEFGHIKLMNPQRSTVWY]+$"}
+        },
+        "required": [
+          "investigation_id",
+          "round_id",
+          "deduplication_key",
+          "sequence_verification_artifact_id",
+          "public_reference_protein_sequence"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "research_artifacts",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization",
+        "current_investigation_round",
+        "same_round_genomi_sequence_verification",
+        "configured_local_network_disabled_esm_scientific_executor"
+      ],
+      "produces": [
+        "immutable_round_bound_research_artifact_or_explicit_unavailable_state",
+        "nonclinical_use_boundary"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "same_round_sequence_verification",
+        "transient_public_reference_protein_sequence"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.run_proto_blinded_experiment_design": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Run one bounded local, network-disabled Proto blinded experiment-design operation through a configured scientific executor and persist its exact method, model, version, inputs, outputs, provenance, and round link. A Modal environment check is never scientific execution; when no executor is configured this returns unavailable without creating an artifact.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {"type": "string", "minLength": 1},
+          "round_id": {"type": "string", "minLength": 1},
+          "deduplication_key": {"type": "string", "minLength": 1, "maxLength": 300},
+          "sequence_verification_artifact_id": {"type": "string", "minLength": 1},
+          "objective": {"type": "string", "minLength": 1, "maxLength": 500},
+          "required_arm_classes": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "assay_negative_control",
+                "functional_loss_control",
+                "test_variant",
+                "wild_type_reference"
+              ]
+            }
+          },
+          "readouts": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,99}$"}
+          }
+        },
+        "required": [
+          "investigation_id",
+          "round_id",
+          "deduplication_key",
+          "sequence_verification_artifact_id",
+          "objective",
+          "required_arm_classes",
+          "readouts"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "research_artifacts",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization",
+        "current_investigation_round",
+        "same_round_genomi_sequence_verification",
+        "configured_local_network_disabled_proto_scientific_executor"
+      ],
+      "produces": [
+        "immutable_round_bound_research_artifact_or_explicit_unavailable_state",
+        "nonclinical_use_boundary"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "approved_investigation_state",
+        "same_round_sequence_verification"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.list_research_artifacts": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Read current round-bound nonclinical research artifacts and their fixed use boundaries. These records expose method, model, version, input/output, and provenance but are not evidence, hypothesis support, brief claims, answer-readiness inputs, or clinician-export content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "research_artifacts",
+      "requires": [
+        "formed_specialist_board",
+        "active_investigation_authorization"
+      ],
+      "produces": [
+        "current_research_artifacts",
+        "nonclinical_use_boundary"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "current_research_artifacts"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.list_research_tools": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "List redacted provider-connection state separately from scientific-operation availability. Paperclip may provide approved search and lookup; Biohub and Modal connection checks never count as ESM or Proto scientific execution.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "integrations",
+      "requires": [],
+      "produces": [
+        "research_tool_status",
+        "scientific_operation_availability"
+      ],
+      "context_optional": [],
+      "privacy_scope": "metadata_only",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [],
+      "data_access": [
+        "provider_connection_metadata"
+      ],
+      "discovery_role": "focused_tool"
+    },
+    "genomilab.revoke_context": {
+      "capability": "genomilab",
+      "namespace": "genomilab",
+      "description": "Revoke future GenomiLab access to the investigation's private profile and Active Genome Index context. Native agent-task cancellation remains owned by the underlying host.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "investigation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "investigation_id"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/genomilab/SKILL.md",
+      "area": "authorization",
+      "requires": [
+        "investigation_id"
+      ],
+      "produces": [
+        "revocation_status"
+      ],
+      "context_optional": [],
+      "privacy_scope": "local_private",
+      "operation_scope": "write",
+      "mutating": true,
+      "external_io": [],
+      "data_access": [
+        "investigation_authorization_state"
+      ],
+      "discovery_role": "focused_tool"
+    }
+  }
+}

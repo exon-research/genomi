@@ -22,6 +22,7 @@ from typing import Any
 JsonObject = dict[str, Any]
 
 MAX_LIST_ITEMS = 8
+MAX_GENOMILAB_NESTING = 32
 _EMBEDDED_LOCAL_PATH_RE = re.compile(
     r"(?P<prefix>^|[\s=([{'\"`])"
     r"(?P<path>\$GENOMI_HOME/[^\s,;)'\"`]+|~/[^\s,;)'\"`]+|/(?=[^/\s,;)'\"`]+/)[^\s,;)'\"`]+)"
@@ -29,6 +30,8 @@ _EMBEDDED_LOCAL_PATH_RE = re.compile(
 
 
 def present_result(operation: str, result: JsonObject) -> JsonObject:
+    if operation.startswith("genomilab."):
+        return _present_genomilab(operation, result)
     if operation == "genomi.parse_source":
         return _present_active_genome_index_parse(result)
     if operation == "decode.build_dashboard_evidence":
@@ -43,6 +46,222 @@ def present_result(operation: str, result: JsonObject) -> JsonObject:
 
 
 # --- specialized presenters -----------------------------------------------
+
+
+def _present_genomilab(operation: str, result: JsonObject) -> JsonObject:
+    """Preserve GenomiLab's typed agent contract without exposing onboarding data.
+
+    Generic presentation deliberately limits depth and drops keys such as
+    ``workspace`` because they usually identify host filesystem locations.
+    GenomiLab uses that name for a domain read model, and its executable
+    capability contracts are necessarily deeper than the generic limit.  Keep
+    the generic policy unchanged and apply a narrowly scoped, recursively
+    redacted projection here instead.
+    """
+
+    if operation == "genomilab.open_workspace":
+        return _present_genomilab_workspace(result)
+    if operation == "genomilab.prepare_authorization":
+        return _present_genomilab_authorization(result)
+    if operation == "genomilab.record_patient_observations":
+        return _present_genomilab_observations(result)
+    if operation == "genomilab.inspect_investigation":
+        return _present_genomilab_investigation(result)
+    compact = _compact_genomilab_value(result)
+    return compact if isinstance(compact, dict) else {"result": compact}
+
+
+def _present_genomilab_workspace(result: JsonObject) -> JsonObject:
+    compact = _compact_genomilab_value(
+        {key: value for key, value in result.items() if key != "workspace"}
+    )
+    payload = compact if isinstance(compact, dict) else {}
+    workspace = result.get("workspace")
+    payload["workspace"] = (
+        _genomilab_workspace_summary(workspace)
+        if isinstance(workspace, dict)
+        else None
+    )
+    return payload
+
+
+def _present_genomilab_authorization(result: JsonObject) -> JsonObject:
+    """Return only what the host needs while the patient reviews in the portal."""
+
+    compact = _compact_genomilab_value(
+        _select(result, ("status", "next_action", "portal"))
+    )
+    return compact if isinstance(compact, dict) else {}
+
+
+def _present_genomilab_observations(result: JsonObject) -> JsonObject:
+    compact = _compact_genomilab_value(result)
+    if not isinstance(compact, dict):
+        return {}
+    authorization = result.get("authorization")
+    if isinstance(authorization, dict):
+        compact_authorization = _compact_genomilab_value(
+            _select(authorization, ("status", "next_action"))
+        )
+        compact["authorization"] = (
+            compact_authorization
+            if isinstance(compact_authorization, dict)
+            else {}
+        )
+    return compact
+
+
+def _present_genomilab_investigation(result: JsonObject) -> JsonObject:
+    investigation = result.get("investigation")
+    approved = (
+        isinstance(investigation, dict)
+        and investigation.get("private_context_status") == "approved_for_session"
+        and investigation.get("state_visibility")
+        == "authorized_for_current_agent_session"
+    )
+    if approved:
+        compact = _compact_genomilab_value(result)
+        return compact if isinstance(compact, dict) else {}
+
+    payload: JsonObject = {
+        key: result.get(key)
+        for key in ("status", "code", "message", "next_actions")
+        if key in result
+    }
+    if isinstance(investigation, dict):
+        payload["investigation"] = _genomilab_investigation_summary(investigation)
+    compact = _compact_genomilab_value(payload)
+    return compact if isinstance(compact, dict) else {}
+
+
+def _genomilab_workspace_summary(workspace: JsonObject) -> JsonObject:
+    onboarding = (
+        workspace.get("profile_onboarding")
+        if isinstance(workspace.get("profile_onboarding"), dict)
+        else None
+    )
+    profile = (
+        workspace.get("profile")
+        if isinstance(workspace.get("profile"), dict)
+        else None
+    )
+    genome = (
+        workspace.get("active_genome_index")
+        if isinstance(workspace.get("active_genome_index"), dict)
+        else (
+            profile.get("genome")
+            if isinstance(profile, dict) and isinstance(profile.get("genome"), dict)
+            else None
+        )
+    )
+    investigations = workspace.get("investigations")
+    summary: JsonObject = {}
+    if workspace.get("workspace_id") is not None:
+        summary["workspace_id"] = _compact_scalar_value(
+            workspace.get("workspace_id")
+        )
+    if isinstance(onboarding, dict):
+        summary["profile_onboarding"] = _select(
+            onboarding,
+            (
+                "observation_count",
+                "source_artifact_count",
+                "specimen_count",
+                "assay_count",
+            ),
+        )
+    elif isinstance(profile, dict):
+        summary["profile_onboarding"] = {
+            "observation_count": _list_count(profile.get("observations")),
+            "source_artifact_count": _list_count(profile.get("source_artifacts")),
+            "specimen_count": _list_count(profile.get("specimens")),
+            "assay_count": _list_count(profile.get("assays")),
+        }
+    if isinstance(genome, dict):
+        summary["active_genome_index"] = {"readiness": genome.get("readiness")}
+    summary["investigations"] = [
+        _genomilab_investigation_summary(item)
+        for item in (investigations if isinstance(investigations, list) else [])
+        if isinstance(item, dict)
+    ]
+    return summary
+
+
+def _genomilab_investigation_summary(investigation: JsonObject) -> JsonObject:
+    summary: JsonObject = {
+        "investigation_id": investigation.get("investigation_id"),
+        "status": investigation.get("status"),
+        "private_context_status": investigation.get("private_context_status"),
+        "state_visibility": investigation.get("state_visibility"),
+    }
+    if "patient_molecular_snapshot_id" in investigation:
+        summary["private_context_present"] = bool(
+            investigation.get("patient_molecular_snapshot_id")
+        )
+    specialist_board = investigation.get("specialist_board")
+    if isinstance(specialist_board, dict):
+        summary["specialist_board"] = _genomilab_specialist_board_summary(
+            specialist_board
+        )
+    compact = _compact_genomilab_value(_drop_none(summary))
+    return compact if isinstance(compact, dict) else {}
+
+
+def _genomilab_specialist_board_summary(board: JsonObject) -> JsonObject:
+    chair = board.get("chair")
+    members = board.get("members")
+    if not isinstance(members, list):
+        return _drop_none(
+            {
+                "status": board.get("status"),
+                "member_count": board.get("member_count"),
+                "chair": (
+                    _select(chair, ("role", "responsibility"))
+                    if isinstance(chair, dict)
+                    else None
+                ),
+            }
+        )
+    return {
+        "status": board.get("status"),
+        "execution_owner": board.get("execution_owner"),
+        "chair": (
+            _select(chair, ("role", "responsibility"))
+            if isinstance(chair, dict)
+            else None
+        ),
+        "members": [
+            _select(
+                member,
+                ("specialist_id", "role", "task", "status", "current_work"),
+            )
+            for member in members
+            if isinstance(member, dict)
+        ],
+    }
+
+
+def _list_count(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _compact_genomilab_value(value: object, *, depth: int = 0) -> object:
+    """Recursively retain typed Lab state while applying ordinary redaction."""
+
+    if depth > MAX_GENOMILAB_NESTING and isinstance(value, (dict, list)):
+        return "[omitted_nested_value]"
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_genomilab_value(item, depth=depth + 1)
+            for key, item in value.items()
+            if not _omit_key(str(key))
+        }
+    if isinstance(value, list):
+        return [
+            _compact_genomilab_value(item, depth=depth + 1) for item in value
+        ]
+    return _compact_scalar_value(value)
+
 
 def _present_active_genome_index_parse(result: JsonObject) -> JsonObject:
     active = _compact_active_index(result.get("active_genome_index"))
@@ -677,6 +896,7 @@ def _compact_active_index(value: object) -> JsonObject | None:
         value,
         (
             "agi_id",
+            "agi_snapshot_id",
             "sample_slug",
             "status",
             "agi_source_format",

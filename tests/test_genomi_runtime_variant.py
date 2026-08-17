@@ -409,6 +409,12 @@ class GenomiRuntimeVariantTests(GenomiRuntimeTestCase):
         self.assertIn("broad_vcf_pgx_calling", pgx_resources["pgx_capability_inventory"]["capabilities"]["capability_axes"])
         self.assertIn("source_catalog", result)
         self.assertIn("context_policy", result)
+        self.assertEqual(
+            result["toolset_disclosure"]["default"],
+            "Default tools/list returns genomi.*, research.*, journal.*, the "
+            "complete direct genomilab.* application boundary, and the "
+            "genomi.invoke dispatcher.",
+        )
         self.assertFalse(result["context_policy"]["active_genome_index_context_listed"])
         self.assertNotIn("context", result)
         self.assertNotIn("context_axes", result)

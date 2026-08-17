@@ -1,3 +1,32 @@
+# Unreleased
+
+- Added a host-owned GenomiLab developer preview. Claude Code, Codex, or another
+  compatible MCP host keeps its native conversation, planning, subagents,
+  streaming, follow-ups, and task controls while direct `genomilab.*`
+  operations persist approved research evidence, hypotheses, and briefs.
+- The loopback Research Desk is now a patient-onboarding, scoped-approval,
+  provider-setup, and committed-domain-event monitoring portal. It requires a
+  current user with a query-ready Active Genome Index; VCF/gVCF and other
+  source intake stays in core Genomi and is reused across investigations.
+- Paperclip exposes narrow investigation-scoped literature, regulatory, and
+  trial-registry discovery only when owner deployment authorization, an
+  independent patient-data contract, and exact disclosure approval all pass.
+  A verified API key alone advertises no live route.
+- Biohub ESM and Proto connection checks remain setup-only and never count as
+  scientific execution. Separate bounded ESM substitution and Proto blinded
+  experiment-design operations run only through configured local,
+  network-disabled executors; an absent executor returns explicit
+  `unavailable` without creating an artifact. Their outputs are round-bound
+  nonclinical research artifacts and are ineligible as evidence, hypothesis or
+  brief support, answer-readiness, treatment content, or clinician export.
+- Added two disjoint synthetic patient fixtures and end-to-end isolation tests.
+- Default-user selection is metadata-only; previously imported Active Genome
+  Index data now always requires explicit current-session read approval.
+- Runtime context, registry, and background-job state now use private file
+  permissions, atomic JSON writes, and symlink refusal.
+- Decode dashboard generation no longer probes a socket when no server will be
+  started.
+
 # Genomi 0.1.0 Release Notes
 
 Released July 2026.

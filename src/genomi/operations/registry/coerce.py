@@ -305,12 +305,21 @@ def _resolved_default_value(operation_name: str, parameter: str, params: JsonObj
         "ancestry.estimate_population_context",
         "prs.check_score_overlap",
         "prs.calculate_score",
+        "variant.find_gene_variants",
     }:
         return _default_genome_build_from_approved_agi(params) or "GRCh38"
     return _UNRESOLVED_DEFAULT
 
 
 def _default_genome_build_from_approved_agi(params: JsonObject) -> str | None:
+    from .execution import current_execution_context
+
+    execution_context = current_execution_context()
+    if execution_context is not None and execution_context.agi_read_lease is not None:
+        build = _run_genome_build(dict(execution_context.agi_read_lease.agi_record))
+        if build:
+            return build
+
     explicit_path = params.get("agi_path")
     if explicit_path not in (None, ""):
         from .agi_access import _registered_run_for_agi_path

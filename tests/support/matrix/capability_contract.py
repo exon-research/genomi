@@ -70,7 +70,7 @@ PUBLIC_DETERMINISTIC_CAPABILITIES = frozenset(
 )
 
 EXTERNAL_SOURCE_CAPABILITIES = frozenset({"gnomad", "gwas-catalog"})
-STATEFUL_RUNTIME_CAPABILITIES = frozenset({"genomi", "journal"})
+STATEFUL_RUNTIME_CAPABILITIES = frozenset({"genomi", "genomilab", "journal"})
 
 SOURCE_FORMAT_MATRIX_OPERATIONS = frozenset(
     {
@@ -87,6 +87,7 @@ SOURCE_FORMAT_MATRIX_OPERATIONS = frozenset(
         "pharmacogenomics.review_medication",
         "prs.calculate_score",
         "prs.check_score_overlap",
+        "variant.find_gene_variants",
         "variant.resolve",
     }
 )
@@ -173,6 +174,25 @@ STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "genomi.parse_source": "source-format setup operation",
     "genomi.search_indexes": "runtime metadata index search",
     "genomi.set_response_profile": "runtime profile mutation",
+    "genomilab.check_request": "authorized investigation request polling state",
+    "genomilab.create_investigation": "encrypted patient investigation state mutation",
+    "genomilab.execute_request": "authorized investigation capability execution",
+    "genomilab.form_specialist_board": "encrypted specialist-board monitoring state mutation",
+    "genomilab.inspect_investigation": "encrypted patient investigation read model",
+    "genomilab.list_research_artifacts": "encrypted nonclinical research artifact read model",
+    "genomilab.list_research_tools": "configured research provider inventory",
+    "genomilab.open_workspace": "active genome and encrypted workspace state",
+    "genomilab.prepare_authorization": "patient context authorization candidate state",
+    "genomilab.record_patient_observations": "encrypted molecular profile state mutation",
+    "genomilab.record_specialist_report": "immutable specialist round report mutation",
+    "genomilab.report_specialist_progress": "authorized specialist progress monitoring state mutation",
+    "genomilab.run_esm_substitution_analysis": "bounded local nonclinical ESM operation",
+    "genomilab.run_proto_blinded_experiment_design": "bounded local nonclinical Proto operation",
+    "genomilab.revoke_context": "patient context authorization revocation",
+    "genomilab.submit_brief": "encrypted investigation brief state mutation",
+    "genomilab.submit_plan": "authorized investigation plan state mutation",
+    "genomilab.submit_research_artifact": "immutable nonclinical research artifact mutation",
+    "genomilab.verify_sequence_substitution": "deterministic local sequence-substitution verification",
     "journal.append_entry": "journal store mutation",
     "journal.export_memory": "journal state export",
     "journal.search_entries": "journal state search",
@@ -184,7 +204,15 @@ STATEFUL_RUNTIME_OPERATION_RATIONALES = {
     "research.search": "reviewed-research store search",
 }
 STATEFUL_RUNTIME_OPERATIONS = frozenset(STATEFUL_RUNTIME_OPERATION_RATIONALES)
-STATEFUL_RUNTIME_EXECUTABLE_OPERATIONS = STATEFUL_RUNTIME_OPERATIONS - {"genomi.install"}
+GENOMILAB_RUNTIME_OPERATIONS = frozenset(
+    operation
+    for operation in STATEFUL_RUNTIME_OPERATIONS
+    if operation.startswith("genomilab.")
+)
+STATEFUL_RUNTIME_EXECUTABLE_OPERATIONS = STATEFUL_RUNTIME_OPERATIONS - {
+    "genomi.install",
+    *GENOMILAB_RUNTIME_OPERATIONS,
+}
 
 def _empty_params(_ctx: MatrixCaseContext) -> JsonObject:
     return {}

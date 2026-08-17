@@ -57,27 +57,22 @@ class ParseSourcePathExpansionTests(GenomiRuntimeTestCase):
         self.assertEqual(parsed["status"], "completed")
         self.assertEqual(parsed["source_format"], "vcf")
 
-    def test_assign_user_by_source_uses_existing_digitized_array_agi(self) -> None:
+    def test_bare_source_path_creates_an_immediately_usable_fresh_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             raw = Path(tmp) / "genome.txt"
             _write_23andme(raw)
 
             parsed = call_operation("genomi.parse_source", {"source": str(raw)})
             parsed_agi_id = parsed["active_genome_index"]["agi_id"]
-            profile_action = next(
-                item for item in parsed["next_actions"] if item.get("action") == "ask_user"
-            )
-            assigned = call_operation(
-                "active_genome_index.assign_user_genome",
-                {"nickname": "Sample user", "source": str(raw)},
-            )
+            context = call_operation("genomi.describe_context")
 
         self.assertTrue(parsed_agi_id.startswith("23andme-sha256-"))
-        self.assertEqual(profile_action["operation"], "active_genome_index.assign_user_genome")
-        self.assertEqual(profile_action["params"]["nickname"], "<profile nickname>")
-        self.assertEqual(assigned["user"]["active_agi_id"], parsed_agi_id)
-        self.assertTrue(assigned["user"]["active_genome_index"]["digitized"])
-        self.assertEqual(assigned["context"]["active_agi_id"], parsed_agi_id)
+        self.assertEqual(context["active_user"]["nickname"], "Default user")
+        self.assertEqual(context["active_agi_id"], parsed_agi_id)
+        self.assertTrue(context["active_genome_index_access"]["approved"])
+        self.assertFalse(
+            any(item.get("action") == "ask_user" for item in parsed["next_actions"])
+        )
 
     def test_decode_uses_digitized_agi_after_profile_assignment_by_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -85,10 +80,6 @@ class ParseSourcePathExpansionTests(GenomiRuntimeTestCase):
             _write_23andme(raw)
 
             call_operation("genomi.parse_source", {"source": str(raw)})
-            call_operation(
-                "active_genome_index.assign_user_genome",
-                {"nickname": "Sample user", "source": str(raw)},
-            )
             built = call_operation("decode.build_dashboard_evidence", {"panels": ["overview"]})
 
         self.assertEqual(built["status"], "completed")
@@ -120,9 +111,15 @@ class ParseSourcePathExpansionTests(GenomiRuntimeTestCase):
             set(runtime_context.load_context()["agis"][agi_id]),
             {
                 "agi_comparable_variant_export",
+                "agi_artifact_sha256",
+                "agi_build_path",
+                "agi_build_revision",
                 "agi_id",
                 "agi_intake_source_path",
                 "agi_path",
+                "agi_schema_version",
+                "agi_snapshot_created_at",
+                "agi_snapshot_id",
                 "agi_source_format",
                 "agi_source_kind",
                 "agi_source_member",

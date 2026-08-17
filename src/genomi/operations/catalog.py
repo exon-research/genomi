@@ -12,6 +12,7 @@ CATALOG_BASE_FILENAME = "catalog_base.json"
 CATALOG_FRAGMENT_FILENAME = "tool_catalog.json"
 CATALOG_FRAGMENT_PACKAGES = (
     "genomi.runtime",
+    "genomi.lab",
     "genomi.active_genome_index",
     "genomi.capabilities.clinvar",
     "genomi.capabilities.variant",

@@ -11,10 +11,12 @@ from .coerce import (
     _int,
     _optional_int,
     _optional_path,
+    _optional_str,
     _str,
     _with_context,
 )
 from .errors import JsonObject, OperationError
+from .execution import current_execution_context
 
 
 def _agi_build_reference_pass(params: JsonObject) -> JsonObject:
@@ -99,6 +101,43 @@ def _agi_callability(params: JsonObject) -> JsonObject:
 
 
 def _variant_lookup(params: JsonObject) -> JsonObject:
+    execution_context = current_execution_context()
+    read_lease = (
+        execution_context.agi_read_lease
+        if execution_context is not None
+        else None
+    )
+    if read_lease is not None:
+        bound_agi_id = str(read_lease.agi_record.get("agi_id") or "")
+        reader = open_agi(
+            need=ActiveGenomeIndexNeed.VARIANT,
+            action="reading the execution context's Active Genome Index slice",
+            params=params,
+            agi_id=bound_agi_id,
+        )
+        return variant_lookup.lookup_variant(
+            query=_optional_str(params, "query"),
+            rsid=_optional_str(params, "rsid"),
+            chrom=_optional_str(params, "chrom"),
+            pos=_optional_int(params, "pos"),
+            ref=_optional_str(params, "ref"),
+            alt=_optional_str(params, "alt"),
+            region=_optional_str(params, "region"),
+            genome_build=_str(
+                params,
+                "genome_build",
+                str(read_lease.agi_record.get("genome_build") or "GRCh38"),
+            ),
+            agi_id=bound_agi_id,
+            include_active_genome_index=True,
+            include_known_active_genome_indexes=False,
+            include_fail=_bool(params, "include_fail"),
+            limit=_int(params, "limit", 20) or 20,
+            bound_agi_reader=reader,
+            bound_agi_record=dict(read_lease.agi_record),
+            bound_agi_selection=read_lease.selection,
+        )
+
     named_agi = params.get("agi_id")
     include_known_active_genome_indexes = _bool(params, "include_known_active_genome_indexes")
     include_active_genome_index = _bool(

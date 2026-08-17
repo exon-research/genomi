@@ -12,11 +12,92 @@
       "operations": [
         "variant.gather_gene_context",
         "variant.gather_allele_context",
+        "variant.find_gene_variants",
         "variant.resolve"
       ]
     }
   },
   "operations": {
+    "variant.find_gene_variants": {
+      "capability": "variant-evidence",
+      "namespace": "variant",
+      "description": "Find passing variants in an approved Active Genome Index that overlap managed GENCODE intervals for a bounded candidate-gene set.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "genes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "genome_build": {
+            "type": "string",
+            "default": "GRCh38",
+            "enum": [
+              "GRCh37",
+              "GRCh38"
+            ],
+            "x_genomi_default": {
+              "source": "tool_default",
+              "condition": "If an approved Active Genome Index supplies genome_build, that context value is used before this fallback."
+            }
+          },
+          "agi_id": {
+            "type": "string"
+          },
+          "per_gene_limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "genes"
+        ],
+        "additionalProperties": false
+      },
+      "skill": "skills/variant-evidence/SKILL.md",
+      "area": "variant",
+      "requires": [
+        "bounded_candidate_genes",
+        "approved_active_genome_index",
+        "variant_callset_or_sequencing_active_genome_index",
+        "matching_build_gencode_annotation"
+      ],
+      "produces": [
+        "gene_coordinate_resolution",
+        "active_genome_index_gene_interval_variants",
+        "coverage",
+        "evidence_envelope"
+      ],
+      "context_optional": [
+        "agi_id",
+        "genome_build"
+      ],
+      "privacy_scope": "local_private",
+      "operation_scope": "read",
+      "mutating": false,
+      "external_io": [
+        "local_gencode_gtf"
+      ],
+      "data_access": [
+        "active_genome_index",
+        "installed_gencode_gene_coordinates"
+      ],
+      "optional_libraries": [
+        "gencode-grch38",
+        "gencode-grch37"
+      ],
+      "library_check_operation": "genomi.check_libraries",
+      "discovery_role": "focused_tool"
+    },
     "variant.resolve": {
       "capability": "variant-evidence",
       "namespace": "variant",

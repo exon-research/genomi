@@ -1,0 +1,2 @@
+include SKILL.md
+recursive-include skills *.md *.yaml

@@ -13,7 +13,17 @@ from ...active_genome_index.active_genome_index import (
 from ...active_genome_index.active_genome_index import (
     ActiveGenomeIndexSchemaTooNew as _ActiveGenomeIndexSchemaTooNew,
 )
+from ...active_genome_index.revisions import ActiveGenomeIndexArtifactIntegrityError
 from ...capabilities.research import intent_research
+from ...lab.agent_artifacts import brief_submission_input_schema
+from ...lab.investigation_rounds import specialist_report_submission_input_schema
+from ...lab.research_artifact_contract import (
+    esm_substitution_analysis_input_schema,
+    proto_blinded_design_input_schema,
+    research_artifact_submission_input_schema,
+    sequence_substitution_verification_input_schema,
+)
+from ...runtime import skill_assets
 from .catalog_meta import (
     BASE_CAPABILITIES_IN_DEFAULT_TOOLS_LIST,
     CAPABILITY_METADATA,
@@ -24,6 +34,12 @@ from .catalog_meta import (
 )
 from .coerce import _int, _list_str, _str, _with_defaults_applied
 from .errors import JsonObject, OperationError
+from .execution import (
+    OperationExecutionContext,
+    OperationExecutionContextError,
+    activate_execution_context,
+    reset_execution_context,
+)
 from .model import Operation, _operation_capability
 from .handlers_agi_lifecycle import (
     _genomi_approve_agi_access,
@@ -47,6 +63,27 @@ from .handlers_admin import (
     _resources_libraries,
     _resources_list,
     _runtime_check_background_job,
+)
+from .handlers_genomilab import (
+    _genomilab_check_request,
+    _genomilab_create_investigation,
+    _genomilab_execute_request,
+    _genomilab_form_specialist_board,
+    _genomilab_inspect_investigation,
+    _genomilab_list_research_artifacts,
+    _genomilab_list_research_tools,
+    _genomilab_open_workspace,
+    _genomilab_prepare_authorization,
+    _genomilab_record_patient_observations,
+    _genomilab_record_specialist_report,
+    _genomilab_report_specialist_progress,
+    _genomilab_revoke_context,
+    _genomilab_submit_brief,
+    _genomilab_submit_plan,
+    _genomilab_submit_research_artifact,
+    _genomilab_verify_sequence_substitution,
+    _genomilab_run_esm_substitution_analysis,
+    _genomilab_run_proto_blinded_experiment_design,
 )
 from .handlers_ancestry_prs import (
     _ancestry_build_source_context,
@@ -130,6 +167,7 @@ from .handlers_vcf_variant import (
     _agi_summary,
     _variant_lookup,
 )
+from .handlers_variant_gene import _variant_find_gene_variants
 
 
 _AGI_REFERENCE = "reference"
@@ -156,12 +194,56 @@ OPERATIONS: list[Operation] = [
     Operation('active_genome_index.clear_default_user', _genomi_clear_default_user),
     Operation('active_genome_index.clear_selection', _genomi_clear_selection),
     Operation('genomi.parse_source', _genomi_parse_source),
+    Operation('genomilab.open_workspace', _genomilab_open_workspace),
+    Operation('genomilab.create_investigation', _genomilab_create_investigation),
+    Operation('genomilab.inspect_investigation', _genomilab_inspect_investigation),
+    Operation('genomilab.form_specialist_board', _genomilab_form_specialist_board),
+    Operation('genomilab.report_specialist_progress', _genomilab_report_specialist_progress),
+    Operation(
+        'genomilab.record_specialist_report',
+        _genomilab_record_specialist_report,
+        input_schema=specialist_report_submission_input_schema(),
+    ),
+    Operation('genomilab.prepare_authorization', _genomilab_prepare_authorization),
+    Operation('genomilab.record_patient_observations', _genomilab_record_patient_observations),
+    Operation('genomilab.submit_plan', _genomilab_submit_plan),
+    Operation('genomilab.execute_request', _genomilab_execute_request),
+    Operation('genomilab.check_request', _genomilab_check_request),
+    Operation(
+        'genomilab.submit_brief',
+        _genomilab_submit_brief,
+        input_schema=brief_submission_input_schema(),
+    ),
+    Operation(
+        'genomilab.submit_research_artifact',
+        _genomilab_submit_research_artifact,
+        input_schema=research_artifact_submission_input_schema(),
+    ),
+    Operation(
+        'genomilab.verify_sequence_substitution',
+        _genomilab_verify_sequence_substitution,
+        input_schema=sequence_substitution_verification_input_schema(),
+    ),
+    Operation(
+        'genomilab.run_esm_substitution_analysis',
+        _genomilab_run_esm_substitution_analysis,
+        input_schema=esm_substitution_analysis_input_schema(),
+    ),
+    Operation(
+        'genomilab.run_proto_blinded_experiment_design',
+        _genomilab_run_proto_blinded_experiment_design,
+        input_schema=proto_blinded_design_input_schema(),
+    ),
+    Operation('genomilab.list_research_artifacts', _genomilab_list_research_artifacts),
+    Operation('genomilab.list_research_tools', _genomilab_list_research_tools),
+    Operation('genomilab.revoke_context', _genomilab_revoke_context),
     Operation('active_genome_index.build_reference_pass', _agi_build_reference_pass),
     Operation('active_genome_index.summarize', _agi_summary),
     Operation('active_genome_index.classify_callset_qc', _agi_qc, agi_need=_AGI_REFERENCE),
     Operation('active_genome_index.classify_genotype_support', _agi_genotype_support, agi_need=_AGI_REFERENCE),
     Operation('active_genome_index.classify_region_callability', _agi_callability, agi_need=_AGI_REFERENCE),
     Operation('variant.resolve', _variant_lookup),
+    Operation('variant.find_gene_variants', _variant_find_gene_variants, agi_need=_AGI_VARIANT),
     Operation('clinvar.match_variants', _clinvar_match),
     Operation('clinvar.scan_candidates', _clinvar_scan),
     Operation('ancestry.list_reference_panels', _ancestry_list_reference_panels),
@@ -265,7 +347,46 @@ def operation_discovery_payload(
 ) -> JsonObject:
     selected_operations = _select_operations(capability=capability, namespace=namespace)
     tools = [operation.tool_definition() for operation in selected_operations]
-    return {"tools": tools}
+    payload: JsonObject = {"tools": tools}
+    if capability is not None or namespace is not None:
+        payload["default_tools"] = [
+            operation.tool_definition()
+            for operation in _select_operations()
+        ]
+        payload["skill_context"] = _focused_skill_context(selected_operations)
+    return payload
+
+
+def _focused_skill_context(operations: list[Operation]) -> JsonObject:
+    """Return focused guidance beside an explicitly expanded tool category."""
+
+    capability_ids = sorted({_operation_capability(operation) for operation in operations})
+    documents: list[JsonObject] = []
+    seen_paths: set[str] = set()
+    for capability_id in capability_ids:
+        metadata = CAPABILITY_METADATA.get(capability_id) or {}
+        for relative_path in metadata.get("skill_documents") or []:
+            path = str(relative_path)
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            candidate = skill_assets.skill_document_path(path)
+            document: JsonObject = {
+                "capability": capability_id,
+                "path": path,
+                "status": "available" if candidate is not None else "unavailable",
+            }
+            if candidate is not None:
+                document["content"] = candidate.read_text(encoding="utf-8")
+            documents.append(document)
+    return {
+        "capabilities": capability_ids,
+        "default_complete": all(
+            bool((CAPABILITY_METADATA.get(capability_id) or {}).get("default_complete"))
+            for capability_id in capability_ids
+        ),
+        "documents": documents,
+    }
 
 
 def _select_operations(
@@ -350,11 +471,59 @@ def _stamp_reference_pending_if_due(name: str, params: JsonObject, result: objec
     return result
 
 
-def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
-    operation = get_operation(name)
+def call_operation(
+    name: str,
+    params: JsonObject | None = None,
+    *,
+    execution_context: OperationExecutionContext | None = None,
+) -> JsonObject:
+    """Dispatch one operation with an optional explicit host context.
+
+    ``execution_context`` is intentionally absent from every tool schema and
+    keyword-only. Clearing/restoring it on every call prevents an embedded
+    host from accidentally lending its process-local resources to an
+    unannotated nested operation.
+    """
+
     safe_params = params or {}
     if not isinstance(safe_params, dict):
         raise OperationError("invalid_params", "operation params must be an object")
+    if execution_context is not None and not isinstance(
+        execution_context, OperationExecutionContext
+    ):
+        raise OperationError(
+            "invalid_operation_execution_context",
+            "execution_context must be an OperationExecutionContext issued by an embedded host.",
+        )
+    try:
+        if execution_context is not None:
+            execution_context.validate_call(name, safe_params)
+        execution_token = activate_execution_context(execution_context)
+    except OperationExecutionContextError as exc:
+        raise OperationError(exc.code, str(exc)) from exc
+
+    try:
+        result = _call_operation_bound(name, safe_params)
+        if execution_context is not None and isinstance(result, dict):
+            try:
+                annotations = execution_context.validate_call(name, safe_params)
+            except OperationExecutionContextError as exc:
+                raise OperationError(exc.code, str(exc)) from exc
+            for key, value in annotations.items():
+                if key in result:
+                    raise OperationError(
+                        "operation_execution_context_annotation_conflict",
+                        f"The execution context cannot overwrite result field {key!r}.",
+                    )
+                result[key] = value
+        return result
+    finally:
+        reset_execution_context(execution_token)
+
+
+def _call_operation_bound(name: str, params: JsonObject) -> JsonObject:
+    operation = get_operation(name)
+    safe_params = params
     try:
         result = operation.handler(safe_params)
     except OperationError:
@@ -367,6 +536,11 @@ def call_operation(name: str, params: JsonObject | None = None) -> JsonObject:
         # materialized yet. Surface it as a structured error so agents know
         # which file to produce.
         raise OperationError("needs_file", f"required file not found: {exc}") from exc
+    except ActiveGenomeIndexArtifactIntegrityError as exc:
+        raise OperationError(
+            "active_genome_index_artifact_integrity_failed",
+            str(exc),
+        ) from exc
     except ValueError as exc:
         # Library functions raise ValueError for missing/invalid required
         # inputs (e.g. "<op> requires gene or condition"). Convert to a

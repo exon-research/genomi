@@ -1,0 +1,237 @@
+"""Canonical evidence-record ledger persistence and commit guards."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Any, ContextManager, Protocol
+
+from ..evidence import envelope as canonical_evidence_envelope
+from .disease_relations import validate_reserved_relation_commit
+from .models import (
+    JsonObject,
+    compact_json,
+    redacted_private_payload,
+    required_text,
+    row_dict,
+    utc_now,
+    validate_private_payload,
+)
+
+
+class EvidenceCommitGuardError(ValueError):
+    """A current-plan or live-approval precondition changed before commit."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class _EvidenceRecordStore(Protocol):
+    def _connect(self) -> ContextManager[Any]: ...
+
+    def _stable_evidence_identity(self, value: object) -> object: ...
+
+    def append_investigation_event(
+        self,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+    def _append_investigation_event(
+        self,
+        connection: Any,
+        investigation_id: str,
+        *,
+        event_type: object,
+        payload: JsonObject,
+    ) -> JsonObject: ...
+
+
+class EvidenceRecordStoreMixin:
+    """Persist immutable normalized evidence against the current investigation."""
+
+    def commit_evidence(
+        self: _EvidenceRecordStore,
+        investigation_id: str,
+        *,
+        source_family: object,
+        operation: object,
+        evidence: JsonObject,
+        deduplication_key: object,
+        expected_plan_version_id: object = None,
+        expected_disclosure_receipt_id: object = None,
+        expected_consent_receipt_id: object = None,
+        _reserved_operation_token: object = None,
+        emit_investigation_event: bool = False,
+    ) -> JsonObject:
+        envelope = evidence.get("evidence_envelope")
+        if not isinstance(envelope, dict):
+            raise ValueError("evidence must include a canonical evidence_envelope")
+        validate_private_payload(envelope)
+        canonical_evidence_envelope.validate(envelope)
+        sanitized = redacted_private_payload(evidence)
+        if not isinstance(sanitized, dict):
+            raise ValueError("evidence must be an object")
+        validate_private_payload(sanitized)
+        source = required_text(source_family, "source_family", 100)
+        operation_value = required_text(operation, "operation", 200)
+        validate_reserved_relation_commit(operation_value, _reserved_operation_token)
+        dedup = required_text(deduplication_key, "deduplication_key", 300)
+        expected_plan = (
+            required_text(expected_plan_version_id, "expected_plan_version_id", 200)
+            if expected_plan_version_id not in (None, "")
+            else None
+        )
+        expected_disclosure = (
+            required_text(
+                expected_disclosure_receipt_id,
+                "expected_disclosure_receipt_id",
+                200,
+            )
+            if expected_disclosure_receipt_id not in (None, "")
+            else None
+        )
+        expected_consent = (
+            required_text(
+                expected_consent_receipt_id,
+                "expected_consent_receipt_id",
+                200,
+            )
+            if expected_consent_receipt_id not in (None, "")
+            else None
+        )
+        record_id = f"evidence-{uuid.uuid4().hex}"
+        envelope = sanitized.get("evidence_envelope")
+        evidence_json = compact_json(sanitized)
+        evidence_identity_json = compact_json(self._stable_evidence_identity(sanitized))
+        envelope_json = compact_json(envelope)
+        with self._connect() as connection:
+            investigation = connection.execute(
+                "SELECT user_id, patient_molecular_snapshot_id, "
+                "active_consent_receipt_id FROM investigations "
+                "WHERE investigation_id = ?",
+                (investigation_id,),
+            ).fetchone()
+            if investigation is None:
+                raise KeyError(investigation_id)
+            profile_snapshot_id = investigation["patient_molecular_snapshot_id"]
+            if expected_plan is not None:
+                current_plan = connection.execute(
+                    "SELECT plan_version_id FROM plan_versions "
+                    "WHERE investigation_id = ? "
+                    "AND patient_molecular_snapshot_id IS ? "
+                    "ORDER BY version DESC LIMIT 1",
+                    (investigation_id, profile_snapshot_id),
+                ).fetchone()
+                accepted = (
+                    connection.execute(
+                        "SELECT 1 FROM plan_acceptances WHERE plan_version_id = ?",
+                        (expected_plan,),
+                    ).fetchone()
+                    if current_plan is not None
+                    and str(current_plan["plan_version_id"]) == expected_plan
+                    else None
+                )
+                if accepted is None:
+                    raise EvidenceCommitGuardError(
+                        "plan_superseded",
+                        "evidence result no longer belongs to the current accepted plan",
+                    )
+            if expected_disclosure is not None:
+                disclosure = connection.execute(
+                    "SELECT 1 FROM outbound_disclosure_receipts "
+                    "WHERE disclosure_receipt_id = ? AND investigation_id = ? "
+                    "AND user_id = ? AND revoked_at IS NULL",
+                    (
+                        expected_disclosure,
+                        investigation_id,
+                        investigation["user_id"],
+                    ),
+                ).fetchone()
+                if disclosure is None:
+                    raise EvidenceCommitGuardError(
+                        "disclosure_revoked",
+                        "evidence disclosure was revoked before result commit",
+                    )
+            if expected_consent is not None:
+                consent = connection.execute(
+                    "SELECT 1 FROM consent_receipts "
+                    "WHERE consent_receipt_id = ? AND investigation_id = ? "
+                    "AND user_id = ? AND patient_molecular_snapshot_id IS ? "
+                    "AND revoked_at IS NULL",
+                    (
+                        expected_consent,
+                        investigation_id,
+                        investigation["user_id"],
+                        profile_snapshot_id,
+                    ),
+                ).fetchone()
+                if (
+                    consent is None
+                    or investigation["active_consent_receipt_id"] != expected_consent
+                ):
+                    raise EvidenceCommitGuardError(
+                        "consent_revoked",
+                        "private molecular-context consent changed before result commit",
+                    )
+            existing = connection.execute(
+                "SELECT * FROM evidence_records WHERE investigation_id = ? "
+                "AND patient_molecular_snapshot_id IS ? AND deduplication_key = ?",
+                (investigation_id, profile_snapshot_id, dedup),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    str(existing["source_family"]) != source
+                    or str(existing["operation"]) != operation_value
+                    or compact_json(
+                        self._stable_evidence_identity(
+                            row_dict(existing).get("evidence") or {}
+                        )
+                    )
+                    != evidence_identity_json
+                    or str(existing["evidence_envelope_json"]) != envelope_json
+                ):
+                    raise ValueError(
+                        "evidence deduplication key was reused for different evidence"
+                    )
+                return row_dict(existing)
+            connection.execute(
+                """
+                INSERT INTO evidence_records(
+                    evidence_record_id, investigation_id,
+                    patient_molecular_snapshot_id, deduplication_key,
+                    source_family, operation, evidence_json,
+                    evidence_envelope_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    investigation_id,
+                    profile_snapshot_id,
+                    dedup,
+                    source,
+                    operation_value,
+                    evidence_json,
+                    envelope_json,
+                    utc_now(),
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM evidence_records WHERE investigation_id = ? "
+                "AND patient_molecular_snapshot_id IS ? AND deduplication_key = ?",
+                (investigation_id, profile_snapshot_id, dedup),
+            ).fetchone()
+            if emit_investigation_event:
+                self._append_investigation_event(
+                    connection,
+                    investigation_id,
+                    event_type="evidence_committed",
+                    payload={
+                        "evidence_record_id": record_id,
+                        "source_family": source,
+                        "operation": operation_value,
+                    },
+                )
+        return row_dict(row)

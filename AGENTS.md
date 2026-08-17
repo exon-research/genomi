@@ -277,7 +277,8 @@ comes from Genomi operations and result envelopes.
 2. Resolve context from this chat. If the user supplied a genome source, prepare or
    select the Active Genome Index before making sample-specific claims.
 3. Identify the user's intent and the matching capability. MCP `tools/list`
-   returns only the base set (`genomi.*` and `journal.*`) plus the
+   returns the default set (`genomi.*`, `research.*`, `journal.*`, and the
+   complete direct `genomilab.*` application boundary) plus the
    `genomi.invoke` dispatcher; every other capability tool is reached by
    reading `skills/<capability>/SKILL.md` first, then calling
    `genomi.invoke` with the registered operation name, for example
@@ -285,8 +286,10 @@ comes from Genomi operations and result envelopes.
    Do not use the capability ID as the tool name. Anthropic
    Claude Code Skills auto-loads each capability's skill via its YAML
    frontmatter (installed as `~/.claude/skills/genomi-<capability>/`).
-4. Base tools (`genomi.*`, `journal.*`) are direct-callable from MCP without
-   a skill read.
+4. Core base tools (`genomi.*`, `research.*`, `journal.*`) are direct-callable
+   from MCP without a skill read. Before using direct `genomilab.*` tools,
+   read `skills/genomilab/SKILL.md`; they are session-bound application writes,
+   not ordinary public evidence calls.
 5. Call the smallest useful Genomi operation for the question.
 6. Before calling a tool, only provide parameters supplied by the current user
    request, current Genomi context, a previous Genomi result, explicit user
@@ -334,8 +337,8 @@ comes from Genomi operations and result envelopes.
 
 ## Tool Discovery
 
-- MCP `tools/list`: base tools list (`genomi.*` + `journal.*` +
-  `genomi.invoke`).
+- MCP `tools/list`: default tools list (`genomi.*` + `research.*` +
+  `journal.*` + `genomilab.*` + `genomi.invoke`).
 - Capability tools are dispatched at runtime through `genomi.invoke` after
   reading the relevant `skills/<capability>/SKILL.md`. Anthropic Claude Code
   Skills loads each `~/.claude/skills/genomi-<capability>/SKILL.md` based on
