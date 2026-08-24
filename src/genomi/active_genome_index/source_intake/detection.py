@@ -392,11 +392,22 @@ def _scan_array(lines: list[str], delimiter: str) -> tuple[list[str], list[str] 
     return comments, header, first_data
 
 
-def _array_reference_build(comments: list[str]) -> str:
+def _array_reference_build(comments: list[str]) -> str | None:
+    """Return the build the export declares, or ``None`` when it declares none.
+
+    Consumer arrays are GRCh37 in practice and the intake pipeline still assumes
+    exactly that: ``_effective_array_build`` resolves an undeclared build to
+    GRCh37. What changes here is where the assumption lives. Returned as a
+    detection result, "GRCh37" cannot be told apart from a build that was
+    actually read out of the header — and one array format can never declare
+    one, since FamilyTreeDNA exports are recognised by having no comment block
+    at all. Detection reports what the file says; the fallback stays in the one
+    place that has to pick a build in order to do coordinate work.
+    """
     joined = "\n".join(comments).lower()
     if any(token in joined for token in _BUILD37_TOKENS):
         return "GRCh37"
-    return "GRCh37"  # consumer arrays are GRCh37 unless a future export says otherwise
+    return None
 
 
 def _match_array(probe: _Probe, sig: _ArraySignature) -> SourceDetection | None:
