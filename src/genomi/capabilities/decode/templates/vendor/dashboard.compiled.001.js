@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/3 from dashboard sources by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 4ea0a1b359efa3c0c9deb5689df547ff947205d39259c0feaf0f1176e29dc038
+// source-sha256: 9955a36712623e40ca394d947be0806f7bee5504c8a62c3d7201ac325a6e5857
 const PGX_IMPACT_COLORS = {
   normal: '#10b981',
   moderate: '#f59e0b',
@@ -297,7 +297,7 @@ function OverviewView({
   const variantsHi = _varHiSrc && _varHiSrc.length > 0 ? _varHiSrc.slice(0, 3) : null;
   const pgxHi = PGX_DATA && PGX_DATA.length > 0 ? PGX_DATA.slice(0, 3) : null;
   const riskHi = PRS_DATA && PRS_DATA.length > 0 ? PRS_DATA.slice(0, 3) : null;
-  const ancestryHi = ANCESTRY_DATA && (ANCESTRY_DATA.dominantAncestry || Array.isArray(ANCESTRY_DATA.neighbors) && ANCESTRY_DATA.neighbors.length > 0) ? ANCESTRY_DATA : null;
+  const ancestryHi = ANCESTRY_DATA && ANCESTRY_DATA.closestSuperpopulation && ANCESTRY_DATA.closestPopulation ? ANCESTRY_DATA : null;
   const nutriHi = NUTRI_DATA && NUTRI_DATA.length > 0 ? NUTRI_DATA.slice(0, 3) : null;
   const anyHighlights = !!(variantsHi || pgxHi || riskHi || ancestryHi || nutriHi);
   return /*#__PURE__*/React.createElement("div", {
@@ -621,18 +621,18 @@ function OverviewView({
       fontSize: 13,
       marginBottom: 8
     }
-  }, "Closest: ", /*#__PURE__*/React.createElement("span", {
+  }, "Closest broad reference cluster:", ' ', /*#__PURE__*/React.createElement("span", {
     style: {
       color: '#3b82f6',
       fontWeight: 600
     }
-  }, ancestryHi.dominantAncestry || '-')), /*#__PURE__*/React.createElement("div", {
+  }, ancestryHi.closestSuperpopulation.label || '-')), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
       gap: 8
     }
-  }, (Array.isArray(ancestryHi.neighbors) ? ancestryHi.neighbors : []).slice(0, 3).map((n, i) => /*#__PURE__*/React.createElement("div", {
+  }, (Array.isArray(ancestryHi.populationCentroids) ? ancestryHi.populationCentroids : []).slice(0, 3).map((n, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       display: 'flex',
@@ -651,22 +651,27 @@ function OverviewView({
       width: 4,
       height: 4,
       borderRadius: '50%',
-      background: SUPERPOP_COLORS[POP_SUPERPOP[n.population]] || '#888',
+      background: SUPERPOP_COLORS[POP_SUPERPOP[n.label]] || '#888',
       display: 'inline-block'
     }
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       color: '#e5e5e5'
     }
-  }, POP_LABELS[n.population] || n.population || '-'), /*#__PURE__*/React.createElement("span", {
+  }, POP_LABELS[n.label] || n.label || '-'), /*#__PURE__*/React.createElement("span", {
     className: "mono-text",
     style: {
       color: '#555',
       fontSize: 10
     }
-  }, n.population)), /*#__PURE__*/React.createElement("span", {
+  }, n.label)), /*#__PURE__*/React.createElement("span", {
     className: "mono-text"
-  }, n.similarity != null ? String(n.similarity) : ''))))), nutriHi && /*#__PURE__*/React.createElement(HighlightCard, {
+  }, n.distance != null ? Number(n.distance).toFixed(4) : ''))), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#555',
+      fontSize: 10
+    }
+  }, "PCA centroid distance \xB7 lower is closer"))), nutriHi && /*#__PURE__*/React.createElement(HighlightCard, {
     title: "Nutrigenomics",
     onNav: onNav ? () => onNav('nutrigenomics') : null
   }, /*#__PURE__*/React.createElement("div", {
@@ -893,8 +898,3 @@ function VirtualVariantTable({
   }, /*#__PURE__*/React.createElement("span", null, rows.length.toLocaleString(), " variants"), /*#__PURE__*/React.createElement("span", null, "Scroll to explore \xB7 rendering ", Math.min(endIdx - startIdx, rows.length), " rows")));
 }
 function VariantsView() {
-  const hasPlp = VARIANTS_DATA && VARIANTS_DATA.length > 0;
-  const hasAll = VARIANTS_ALL_DATA && VARIANTS_ALL_DATA.length > 0;
-  if (!hasPlp && !hasAll) return /*#__PURE__*/React.createElement(EmptyPanel, {
-    title: "Variants",
-    panel: "variants"

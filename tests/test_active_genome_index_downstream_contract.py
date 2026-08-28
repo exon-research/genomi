@@ -832,7 +832,8 @@ class ActiveGenomeIndexDownstreamContractTests(
             ]
             self.assertIn("clinvar.scan_candidates", risk_state_operations)
             self.assertIn("prs.calculate_score", risk_state_operations)
-            self.assertTrue(dashboard["ancestry"]["neighbors"])
+            self.assertTrue(dashboard["ancestry"]["superpopulationCentroids"])
+            self.assertTrue(dashboard["ancestry"]["populationCentroids"])
             self.assertEqual(dashboard["nutrigenomics"][0]["rsid"], "rs1801133")
             self.assertEqual(dashboard["nutrigenomics"][0]["gene"], "MTHFR")
 

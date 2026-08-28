@@ -450,7 +450,8 @@ class ActiveGenomeIndexSequencingE2ETests(GenomiRuntimeTestCase):
         ]
         self.assertIn("clinvar.scan_candidates", risk_state_operations)
         self.assertIn("prs.calculate_score", risk_state_operations)
-        self.assertTrue(dashboard["ancestry"]["neighbors"])
+        self.assertTrue(dashboard["ancestry"]["superpopulationCentroids"])
+        self.assertTrue(dashboard["ancestry"]["populationCentroids"])
         self.assertIn("pgx", dashboard_result["evidence_build"]["panels_blocked"])
         self.assertIn("pgx", dashboard_result["evidence_build"]["panels_empty"])
 

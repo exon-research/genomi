@@ -137,8 +137,10 @@ def _stale_panel(panel: str) -> object:
         return {"sampleId": "HG-DATA-OLD", "variantCount": 1}
     if panel == "ancestry":
         return {
-            "dominantAncestry": "EUR",
-            "neighbors": [{"population": "EUR", "similarity": 0.9}],
+            "closestSuperpopulation": {"label": "EUR", "distance": 0.4},
+            "closestPopulation": {"label": "GBR", "distance": 0.5},
+            "superpopulationCentroids": [{"label": "EUR", "distance": 0.4}],
+            "populationCentroids": [{"label": "GBR", "distance": 0.5}],
         }
     if panel in {"variants", "variants_all"}:
         return [{"rsid": "rs1", "gene": "GENE1"}]
@@ -257,8 +259,10 @@ def _data_returned_evidence(panel: str) -> object:
         return [{"trait": "Synthetic common trait", "score": 2.0, "sources": ["PGS900001"]}]
     if panel == "ancestry":
         return {
-            "dominantAncestry": "EUR",
-            "neighbors": [{"population": "EUR", "similarity": 0.9}],
+            "closestSuperpopulation": {"label": "EUR", "distance": 0.4},
+            "closestPopulation": {"label": "GBR", "distance": 0.5},
+            "superpopulationCentroids": [{"label": "EUR", "distance": 0.4}],
+            "populationCentroids": [{"label": "GBR", "distance": 0.5}],
         }
     if panel == "nutrigenomics":
         return [{"marker": "Folate Metabolism", "gene": "MTHFR", "rsid": "rs1801133"}]

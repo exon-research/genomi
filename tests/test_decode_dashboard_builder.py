@@ -89,7 +89,12 @@ class DecodeDashboardEvidenceBuilderTests(unittest.TestCase):
                     ],
                 }
             if operation == "ancestry.estimate_population_context":
-                return {"nearest_reference_groups": [{"group": "EUR", "score": 0.9}]}
+                return {
+                    "nearest_reference_groups": [
+                        {"group_type": "superpopulation", "label": "EUR", "centroid_distance": 0.4},
+                        {"group_type": "population", "label": "GBR", "centroid_distance": 0.5},
+                    ]
+                }
             if operation == "nutrigenomics.list_domains":
                 return {"domains": [{"domain_id": "folate_metabolism"}]}
             if operation == "nutrigenomics.retrieve_domain_markers":

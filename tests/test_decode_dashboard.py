@@ -450,16 +450,22 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertEqual(parsed["overview"]["sampleId"], "HG-BRACE")
         self.assertEqual(parsed["pgx"][0]["gene"], "CYP2C19")
 
-    def test_normalizes_ancestry_nearest_reference_groups(self) -> None:
-        """ancestry.estimate_population_context keys map to neighbors[]."""
+    def test_normalizes_ancestry_reference_group_centroids_by_scope(self) -> None:
+        """Broad and population centroid distances stay separate in the dashboard."""
         out = self.tmpdir / "dash.html"
         result = decode_dashboard.render_dashboard(
             evidence={
                 "ancestry": {
                     "nearest_reference_groups": [
-                        {"label": "EUR", "centroid_distance": 0.39},
-                        {"label": "AMR", "centroid_distance": 0.82},
+                        {"group_type": "population", "label": "CHB", "centroid_distance": 0.31},
+                        {"group_type": "superpopulation", "label": "EAS", "centroid_distance": 0.39},
+                        {"group_type": "population", "label": "CHS", "centroid_distance": 0.52},
+                        {"group_type": "superpopulation", "label": "AMR", "centroid_distance": 0.82},
                     ],
+                    "pca_projection": {
+                        "component_scores": {"PC1": 1.25, "PC2": -0.5},
+                        "distance_metric": "euclidean_distance_in_panel_pca_space",
+                    },
                     "sample_qc": {
                         "marker_overlap_quality": "low",
                         "overlap_fraction": 0.56,
@@ -472,8 +478,17 @@ class RenderDashboardTests(unittest.TestCase):
         )
         parsed = _extract_evidence(out.read_text(encoding="utf-8"))
         anc = parsed["ancestry"]
-        self.assertEqual(anc["dominantAncestry"], "EUR")
-        self.assertEqual(anc["neighbors"][0], {"population": "EUR", "similarity": 0.39})
+        self.assertEqual(anc["closestSuperpopulation"], {"label": "EAS", "distance": 0.39})
+        self.assertEqual(anc["closestPopulation"], {"label": "CHB", "distance": 0.31})
+        self.assertEqual(
+            anc["superpopulationCentroids"],
+            [{"label": "EAS", "distance": 0.39}, {"label": "AMR", "distance": 0.82}],
+        )
+        self.assertEqual(
+            anc["populationCentroids"],
+            [{"label": "CHB", "distance": 0.31}, {"label": "CHS", "distance": 0.52}],
+        )
+        self.assertEqual(anc["distanceMetric"], "euclidean_distance_in_panel_pca_space")
         self.assertIn("ancestry", result["panels_rendered"])
 
     def test_supplied_overview_unmappable_raises(self) -> None:
@@ -632,9 +647,10 @@ class RenderDashboardTests(unittest.TestCase):
                      "phenotype": "Intermediate", "impact": "reduced"},
                 ],
                 "ancestry": {
-                    "dominantAncestry": "EUR",
-                    "neighbors": [{"population": "EUR", "similarity": 0.9}],
-                    "pcaPoints": [{"x": 1, "y": 2, "cluster": "sample"}],
+                    "closestSuperpopulation": {"label": "EUR", "distance": 0.4},
+                    "closestPopulation": {"label": "GBR", "distance": 0.5},
+                    "superpopulationCentroids": [{"label": "EUR", "distance": 0.4}],
+                    "populationCentroids": [{"label": "GBR", "distance": 0.5}],
                 },
             },
             mode="full",
@@ -675,20 +691,27 @@ class RenderDashboardTests(unittest.TestCase):
         self.assertEqual(sources[1]["coverageState"], "data_returned")
         self.assertEqual(sources[0]["percent"], 100)
 
-    def test_ancestry_pca_empty_shows_placeholder(self) -> None:
+    def test_ancestry_view_explains_centroid_distance_and_marker_overlap(self) -> None:
         out = self.tmpdir / "dash.html"
         decode_dashboard.render_dashboard(
             evidence={
                 "ancestry": {
-                    "dominantAncestry": "EUR",
-                    "neighbors": [{"population": "EUR", "similarity": 0.9}],
+                    "closestSuperpopulation": {"label": "EUR", "distance": 0.4},
+                    "closestPopulation": {"label": "GBR", "distance": 0.5},
+                    "superpopulationCentroids": [{"label": "EUR", "distance": 0.4}],
+                    "populationCentroids": [{"label": "GBR", "distance": 0.5}],
+                    "overlapFraction": 0.88,
+                    "markerOverlapQuality": "high",
                 },
             },
             mode="full",
             output=out,
         )
         html = out.read_text(encoding="utf-8")
-        self.assertIn("No PCA points in evidence", html)
+        self.assertIn("Population centroid distances", html)
+        self.assertIn("Broad-cluster centroid distances", html)
+        self.assertIn("PCA centroid distance · lower is closer · not a percentage", html)
+        self.assertIn("ancestry markers usable", html)
 
     def test_render_update_missing_file_errors(self) -> None:
         missing = self.tmpdir / "nope" / "dash.html"

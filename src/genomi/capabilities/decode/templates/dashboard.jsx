@@ -126,7 +126,7 @@
       const variantsHi = _varHiSrc && _varHiSrc.length > 0 ? _varHiSrc.slice(0, 3) : null;
       const pgxHi = PGX_DATA && PGX_DATA.length > 0 ? PGX_DATA.slice(0, 3) : null;
       const riskHi = PRS_DATA && PRS_DATA.length > 0 ? PRS_DATA.slice(0, 3) : null;
-      const ancestryHi = ANCESTRY_DATA && (ANCESTRY_DATA.dominantAncestry || (Array.isArray(ANCESTRY_DATA.neighbors) && ANCESTRY_DATA.neighbors.length > 0)) ? ANCESTRY_DATA : null;
+      const ancestryHi = ANCESTRY_DATA && ANCESTRY_DATA.closestSuperpopulation && ANCESTRY_DATA.closestPopulation ? ANCESTRY_DATA : null;
       const nutriHi = NUTRI_DATA && NUTRI_DATA.length > 0 ? NUTRI_DATA.slice(0, 3) : null;
 
       const anyHighlights = !!(variantsHi || pgxHi || riskHi || ancestryHi || nutriHi);
@@ -261,19 +261,21 @@
               {ancestryHi && (
                 <HighlightCard title="Ancestry" onNav={onNav ? () => onNav('ancestry') : null}>
                   <div style={{ color: '#e5e5e5', fontSize: 13, marginBottom: 8 }}>
-                    Closest: <span style={{ color: '#3b82f6', fontWeight: 600 }}>{ancestryHi.dominantAncestry || '-'}</span>
+                    Closest broad reference cluster:{' '}
+                    <span style={{ color: '#3b82f6', fontWeight: 600 }}>{ancestryHi.closestSuperpopulation.label || '-'}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(Array.isArray(ancestryHi.neighbors) ? ancestryHi.neighbors : []).slice(0, 3).map((n, i) => (
+                    {(Array.isArray(ancestryHi.populationCentroids) ? ancestryHi.populationCentroids : []).slice(0, 3).map((n, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: SUPERPOP_COLORS[POP_SUPERPOP[n.population]] || '#888', display: 'inline-block' }} />
-                          <span style={{ color: '#e5e5e5' }}>{POP_LABELS[n.population] || n.population || '-'}</span>
-                          <span className="mono-text" style={{ color: '#555', fontSize: 10 }}>{n.population}</span>
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: SUPERPOP_COLORS[POP_SUPERPOP[n.label]] || '#888', display: 'inline-block' }} />
+                          <span style={{ color: '#e5e5e5' }}>{POP_LABELS[n.label] || n.label || '-'}</span>
+                          <span className="mono-text" style={{ color: '#555', fontSize: 10 }}>{n.label}</span>
                         </div>
-                        <span className="mono-text">{n.similarity != null ? String(n.similarity) : ''}</span>
+                        <span className="mono-text">{n.distance != null ? Number(n.distance).toFixed(4) : ''}</span>
                       </div>
                     ))}
+                    <span style={{ color: '#555', fontSize: 10 }}>PCA centroid distance · lower is closer</span>
                   </div>
                 </HighlightCard>
               )}
@@ -680,100 +682,81 @@
     function AncestryView() {
       if (!ANCESTRY_DATA) return <EmptyPanel title="Ancestry" panel="ancestry" />;
       const d = ANCESTRY_DATA;
-      const neighbors = Array.isArray(d.neighbors) ? d.neighbors : [];
-      const pts = Array.isArray(d.pcaPoints) ? d.pcaPoints : [];
-      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-      const xMin = xs.length ? Math.min(...xs) - 4 : -1, xMax = xs.length ? Math.max(...xs) + 4 : 1;
-      const yMin = ys.length ? Math.min(...ys) - 4 : -1, yMax = ys.length ? Math.max(...ys) + 4 : 1;
-      const W = 480, H = 320, PAD = 30;
-      const sx = v => PAD + ((v - xMin) / (xMax - xMin || 1)) * (W - 2 * PAD);
-      const sy = v => H - PAD - ((v - yMin) / (yMax - yMin || 1)) * (H - 2 * PAD);
-      const palette = { sample: '#f5f5f5', EUR: '#3b82f6', EAS: '#f59e0b', AFR: '#10b981', SAS: '#8b5cf6', AMR: '#f97316' };
+      const superpopulationCentroids = Array.isArray(d.superpopulationCentroids) ? d.superpopulationCentroids : [];
+      const populationCentroids = Array.isArray(d.populationCentroids) ? d.populationCentroids : [];
+      const closestSuperpopulation = d.closestSuperpopulation || {};
+      const closestPopulation = d.closestPopulation || {};
+      const distanceNote = 'PCA centroid distance · lower is closer · not a percentage';
 
-      // superpopulation distribution from neighbors
-      const spCounts = {};
-      neighbors.forEach(n => { const sp = POP_SUPERPOP[n.population] || 'OTH'; spCounts[sp] = (spCounts[sp] || 0) + 1; });
-      const spEntries = Object.entries(spCounts).sort((a, b) => b[1] - a[1]);
-      const totalN = neighbors.length || 1;
-      const domSP = POP_SUPERPOP[d.dominantAncestry] || d.dominantAncestry;
+      const centroidRows = (rows, broad) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rows.map((row, i) => {
+            const sp = broad ? row.label : (POP_SUPERPOP[row.label] || 'OTH');
+            return (
+              <div key={`${row.label}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: SUPERPOP_COLORS[sp] || '#888', display: 'inline-block', flexShrink: 0 }} />
+                  <div>
+                    <span style={{ color: '#e5e5e5', fontSize: 12, fontWeight: 500 }}>{POP_LABELS[row.label] || row.label}</span>
+                    <span className="mono-text" style={{ color: '#555', fontSize: 10, marginLeft: 6 }}>{row.label}</span>
+                  </div>
+                </div>
+                <span className="mono-text" style={{ fontSize: 11 }}>{Number(row.distance).toFixed(4)}</span>
+              </div>
+            );
+          })}
+          <span style={{ color: '#555', fontSize: 10 }}>{distanceNote}</span>
+        </div>
+      );
 
       return (
         <div className="view-content">
           <div className="view-header">
             <div>
               <h2 className="view-title">Ancestry Context</h2>
-              <p className="view-subtitle">Reference-panel similarity context (PCA / nearest neighbors)</p>
+              <p className="view-subtitle">Qualitative similarity to 1000 Genomes reference-group centroids</p>
             </div>
             {d.overlapFraction != null && (
               <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630' }}>
-                {Math.round(d.overlapFraction * 100)}% variant coverage
+                {Math.round(d.overlapFraction * 100)}% ancestry markers usable
               </span>
             )}
           </div>
 
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
             <div className="card" style={{ flex: '1 1 160px', padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Dominant Ancestry</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: SUPERPOP_COLORS[domSP] || '#e5e5e5' }}>{domSP || d.dominantAncestry || '–'}</div>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{POP_LABELS[d.dominantAncestry] || d.dominantAncestry}</div>
+              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Closest broad reference cluster</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5' }}>{closestSuperpopulation.label || '–'}</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || ''}</div>
+              {closestSuperpopulation.distance != null && <div className="mono-text" style={{ marginTop: 8 }}>{Number(closestSuperpopulation.distance).toFixed(4)} PCA distance</div>}
             </div>
-            <div className="card" style={{ flex: '2 1 260px', padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Neighbor Distribution</div>
-              {spEntries.map(([sp, count]) => (
-                <div key={sp} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ width: 36, fontSize: 11, fontWeight: 600, color: SUPERPOP_COLORS[sp] || '#888' }}>{sp}</span>
-                  <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#1a1a1a', overflow: 'hidden' }}>
-                    <div style={{ width: `${(count / totalN) * 100}%`, height: '100%', borderRadius: 3, background: SUPERPOP_COLORS[sp] || '#888' }} />
-                  </div>
-                  <span style={{ fontSize: 11, color: '#666', width: 20, textAlign: 'right' }}>{count}</span>
-                </div>
-              ))}
+            <div className="card" style={{ flex: '1 1 220px', padding: '14px 18px' }}>
+              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Closest population-label centroid</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: SUPERPOP_COLORS[POP_SUPERPOP[closestPopulation.label]] || '#e5e5e5' }}>{closestPopulation.label || '–'}</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{POP_LABELS[closestPopulation.label] || closestPopulation.label || ''}</div>
+              {closestPopulation.distance != null && <div className="mono-text" style={{ marginTop: 8 }}>{Number(closestPopulation.distance).toFixed(4)} PCA distance</div>}
+            </div>
+            <div className="card" style={{ flex: '2 1 300px', padding: '14px 18px' }}>
+              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>How to read this</div>
+              <div style={{ color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
+                Smaller PCA distances mean greater similarity to a reference-group centroid in this panel. Distances are arbitrary PCA units, not ancestry percentages, probabilities, or identity labels.
+              </div>
+              {d.markerOverlapQuality && <div style={{ color: '#666', fontSize: 11, marginTop: 8 }}>Marker-overlap quality: {d.markerOverlapQuality}</div>}
             </div>
           </div>
 
           <div className="two-col">
             <div className="card">
-              <div className="card-header"><span>Nearest Neighbors</span></div>
+              <div className="card-header"><span>Population centroid distances</span></div>
               <div className="card-body">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {neighbors.map((n, i) => {
-                    const sp = POP_SUPERPOP[n.population] || 'OTH';
-                    const spColor = SUPERPOP_COLORS[sp] || '#888';
-                    return (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: spColor, display: 'inline-block', flexShrink: 0 }} />
-                          <div>
-                            <span style={{ color: '#e5e5e5', fontSize: 12, fontWeight: 500 }}>{POP_LABELS[n.population] || n.population}</span>
-                            <span className="mono-text" style={{ color: '#555', fontSize: 10, marginLeft: 6 }}>{n.population}</span>
-                          </div>
-                        </div>
-                        {n.similarity != null ? (
-                          <span className="mono-text" style={{ fontSize: 11 }}>{Number(n.similarity).toFixed(4)}</span>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
+                {centroidRows(populationCentroids, false)}
               </div>
             </div>
             <div className="card">
-              <div className="card-header"><span>PCA Projection</span></div>
-              {pts.length === 0 ? (
-                <div className="empty-body" style={{ padding: '24px 16px', color: '#444', fontSize: 12 }}>
-                  No PCA points in evidence. Run <code>ancestry.estimate_population_context</code> with <code>include_pca_points: true</code>.
-                </div>
-              ) : (
-                <div className="card-body" style={{ display: 'flex', justifyContent: 'center' }}>
-                  <svg width={W} height={H}>
-                    {pts.map((p, i) => (
-                      <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={p.cluster === 'sample' ? 6 : 3.5}
-                        fill={palette[p.cluster] || '#888'} opacity={p.cluster === 'sample' ? 1 : 0.5}
-                        stroke={p.cluster === 'sample' ? '#f5f5f5' : 'none'} strokeWidth={p.cluster === 'sample' ? 2 : 0} />
-                    ))}
-                  </svg>
-                </div>
-              )}
+              <div className="card-header"><span>Broad-cluster centroid distances</span></div>
+              <div className="card-body">
+                {centroidRows(superpopulationCentroids, true)}
+              </div>
             </div>
           </div>
         </div>

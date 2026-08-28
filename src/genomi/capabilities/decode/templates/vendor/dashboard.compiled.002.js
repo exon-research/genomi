@@ -1,5 +1,10 @@
 // AUTO-GENERATED chunk 2/3 from dashboard sources by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 4ea0a1b359efa3c0c9deb5689df547ff947205d39259c0feaf0f1176e29dc038
+// source-sha256: 9955a36712623e40ca394d947be0806f7bee5504c8a62c3d7201ac325a6e5857
+  const hasPlp = VARIANTS_DATA && VARIANTS_DATA.length > 0;
+  const hasAll = VARIANTS_ALL_DATA && VARIANTS_ALL_DATA.length > 0;
+  if (!hasPlp && !hasAll) return /*#__PURE__*/React.createElement(EmptyPanel, {
+    title: "Variants",
+    panel: "variants"
   });
   const [search, setSearch] = React.useState('');
   const [sigFilter, setSigFilter] = React.useState('all');
@@ -497,37 +502,66 @@ function AncestryView() {
     panel: "ancestry"
   });
   const d = ANCESTRY_DATA;
-  const neighbors = Array.isArray(d.neighbors) ? d.neighbors : [];
-  const pts = Array.isArray(d.pcaPoints) ? d.pcaPoints : [];
-  const xs = pts.map(p => p.x),
-    ys = pts.map(p => p.y);
-  const xMin = xs.length ? Math.min(...xs) - 4 : -1,
-    xMax = xs.length ? Math.max(...xs) + 4 : 1;
-  const yMin = ys.length ? Math.min(...ys) - 4 : -1,
-    yMax = ys.length ? Math.max(...ys) + 4 : 1;
-  const W = 480,
-    H = 320,
-    PAD = 30;
-  const sx = v => PAD + (v - xMin) / (xMax - xMin || 1) * (W - 2 * PAD);
-  const sy = v => H - PAD - (v - yMin) / (yMax - yMin || 1) * (H - 2 * PAD);
-  const palette = {
-    sample: '#f5f5f5',
-    EUR: '#3b82f6',
-    EAS: '#f59e0b',
-    AFR: '#10b981',
-    SAS: '#8b5cf6',
-    AMR: '#f97316'
-  };
-
-  // superpopulation distribution from neighbors
-  const spCounts = {};
-  neighbors.forEach(n => {
-    const sp = POP_SUPERPOP[n.population] || 'OTH';
-    spCounts[sp] = (spCounts[sp] || 0) + 1;
-  });
-  const spEntries = Object.entries(spCounts).sort((a, b) => b[1] - a[1]);
-  const totalN = neighbors.length || 1;
-  const domSP = POP_SUPERPOP[d.dominantAncestry] || d.dominantAncestry;
+  const superpopulationCentroids = Array.isArray(d.superpopulationCentroids) ? d.superpopulationCentroids : [];
+  const populationCentroids = Array.isArray(d.populationCentroids) ? d.populationCentroids : [];
+  const closestSuperpopulation = d.closestSuperpopulation || {};
+  const closestPopulation = d.closestPopulation || {};
+  const distanceNote = 'PCA centroid distance · lower is closer · not a percentage';
+  const centroidRows = (rows, broad) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, rows.map((row, i) => {
+    const sp = broad ? row.label : POP_SUPERPOP[row.label] || 'OTH';
+    return /*#__PURE__*/React.createElement("div", {
+      key: `${row.label}-${i}`,
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 4,
+        height: 4,
+        borderRadius: '50%',
+        background: SUPERPOP_COLORS[sp] || '#888',
+        display: 'inline-block',
+        flexShrink: 0
+      }
+    }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#e5e5e5',
+        fontSize: 12,
+        fontWeight: 500
+      }
+    }, POP_LABELS[row.label] || row.label), /*#__PURE__*/React.createElement("span", {
+      className: "mono-text",
+      style: {
+        color: '#555',
+        fontSize: 10,
+        marginLeft: 6
+      }
+    }, row.label))), /*#__PURE__*/React.createElement("span", {
+      className: "mono-text",
+      style: {
+        fontSize: 11
+      }
+    }, Number(row.distance).toFixed(4)));
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#555',
+      fontSize: 10
+    }
+  }, distanceNote));
   return /*#__PURE__*/React.createElement("div", {
     className: "view-content"
   }, /*#__PURE__*/React.createElement("div", {
@@ -536,14 +570,14 @@ function AncestryView() {
     className: "view-title"
   }, "Ancestry Context"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Reference-panel similarity context (PCA / nearest neighbors)")), d.overlapFraction != null && /*#__PURE__*/React.createElement("span", {
+  }, "Qualitative similarity to 1000 Genomes reference-group centroids")), d.overlapFraction != null && /*#__PURE__*/React.createElement("span", {
     className: "badge",
     style: {
       background: '#3b82f618',
       color: '#3b82f6',
       borderColor: '#3b82f630'
     }
-  }, Math.round(d.overlapFraction * 100), "% variant coverage")), /*#__PURE__*/React.createElement("div", {
+  }, Math.round(d.overlapFraction * 100), "% ancestry markers usable")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 16,
@@ -564,22 +598,27 @@ function AncestryView() {
       letterSpacing: '0.06em',
       marginBottom: 6
     }
-  }, "Dominant Ancestry"), /*#__PURE__*/React.createElement("div", {
+  }, "Closest broad reference cluster"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 22,
       fontWeight: 700,
-      color: SUPERPOP_COLORS[domSP] || '#e5e5e5'
+      color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5'
     }
-  }, domSP || d.dominantAncestry || '–'), /*#__PURE__*/React.createElement("div", {
+  }, closestSuperpopulation.label || '–'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: '#888',
       marginTop: 2
     }
-  }, POP_LABELS[d.dominantAncestry] || d.dominantAncestry)), /*#__PURE__*/React.createElement("div", {
+  }, POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || ''), closestSuperpopulation.distance != null && /*#__PURE__*/React.createElement("div", {
+    className: "mono-text",
+    style: {
+      marginTop: 8
+    }
+  }, Number(closestSuperpopulation.distance).toFixed(4), " PCA distance")), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
-      flex: '2 1 260px',
+      flex: '1 1 220px',
       padding: '14px 18px'
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -588,133 +627,66 @@ function AncestryView() {
       color: 'var(--text4)',
       textTransform: 'uppercase',
       letterSpacing: '0.06em',
-      marginBottom: 10
-    }
-  }, "Neighbor Distribution"), spEntries.map(([sp, count]) => /*#__PURE__*/React.createElement("div", {
-    key: sp,
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
       marginBottom: 6
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, "Closest population-label centroid"), /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 36,
-      fontSize: 11,
-      fontWeight: 600,
-      color: SUPERPOP_COLORS[sp] || '#888'
+      fontSize: 22,
+      fontWeight: 700,
+      color: SUPERPOP_COLORS[POP_SUPERPOP[closestPopulation.label]] || '#e5e5e5'
     }
-  }, sp), /*#__PURE__*/React.createElement("div", {
+  }, closestPopulation.label || '–'), /*#__PURE__*/React.createElement("div", {
     style: {
-      flex: 1,
-      height: 6,
-      borderRadius: 3,
-      background: '#1a1a1a',
-      overflow: 'hidden'
+      fontSize: 12,
+      color: '#888',
+      marginTop: 2
+    }
+  }, POP_LABELS[closestPopulation.label] || closestPopulation.label || ''), closestPopulation.distance != null && /*#__PURE__*/React.createElement("div", {
+    className: "mono-text",
+    style: {
+      marginTop: 8
+    }
+  }, Number(closestPopulation.distance).toFixed(4), " PCA distance")), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      flex: '2 1 300px',
+      padding: '14px 18px'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: `${count / totalN * 100}%`,
-      height: '100%',
-      borderRadius: 3,
-      background: SUPERPOP_COLORS[sp] || '#888'
-    }
-  })), /*#__PURE__*/React.createElement("span", {
-    style: {
       fontSize: 11,
-      color: '#666',
-      width: 20,
-      textAlign: 'right'
+      color: 'var(--text4)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      marginBottom: 8
     }
-  }, count))))), /*#__PURE__*/React.createElement("div", {
+  }, "How to read this"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.6
+    }
+  }, "Smaller PCA distances mean greater similarity to a reference-group centroid in this panel. Distances are arbitrary PCA units, not ancestry percentages, probabilities, or identity labels."), d.markerOverlapQuality && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#666',
+      fontSize: 11,
+      marginTop: 8
+    }
+  }, "Marker-overlap quality: ", d.markerOverlapQuality))), /*#__PURE__*/React.createElement("div", {
     className: "two-col"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-header"
-  }, /*#__PURE__*/React.createElement("span", null, "Nearest Neighbors")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Population centroid distances")), /*#__PURE__*/React.createElement("div", {
     className: "card-body"
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10
-    }
-  }, neighbors.map((n, i) => {
-    const sp = POP_SUPERPOP[n.population] || 'OTH';
-    const spColor = SUPERPOP_COLORS[sp] || '#888';
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 4,
-        height: 4,
-        borderRadius: '50%',
-        background: spColor,
-        display: 'inline-block',
-        flexShrink: 0
-      }
-    }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: '#e5e5e5',
-        fontSize: 12,
-        fontWeight: 500
-      }
-    }, POP_LABELS[n.population] || n.population), /*#__PURE__*/React.createElement("span", {
-      className: "mono-text",
-      style: {
-        color: '#555',
-        fontSize: 10,
-        marginLeft: 6
-      }
-    }, n.population))), n.similarity != null ? /*#__PURE__*/React.createElement("span", {
-      className: "mono-text",
-      style: {
-        fontSize: 11
-      }
-    }, Number(n.similarity).toFixed(4)) : null);
-  })))), /*#__PURE__*/React.createElement("div", {
+  }, centroidRows(populationCentroids, false))), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-header"
-  }, /*#__PURE__*/React.createElement("span", null, "PCA Projection")), pts.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    className: "empty-body",
-    style: {
-      padding: '24px 16px',
-      color: '#444',
-      fontSize: 12
-    }
-  }, "No PCA points in evidence. Run ", /*#__PURE__*/React.createElement("code", null, "ancestry.estimate_population_context"), " with ", /*#__PURE__*/React.createElement("code", null, "include_pca_points: true"), ".") : /*#__PURE__*/React.createElement("div", {
-    className: "card-body",
-    style: {
-      display: 'flex',
-      justifyContent: 'center'
-    }
-  }, /*#__PURE__*/React.createElement("svg", {
-    width: W,
-    height: H
-  }, pts.map((p, i) => /*#__PURE__*/React.createElement("circle", {
-    key: i,
-    cx: sx(p.x),
-    cy: sy(p.y),
-    r: p.cluster === 'sample' ? 6 : 3.5,
-    fill: palette[p.cluster] || '#888',
-    opacity: p.cluster === 'sample' ? 1 : 0.5,
-    stroke: p.cluster === 'sample' ? '#f5f5f5' : 'none',
-    strokeWidth: p.cluster === 'sample' ? 2 : 0
-  })))))));
+  }, /*#__PURE__*/React.createElement("span", null, "Broad-cluster centroid distances")), /*#__PURE__*/React.createElement("div", {
+    className: "card-body"
+  }, centroidRows(superpopulationCentroids, true)))));
 }
 function NutrigenomicsView() {
   if (!NUTRI_DATA) return /*#__PURE__*/React.createElement(EmptyPanel, {
@@ -898,3 +870,31 @@ function App() {
   }, /*#__PURE__*/React.createElement("summary", {
     style: {
       cursor: 'pointer'
+    }
+  }, "Genomi Tweaks"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 8
+    }
+  }, "Accent", /*#__PURE__*/React.createElement("select", {
+    value: tweaks.accentColor,
+    onChange: e => setTweak('accentColor', e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "green"
+  }, "green"), /*#__PURE__*/React.createElement("option", {
+    value: "blue"
+  }, "blue"), /*#__PURE__*/React.createElement("option", {
+    value: "purple"
+  }, "purple"), /*#__PURE__*/React.createElement("option", {
+    value: "amber"
+  }, "amber"))), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'flex',

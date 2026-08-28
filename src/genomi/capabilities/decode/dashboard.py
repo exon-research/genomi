@@ -217,15 +217,18 @@ def _is_consumer_array_overview(source_kind: Any, genome_source: Any) -> bool:
 def _normalize_ancestry(raw: Any) -> JsonObject | None:
     if not isinstance(raw, dict):
         return None
-    if any(key in raw for key in ("dominantAncestry", "neighbors")):
+    if any(key in raw for key in _CANONICAL_ANCESTRY_KEYS):
         return _normalize_dashboard_ancestry(raw)
     return _normalize_native_ancestry(raw)
 
 
 _CANONICAL_ANCESTRY_KEYS = {
-    "dominantAncestry",
-    "neighbors",
-    "pcaPoints",
+    "closestSuperpopulation",
+    "closestPopulation",
+    "superpopulationCentroids",
+    "populationCentroids",
+    "componentScores",
+    "distanceMetric",
     "markerOverlapQuality",
     "overlapFraction",
     "panelId",
@@ -238,27 +241,33 @@ def _normalize_dashboard_ancestry(raw: JsonObject) -> JsonObject:
 
 
 def _normalize_native_ancestry(raw: JsonObject) -> JsonObject | None:
-    neighbors_src = (
-        raw.get("neighbors")
-        or raw.get("nearest_reference_groups")
-        or raw.get("nearest_reference_samples")
-        or []
-    )
+    groups_src = raw.get("nearest_reference_groups") or []
     sample_qc = _as_dict(raw.get("sample_qc"))
     reference_panel = _as_dict(raw.get("reference_panel"))
-    neighbors = []
-    if isinstance(neighbors_src, list):
-        for item in neighbors_src:
+    pca_projection = _as_dict(raw.get("pca_projection"))
+    superpopulation_centroids = []
+    population_centroids = []
+    if isinstance(groups_src, list):
+        for item in groups_src:
             if not isinstance(item, dict):
                 continue
-            neighbors.append({
-                "population": _pick(item, "population", "group", "label", "id", "sample"),
-                "similarity": _pick(item, "similarity", "score", "distance", "centroid_distance", "overlap"),
-            })
+            label = _pick(item, "label", "group", "population", "id")
+            distance = _pick(item, "centroid_distance", "distance")
+            if label in (None, "") or distance is None:
+                continue
+            centroid = {"label": label, "distance": distance}
+            group_type = str(item.get("group_type") or "").strip()
+            if group_type == "superpopulation":
+                superpopulation_centroids.append(centroid)
+            elif group_type == "population":
+                population_centroids.append(centroid)
     out = {
-        "dominantAncestry": neighbors[0]["population"] if neighbors else None,
-        "neighbors": neighbors or None,
-        "pcaPoints": raw.get("pca_projection"),
+        "closestSuperpopulation": superpopulation_centroids[0] if superpopulation_centroids else None,
+        "closestPopulation": population_centroids[0] if population_centroids else None,
+        "superpopulationCentroids": superpopulation_centroids or None,
+        "populationCentroids": population_centroids or None,
+        "componentScores": pca_projection.get("component_scores"),
+        "distanceMetric": pca_projection.get("distance_metric"),
         "markerOverlapQuality": sample_qc.get("marker_overlap_quality"),
         "overlapFraction": sample_qc.get("overlap_fraction"),
         "panelId": reference_panel.get("panel_id"),
@@ -537,7 +546,15 @@ _PANEL_NORMALIZERS: dict[str, Any] = {
 # least one field the dashboard actually renders.
 _PANEL_SCHEMAS: dict[str, dict[str, Any]] = {
     "overview": {"kind": "object", "required": ("sampleId", "variantCount")},
-    "ancestry": {"kind": "object", "required": ("dominantAncestry", "neighbors")},
+    "ancestry": {
+        "kind": "object",
+        "required": (
+            "closestSuperpopulation",
+            "closestPopulation",
+            "superpopulationCentroids",
+            "populationCentroids",
+        ),
+    },
     "variants": {
         "kind": "list",
         "row_fields": (
