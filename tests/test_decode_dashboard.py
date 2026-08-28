@@ -658,9 +658,12 @@ class RenderDashboardTests(unittest.TestCase):
         )
         html = out.read_text(encoding="utf-8")
         # Highlight card headers render in the inline script.
-        self.assertIn("Top Variants", html)
+        self.assertIn("ClinVar matches to review", html)
         self.assertIn("Pharmacogenomics", html)
         self.assertIn("Ancestry", html)
+        self.assertIn("Closest reference match", html)
+        self.assertIn("Closest named group", html)
+        self.assertIn("ancestry percentages use a different method", html)
 
     def test_source_coverage_uses_canonical_name_and_state_keys(self) -> None:
         out = self.tmpdir / "dash.html"
@@ -708,10 +711,43 @@ class RenderDashboardTests(unittest.TestCase):
             output=out,
         )
         html = out.read_text(encoding="utf-8")
-        self.assertIn("Population centroid distances", html)
-        self.assertIn("Broad-cluster centroid distances", html)
-        self.assertIn("PCA centroid distance · lower is closer · not a percentage", html)
+        self.assertIn("Your closest reference match", html)
+        self.assertIn("Closest named comparison groups", html)
+        self.assertIn("How to understand the result", html)
+        self.assertIn("Ancestry percentages, ethnicity, and identity each require different evidence", html)
+        self.assertIn("Technical PCA distances and full ranking", html)
+        self.assertIn("PCA centroid distance · lower values indicate closer reference similarity", html)
         self.assertIn("ancestry markers usable", html)
+
+    def test_dashboard_pages_explain_personal_evidence_boundaries(self) -> None:
+        out = self.tmpdir / "dash.html"
+        decode_dashboard.render_dashboard(
+            evidence={
+                "overview": {"sampleId": "HG-UX", "variantCount": 12},
+                "variants": [{
+                    "rsid": "rs1", "gene": "GENE1", "chrom": "1", "pos": 10,
+                    "ref": "A", "alt": "G", "clinvarSignificance": "Pathogenic",
+                    "conditionShort": "Example condition",
+                }],
+                "pgx": [{"gene": "CYP2C19", "diplotype": "*1/*2", "impact": "reduced"}],
+                "risk": [{
+                    "row_type": "polygenic_score", "trait": "Example trait",
+                    "score": 1.25, "overlap": "10/20 variants",
+                }],
+                "nutrigenomics": [{
+                    "marker": "Example marker", "gene": "GENE2", "rsid": "rs2",
+                    "recommendation": "Example research finding", "evidenceTier": "established",
+                }],
+            },
+            mode="full",
+            output=out,
+        )
+        html = out.read_text(encoding="utf-8")
+        self.assertIn("use these database matches as review candidates", html)
+        self.assertIn("Calibration will add a percentile and absolute-risk interpretation", html)
+        self.assertIn("treatment changes stay guided by a qualified clinician or pharmacist", html)
+        self.assertIn("Use these records as nutrition research background", html)
+        self.assertIn("Personal interpretation begins with genotype evidence", html)
 
     def test_render_update_missing_file_errors(self) -> None:
         missing = self.tmpdir / "nope" / "dash.html"

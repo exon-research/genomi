@@ -1,24 +1,5 @@
 // AUTO-GENERATED chunk 2/3 from dashboard sources by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 9955a36712623e40ca394d947be0806f7bee5504c8a62c3d7201ac325a6e5857
-  const hasPlp = VARIANTS_DATA && VARIANTS_DATA.length > 0;
-  const hasAll = VARIANTS_ALL_DATA && VARIANTS_ALL_DATA.length > 0;
-  if (!hasPlp && !hasAll) return /*#__PURE__*/React.createElement(EmptyPanel, {
-    title: "Variants",
-    panel: "variants"
-  });
-  const [search, setSearch] = React.useState('');
-  const [sigFilter, setSigFilter] = React.useState('all');
-  function matchesSearch(v) {
-    if (!search) return true;
-    const s = search.toLowerCase();
-    return (v.rsid || '').toLowerCase().includes(s) || (v.gene || '').toLowerCase().includes(s) || (v.conditionShort || '').toLowerCase().includes(s) || (v.clinvarSignificance || '').toLowerCase().includes(s);
-  }
-  function matchesSigFilter(v) {
-    if (sigFilter === 'all') return true;
-    const s = (v.clinvarSignificance || '').toLowerCase();
-    if (sigFilter === 'plp') return s.includes('pathogenic');
-    if (sigFilter === 'vus') return s.includes('uncertain');
-    if (sigFilter === 'benign') return s.includes('benign');
+// source-sha256: 6b67c316a73ac2de502e8c7ea6094d3a343890b34b3b786fc33461b695712cc5
     if (sigFilter === 'other') return !s.includes('pathogenic') && !s.includes('uncertain') && !s.includes('benign');
     return true;
   }
@@ -26,7 +7,7 @@
   const allFiltered = React.useMemo(() => hasAll ? VARIANTS_ALL_DATA.filter(v => matchesSearch(v) && matchesSigFilter(v)) : [], [search, sigFilter]);
   const totalCount = hasAll ? VARIANTS_ALL_DATA.length : hasPlp ? VARIANTS_DATA.length : 0;
   const plpCount = hasPlp ? VARIANTS_DATA.length : 0;
-  const SIG_TABS = [['all', 'All'], ['plp', 'P/LP'], ['vus', 'VUS'], ['benign', 'Benign'], ['other', 'Other']];
+  const SIG_TABS = [['all', 'All'], ['plp', 'Pathogenic labels'], ['vus', 'Uncertain'], ['benign', 'Benign'], ['other', 'Other']];
   return /*#__PURE__*/React.createElement("div", {
     className: "view-content"
   }, /*#__PURE__*/React.createElement("div", {
@@ -35,7 +16,7 @@
     className: "view-title"
   }, "Variant Explorer"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "ClinVar-matched variants from your Active Genome Index")), /*#__PURE__*/React.createElement("div", {
+  }, "Exact allele matches against ClinVar records")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -48,14 +29,27 @@
       color: '#f97316',
       borderColor: '#f9731630'
     }
-  }, plpCount, " P/LP"), totalCount > 0 && /*#__PURE__*/React.createElement("span", {
+  }, plpCount, " pathogenic-label matches"), totalCount > 0 && /*#__PURE__*/React.createElement("span", {
     className: "badge",
     style: {
       background: '#1a1a1a',
       color: '#666',
       borderColor: '#282828'
     }
-  }, totalCount.toLocaleString(), " total"))), /*#__PURE__*/React.createElement("input", {
+  }, totalCount.toLocaleString(), " total"))), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: '14px 18px',
+      marginBottom: 16,
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Start here:"), " use these database matches as review candidates. Each ClinVar label describes a specific variant\u2013condition assertion. Inheritance, zygosity, symptoms, family history, and clinical confirmation establish personal relevance."), /*#__PURE__*/React.createElement("input", {
     placeholder: "Search rsID, gene, condition, or significance\u2026",
     value: search,
     onChange: e => setSearch(e.target.value),
@@ -95,67 +89,27 @@
       background: '#f97316',
       display: 'inline-block'
     }
-  }), "Clinically Significant"), /*#__PURE__*/React.createElement("div", {
+  }), "Pathogenic / likely pathogenic labels to review"), /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       overflow: 'hidden'
     }
-  }, /*#__PURE__*/React.createElement("table", {
-    className: "variant-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Variant"), /*#__PURE__*/React.createElement("th", null, "Gene"), /*#__PURE__*/React.createElement("th", null, "Location"), /*#__PURE__*/React.createElement("th", null, "Genotype"), /*#__PURE__*/React.createElement("th", null, "Significance"), /*#__PURE__*/React.createElement("th", null, "Condition"), /*#__PURE__*/React.createElement("th", null, "Quality"))), /*#__PURE__*/React.createElement("tbody", null, plpFiltered.map((v, i) => {
-    const sc = sigBadgeStyle(v.clinvarSignificance);
-    return /*#__PURE__*/React.createElement("tr", {
-      key: v.rsid || i
-    }, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "mono-text",
-      style: {
-        color: '#e5e5e5'
-      }
-    }, v.rsid)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: '#3b82f6',
-        fontWeight: 600,
-        fontSize: 13
-      }
-    }, v.gene)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "mono-text"
-    }, "chr", v.chrom, ":", v.pos != null ? Number(v.pos).toLocaleString() : '')), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "genotype-badge"
-    }, v.ref, '>', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: '#555',
-        fontSize: 10
-      }
-    }, " ", v.zygosity) : null)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-      className: "badge",
-      style: {
-        background: sc.bg,
-        color: sc.fg,
-        borderColor: sc.border
-      }
-    }, (v.clinvarSignificance || '').replace(/_/g, ' '))), /*#__PURE__*/React.createElement("td", {
-      style: {
-        color: '#aaa',
-        fontSize: 12
-      }
-    }, v.conditionShort), /*#__PURE__*/React.createElement("td", {
-      style: {
-        color: '#555',
-        fontSize: 11
-      }
-    }, v.evidenceQuality || ''));
-  }))), plpFiltered.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, plpFiltered.length > 0 ? /*#__PURE__*/React.createElement(VirtualVariantTable, {
+    rows: plpFiltered
+  }) : /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 24,
       textAlign: 'center',
-      color: '#444'
+      color: '#666'
     }
-  }, "No P/LP variants match your search."))), hasAll && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Adjust your search to view pathogenic-label matches."))), hasAll && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "variant-filter-row",
     style: {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: 10
+      marginBottom: 10,
+      gap: 10
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -165,7 +119,8 @@
       textTransform: 'uppercase',
       letterSpacing: '0.08em'
     }
-  }, "All ClinVar Variants"), /*#__PURE__*/React.createElement("div", {
+  }, "Full ClinVar match inventory"), /*#__PURE__*/React.createElement("div", {
+    className: "variant-filter-tabs",
     style: {
       display: 'flex',
       gap: 4
@@ -195,13 +150,13 @@
     style: {
       padding: 40,
       textAlign: 'center',
-      color: '#444'
+      color: '#666'
     }
-  }, "No variants match your filter."))));
+  }, "Adjust the search or filter to view matching variants."))));
 }
 function PharmacogenomicsView() {
   if (!PGX_DATA) return /*#__PURE__*/React.createElement(EmptyPanel, {
-    title: "Pharmacogenomics",
+    title: "Medication Response",
     panel: "pgx"
   });
   const impactColors = PGX_IMPACT_COLORS;
@@ -224,9 +179,22 @@ function PharmacogenomicsView() {
     className: "view-header"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
     className: "view-title"
-  }, "Pharmacogenomics"), /*#__PURE__*/React.createElement("p", {
+  }, "Medication Response"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Medication-row PGx evidence from PharmCAT and medication review"))), /*#__PURE__*/React.createElement("div", {
+  }, "How genetic evidence may affect specific medications"))), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: '14px 18px',
+      marginBottom: 20,
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Use this with a clinician or pharmacist."), " Pharmacogenomic results support medication review, while treatment changes stay guided by a qualified clinician or pharmacist."), /*#__PURE__*/React.createElement("div", {
     className: "pgx-grid"
   }, sortedPgx.map((d, i) => {
     const ic = impactColors[d.impact] || '#666';
@@ -322,7 +290,20 @@ function RiskScoresView() {
     className: "view-title"
   }, "Risk & Condition Review"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "PRS scores and ClinVar carrier/condition review targets"))), reviewRows.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Separate review candidates from calibrated risk estimates"))), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: '14px 18px',
+      marginBottom: 20,
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Interpretation standard:"), " calibrate each raw polygenic score to a reference population before assigning a percentile or relative-risk interpretation. Complete variant review with inheritance, genotype, phenotype, and clinical confirmation."), reviewRows.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 28
     }
@@ -335,15 +316,20 @@ function RiskScoresView() {
       letterSpacing: '0.08em',
       marginBottom: 10
     }
-  }, "Carrier / Condition Review"), /*#__PURE__*/React.createElement("div", {
+  }, "Variant and condition review targets"), /*#__PURE__*/React.createElement("div", {
     className: "risk-grid"
   }, reviewRows.map((d, i) => {
     const sig = firstCountLabel(d.clinical_significance_counts);
     const zygosity = firstCountLabel(d.zygosity_counts);
+    const combinedLabel = riskReviewLabel(d);
+    const labelParts = combinedLabel.split(' / ');
+    const geneLabel = d.gene || (labelParts.length > 1 ? labelParts.shift() : null);
+    const conditionLabel = conciseEvidenceLabel(d.condition || (labelParts.length > 0 ? labelParts.join(' / ') : combinedLabel));
     return /*#__PURE__*/React.createElement("div", {
       key: d.group_id || d.candidate_id || d.trait || i,
       className: "risk-card"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "risk-card-title-row",
       style: {
         display: 'flex',
         justifyContent: 'space-between',
@@ -352,11 +338,24 @@ function RiskScoresView() {
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
+        minWidth: 0
+      }
+    }, geneLabel && /*#__PURE__*/React.createElement("div", {
+      className: "mono-text",
+      style: {
+        color: '#3b82f6',
+        fontSize: 11,
+        fontWeight: 600,
+        marginBottom: 5
+      }
+    }, geneLabel), /*#__PURE__*/React.createElement("div", {
+      style: {
         color: '#e5e5e5',
         fontWeight: 600,
-        fontSize: 14
+        fontSize: 14,
+        lineHeight: 1.4
       }
-    }, riskReviewLabel(d)), /*#__PURE__*/React.createElement("span", {
+    }, conditionLabel || '-')), /*#__PURE__*/React.createElement("span", {
       className: "badge",
       style: {
         background: '#3b82f618',
@@ -398,10 +397,10 @@ function RiskScoresView() {
         display: 'flex',
         gap: 12,
         flexWrap: 'wrap',
-        color: '#555',
+        color: '#666',
         fontSize: 11
       }
-    }, d.score != null && /*#__PURE__*/React.createElement("span", null, "rank score: ", Number(d.score).toFixed(2)), Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && /*#__PURE__*/React.createElement("span", null, d.candidate_ids.length, " variants")));
+    }, /*#__PURE__*/React.createElement("span", null, "Review candidate \xB7 clinical confirmation required"), Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && /*#__PURE__*/React.createElement("span", null, d.candidate_ids.length, " linked variants")));
   }))), prsRows.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
@@ -411,17 +410,17 @@ function RiskScoresView() {
       letterSpacing: '0.08em',
       marginBottom: 10
     }
-  }, "Polygenic Risk Scores"), /*#__PURE__*/React.createElement("div", {
+  }, "Polygenic score calculations"), /*#__PURE__*/React.createElement("div", {
     className: "risk-grid"
   }, prsRows.map((d, i) => {
     const level = prsLevel(d.percentile);
     const scoreNum = d.score != null ? Number(d.score) : null;
     const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
-    const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
     return /*#__PURE__*/React.createElement("div", {
       key: d.score_id || d.trait || i,
       className: "risk-card"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "risk-card-title-row",
       style: {
         display: 'flex',
         justifyContent: 'space-between',
@@ -443,33 +442,40 @@ function RiskScoresView() {
       }
     }, d.sources[0])), /*#__PURE__*/React.createElement("div", {
       style: {
+        marginTop: 10
+      }
+    }, d.percentile != null ? /*#__PURE__*/React.createElement("div", {
+      style: {
         display: 'flex',
         alignItems: 'baseline',
-        gap: 10,
-        marginTop: 10
+        gap: 10
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontFamily: 'var(--mono)',
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 700,
-        color: scoreColor
+        color: level.color
       }
-    }, scoreStr), d.percentile != null ? /*#__PURE__*/React.createElement("span", {
+    }, level.label), /*#__PURE__*/React.createElement("span", {
       className: "badge",
       style: {
         background: level.color + '18',
         color: level.color,
         borderColor: level.color + '30'
       }
-    }, level.label, " \xB7 ", d.percentile, "th pct") : /*#__PURE__*/React.createElement("span", {
-      className: "badge",
+    }, d.percentile, "th percentile")) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
-        background: '#66666618',
-        color: '#888',
-        borderColor: '#66666630'
+        color: '#e5e5e5',
+        fontSize: 14,
+        fontWeight: 600
       }
-    }, "raw score")), d.note && /*#__PURE__*/React.createElement("div", {
+    }, "Score calculated"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: '#777',
+        fontSize: 11,
+        marginTop: 3
+      }
+    }, "Calibration will add a percentile and absolute-risk interpretation."))), d.note && d.percentile != null && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10,
         color: '#999',
@@ -493,7 +499,22 @@ function RiskScoresView() {
         color: '#555',
         fontSize: 11
       }
-    }, "ancestry-adj: ", String(d.ancestryAdjusted))));
+    }, d.ancestryAdjusted ? 'population adjustment applied' : 'population adjustment pending')), /*#__PURE__*/React.createElement("details", {
+      style: {
+        marginTop: 10,
+        color: '#555',
+        fontSize: 11
+      }
+    }, /*#__PURE__*/React.createElement("summary", {
+      style: {
+        cursor: 'pointer'
+      }
+    }, "Technical score details"), /*#__PURE__*/React.createElement("div", {
+      className: "mono-text",
+      style: {
+        marginTop: 6
+      }
+    }, "Raw weighted score: ", scoreStr)));
   }))));
 }
 function AncestryView() {
@@ -506,7 +527,7 @@ function AncestryView() {
   const populationCentroids = Array.isArray(d.populationCentroids) ? d.populationCentroids : [];
   const closestSuperpopulation = d.closestSuperpopulation || {};
   const closestPopulation = d.closestPopulation || {};
-  const distanceNote = 'PCA centroid distance · lower is closer · not a percentage';
+  const distanceNote = 'PCA centroid distance · lower values indicate closer reference similarity';
   const centroidRows = (rows, broad) => /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -562,6 +583,71 @@ function AncestryView() {
       fontSize: 10
     }
   }, distanceNote));
+  const rankedReferenceGroups = (rows, broad, maxRows) => {
+    const plotted = rows.slice(0, maxRows || rows.length);
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, plotted.map((row, i) => {
+      const sp = broad ? row.label : POP_SUPERPOP[row.label] || 'OTH';
+      const color = SUPERPOP_COLORS[sp] || '#888';
+      return /*#__PURE__*/React.createElement("div", {
+        key: `${row.label}-${i}`,
+        style: {
+          display: 'grid',
+          gridTemplateColumns: '32px minmax(0, 1fr)',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 10px',
+          borderRadius: 8,
+          background: i === 0 ? color + '12' : '#141414'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "mono-text",
+        style: {
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: i === 0 ? color : '#222',
+          color: i === 0 ? '#0a0a0a' : '#888',
+          fontWeight: 700
+        }
+      }, i + 1), /*#__PURE__*/React.createElement("div", {
+        style: {
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: i === 0 ? '#f5f5f5' : '#ccc',
+          fontSize: 13,
+          fontWeight: i === 0 ? 700 : 500,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }
+      }, POP_LABELS[row.label] || row.label), /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: '#666',
+          fontSize: 10,
+          marginTop: 2
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "mono-text"
+      }, row.label), i === 0 ? ' · closest match in this comparison' : '')));
+    }), plotted.length < rows.length && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: '#666',
+        fontSize: 11,
+        marginTop: 4
+      }
+    }, "Showing the ", plotted.length, " closest groups. The complete technical ranking is available below."));
+  };
   return /*#__PURE__*/React.createElement("div", {
     className: "view-content"
   }, /*#__PURE__*/React.createElement("div", {
@@ -570,7 +656,7 @@ function AncestryView() {
     className: "view-title"
   }, "Ancestry Context"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Qualitative similarity to 1000 Genomes reference-group centroids")), d.overlapFraction != null && /*#__PURE__*/React.createElement("span", {
+  }, "How your DNA pattern compares with people in the 1000 Genomes reference dataset")), d.overlapFraction != null && /*#__PURE__*/React.createElement("span", {
     className: "badge",
     style: {
       background: '#3b82f618',
@@ -578,79 +664,10 @@ function AncestryView() {
       borderColor: '#3b82f630'
     }
   }, Math.round(d.overlapFraction * 100), "% ancestry markers usable")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 16,
-      marginBottom: 20,
-      flexWrap: 'wrap'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
-      flex: '1 1 160px',
-      padding: '14px 18px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: 'var(--text4)',
-      textTransform: 'uppercase',
-      letterSpacing: '0.06em',
-      marginBottom: 6
-    }
-  }, "Closest broad reference cluster"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5'
-    }
-  }, closestSuperpopulation.label || '–'), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: '#888',
-      marginTop: 2
-    }
-  }, POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || ''), closestSuperpopulation.distance != null && /*#__PURE__*/React.createElement("div", {
-    className: "mono-text",
-    style: {
-      marginTop: 8
-    }
-  }, Number(closestSuperpopulation.distance).toFixed(4), " PCA distance")), /*#__PURE__*/React.createElement("div", {
-    className: "card",
-    style: {
-      flex: '1 1 220px',
-      padding: '14px 18px'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: 'var(--text4)',
-      textTransform: 'uppercase',
-      letterSpacing: '0.06em',
-      marginBottom: 6
-    }
-  }, "Closest population-label centroid"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 22,
-      fontWeight: 700,
-      color: SUPERPOP_COLORS[POP_SUPERPOP[closestPopulation.label]] || '#e5e5e5'
-    }
-  }, closestPopulation.label || '–'), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: '#888',
-      marginTop: 2
-    }
-  }, POP_LABELS[closestPopulation.label] || closestPopulation.label || ''), closestPopulation.distance != null && /*#__PURE__*/React.createElement("div", {
-    className: "mono-text",
-    style: {
-      marginTop: 8
-    }
-  }, Number(closestPopulation.distance).toFixed(4), " PCA distance")), /*#__PURE__*/React.createElement("div", {
-    className: "card",
-    style: {
-      flex: '2 1 300px',
-      padding: '14px 18px'
+      padding: '22px 24px',
+      marginBottom: 20
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -660,33 +677,92 @@ function AncestryView() {
       letterSpacing: '0.06em',
       marginBottom: 8
     }
-  }, "How to read this"), /*#__PURE__*/React.createElement("div", {
+  }, "Your closest reference match"), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: '#aaa',
-      fontSize: 12,
+      fontSize: 30,
+      fontWeight: 800,
+      color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5'
+    }
+  }, POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || 'Reference match pending'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#bbb',
+      fontSize: 14,
+      marginTop: 8,
       lineHeight: 1.6
     }
-  }, "Smaller PCA distances mean greater similarity to a reference-group centroid in this panel. Distances are arbitrary PCA units, not ancestry percentages, probabilities, or identity labels."), d.markerOverlapQuality && /*#__PURE__*/React.createElement("div", {
+  }, "Your DNA pattern most closely matches the ", /*#__PURE__*/React.createElement("strong", null, POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || 'nearest'), " samples in this reference dataset. The closest specifically named group is ", /*#__PURE__*/React.createElement("strong", null, POP_LABELS[closestPopulation.label] || closestPopulation.label || 'pending'), "."), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: '#666',
+      color: '#777',
       fontSize: 11,
-      marginTop: 8
+      marginTop: 10
     }
-  }, "Marker-overlap quality: ", d.markerOverlapQuality))), /*#__PURE__*/React.createElement("div", {
+  }, "Use this as a reference-dataset similarity result. Ancestry percentages, ethnicity, and identity each require different evidence.")), /*#__PURE__*/React.createElement("div", {
     className: "two-col"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-header"
-  }, /*#__PURE__*/React.createElement("span", null, "Population centroid distances")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Closest named comparison groups")), /*#__PURE__*/React.createElement("div", {
     className: "card-body"
-  }, centroidRows(populationCentroids, false))), /*#__PURE__*/React.createElement("div", {
+  }, rankedReferenceGroups(populationCentroids, false, 5))), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-header"
-  }, /*#__PURE__*/React.createElement("span", null, "Broad-cluster centroid distances")), /*#__PURE__*/React.createElement("div", {
-    className: "card-body"
-  }, centroidRows(superpopulationCentroids, true)))));
+  }, /*#__PURE__*/React.createElement("span", null, "How to understand the result")), /*#__PURE__*/React.createElement("div", {
+    className: "card-body",
+    style: {
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.7
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "What it says:"), " among the people included in this public dataset, your overall DNA pattern is closest to the groups shown here."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Scope:"), " this result compares your overall pattern with reference groups. Ancestry composition and personal identity use additional evidence and methods."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Data quality:"), " ", d.markerOverlapQuality || 'pending', " marker overlap", d.overlapFraction != null ? ` (${Math.round(d.overlapFraction * 100)}% of panel markers usable)` : '', ".")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("details", {
+    className: "card"
+  }, /*#__PURE__*/React.createElement("summary", {
+    className: "card-header",
+    style: {
+      cursor: 'pointer'
+    }
+  }, "Technical PCA distances and full ranking"), /*#__PURE__*/React.createElement("div", {
+    className: "card-body two-col"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#aaa',
+      fontSize: 11,
+      marginBottom: 12
+    }
+  }, "Population-label centroids"), centroidRows(populationCentroids, false)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#aaa',
+      fontSize: 11,
+      marginBottom: 12
+    }
+  }, "Broad reference clusters"), centroidRows(superpopulationCentroids, true))))));
 }
 function NutrigenomicsView() {
   if (!NUTRI_DATA) return /*#__PURE__*/React.createElement(EmptyPanel, {
@@ -704,9 +780,22 @@ function NutrigenomicsView() {
     className: "view-header"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
     className: "view-title"
-  }, "Nutrigenomics"), /*#__PURE__*/React.createElement("p", {
+  }, "Nutrition Marker Reference"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Gene\u2013nutrient and gene\u2013diet single-marker evidence"))), /*#__PURE__*/React.createElement("div", {
+  }, "Research context for gene\u2013nutrition markers"))), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: '14px 18px',
+      marginBottom: 20,
+      color: '#aaa',
+      fontSize: 12,
+      lineHeight: 1.6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: '#e5e5e5'
+    }
+  }, "Use these records as nutrition research background."), " Personal interpretation begins with genotype evidence at each marker. A qualified clinician or dietitian can connect confirmed results with diet or supplement decisions."), /*#__PURE__*/React.createElement("div", {
     className: "nutri-grid"
   }, NUTRI_DATA.map((d, i) => {
     const tc = tierColors[d.evidenceTier] || '#666';
@@ -714,10 +803,12 @@ function NutrigenomicsView() {
       key: i,
       className: "nutri-card"
     }, /*#__PURE__*/React.createElement("div", {
+      className: "nutri-card-title-row",
       style: {
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'flex-start'
+        alignItems: 'flex-start',
+        gap: 10
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -739,7 +830,7 @@ function NutrigenomicsView() {
       }
     }, d.gene), /*#__PURE__*/React.createElement("span", {
       className: "mono-text"
-    }, d.rsid), /*#__PURE__*/React.createElement("span", {
+    }, d.rsid), d.status && /*#__PURE__*/React.createElement("span", {
       className: "genotype-badge"
     }, d.status))), /*#__PURE__*/React.createElement("span", {
       className: "badge",
@@ -750,10 +841,18 @@ function NutrigenomicsView() {
       }
     }, d.evidenceTier)), /*#__PURE__*/React.createElement("div", {
       style: {
+        color: '#666',
+        fontSize: 10,
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        marginTop: 12
+      }
+    }, "What research reports"), /*#__PURE__*/React.createElement("div", {
+      style: {
         color: '#999',
         fontSize: 12,
         lineHeight: 1.6,
-        marginTop: 10
+        marginTop: 5
       }
     }, d.recommendation));
   })));
@@ -792,109 +891,10 @@ function Sidebar({
     }, item.icon), /*#__PURE__*/React.createElement("span", null, item.label)));
   })), /*#__PURE__*/React.createElement("div", {
     className: "sidebar-footer"
-  }, "Experimental \xB7 Research use only", /*#__PURE__*/React.createElement("br", null), "Not for clinical diagnosis", RENDERED_AT && /*#__PURE__*/React.createElement("span", {
+  }, "Experimental \xB7 Research use only", /*#__PURE__*/React.createElement("br", null), "Clinical confirmation supports health decisions", RENDERED_AT && /*#__PURE__*/React.createElement("span", {
     className: "timestamp"
   }, "rendered ", RENDERED_AT)));
 }
-function App() {
-  const [view, setView] = React.useState(AVAILABLE_NAV[0] && AVAILABLE_NAV[0].id || 'overview');
-  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
-  const accent = ACCENT_MAP[tweaks.accentColor] || ACCENT_MAP.green;
-  React.useEffect(() => {
-    document.documentElement.style.setProperty('--green', accent.primary);
-  }, [accent.primary]);
-  const viewLabel = NAV_ITEMS.find(n => n.id === view)?.label || 'Overview';
-  const renderView = () => {
-    switch (view) {
-      case 'overview':
-        return /*#__PURE__*/React.createElement(OverviewView, {
-          onNav: setView
-        });
-      case 'variants':
-        return /*#__PURE__*/React.createElement(VariantsView, null);
-      case 'pharmacogenomics':
-        return /*#__PURE__*/React.createElement(PharmacogenomicsView, null);
-      case 'risk':
-        return /*#__PURE__*/React.createElement(RiskScoresView, null);
-      case 'ancestry':
-        return /*#__PURE__*/React.createElement(AncestryView, null);
-      case 'nutrigenomics':
-        return /*#__PURE__*/React.createElement(NutrigenomicsView, null);
-      default:
-        return /*#__PURE__*/React.createElement(OverviewView, {
-          onNav: setView
-        });
-    }
-  };
-  const setTweak = (k, v) => setTweaks(prev => ({
-    ...prev,
-    [k]: v
-  }));
-  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Sidebar, {
-    active: view,
-    onNav: setView
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "main"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "topbar"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "topbar-title"
-  }, viewLabel), /*#__PURE__*/React.createElement("div", {
-    className: "topbar-right"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "topbar-status"
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: accent.primary
-    }
-  }, "\u25CF"), /*#__PURE__*/React.createElement("span", null, GENOME_SUMMARY?.sampleId || 'no active sample'), GENOME_SUMMARY?.genomeBuild && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: '#333'
-    }
-  }, "\xB7"), /*#__PURE__*/React.createElement("span", null, GENOME_SUMMARY.genomeBuild))))), renderView()), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'fixed',
-      right: 16,
-      bottom: 16,
-      zIndex: 100
-    }
-  }, /*#__PURE__*/React.createElement("details", {
-    style: {
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      padding: '6px 10px',
-      color: 'var(--text3)',
-      fontSize: 11
-    }
-  }, /*#__PURE__*/React.createElement("summary", {
-    style: {
-      cursor: 'pointer'
-    }
-  }, "Genomi Tweaks"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      gap: 8
-    }
-  }, "Accent", /*#__PURE__*/React.createElement("select", {
-    value: tweaks.accentColor,
-    onChange: e => setTweak('accentColor', e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "green"
-  }, "green"), /*#__PURE__*/React.createElement("option", {
-    value: "blue"
-  }, "blue"), /*#__PURE__*/React.createElement("option", {
-    value: "purple"
-  }, "purple"), /*#__PURE__*/React.createElement("option", {
-    value: "amber"
-  }, "amber"))), /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
+function MobileNav({
+  active,
+  onNav

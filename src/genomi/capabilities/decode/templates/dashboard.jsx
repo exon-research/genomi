@@ -19,7 +19,7 @@
     const NAV_ITEMS = [
       { id: 'overview', label: 'Overview', icon: '◫', section: 'Dashboard', panel: 'overview' },
       { id: 'variants', label: 'Variants', icon: '◇', section: 'Dashboard', panel: 'variants' },
-      { id: 'pharmacogenomics', label: 'Pharmacogenomics', icon: '◉', section: 'Genomics', panel: 'pgx' },
+      { id: 'pharmacogenomics', label: 'Medication Response', icon: '◉', section: 'Genomics', panel: 'pgx' },
       { id: 'risk', label: 'Risk Review', icon: '◈', section: 'Genomics', panel: 'risk' },
       { id: 'ancestry', label: 'Ancestry', icon: '◎', section: 'Genomics', panel: 'ancestry' },
       { id: 'nutrigenomics', label: 'Nutrigenomics', icon: '◆', section: 'Genomics', panel: 'nutrigenomics' },
@@ -42,18 +42,18 @@
 
     function unavailableLabel(state) {
       const labels = {
-        not_selected: 'Not selected',
+        not_selected: 'Ready to add',
         blocked_position_aware_export: 'Export required',
-        missing_scores: 'Scores unavailable',
-        insufficient_overlap: 'Insufficient overlap',
+        missing_scores: 'Score setup ready',
+        insufficient_overlap: 'More markers required',
         running: 'Running',
-        failed: 'Failed',
+        failed: 'Refresh required',
         blocked_setup: 'Setup required',
-        source_unavailable: 'Source unavailable',
-        out_of_scope: 'Out of scope',
-        checked_empty: 'No records rendered',
-        no_pharmcat_results: 'No PharmCAT results',
-        no_renderable_evidence: 'No renderable evidence',
+        source_unavailable: 'Source reconnect required',
+        out_of_scope: 'Different input required',
+        checked_empty: 'Review complete',
+        no_pharmcat_results: 'Medication review complete',
+        no_renderable_evidence: 'Assessment ready',
       };
       return labels[state] || labels.no_renderable_evidence;
     }
@@ -61,36 +61,39 @@
     function unavailableMessage(item) {
       const state = item && item.state;
       const messages = {
-        not_selected: 'This category was not included in this dashboard render.',
-        blocked_position_aware_export: 'Pharmacogenomics was checked, but broad PharmCAT rendering requires a position-aware Active Genome Index export that preserves reference and no-call loci.',
-        missing_scores: 'Risk scores were checked, but no imported PGS Catalog scores were available for this dashboard.',
-        insufficient_overlap: 'Ancestry context was checked, but marker overlap was too low to render reference-neighbor context.',
+        not_selected: 'Add this category during the next dashboard refresh.',
+        blocked_position_aware_export: 'Broad medication-response rendering becomes available with a position-aware Active Genome Index export that preserves reference and uncalled loci.',
+        missing_scores: 'Install or import PGS Catalog scores to add calibrated polygenic results.',
+        insufficient_overlap: 'A larger set of overlapping ancestry markers will support reference-neighbor context.',
         running: item && item.job_id ? `This category is still running in background job ${item.job_id}. Refresh the dashboard after the job completes.` : 'This category is still running in the background. Refresh the dashboard after it completes.',
-        failed: item && item.error && item.error.message ? `This category failed before renderable evidence was available: ${item.error.message}` : 'This category failed before renderable evidence was available.',
-        blocked_setup: 'This category needs required setup before it can render evidence.',
-        source_unavailable: 'The source needed for this category was unavailable during the dashboard build.',
-        out_of_scope: 'This genome input is outside the supported scope for this category.',
-        checked_empty: 'Genomi checked this category and found no renderable records in the consulted scope.',
-        no_pharmcat_results: 'Pharmacogenomics was checked, but no renderable PharmCAT results were available for this dashboard.',
-        no_renderable_evidence: 'This category has no renderable evidence in this dashboard.',
+        failed: item && item.error && item.error.message ? `Refresh this category after resolving: ${item.error.message}` : 'Refresh this category to complete its evidence display.',
+        blocked_setup: 'Complete the required setup to render this category.',
+        source_unavailable: 'Reconnect the category source and refresh the dashboard.',
+        out_of_scope: 'Use a supported genome input to render this category.',
+        checked_empty: 'Genomi completed this category review across the consulted scope with zero display rows.',
+        no_pharmcat_results: 'Genomi completed the medication-response review with zero PharmCAT display rows.',
+        no_renderable_evidence: 'Run or refresh this category to add display-ready evidence.',
       };
       return messages[state] || messages.no_renderable_evidence;
     }
 
     function EmptyPanel({ title, panel }) {
       const unavailable = unavailablePanel(panel);
+      const isUnassessedPgx = panel === 'pgx' && (!unavailable || ['not_selected', 'no_renderable_evidence'].includes(unavailable.state));
       return (
         <div className="view-content">
           <div className="view-header">
             <div>
               <h2 className="view-title">{title}</h2>
-              <p className="view-subtitle">{unavailableLabel(unavailable && unavailable.state)}</p>
+              <p className="view-subtitle">{isUnassessedPgx ? 'Assessment ready to run' : unavailableLabel(unavailable && unavailable.state)}</p>
             </div>
           </div>
           <div className="card">
-            <div className="card-header"><span>{title}</span></div>
+            <div className="card-header"><span>{isUnassessedPgx ? 'What this means' : title}</span></div>
             <div className="empty-body">
-              {unavailableMessage(unavailable)}
+              {isUnassessedPgx
+                ? 'Run the medication-response analysis to add reviewed gene–drug results to this dashboard.'
+                : unavailableMessage(unavailable)}
             </div>
           </div>
         </div>
@@ -119,8 +122,9 @@
       const gq = gs.genotypeQuality != null ? `${gs.genotypeQuality}%` : '-';
       const gqSub = gs.meanDepth != null
         ? `${gs.meanDepth}× mean depth`
-        : (gs.genotypeQuality != null ? 'PASS rate' : '');
+        : (gs.genotypeQuality != null ? 'variants marked PASS' : '');
       const sources = Array.isArray(gs.sourceCoverage) ? gs.sourceCoverage : [];
+      const sampleLabel = gs.sampleName || (gs.sampleId && !String(gs.sampleId).includes('sha256-') ? gs.sampleId : null);
 
       const _varHiSrc = VARIANTS_DATA || VARIANTS_ALL_DATA;
       const variantsHi = _varHiSrc && _varHiSrc.length > 0 ? _varHiSrc.slice(0, 3) : null;
@@ -137,7 +141,7 @@
             <div>
               <h2 className="view-title">Overview</h2>
               <p className="view-subtitle">
-                Active Genome Index{gs.sampleId ? ` · ${gs.sampleId}` : ''}
+                Active Genome Index{sampleLabel ? ` · ${sampleLabel}` : ''}
                 {gs.genomeBuild ? ` · ${gs.genomeBuild}` : ''}
               </p>
             </div>
@@ -151,10 +155,10 @@
             <div className="stat-card"><div className="stat-value" style={{ color: '#10b981' }}>{variantCount}</div><div className="stat-label">{variantCountLabel}</div><div className="stat-sub">{gs.genomeSource || ''}</div></div>
             <div className="stat-card"><div className="stat-value" style={{ color: '#3b82f6' }}>{gs.genomeBuild || '-'}</div><div className="stat-label">Genome Build</div><div className="stat-sub">{gs.parsedAt || ''}</div></div>
             {gs.genotypeQuality != null
-              ? <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6' }}>{gq}</div><div className="stat-label">Genotype Quality</div><div className="stat-sub">{gqSub}</div></div>
+              ? <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6' }}>{gq}</div><div className="stat-label">Callset QC</div><div className="stat-sub">{gqSub}</div></div>
               : <div className="stat-card"><div className="stat-value" style={{ color: '#8b5cf6', fontSize: 14, paddingTop: 4 }}>{gs.pipeline || gs.genomeSource || '-'}</div><div className="stat-label">Variant Caller</div><div className="stat-sub">{gs.contig_count != null ? `${Number(gs.contig_count).toLocaleString()} contigs` : ''}</div></div>
             }
-            <div className="stat-card"><div className="stat-value" style={{ color: '#f59e0b' }}>{PGX_DATA ? PGX_DATA.length : '-'}</div><div className="stat-label">PGx Rows</div><div className="stat-sub">{PGX_DATA ? `${PGX_DATA.filter(d => d.readiness === 'needs_clinical_confirmation').length} need confirmation` : ''}</div></div>
+            <div className="stat-card"><div className="stat-value" style={{ color: '#f59e0b', fontSize: PGX_DATA ? 26 : 14 }}>{PGX_DATA ? PGX_DATA.length : 'Assessment ready'}</div><div className="stat-label">Medication Response</div><div className="stat-sub">{PGX_DATA ? `${PGX_DATA.filter(d => d.readiness === 'needs_clinical_confirmation').length} require confirmation` : 'Run a medication-response analysis'}</div></div>
           </div>
 
           {sources.length > 0 && (
@@ -166,7 +170,7 @@
                     <div key={i} className="source-item">
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ color: '#e5e5e5', fontSize: 13, fontWeight: 600 }}>{src.name || 'unknown source'}</span>
-                        <span className="badge" style={{ background: '#10b98118', color: '#10b981', borderColor: '#10b98130' }}>{src.coverageState || 'data_returned'}</span>
+                        <span className="badge" style={{ background: '#10b98118', color: '#10b981', borderColor: '#10b98130' }}>{reviewTypeLabel(src.coverageState || 'data_returned')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, color: '#555', fontSize: 11 }}>
                         <span>{src.percent != null ? `${src.percent}%` : ''}</span>
@@ -181,7 +185,7 @@
           {anyHighlights && (
             <div className="two-col">
               {variantsHi && (
-                <HighlightCard title="Top Variants" onNav={onNav ? () => onNav('variants') : null}>
+                <HighlightCard title="ClinVar matches to review" onNav={onNav ? () => onNav('variants') : null}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {variantsHi.map((v, i) => {
                       const sc = v.clinvarSignificance ? sigBadgeStyle(v.clinvarSignificance) : null;
@@ -194,9 +198,11 @@
                           {sc && (
                             <span className="badge" style={{ alignSelf: 'flex-start', background: sc.bg, color: sc.fg, borderColor: sc.border }}>{v.clinvarSignificance.replace(/_/g, ' ')}</span>
                           )}
+                          {v.conditionShort && <span style={{ color: '#777', fontSize: 10 }}>{conciseEvidenceLabel(v.conditionShort)}</span>}
                         </div>
                       );
                     })}
+                    <span style={{ color: '#555', fontSize: 10, lineHeight: 1.5 }}>Database labels for review; clinical context establishes relevance.</span>
                   </div>
                 </HighlightCard>
               )}
@@ -231,24 +237,20 @@
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630', fontSize: 10 }}>{reviewTypeLabel(d.group_type || d.row_type)}</span>
                               {Array.isArray(d.missing_interpretation_gates) && d.missing_interpretation_gates.length > 0 && (
-                                <span style={{ color: '#555', fontSize: 10 }}>{d.missing_interpretation_gates.length} gates missing</span>
+                                <span style={{ color: '#555', fontSize: 10 }}>{d.missing_interpretation_gates.length} interpretation checks pending</span>
                               )}
                             </div>
                           </div>
                         );
                       }
-                      const scoreNum = d.score != null ? Number(d.score) : null;
-                      const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
-                      const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
                       return (
                         <div key={d.trait || i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ color: '#e5e5e5', fontSize: 13, fontWeight: 600 }}>{d.trait || '-'}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 16, fontWeight: 700, color: scoreColor }}>{scoreStr}</span>
                             {d.percentile != null ? (
                               <span className="badge" style={{ background: prsLevel(d.percentile).color + '18', color: prsLevel(d.percentile).color, borderColor: prsLevel(d.percentile).color + '30', fontSize: 10 }}>{d.percentile}th pct</span>
                             ) : (
-                              <span className="badge" style={{ background: '#66666618', color: '#888', borderColor: '#66666630', fontSize: 10 }}>raw score</span>
+                              <span className="badge" style={{ background: '#66666618', color: '#888', borderColor: '#66666630', fontSize: 10 }}>calculated · calibration pending</span>
                             )}
                           </div>
                           {d.overlap && <span style={{ color: '#555', fontSize: 10 }}>{d.overlap}</span>}
@@ -260,41 +262,20 @@
               )}
               {ancestryHi && (
                 <HighlightCard title="Ancestry" onNav={onNav ? () => onNav('ancestry') : null}>
-                  <div style={{ color: '#e5e5e5', fontSize: 13, marginBottom: 8 }}>
-                    Closest broad reference cluster:{' '}
-                    <span style={{ color: '#3b82f6', fontWeight: 600 }}>{ancestryHi.closestSuperpopulation.label || '-'}</span>
+                  <div style={{ color: '#666', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Closest reference match</div>
+                  <div style={{ color: SUPERPOP_COLORS[ancestryHi.closestSuperpopulation.label] || '#e5e5e5', fontSize: 20, fontWeight: 800, marginTop: 3 }}>
+                    {POP_LABELS[ancestryHi.closestSuperpopulation.label] || ancestryHi.closestSuperpopulation.label || '-'}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(Array.isArray(ancestryHi.populationCentroids) ? ancestryHi.populationCentroids : []).slice(0, 3).map((n, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: SUPERPOP_COLORS[POP_SUPERPOP[n.label]] || '#888', display: 'inline-block' }} />
-                          <span style={{ color: '#e5e5e5' }}>{POP_LABELS[n.label] || n.label || '-'}</span>
-                          <span className="mono-text" style={{ color: '#555', fontSize: 10 }}>{n.label}</span>
-                        </div>
-                        <span className="mono-text">{n.distance != null ? Number(n.distance).toFixed(4) : ''}</span>
-                      </div>
-                    ))}
-                    <span style={{ color: '#555', fontSize: 10 }}>PCA centroid distance · lower is closer</span>
+                  <div style={{ color: '#aaa', fontSize: 12, marginTop: 8 }}>
+                    Closest named group: <strong style={{ color: '#e5e5e5' }}>{POP_LABELS[ancestryHi.closestPopulation.label] || ancestryHi.closestPopulation.label || '-'}</strong>
                   </div>
+                  <div style={{ color: '#555', fontSize: 10, marginTop: 10, lineHeight: 1.5 }}>Reference-dataset comparison; ancestry percentages use a different method.</div>
                 </HighlightCard>
               )}
               {nutriHi && (
-                <HighlightCard title="Nutrigenomics" onNav={onNav ? () => onNav('nutrigenomics') : null}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {nutriHi.map((d, i) => {
-                      const ntc = { established: '#10b981', probable: '#f59e0b', emerging: '#8b5cf6' }[d.evidenceTier] || '#666';
-                      return (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-                            <span style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 13 }}>{d.marker || '-'}</span>
-                            {d.gene && <span className="mono-text" style={{ color: '#3b82f6', fontSize: 12 }}>{d.gene}</span>}
-                          </div>
-                          {d.evidenceTier && <span className="badge" style={{ background: ntc + '18', color: ntc, borderColor: ntc + '30', fontSize: 10, flexShrink: 0 }}>{d.evidenceTier}</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
+                <HighlightCard title="Nutrition marker reference" onNav={onNav ? () => onNav('nutrigenomics') : null}>
+                  <div style={{ color: '#e5e5e5', fontSize: 18, fontWeight: 700 }}>{NUTRI_DATA.length} researched markers</div>
+                  <div style={{ color: '#888', fontSize: 12, lineHeight: 1.55, marginTop: 8 }}>Background research is available; personal interpretation begins after matching these markers to your genotype.</div>
                 </HighlightCard>
               )}
             </div>
@@ -323,7 +304,13 @@
     }
 
     function VirtualVariantTable({ rows }) {
-      const ROW_H = 44;
+      const [compact, setCompact] = React.useState(() => window.innerWidth <= 768);
+      React.useEffect(() => {
+        const onResize = () => setCompact(window.innerWidth <= 768);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+      }, []);
+      const ROW_H = compact ? 132 : 44;
       const OVERSCAN = 8;
       const containerRef = React.useRef(null);
       const [scrollTop, setScrollTop] = React.useState(0);
@@ -334,7 +321,7 @@
       }, [rows]);
 
       const totalH = rows.length * ROW_H;
-      const containerH = Math.min(totalH, ROW_H * 15);
+      const containerH = Math.min(totalH, ROW_H * (compact ? 5 : 15));
       const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
       const endIdx = Math.min(rows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
       const visibleRows = rows.slice(startIdx, endIdx);
@@ -342,7 +329,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{
+          {!compact && <div style={{
             display: 'grid', gridTemplateColumns: COLS, padding: '10px 14px',
             borderBottom: '1px solid var(--border)',
             fontSize: 11, fontWeight: 600, color: 'var(--text4)',
@@ -350,7 +337,7 @@
           }}>
             <span>Variant</span><span>Gene</span><span>Location</span>
             <span>Genotype</span><span>Significance</span><span>Condition</span><span>Quality</span>
-          </div>
+          </div>}
           <div
             ref={containerRef}
             onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
@@ -361,24 +348,28 @@
               const sc = sigBadgeStyle(v.clinvarSignificance);
               return (
                 <div key={v.rsid || (startIdx + i)} style={{
-                  display: 'grid', gridTemplateColumns: COLS,
-                  padding: '0 14px', height: ROW_H, alignItems: 'center',
+                  display: 'grid',
+                  gridTemplateColumns: compact ? 'minmax(0, 1fr) auto' : COLS,
+                  gridTemplateAreas: compact ? '"variant significance" "gene genotype" "condition condition" "location quality"' : 'none',
+                  rowGap: compact ? 7 : 0,
+                  columnGap: compact ? 12 : 0,
+                  padding: compact ? '13px 14px' : '0 14px', height: ROW_H, alignItems: 'center',
                   borderBottom: '1px solid #141414',
                 }}>
-                  <span className="mono-text" style={{ color: '#e5e5e5', fontSize: 12 }}>{v.rsid || '-'}</span>
-                  <span style={{ color: '#3b82f6', fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.gene || '-'}</span>
-                  <span className="mono-text" style={{ fontSize: 11 }}>chr{v.chrom}:{v.pos != null ? Number(v.pos).toLocaleString() : ''}</span>
-                  <span className="genotype-badge">{v.ref}{'>'}{v.alt}{v.zygosity ? <span style={{ color: '#555', fontSize: 10 }}> {v.zygosity}</span> : null}</span>
-                  <span className="badge" style={{ background: sc.bg, color: sc.fg, borderColor: sc.border, fontSize: 10, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(v.clinvarSignificance || '').replace(/_/g, ' ')}</span>
-                  <span style={{ color: '#aaa', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.conditionShort || ''}</span>
-                  <span style={{ color: '#555', fontSize: 11 }}>{v.evidenceQuality || ''}</span>
+                  <span className="mono-text" style={{ gridArea: compact ? 'variant' : 'auto', color: '#e5e5e5', fontSize: 12, fontWeight: 600 }}>{v.rsid || '-'}</span>
+                  <span style={{ gridArea: compact ? 'gene' : 'auto', color: '#3b82f6', fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.gene || '-'}</span>
+                  <span className="mono-text" style={{ gridArea: compact ? 'location' : 'auto', fontSize: 11 }}>chr{v.chrom}:{v.pos != null ? Number(v.pos).toLocaleString() : ''}</span>
+                  <span className="genotype-badge" style={{ gridArea: compact ? 'genotype' : 'auto', justifySelf: compact ? 'end' : 'auto' }}>{v.ref}{' → '}{v.alt}{v.zygosity ? <span style={{ color: '#888', fontSize: 10 }}> · {v.zygosity}</span> : null}</span>
+                  <span className="badge" style={{ gridArea: compact ? 'significance' : 'auto', justifySelf: compact ? 'end' : 'auto', background: sc.bg, color: sc.fg, borderColor: sc.border, fontSize: 10, maxWidth: compact ? 190 : '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{humanizeLabel(v.clinvarSignificance)}</span>
+                  <span style={{ gridArea: compact ? 'condition' : 'auto', color: '#aaa', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conciseEvidenceLabel(v.conditionShort)}</span>
+                  <span style={{ gridArea: compact ? 'quality' : 'auto', justifySelf: compact ? 'end' : 'auto', color: '#777', fontSize: 11 }}>{v.evidenceQuality || ''}</span>
                 </div>
               );
             })}
             <div style={{ height: Math.max(0, (rows.length - endIdx) * ROW_H) }} />
           </div>
           {rows.length > 0 && (
-            <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text4)', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <span>{rows.length.toLocaleString()} variants</span>
               <span>Scroll to explore · rendering {Math.min(endIdx - startIdx, rows.length)} rows</span>
             </div>
@@ -428,8 +419,8 @@
 
       const SIG_TABS = [
         ['all', 'All'],
-        ['plp', 'P/LP'],
-        ['vus', 'VUS'],
+        ['plp', 'Pathogenic labels'],
+        ['vus', 'Uncertain'],
         ['benign', 'Benign'],
         ['other', 'Other'],
       ];
@@ -439,12 +430,12 @@
           <div className="view-header">
             <div>
               <h2 className="view-title">Variant Explorer</h2>
-              <p className="view-subtitle">ClinVar-matched variants from your Active Genome Index</p>
+              <p className="view-subtitle">Exact allele matches against ClinVar records</p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {plpCount > 0 && (
                 <span className="badge" style={{ background: '#f9731618', color: '#f97316', borderColor: '#f9731630' }}>
-                  {plpCount} P/LP
+                  {plpCount} pathogenic-label matches
                 </span>
               )}
               {totalCount > 0 && (
@@ -455,6 +446,10 @@
             </div>
           </div>
 
+          <div className="card" style={{ padding: '14px 18px', marginBottom: 16, color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
+            <strong style={{ color: '#e5e5e5' }}>Start here:</strong> use these database matches as review candidates. Each ClinVar label describes a specific variant–condition assertion. Inheritance, zygosity, symptoms, family history, and clinical confirmation establish personal relevance.
+          </div>
+
           <input placeholder="Search rsID, gene, condition, or significance…"
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: '100%', padding: '8px 14px', borderRadius: 8, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--sans)', fontSize: 13, outline: 'none', marginBottom: 20 }} />
@@ -463,51 +458,24 @@
             <div style={{ marginBottom: 28 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f97316', display: 'inline-block' }} />
-                Clinically Significant
+                Pathogenic / likely pathogenic labels to review
               </div>
               <div className="card" style={{ overflow: 'hidden' }}>
-                <table className="variant-table">
-                  <thead>
-                    <tr>
-                      <th>Variant</th><th>Gene</th><th>Location</th>
-                      <th>Genotype</th><th>Significance</th><th>Condition</th><th>Quality</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {plpFiltered.map((v, i) => {
-                      const sc = sigBadgeStyle(v.clinvarSignificance);
-                      return (
-                        <tr key={v.rsid || i}>
-                          <td><span className="mono-text" style={{ color: '#e5e5e5' }}>{v.rsid}</span></td>
-                          <td><span style={{ color: '#3b82f6', fontWeight: 600, fontSize: 13 }}>{v.gene}</span></td>
-                          <td><span className="mono-text">chr{v.chrom}:{v.pos != null ? Number(v.pos).toLocaleString() : ''}</span></td>
-                          <td>
-                            <span className="genotype-badge">
-                              {v.ref}{'>'}{v.alt}{v.zygosity ? <span style={{ color: '#555', fontSize: 10 }}> {v.zygosity}</span> : null}
-                            </span>
-                          </td>
-                          <td><span className="badge" style={{ background: sc.bg, color: sc.fg, borderColor: sc.border }}>{(v.clinvarSignificance || '').replace(/_/g, ' ')}</span></td>
-                          <td style={{ color: '#aaa', fontSize: 12 }}>{v.conditionShort}</td>
-                          <td style={{ color: '#555', fontSize: 11 }}>{v.evidenceQuality || ''}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {plpFiltered.length === 0 && (
-                  <div style={{ padding: 24, textAlign: 'center', color: '#444' }}>No P/LP variants match your search.</div>
-                )}
+                {plpFiltered.length > 0
+                  ? <VirtualVariantTable rows={plpFiltered} />
+                  : <div style={{ padding: 24, textAlign: 'center', color: '#666' }}>Adjust your search to view pathogenic-label matches.</div>
+                }
               </div>
             </div>
           )}
 
           {hasAll && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div className="variant-filter-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  All ClinVar Variants
+                  Full ClinVar match inventory
                 </div>
-                <div style={{ display: 'flex', gap: 4 }}>
+                <div className="variant-filter-tabs" style={{ display: 'flex', gap: 4 }}>
                   {SIG_TABS.map(([key, label]) => (
                     <button key={key} onClick={() => setSigFilter(key)} style={{
                       padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
@@ -522,7 +490,7 @@
               <div className="card" style={{ overflow: 'hidden' }}>
                 {allFiltered.length > 0
                   ? <VirtualVariantTable rows={allFiltered} />
-                  : <div style={{ padding: 40, textAlign: 'center', color: '#444' }}>No variants match your filter.</div>
+                  : <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Adjust the search or filter to view matching variants.</div>
                 }
               </div>
             </div>
@@ -532,7 +500,7 @@
     }
 
     function PharmacogenomicsView() {
-      if (!PGX_DATA) return <EmptyPanel title="Pharmacogenomics" panel="pgx" />;
+      if (!PGX_DATA) return <EmptyPanel title="Medication Response" panel="pgx" />;
       const impactColors = PGX_IMPACT_COLORS;
       // Order by finding severity so actionable results sort to the top:
       // high-impact (poor/elevated) first, then reduced/increased/moderate,
@@ -544,9 +512,12 @@
         <div className="view-content">
           <div className="view-header">
             <div>
-              <h2 className="view-title">Pharmacogenomics</h2>
-              <p className="view-subtitle">Medication-row PGx evidence from PharmCAT and medication review</p>
+              <h2 className="view-title">Medication Response</h2>
+              <p className="view-subtitle">How genetic evidence may affect specific medications</p>
             </div>
+          </div>
+          <div className="card" style={{ padding: '14px 18px', marginBottom: 20, color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
+            <strong style={{ color: '#e5e5e5' }}>Use this with a clinician or pharmacist.</strong> Pharmacogenomic results support medication review, while treatment changes stay guided by a qualified clinician or pharmacist.
           </div>
           <div className="pgx-grid">
             {sortedPgx.map((d, i) => {
@@ -600,22 +571,32 @@
           <div className="view-header">
             <div>
               <h2 className="view-title">Risk & Condition Review</h2>
-              <p className="view-subtitle">PRS scores and ClinVar carrier/condition review targets</p>
+              <p className="view-subtitle">Separate review candidates from calibrated risk estimates</p>
             </div>
+          </div>
+          <div className="card" style={{ padding: '14px 18px', marginBottom: 20, color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
+            <strong style={{ color: '#e5e5e5' }}>Interpretation standard:</strong> calibrate each raw polygenic score to a reference population before assigning a percentile or relative-risk interpretation. Complete variant review with inheritance, genotype, phenotype, and clinical confirmation.
           </div>
           {reviewRows.length > 0 && (
             <div style={{ marginBottom: 28 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                Carrier / Condition Review
+                Variant and condition review targets
               </div>
               <div className="risk-grid">
                 {reviewRows.map((d, i) => {
                   const sig = firstCountLabel(d.clinical_significance_counts);
                   const zygosity = firstCountLabel(d.zygosity_counts);
+                  const combinedLabel = riskReviewLabel(d);
+                  const labelParts = combinedLabel.split(' / ');
+                  const geneLabel = d.gene || (labelParts.length > 1 ? labelParts.shift() : null);
+                  const conditionLabel = conciseEvidenceLabel(d.condition || (labelParts.length > 0 ? labelParts.join(' / ') : combinedLabel));
                   return (
                     <div key={d.group_id || d.candidate_id || d.trait || i} className="risk-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{riskReviewLabel(d)}</div>
+                      <div className="risk-card-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          {geneLabel && <div className="mono-text" style={{ color: '#3b82f6', fontSize: 11, fontWeight: 600, marginBottom: 5 }}>{geneLabel}</div>}
+                          <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14, lineHeight: 1.4 }}>{conditionLabel || '-'}</div>
+                        </div>
                         <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630' }}>{reviewTypeLabel(d.group_type || d.row_type)}</span>
                       </div>
                       <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -625,9 +606,9 @@
                           <span key={gate} className="badge" style={{ background: '#f59e0b18', color: '#f59e0b', borderColor: '#f59e0b30' }}>{reviewTypeLabel(gate)}</span>
                         ))}
                       </div>
-                      <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', color: '#555', fontSize: 11 }}>
-                        {d.score != null && <span>rank score: {Number(d.score).toFixed(2)}</span>}
-                        {Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && <span>{d.candidate_ids.length} variants</span>}
+                      <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', color: '#666', fontSize: 11 }}>
+                        <span>Review candidate · clinical confirmation required</span>
+                        {Array.isArray(d.candidate_ids) && d.candidate_ids.length > 0 && <span>{d.candidate_ids.length} linked variants</span>}
                       </div>
                     </div>
                   );
@@ -638,37 +619,45 @@
           {prsRows.length > 0 && (
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                Polygenic Risk Scores
+                Polygenic score calculations
               </div>
               <div className="risk-grid">
                 {prsRows.map((d, i) => {
                   const level = prsLevel(d.percentile);
                   const scoreNum = d.score != null ? Number(d.score) : null;
                   const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
-                  const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
                   return (
                     <div key={d.score_id || d.trait || i} className="risk-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div className="risk-card-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                         <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{d.trait}</div>
                         {Array.isArray(d.sources) && d.sources.length > 0 && (
                           <span className="mono-text" style={{ color: '#555', fontSize: 10, whiteSpace: 'nowrap' }}>{d.sources[0]}</span>
                         )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10 }}>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: scoreColor }}>{scoreStr}</span>
+                      <div style={{ marginTop: 10 }}>
                         {d.percentile != null ? (
-                          <span className="badge" style={{ background: level.color + '18', color: level.color, borderColor: level.color + '30' }}>{level.label} · {d.percentile}th pct</span>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                            <span style={{ fontSize: 20, fontWeight: 700, color: level.color }}>{level.label}</span>
+                            <span className="badge" style={{ background: level.color + '18', color: level.color, borderColor: level.color + '30' }}>{d.percentile}th percentile</span>
+                          </div>
                         ) : (
-                          <span className="badge" style={{ background: '#66666618', color: '#888', borderColor: '#66666630' }}>raw score</span>
+                          <div>
+                            <div style={{ color: '#e5e5e5', fontSize: 14, fontWeight: 600 }}>Score calculated</div>
+                            <div style={{ color: '#777', fontSize: 11, marginTop: 3 }}>Calibration will add a percentile and absolute-risk interpretation.</div>
+                          </div>
                         )}
                       </div>
-                      {d.note && (
+                      {d.note && d.percentile != null && (
                         <div style={{ marginTop: 10, color: '#999', fontSize: 12, lineHeight: 1.6 }}>{d.note}</div>
                       )}
                       <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         {d.overlap != null && <span style={{ color: '#555', fontSize: 11 }}>overlap: {d.overlap}</span>}
-                        {d.ancestryAdjusted != null && <span style={{ color: '#555', fontSize: 11 }}>ancestry-adj: {String(d.ancestryAdjusted)}</span>}
+                        {d.ancestryAdjusted != null && <span style={{ color: '#555', fontSize: 11 }}>{d.ancestryAdjusted ? 'population adjustment applied' : 'population adjustment pending'}</span>}
                       </div>
+                      <details style={{ marginTop: 10, color: '#555', fontSize: 11 }}>
+                        <summary style={{ cursor: 'pointer' }}>Technical score details</summary>
+                        <div className="mono-text" style={{ marginTop: 6 }}>Raw weighted score: {scoreStr}</div>
+                      </details>
                     </div>
                   );
                 })}
@@ -686,7 +675,7 @@
       const populationCentroids = Array.isArray(d.populationCentroids) ? d.populationCentroids : [];
       const closestSuperpopulation = d.closestSuperpopulation || {};
       const closestPopulation = d.closestPopulation || {};
-      const distanceNote = 'PCA centroid distance · lower is closer · not a percentage';
+      const distanceNote = 'PCA centroid distance · lower values indicate closer reference similarity';
 
       const centroidRows = (rows, broad) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -709,12 +698,36 @@
         </div>
       );
 
+      const rankedReferenceGroups = (rows, broad, maxRows) => {
+        const plotted = rows.slice(0, maxRows || rows.length);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {plotted.map((row, i) => {
+                const sp = broad ? row.label : (POP_SUPERPOP[row.label] || 'OTH');
+                const color = SUPERPOP_COLORS[sp] || '#888';
+                return (
+                  <div key={`${row.label}-${i}`} style={{ display: 'grid', gridTemplateColumns: '32px minmax(0, 1fr)', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, background: i === 0 ? color + '12' : '#141414' }}>
+                    <div className="mono-text" style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? color : '#222', color: i === 0 ? '#0a0a0a' : '#888', fontWeight: 700 }}>{i + 1}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: i === 0 ? '#f5f5f5' : '#ccc', fontSize: 13, fontWeight: i === 0 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{POP_LABELS[row.label] || row.label}</div>
+                      <div style={{ color: '#666', fontSize: 10, marginTop: 2 }}><span className="mono-text">{row.label}</span>{i === 0 ? ' · closest match in this comparison' : ''}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            {plotted.length < rows.length && (
+              <div style={{ color: '#666', fontSize: 11, marginTop: 4 }}>Showing the {plotted.length} closest groups. The complete technical ranking is available below.</div>
+            )}
+          </div>
+        );
+      };
+
       return (
         <div className="view-content">
           <div className="view-header">
             <div>
               <h2 className="view-title">Ancestry Context</h2>
-              <p className="view-subtitle">Qualitative similarity to 1000 Genomes reference-group centroids</p>
+              <p className="view-subtitle">How your DNA pattern compares with people in the 1000 Genomes reference dataset</p>
             </div>
             {d.overlapFraction != null && (
               <span className="badge" style={{ background: '#3b82f618', color: '#3b82f6', borderColor: '#3b82f630' }}>
@@ -723,41 +736,45 @@
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div className="card" style={{ flex: '1 1 160px', padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Closest broad reference cluster</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5' }}>{closestSuperpopulation.label || '–'}</div>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || ''}</div>
-              {closestSuperpopulation.distance != null && <div className="mono-text" style={{ marginTop: 8 }}>{Number(closestSuperpopulation.distance).toFixed(4)} PCA distance</div>}
+          <div className="card" style={{ padding: '22px 24px', marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Your closest reference match</div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: SUPERPOP_COLORS[closestSuperpopulation.label] || '#e5e5e5' }}>{POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || 'Reference match pending'}</div>
+            <div style={{ color: '#bbb', fontSize: 14, marginTop: 8, lineHeight: 1.6 }}>
+              Your DNA pattern most closely matches the <strong>{POP_LABELS[closestSuperpopulation.label] || closestSuperpopulation.label || 'nearest'}</strong> samples in this reference dataset. The closest specifically named group is <strong>{POP_LABELS[closestPopulation.label] || closestPopulation.label || 'pending'}</strong>.
             </div>
-            <div className="card" style={{ flex: '1 1 220px', padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Closest population-label centroid</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: SUPERPOP_COLORS[POP_SUPERPOP[closestPopulation.label]] || '#e5e5e5' }}>{closestPopulation.label || '–'}</div>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{POP_LABELS[closestPopulation.label] || closestPopulation.label || ''}</div>
-              {closestPopulation.distance != null && <div className="mono-text" style={{ marginTop: 8 }}>{Number(closestPopulation.distance).toFixed(4)} PCA distance</div>}
-            </div>
-            <div className="card" style={{ flex: '2 1 300px', padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'var(--text4)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>How to read this</div>
-              <div style={{ color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
-                Smaller PCA distances mean greater similarity to a reference-group centroid in this panel. Distances are arbitrary PCA units, not ancestry percentages, probabilities, or identity labels.
-              </div>
-              {d.markerOverlapQuality && <div style={{ color: '#666', fontSize: 11, marginTop: 8 }}>Marker-overlap quality: {d.markerOverlapQuality}</div>}
-            </div>
+            <div style={{ color: '#777', fontSize: 11, marginTop: 10 }}>Use this as a reference-dataset similarity result. Ancestry percentages, ethnicity, and identity each require different evidence.</div>
           </div>
 
           <div className="two-col">
             <div className="card">
-              <div className="card-header"><span>Population centroid distances</span></div>
+              <div className="card-header"><span>Closest named comparison groups</span></div>
               <div className="card-body">
-                {centroidRows(populationCentroids, false)}
+                {rankedReferenceGroups(populationCentroids, false, 5)}
               </div>
             </div>
             <div className="card">
-              <div className="card-header"><span>Broad-cluster centroid distances</span></div>
-              <div className="card-body">
-                {centroidRows(superpopulationCentroids, true)}
+              <div className="card-header"><span>How to understand the result</span></div>
+              <div className="card-body" style={{ color: '#aaa', fontSize: 12, lineHeight: 1.7 }}>
+                <div style={{ marginBottom: 10 }}><strong style={{ color: '#e5e5e5' }}>What it says:</strong> among the people included in this public dataset, your overall DNA pattern is closest to the groups shown here.</div>
+                <div style={{ marginBottom: 10 }}><strong style={{ color: '#e5e5e5' }}>Scope:</strong> this result compares your overall pattern with reference groups. Ancestry composition and personal identity use additional evidence and methods.</div>
+                <div><strong style={{ color: '#e5e5e5' }}>Data quality:</strong> {d.markerOverlapQuality || 'pending'} marker overlap{d.overlapFraction != null ? ` (${Math.round(d.overlapFraction * 100)}% of panel markers usable)` : ''}.</div>
               </div>
             </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <details className="card">
+              <summary className="card-header" style={{ cursor: 'pointer' }}>Technical PCA distances and full ranking</summary>
+              <div className="card-body two-col">
+                <div>
+                  <div style={{ color: '#aaa', fontSize: 11, marginBottom: 12 }}>Population-label centroids</div>
+                  {centroidRows(populationCentroids, false)}
+                </div>
+                <div>
+                  <div style={{ color: '#aaa', fontSize: 11, marginBottom: 12 }}>Broad reference clusters</div>
+                  {centroidRows(superpopulationCentroids, true)}
+                </div>
+              </div>
+            </details>
           </div>
         </div>
       );
@@ -770,27 +787,31 @@
         <div className="view-content">
           <div className="view-header">
             <div>
-              <h2 className="view-title">Nutrigenomics</h2>
-              <p className="view-subtitle">Gene–nutrient and gene–diet single-marker evidence</p>
+              <h2 className="view-title">Nutrition Marker Reference</h2>
+              <p className="view-subtitle">Research context for gene–nutrition markers</p>
             </div>
+          </div>
+          <div className="card" style={{ padding: '14px 18px', marginBottom: 20, color: '#aaa', fontSize: 12, lineHeight: 1.6 }}>
+            <strong style={{ color: '#e5e5e5' }}>Use these records as nutrition research background.</strong> Personal interpretation begins with genotype evidence at each marker. A qualified clinician or dietitian can connect confirmed results with diet or supplement decisions.
           </div>
           <div className="nutri-grid">
             {NUTRI_DATA.map((d, i) => {
               const tc = tierColors[d.evidenceTier] || '#666';
               return (
                 <div key={i} className="nutri-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div className="nutri-card-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                     <div>
                       <div style={{ color: '#e5e5e5', fontWeight: 600, fontSize: 14 }}>{d.marker}</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
                         <span className="mono-text" style={{ color: '#3b82f6' }}>{d.gene}</span>
                         <span className="mono-text">{d.rsid}</span>
-                        <span className="genotype-badge">{d.status}</span>
+                        {d.status && <span className="genotype-badge">{d.status}</span>}
                       </div>
                     </div>
                     <span className="badge" style={{ background: tc + '18', color: tc, borderColor: tc + '30' }}>{d.evidenceTier}</span>
                   </div>
-                  <div style={{ color: '#999', fontSize: 12, lineHeight: 1.6, marginTop: 10 }}>{d.recommendation}</div>
+                  <div style={{ color: '#666', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 12 }}>What research reports</div>
+                  <div style={{ color: '#999', fontSize: 12, lineHeight: 1.6, marginTop: 5 }}>{d.recommendation}</div>
                 </div>
               );
             })}
@@ -825,50 +846,74 @@
           </nav>
           <div className="sidebar-footer">
             Experimental · Research use only<br />
-            Not for clinical diagnosis
+            Clinical confirmation supports health decisions
             {RENDERED_AT && <span className="timestamp">rendered {RENDERED_AT}</span>}
           </div>
         </div>
       );
     }
 
+    function MobileNav({ active, onNav }) {
+      return (
+        <nav className="mobile-nav" aria-label="Dashboard pages">
+          {AVAILABLE_NAV.map(item => (
+            <button
+              key={item.id}
+              className={`mobile-nav-item ${active === item.id ? 'active' : ''}`}
+              onClick={() => onNav(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      );
+    }
+
     function App() {
       const [view, setView] = React.useState((AVAILABLE_NAV[0] && AVAILABLE_NAV[0].id) || 'overview');
       const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+      const mainRef = React.useRef(null);
       const accent = ACCENT_MAP[tweaks.accentColor] || ACCENT_MAP.green;
       React.useEffect(() => {
         document.documentElement.style.setProperty('--green', accent.primary);
       }, [accent.primary]);
+      const navigate = nextView => {
+        setView(nextView);
+        window.requestAnimationFrame(() => {
+          if (mainRef.current) mainRef.current.scrollTo({ top: 0, behavior: 'auto' });
+        });
+      };
       const viewLabel = NAV_ITEMS.find(n => n.id === view)?.label || 'Overview';
       const renderView = () => {
         switch (view) {
-          case 'overview': return <OverviewView onNav={setView} />;
+          case 'overview': return <OverviewView onNav={navigate} />;
           case 'variants': return <VariantsView />;
           case 'pharmacogenomics': return <PharmacogenomicsView />;
           case 'risk': return <RiskScoresView />;
           case 'ancestry': return <AncestryView />;
           case 'nutrigenomics': return <NutrigenomicsView />;
-          default: return <OverviewView onNav={setView} />;
+          default: return <OverviewView onNav={navigate} />;
         }
       };
       const setTweak = (k, v) => setTweaks(prev => ({ ...prev, [k]: v }));
       return (
         <React.Fragment>
-          <Sidebar active={view} onNav={setView} />
-          <div className="main">
+          <Sidebar active={view} onNav={navigate} />
+          <div className="main" ref={mainRef}>
             <div className="topbar">
               <span className="topbar-title">{viewLabel}</span>
               <div className="topbar-right">
                 <div className="topbar-status">
                   <span style={{ color: accent.primary }}>●</span>
-                  <span>{GENOME_SUMMARY?.sampleId || 'no active sample'}</span>
+                  <span className="sample-id">{GENOME_SUMMARY?.sampleId || 'Select an active genome'}</span>
                   {GENOME_SUMMARY?.genomeBuild && <><span style={{ color: '#333' }}>·</span><span>{GENOME_SUMMARY.genomeBuild}</span></>}
                 </div>
               </div>
             </div>
+            <MobileNav active={view} onNav={navigate} />
             {renderView()}
           </div>
-          <div style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 100 }}>
+          <div className="tweaks-panel" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 100 }}>
             <details style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '6px 10px', color: 'var(--text3)', fontSize: 11 }}>
               <summary style={{ cursor: 'pointer' }}>Genomi Tweaks</summary>
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>

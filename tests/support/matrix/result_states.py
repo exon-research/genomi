@@ -297,7 +297,7 @@ def _data_returned_ui_tokens(panel: str) -> tuple[str, ...]:
     if panel == "pgx":
         return ("Pharmacogenomics", "pgx-grid")
     if panel == "risk":
-        return ("Polygenic Risk Scores", "risk-grid")
+        return ("Polygenic score calculations", "risk-grid")
     if panel == "ancestry":
         return ("Ancestry Context", "Dominant Ancestry")
     if panel == "nutrigenomics":

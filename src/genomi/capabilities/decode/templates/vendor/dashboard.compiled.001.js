@@ -1,5 +1,5 @@
 // AUTO-GENERATED chunk 1/3 from dashboard sources by scripts/build_dashboard.py - do not edit by hand.
-// source-sha256: 9955a36712623e40ca394d947be0806f7bee5504c8a62c3d7201ac325a6e5857
+// source-sha256: 6b67c316a73ac2de502e8c7ea6094d3a343890b34b3b786fc33461b695712cc5
 const PGX_IMPACT_COLORS = {
   normal: '#10b981',
   moderate: '#f59e0b',
@@ -33,13 +33,27 @@ function prsLevel(p) {
 function isPrsRow(row) {
   return row && (row.row_type === 'polygenic_score' || row.score_id || row.percentile != null);
 }
+function humanizeLabel(value) {
+  return String(value || '').replace(/[|]+/g, '; ').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function conciseEvidenceLabel(value) {
+  const usefulParts = humanizeLabel(value).split(';').map(part => part.trim()).filter(part => part && !['not provided', 'not specified', 'unknown'].includes(part.toLowerCase()));
+  return usefulParts.join('; ') || 'Details pending';
+}
 function riskReviewLabel(row) {
   if (!row) return '-';
   const pieces = [row.gene, row.condition].filter(Boolean);
-  return pieces.length ? pieces.join(' / ') : row.trait || row.group_id || row.candidate_id || '-';
+  return conciseEvidenceLabel(pieces.length ? pieces.join(' / ') : row.trait || row.group_id || row.candidate_id || '-');
 }
 function reviewTypeLabel(value) {
-  return String(value || 'review_target').replace(/_/g, ' ');
+  const friendly = {
+    phenotype_review_target: 'Needs review',
+    review_target: 'Needs review',
+    polygenic_score: 'Polygenic score',
+    needs_clinical_confirmation: 'Clinical confirmation needed'
+  };
+  if (friendly[value]) return friendly[value];
+  return humanizeLabel(value || 'review_target');
 }
 function firstCountLabel(counts) {
   if (!Array.isArray(counts) || counts.length === 0) return null;
@@ -160,7 +174,7 @@ const NAV_ITEMS = [{
   panel: 'variants'
 }, {
   id: 'pharmacogenomics',
-  label: 'Pharmacogenomics',
+  label: 'Medication Response',
   icon: '◉',
   section: 'Genomics',
   panel: 'pgx'
@@ -210,36 +224,36 @@ function unavailablePanel(panel) {
 }
 function unavailableLabel(state) {
   const labels = {
-    not_selected: 'Not selected',
+    not_selected: 'Ready to add',
     blocked_position_aware_export: 'Export required',
-    missing_scores: 'Scores unavailable',
-    insufficient_overlap: 'Insufficient overlap',
+    missing_scores: 'Score setup ready',
+    insufficient_overlap: 'More markers required',
     running: 'Running',
-    failed: 'Failed',
+    failed: 'Refresh required',
     blocked_setup: 'Setup required',
-    source_unavailable: 'Source unavailable',
-    out_of_scope: 'Out of scope',
-    checked_empty: 'No records rendered',
-    no_pharmcat_results: 'No PharmCAT results',
-    no_renderable_evidence: 'No renderable evidence'
+    source_unavailable: 'Source reconnect required',
+    out_of_scope: 'Different input required',
+    checked_empty: 'Review complete',
+    no_pharmcat_results: 'Medication review complete',
+    no_renderable_evidence: 'Assessment ready'
   };
   return labels[state] || labels.no_renderable_evidence;
 }
 function unavailableMessage(item) {
   const state = item && item.state;
   const messages = {
-    not_selected: 'This category was not included in this dashboard render.',
-    blocked_position_aware_export: 'Pharmacogenomics was checked, but broad PharmCAT rendering requires a position-aware Active Genome Index export that preserves reference and no-call loci.',
-    missing_scores: 'Risk scores were checked, but no imported PGS Catalog scores were available for this dashboard.',
-    insufficient_overlap: 'Ancestry context was checked, but marker overlap was too low to render reference-neighbor context.',
+    not_selected: 'Add this category during the next dashboard refresh.',
+    blocked_position_aware_export: 'Broad medication-response rendering becomes available with a position-aware Active Genome Index export that preserves reference and uncalled loci.',
+    missing_scores: 'Install or import PGS Catalog scores to add calibrated polygenic results.',
+    insufficient_overlap: 'A larger set of overlapping ancestry markers will support reference-neighbor context.',
     running: item && item.job_id ? `This category is still running in background job ${item.job_id}. Refresh the dashboard after the job completes.` : 'This category is still running in the background. Refresh the dashboard after it completes.',
-    failed: item && item.error && item.error.message ? `This category failed before renderable evidence was available: ${item.error.message}` : 'This category failed before renderable evidence was available.',
-    blocked_setup: 'This category needs required setup before it can render evidence.',
-    source_unavailable: 'The source needed for this category was unavailable during the dashboard build.',
-    out_of_scope: 'This genome input is outside the supported scope for this category.',
-    checked_empty: 'Genomi checked this category and found no renderable records in the consulted scope.',
-    no_pharmcat_results: 'Pharmacogenomics was checked, but no renderable PharmCAT results were available for this dashboard.',
-    no_renderable_evidence: 'This category has no renderable evidence in this dashboard.'
+    failed: item && item.error && item.error.message ? `Refresh this category after resolving: ${item.error.message}` : 'Refresh this category to complete its evidence display.',
+    blocked_setup: 'Complete the required setup to render this category.',
+    source_unavailable: 'Reconnect the category source and refresh the dashboard.',
+    out_of_scope: 'Use a supported genome input to render this category.',
+    checked_empty: 'Genomi completed this category review across the consulted scope with zero display rows.',
+    no_pharmcat_results: 'Genomi completed the medication-response review with zero PharmCAT display rows.',
+    no_renderable_evidence: 'Run or refresh this category to add display-ready evidence.'
   };
   return messages[state] || messages.no_renderable_evidence;
 }
@@ -248,6 +262,7 @@ function EmptyPanel({
   panel
 }) {
   const unavailable = unavailablePanel(panel);
+  const isUnassessedPgx = panel === 'pgx' && (!unavailable || ['not_selected', 'no_renderable_evidence'].includes(unavailable.state));
   return /*#__PURE__*/React.createElement("div", {
     className: "view-content"
   }, /*#__PURE__*/React.createElement("div", {
@@ -256,13 +271,13 @@ function EmptyPanel({
     className: "view-title"
   }, title), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, unavailableLabel(unavailable && unavailable.state)))), /*#__PURE__*/React.createElement("div", {
+  }, isUnassessedPgx ? 'Assessment ready to run' : unavailableLabel(unavailable && unavailable.state)))), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-header"
-  }, /*#__PURE__*/React.createElement("span", null, title)), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, isUnassessedPgx ? 'What this means' : title)), /*#__PURE__*/React.createElement("div", {
     className: "empty-body"
-  }, unavailableMessage(unavailable))));
+  }, isUnassessedPgx ? 'Run the medication-response analysis to add reviewed gene–drug results to this dashboard.' : unavailableMessage(unavailable))));
 }
 function HighlightCard({
   title,
@@ -291,8 +306,9 @@ function OverviewView({
   const variantCount = gs.variantCount != null ? Number(gs.variantCount).toLocaleString() : '-';
   const variantCountLabel = gs.variantCountLabel || 'Variants Indexed';
   const gq = gs.genotypeQuality != null ? `${gs.genotypeQuality}%` : '-';
-  const gqSub = gs.meanDepth != null ? `${gs.meanDepth}× mean depth` : gs.genotypeQuality != null ? 'PASS rate' : '';
+  const gqSub = gs.meanDepth != null ? `${gs.meanDepth}× mean depth` : gs.genotypeQuality != null ? 'variants marked PASS' : '';
   const sources = Array.isArray(gs.sourceCoverage) ? gs.sourceCoverage : [];
+  const sampleLabel = gs.sampleName || (gs.sampleId && !String(gs.sampleId).includes('sha256-') ? gs.sampleId : null);
   const _varHiSrc = VARIANTS_DATA || VARIANTS_ALL_DATA;
   const variantsHi = _varHiSrc && _varHiSrc.length > 0 ? _varHiSrc.slice(0, 3) : null;
   const pgxHi = PGX_DATA && PGX_DATA.length > 0 ? PGX_DATA.slice(0, 3) : null;
@@ -308,7 +324,7 @@ function OverviewView({
     className: "view-title"
   }, "Overview"), /*#__PURE__*/React.createElement("p", {
     className: "view-subtitle"
-  }, "Active Genome Index", gs.sampleId ? ` · ${gs.sampleId}` : '', gs.genomeBuild ? ` · ${gs.genomeBuild}` : '')), /*#__PURE__*/React.createElement("div", {
+  }, "Active Genome Index", sampleLabel ? ` · ${sampleLabel}` : '', gs.genomeBuild ? ` · ${gs.genomeBuild}` : '')), /*#__PURE__*/React.createElement("div", {
     className: "header-badge"
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -356,7 +372,7 @@ function OverviewView({
     }
   }, gq), /*#__PURE__*/React.createElement("div", {
     className: "stat-label"
-  }, "Genotype Quality"), /*#__PURE__*/React.createElement("div", {
+  }, "Callset QC"), /*#__PURE__*/React.createElement("div", {
     className: "stat-sub"
   }, gqSub)) : /*#__PURE__*/React.createElement("div", {
     className: "stat-card"
@@ -376,13 +392,14 @@ function OverviewView({
   }, /*#__PURE__*/React.createElement("div", {
     className: "stat-value",
     style: {
-      color: '#f59e0b'
+      color: '#f59e0b',
+      fontSize: PGX_DATA ? 26 : 14
     }
-  }, PGX_DATA ? PGX_DATA.length : '-'), /*#__PURE__*/React.createElement("div", {
+  }, PGX_DATA ? PGX_DATA.length : 'Assessment ready'), /*#__PURE__*/React.createElement("div", {
     className: "stat-label"
-  }, "PGx Rows"), /*#__PURE__*/React.createElement("div", {
+  }, "Medication Response"), /*#__PURE__*/React.createElement("div", {
     className: "stat-sub"
-  }, PGX_DATA ? `${PGX_DATA.filter(d => d.readiness === 'needs_clinical_confirmation').length} need confirmation` : ''))), sources.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, PGX_DATA ? `${PGX_DATA.filter(d => d.readiness === 'needs_clinical_confirmation').length} require confirmation` : 'Run a medication-response analysis'))), sources.length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "card",
     style: {
       marginBottom: 20
@@ -415,7 +432,7 @@ function OverviewView({
       color: '#10b981',
       borderColor: '#10b98130'
     }
-  }, src.coverageState || 'data_returned')), /*#__PURE__*/React.createElement("div", {
+  }, reviewTypeLabel(src.coverageState || 'data_returned'))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -426,7 +443,7 @@ function OverviewView({
   }, /*#__PURE__*/React.createElement("span", null, src.percent != null ? `${src.percent}%` : ''))))))), anyHighlights && /*#__PURE__*/React.createElement("div", {
     className: "two-col"
   }, variantsHi && /*#__PURE__*/React.createElement(HighlightCard, {
-    title: "Top Variants",
+    title: "ClinVar matches to review",
     onNav: onNav ? () => onNav('variants') : null
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -469,8 +486,19 @@ function OverviewView({
         color: sc.fg,
         borderColor: sc.border
       }
-    }, v.clinvarSignificance.replace(/_/g, ' ')));
-  }))), pgxHi && /*#__PURE__*/React.createElement(HighlightCard, {
+    }, v.clinvarSignificance.replace(/_/g, ' ')), v.conditionShort && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#777',
+        fontSize: 10
+      }
+    }, conciseEvidenceLabel(v.conditionShort)));
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#555',
+      fontSize: 10,
+      lineHeight: 1.5
+    }
+  }, "Database labels for review; clinical context establishes relevance."))), pgxHi && /*#__PURE__*/React.createElement(HighlightCard, {
     title: "Pharmacogenomics",
     onNav: onNav ? () => onNav('pharmacogenomics') : null
   }, /*#__PURE__*/React.createElement("div", {
@@ -559,11 +587,8 @@ function OverviewView({
           color: '#555',
           fontSize: 10
         }
-      }, d.missing_interpretation_gates.length, " gates missing")));
+      }, d.missing_interpretation_gates.length, " interpretation checks pending")));
     }
-    const scoreNum = d.score != null ? Number(d.score) : null;
-    const scoreStr = scoreNum != null ? (scoreNum > 0 ? '+' : '') + scoreNum.toFixed(3) : '-';
-    const scoreColor = scoreNum == null ? '#666' : scoreNum > 0.5 ? '#f59e0b' : scoreNum < -0.5 ? '#3b82f6' : '#aaa';
     return /*#__PURE__*/React.createElement("div", {
       key: d.trait || i,
       style: {
@@ -583,14 +608,7 @@ function OverviewView({
         alignItems: 'center',
         gap: 8
       }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontFamily: 'var(--mono)',
-        fontSize: 16,
-        fontWeight: 700,
-        color: scoreColor
-      }
-    }, scoreStr), d.percentile != null ? /*#__PURE__*/React.createElement("span", {
+    }, d.percentile != null ? /*#__PURE__*/React.createElement("span", {
       className: "badge",
       style: {
         background: prsLevel(d.percentile).color + '18',
@@ -606,7 +624,7 @@ function OverviewView({
         borderColor: '#66666630',
         fontSize: 10
       }
-    }, "raw score")), d.overlap && /*#__PURE__*/React.createElement("span", {
+    }, "calculated \xB7 calibration pending")), d.overlap && /*#__PURE__*/React.createElement("span", {
       style: {
         color: '#555',
         fontSize: 10
@@ -617,113 +635,52 @@ function OverviewView({
     onNav: onNav ? () => onNav('ancestry') : null
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      color: '#e5e5e5',
-      fontSize: 13,
-      marginBottom: 8
+      color: '#666',
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em'
     }
-  }, "Closest broad reference cluster:", ' ', /*#__PURE__*/React.createElement("span", {
+  }, "Closest reference match"), /*#__PURE__*/React.createElement("div", {
     style: {
-      color: '#3b82f6',
-      fontWeight: 600
+      color: SUPERPOP_COLORS[ancestryHi.closestSuperpopulation.label] || '#e5e5e5',
+      fontSize: 20,
+      fontWeight: 800,
+      marginTop: 3
     }
-  }, ancestryHi.closestSuperpopulation.label || '-')), /*#__PURE__*/React.createElement("div", {
+  }, POP_LABELS[ancestryHi.closestSuperpopulation.label] || ancestryHi.closestSuperpopulation.label || '-'), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 8
-    }
-  }, (Array.isArray(ancestryHi.populationCentroids) ? ancestryHi.populationCentroids : []).slice(0, 3).map((n, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
+      color: '#aaa',
       fontSize: 12,
-      alignItems: 'center'
+      marginTop: 8
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      width: 4,
-      height: 4,
-      borderRadius: '50%',
-      background: SUPERPOP_COLORS[POP_SUPERPOP[n.label]] || '#888',
-      display: 'inline-block'
-    }
-  }), /*#__PURE__*/React.createElement("span", {
+  }, "Closest named group: ", /*#__PURE__*/React.createElement("strong", {
     style: {
       color: '#e5e5e5'
     }
-  }, POP_LABELS[n.label] || n.label || '-'), /*#__PURE__*/React.createElement("span", {
-    className: "mono-text",
+  }, POP_LABELS[ancestryHi.closestPopulation.label] || ancestryHi.closestPopulation.label || '-')), /*#__PURE__*/React.createElement("div", {
     style: {
       color: '#555',
-      fontSize: 10
+      fontSize: 10,
+      marginTop: 10,
+      lineHeight: 1.5
     }
-  }, n.label)), /*#__PURE__*/React.createElement("span", {
-    className: "mono-text"
-  }, n.distance != null ? Number(n.distance).toFixed(4) : ''))), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: '#555',
-      fontSize: 10
-    }
-  }, "PCA centroid distance \xB7 lower is closer"))), nutriHi && /*#__PURE__*/React.createElement(HighlightCard, {
-    title: "Nutrigenomics",
+  }, "Reference-dataset comparison; ancestry percentages use a different method.")), nutriHi && /*#__PURE__*/React.createElement(HighlightCard, {
+    title: "Nutrition marker reference",
     onNav: onNav ? () => onNav('nutrigenomics') : null
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10
+      color: '#e5e5e5',
+      fontSize: 18,
+      fontWeight: 700
     }
-  }, nutriHi.map((d, i) => {
-    const ntc = {
-      established: '#10b981',
-      probable: '#f59e0b',
-      emerging: '#8b5cf6'
-    }[d.evidenceTier] || '#666';
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: '#e5e5e5',
-        fontWeight: 600,
-        fontSize: 13
-      }
-    }, d.marker || '-'), d.gene && /*#__PURE__*/React.createElement("span", {
-      className: "mono-text",
-      style: {
-        color: '#3b82f6',
-        fontSize: 12
-      }
-    }, d.gene)), d.evidenceTier && /*#__PURE__*/React.createElement("span", {
-      className: "badge",
-      style: {
-        background: ntc + '18',
-        color: ntc,
-        borderColor: ntc + '30',
-        fontSize: 10,
-        flexShrink: 0
-      }
-    }, d.evidenceTier));
-  })))));
+  }, NUTRI_DATA.length, " researched markers"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: '#888',
+      fontSize: 12,
+      lineHeight: 1.55,
+      marginTop: 8
+    }
+  }, "Background research is available; personal interpretation begins after matching these markers to your genotype."))));
 }
 function sigBadgeStyle(sig) {
   const s = (sig || '').toLowerCase();
@@ -774,7 +731,13 @@ function sigBadgeStyle(sig) {
 function VirtualVariantTable({
   rows
 }) {
-  const ROW_H = 44;
+  const [compact, setCompact] = React.useState(() => window.innerWidth <= 768);
+  React.useEffect(() => {
+    const onResize = () => setCompact(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const ROW_H = compact ? 132 : 44;
   const OVERSCAN = 8;
   const containerRef = React.useRef(null);
   const [scrollTop, setScrollTop] = React.useState(0);
@@ -783,7 +746,7 @@ function VirtualVariantTable({
     if (containerRef.current) containerRef.current.scrollTop = 0;
   }, [rows]);
   const totalH = rows.length * ROW_H;
-  const containerH = Math.min(totalH, ROW_H * 15);
+  const containerH = Math.min(totalH, ROW_H * (compact ? 5 : 15));
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const endIdx = Math.min(rows.length, Math.ceil((scrollTop + containerH) / ROW_H) + OVERSCAN);
   const visibleRows = rows.slice(startIdx, endIdx);
@@ -793,7 +756,7 @@ function VirtualVariantTable({
       display: 'flex',
       flexDirection: 'column'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !compact && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: COLS,
@@ -823,8 +786,11 @@ function VirtualVariantTable({
       key: v.rsid || startIdx + i,
       style: {
         display: 'grid',
-        gridTemplateColumns: COLS,
-        padding: '0 14px',
+        gridTemplateColumns: compact ? 'minmax(0, 1fr) auto' : COLS,
+        gridTemplateAreas: compact ? '"variant significance" "gene genotype" "condition condition" "location quality"' : 'none',
+        rowGap: compact ? 7 : 0,
+        columnGap: compact ? 12 : 0,
+        padding: compact ? '13px 14px' : '0 14px',
         height: ROW_H,
         alignItems: 'center',
         borderBottom: '1px solid #141414'
@@ -832,11 +798,14 @@ function VirtualVariantTable({
     }, /*#__PURE__*/React.createElement("span", {
       className: "mono-text",
       style: {
+        gridArea: compact ? 'variant' : 'auto',
         color: '#e5e5e5',
-        fontSize: 12
+        fontSize: 12,
+        fontWeight: 600
       }
     }, v.rsid || '-'), /*#__PURE__*/React.createElement("span", {
       style: {
+        gridArea: compact ? 'gene' : 'auto',
         color: '#3b82f6',
         fontWeight: 600,
         fontSize: 12,
@@ -847,38 +816,48 @@ function VirtualVariantTable({
     }, v.gene || '-'), /*#__PURE__*/React.createElement("span", {
       className: "mono-text",
       style: {
+        gridArea: compact ? 'location' : 'auto',
         fontSize: 11
       }
     }, "chr", v.chrom, ":", v.pos != null ? Number(v.pos).toLocaleString() : ''), /*#__PURE__*/React.createElement("span", {
-      className: "genotype-badge"
-    }, v.ref, '>', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
+      className: "genotype-badge",
       style: {
-        color: '#555',
+        gridArea: compact ? 'genotype' : 'auto',
+        justifySelf: compact ? 'end' : 'auto'
+      }
+    }, v.ref, ' → ', v.alt, v.zygosity ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: '#888',
         fontSize: 10
       }
-    }, " ", v.zygosity) : null), /*#__PURE__*/React.createElement("span", {
+    }, " \xB7 ", v.zygosity) : null), /*#__PURE__*/React.createElement("span", {
       className: "badge",
       style: {
+        gridArea: compact ? 'significance' : 'auto',
+        justifySelf: compact ? 'end' : 'auto',
         background: sc.bg,
         color: sc.fg,
         borderColor: sc.border,
         fontSize: 10,
-        maxWidth: '100%',
+        maxWidth: compact ? 190 : '100%',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
       }
-    }, (v.clinvarSignificance || '').replace(/_/g, ' ')), /*#__PURE__*/React.createElement("span", {
+    }, humanizeLabel(v.clinvarSignificance)), /*#__PURE__*/React.createElement("span", {
       style: {
+        gridArea: compact ? 'condition' : 'auto',
         color: '#aaa',
         fontSize: 12,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap'
       }
-    }, v.conditionShort || ''), /*#__PURE__*/React.createElement("span", {
+    }, conciseEvidenceLabel(v.conditionShort)), /*#__PURE__*/React.createElement("span", {
       style: {
-        color: '#555',
+        gridArea: compact ? 'quality' : 'auto',
+        justifySelf: compact ? 'end' : 'auto',
+        color: '#777',
         fontSize: 11
       }
     }, v.evidenceQuality || ''));
@@ -888,13 +867,34 @@ function VirtualVariantTable({
     }
   })), rows.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: '8px 14px',
+      padding: '9px 14px',
       borderTop: '1px solid var(--border)',
       fontSize: 11,
-      color: 'var(--text4)',
+      color: 'var(--text3)',
       display: 'flex',
-      justifyContent: 'space-between'
+      justifyContent: 'space-between',
+      gap: 12,
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("span", null, rows.length.toLocaleString(), " variants"), /*#__PURE__*/React.createElement("span", null, "Scroll to explore \xB7 rendering ", Math.min(endIdx - startIdx, rows.length), " rows")));
 }
 function VariantsView() {
+  const hasPlp = VARIANTS_DATA && VARIANTS_DATA.length > 0;
+  const hasAll = VARIANTS_ALL_DATA && VARIANTS_ALL_DATA.length > 0;
+  if (!hasPlp && !hasAll) return /*#__PURE__*/React.createElement(EmptyPanel, {
+    title: "Variants",
+    panel: "variants"
+  });
+  const [search, setSearch] = React.useState('');
+  const [sigFilter, setSigFilter] = React.useState('all');
+  function matchesSearch(v) {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (v.rsid || '').toLowerCase().includes(s) || (v.gene || '').toLowerCase().includes(s) || (v.conditionShort || '').toLowerCase().includes(s) || (v.clinvarSignificance || '').toLowerCase().includes(s);
+  }
+  function matchesSigFilter(v) {
+    if (sigFilter === 'all') return true;
+    const s = (v.clinvarSignificance || '').toLowerCase();
+    if (sigFilter === 'plp') return s.includes('pathogenic');
+    if (sigFilter === 'vus') return s.includes('uncertain');
+    if (sigFilter === 'benign') return s.includes('benign');

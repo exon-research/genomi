@@ -19,14 +19,37 @@ function isPrsRow(row) {
   return row && (row.row_type === 'polygenic_score' || row.score_id || row.percentile != null);
 }
 
+function humanizeLabel(value) {
+  return String(value || '')
+    .replace(/[|]+/g, '; ')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function conciseEvidenceLabel(value) {
+  const usefulParts = humanizeLabel(value)
+    .split(';')
+    .map(part => part.trim())
+    .filter(part => part && !['not provided', 'not specified', 'unknown'].includes(part.toLowerCase()));
+  return usefulParts.join('; ') || 'Details pending';
+}
+
 function riskReviewLabel(row) {
   if (!row) return '-';
   const pieces = [row.gene, row.condition].filter(Boolean);
-  return pieces.length ? pieces.join(' / ') : (row.trait || row.group_id || row.candidate_id || '-');
+  return conciseEvidenceLabel(pieces.length ? pieces.join(' / ') : (row.trait || row.group_id || row.candidate_id || '-'));
 }
 
 function reviewTypeLabel(value) {
-  return String(value || 'review_target').replace(/_/g, ' ');
+  const friendly = {
+    phenotype_review_target: 'Needs review',
+    review_target: 'Needs review',
+    polygenic_score: 'Polygenic score',
+    needs_clinical_confirmation: 'Clinical confirmation needed',
+  };
+  if (friendly[value]) return friendly[value];
+  return humanizeLabel(value || 'review_target');
 }
 
 function firstCountLabel(counts) {
