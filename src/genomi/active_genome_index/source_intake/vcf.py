@@ -27,6 +27,7 @@ from ..canonical import build_canonical_bgzip
 from ..identity import source_content_sha256
 from .agi_store import JsonObject, _init_source_evidence_db
 from .detection import SourceDetection
+from .reference import installed_reference_fasta
 from .text_io import open_genomic_binary
 
 
@@ -37,6 +38,8 @@ def _parse_vcf_active_genome_index(
     evidence_db: str | Path | None,
     source_evidence_db: str | Path | None,
     shared_evidence_db: str | Path | None,
+    reference_fasta: str | Path | None,
+    auto_reference_fasta: bool,
     genome_build: str,
     force: bool,
     max_records: int | None,
@@ -45,6 +48,14 @@ def _parse_vcf_active_genome_index(
 ) -> JsonObject:
     effective_agi_source_format = agi_source_format or detection.source_format
     effective_build = resolve_genome_build(source_path, genome_build)
+    resolved_reference_fasta = Path(reference_fasta) if reference_fasta is not None else None
+    if resolved_reference_fasta is None and auto_reference_fasta:
+        dependency = installed_reference_fasta(
+            effective_build,
+            intent="genotype support resolution for VCF/gVCF reference blocks",
+        )
+        if dependency.get("status") == "installed" and dependency.get("reference_fasta"):
+            resolved_reference_fasta = Path(str(dependency["reference_fasta"]))
     intake_content_sha256 = source_content_sha256(source_path)
     project_dir = run_project_dir_for_source(source_path, source_format=detection.source_format)
     work_dir = run_work_dir_for_source(source_path, source_format=detection.source_format)
@@ -137,6 +148,7 @@ def _parse_vcf_active_genome_index(
         "annotation_scope": "active_genome_index",
         "sample_slug": sample_slug_from_source(source_path, source_format=detection.source_format),
         "genome_build": effective_build,
+        "reference_fasta": str(resolved_reference_fasta) if resolved_reference_fasta is not None else None,
         "evidence_db": str(db_path),
         "shared_evidence_db": str(shared_db),
         "project_dir": str(project_dir),

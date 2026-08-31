@@ -47,6 +47,8 @@ def parse_source(
             evidence_db=evidence_db,
             source_evidence_db=source_evidence_db,
             shared_evidence_db=shared_evidence_db,
+            reference_fasta=reference_fasta,
+            auto_reference_fasta=auto_reference_fasta,
             genome_build=genome_build,
             force=force,
             max_records=max_records,

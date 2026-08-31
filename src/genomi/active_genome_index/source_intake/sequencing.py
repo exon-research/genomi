@@ -13,7 +13,6 @@ from ...runtime.paths import (
     sample_slug_from_source,
     shared_evidence_db_path,
 )
-from ...runtime.libraries import manager as library_manager
 from ..alignment import (
     align_fastq_to_bam,
     detect_paired_fastq,
@@ -25,6 +24,7 @@ from ..alignment import (
 )
 from .agi_store import JsonObject, _init_source_evidence_db
 from .detection import SourceDetection
+from .reference import installed_reference_fasta
 from .text_io import archive_member_names, open_archive_member_raw, open_genomic_binary
 from .vcf import _parse_vcf_active_genome_index
 
@@ -97,7 +97,7 @@ def parse_bam_source(
 
     resolved_reference_fasta = Path(reference_fasta) if reference_fasta is not None else None
     if resolved_reference_fasta is None and auto_reference_fasta:
-        dependency = _installed_reference_fasta(effective_build)
+        dependency = installed_reference_fasta(effective_build)
         steps.append(
             {
                 "name": "ensure-reference-fasta",
@@ -166,6 +166,8 @@ def parse_bam_source(
         evidence_db=db_path,
         source_evidence_db=source_evidence_db,
         shared_evidence_db=shared_db,
+        reference_fasta=resolved_reference_fasta,
+        auto_reference_fasta=False,
         genome_build=effective_build,
         force=force,
         max_records=max_records,
@@ -369,7 +371,7 @@ def parse_fastq_source(
         }
     ]
     if resolved_reference_fasta is None and auto_reference_fasta:
-        dependency = _installed_reference_fasta(effective_build)
+        dependency = installed_reference_fasta(effective_build)
         steps.append(
             {
                 "name": "ensure-reference-fasta",
@@ -490,33 +492,6 @@ def parse_fastq_source(
         "reference_fasta": str(resolved_reference_fasta),
         "outputs": outputs,
         "steps": steps,
-    }
-
-
-def _installed_reference_fasta(genome_build: str) -> JsonObject:
-    library = f"reference-{genome_build.lower()}"
-    status = library_manager.status(library)
-    if not status.get("installed"):
-        request = library_manager.missing_request(
-            library,
-            intent="reference FASTA for sequencing source parsing",
-            operation="genomi.parse_source",
-            genome_build=genome_build,
-        )
-        return {
-            "status": "requires_library_install",
-            "library": library,
-            "library_install_request": request,
-            "missing_library": request["missing_library"],
-            "ask_user": request["ask_user"],
-        }
-    required_paths = status.get("required_paths") or []
-    reference_fasta = str(required_paths[0]) if required_paths else ""
-    return {
-        "status": "installed",
-        "library": library,
-        "reference_fasta": reference_fasta,
-        "library_status": status,
     }
 
 

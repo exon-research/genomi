@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from genomi.operations import call_operation
 from genomi.active_genome_index.active_genome_index import active_genome_index_readiness, active_genome_index_summary
@@ -35,6 +36,46 @@ def _hidden_path_leaks(payload: object, *paths: Path) -> list[str]:
 
 
 class GenomiRuntimeVcfIntakeTests(GenomiRuntimeTestCase):
+    def test_gvcf_parse_default_persists_installed_reference_for_genotype_support(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.getcwd()
+            os.chdir(tmp)
+            try:
+                reference = Path("hg38.fa")
+                reference.write_text(">chr1\n" + "A" * 250 + "\n", encoding="utf-8")
+                gvcf = Path("sample.g.vcf")
+                gvcf.write_text(
+                    "##fileformat=VCFv4.2\n"
+                    '##INFO=<ID=END,Number=1,Type=Integer,Description="End">\n'
+                    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample\n"
+                    "1\t100\t.\tA\t<NON_REF>\t.\tPASS\tEND=200\tGT:DP:GQ\t0/0:30:0\n",
+                    encoding="utf-8",
+                )
+                installed = {
+                    "installed": True,
+                    "required_paths": [str(reference), str(Path(f"{reference}.fai"))],
+                }
+
+                with mock.patch(
+                    "genomi.active_genome_index.source_intake.reference.library_manager.status",
+                    return_value=installed,
+                ):
+                    parsed = call_operation(
+                        "genomi.parse_source",
+                        {"source": str(gvcf), "genome_build": "GRCh38"},
+                    )
+
+                self.assertEqual(parsed["status"], "completed")
+                support = call_operation(
+                    "active_genome_index.classify_genotype_support",
+                    {"chrom": "1", "pos": 150, "ref": "A", "alt": "G"},
+                )
+                self.assertEqual(support["support_status"], "not_observed")
+                self.assertEqual(support["sample_observation"]["observed_genotype"], "A/A")
+                self.assertEqual(support["site_observation"]["reference_base_source"], "reference_fasta")
+            finally:
+                os.chdir(previous)
+
     def test_active_genome_index_parse_materializes_vcf_index_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             previous = os.getcwd()
